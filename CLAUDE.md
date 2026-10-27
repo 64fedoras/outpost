@@ -11,6 +11,7 @@ controller reviews, runs tests on an exec-enabled node, fixes failures, and offe
 
 Read `README.md` for user-facing behaviour and `docs/ROADMAP.md` for the planned work (0.7 to 1.1,
 nothing built yet, decisions pending with the owner).
+`docs/ARCHITECTURE.md` explains the data folders, node connection, task lifecycle and update flow.
 
 ## Owner preferences (standing)
 - **Release numbers go up by one digit only.** After 0.9 comes 1.0, then 1.1. Never 0.10 or 0.11.
