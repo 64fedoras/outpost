@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outpost</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="login" class="card hidden">
+  <h1>Outpost</h1>
+  <p class="sub wrap">Sign in with the admin password. It was printed when the controller was installed; <code>sudo outpost reset-password</code> on the controller sets a new one.</p>
+  <form id="login-form">
+    <label for="pw">Password</label>
+    <input id="pw" type="password" autocomplete="current-password" autofocus>
+    <div class="error-msg hidden" id="login-err"></div>
+    <div class="modal-foot"><button class="primary" type="submit">Sign in</button></div>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <div class="topbar">
+    <button class="icon-btn" id="side-open" aria-label="Show tasks and menu">☰</button>
+    <span class="brand">Outpost</span>
+    <span class="spacer"></span>
+    <a class="icon-btn" href="#/new" aria-label="New task">＋</a>
+  </div>
+  <aside class="side" id="side">
+    <div class="side-head">
+      <span class="brand">Outpost</span>
+      <button class="icon-btn side-close" id="side-close" aria-label="Close menu">✕</button>
+    </div>
+    <a class="new-task" href="#/new"><span aria-hidden="true">＋</span> New task</a>
+    <nav class="side-tasks" id="side-tasks" aria-label="Tasks"></nav>
+    <div class="side-foot">
+      <div class="cluster" id="side-cluster"></div>
+      <nav class="side-nav" aria-label="Cluster">
+        <a href="#/nodes" data-tab="nodes">Nodes <span class="badge hidden" id="badge-nodes"></span></a>
+        <a href="#/models" data-tab="models">Models</a>
+        <a href="#/updates" data-tab="updates">Updates <span class="badge hidden" id="badge-updates"></span></a>
+        <a href="#/settings" data-tab="settings">Settings</a>
+      </nav>
+      <div class="side-meta"><span id="hdr-meta"></span><button class="link-btn" id="btn-logout">Sign out</button></div>
+    </div>
+  </aside>
+  <div class="scrim hidden" id="scrim"></div>
+  <div class="content">
+  <div id="offline-banner" class="note bad hidden" style="margin:0;border-radius:0;text-align:center"><b>Can't reach the controller.</b> Showing the last data received; retrying every 2 seconds. If this lasts, check <code>sudo systemctl status outpost-controller</code> on the controller.</div>
+
+    <!-- NEW TASK -->
+    <section data-page="new" class="page-new hidden">
+      <div class="new-wrap">
+        <h1 class="new-title">What should the cluster build?</h1>
+        <p class="new-sub" id="new-cluster"></p>
+        <div class="composer big">
+          <textarea id="nt-prompt" rows="4" placeholder="Describe a program, script or change. The planner asks if anything is unclear, then shows you a plan before any work starts."></textarea>
+          <div class="composer-bar">
+            <select id="nt-planner" class="chip-select" aria-label="Planner"></select>
+            <select id="nt-model" class="chip-select" aria-label="Claude model"></select>
+            <label class="chip-input" id="nt-cap-wrap" title="Spending cap for Claude on this task">cap $<input id="nt-cap" type="number" min="0.05" step="0.25" aria-label="Spending cap in US dollars"></label>
+            <label class="toggle" title="A second node checks each subtask and fixes mistakes"><input type="checkbox" id="nt-review" checked> peer review</label>
+            <span class="spacer"></span>
+            <button class="send" id="nt-go" aria-label="Start planning">Plan it</button>
+          </div>
+        </div>
+        <div class="error-msg hidden" id="nt-err"></div>
+        <div class="starters" id="nt-starters"></div>
+        <div id="home-setup"></div>
+      </div>
+    </section>
+
+    <!-- TASK THREAD -->
+    <section data-page="task" class="page-task hidden">
+      <div class="task-bar">
+        <div class="task-bar-main">
+          <h2 id="tv-title"></h2>
+          <span class="pill" id="tv-status"></span>
+        </div>
+        <div class="task-bar-tools">
+          <span id="tv-spend"></span>
+          <button class="small" data-act="task-files" id="tv-files-btn">Files</button>
+          <button class="small" data-act="task-activity">Activity</button>
+          <a id="tv-download" class="hidden"><button class="small primary">Download .zip</button></a>
+          <button class="small danger hidden" data-act="task-cancel" id="tv-stop">Stop</button>
+          <button class="small danger hidden" data-act="task-delete" id="tv-delete">Delete</button>
+        </div>
+      </div>
+      <div class="thread" id="thread"></div>
+      <div class="dock">
+        <div class="composer">
+          <textarea id="tm-text" rows="1" placeholder="Message"></textarea>
+          <div class="composer-bar">
+            <span class="composer-hint" id="tm-hint"></span>
+            <span class="spacer"></span>
+            <button class="send" id="tm-send">Send</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <main class="page-plain">
+    <!-- NODES -->
+    <section data-page="nodes" class="hidden">
+      <div class="section-head"><h2>Nodes</h2><span class="sub" id="node-count" style="margin:0"></span><span class="spacer"></span><button id="btn-add" class="primary">Add node</button></div>
+      <div id="nodes" class="grid"></div>
+      <div class="section-head"><h2>Recent jobs</h2><span class="sub" style="margin:0">every model call and command sent to a node</span></div>
+      <div id="jobs"></div>
+    </section>
+
+    <!-- MODELS -->
+    <section data-page="models" class="hidden">
+      <div class="section-head"><h2>Model library</h2><span class="sub" id="models-disk" style="margin:0"></span></div>
+      <p class="hint">Each model is either <b>downloaded by each node</b> straight from Hugging Face when you load it (uses no controller space; nodes need internet), or <b>stored on the controller</b> once and copied to nodes over your network.</p>
+      <div id="models-list"></div>
+      <div class="section-head"><h2>Recommended for your machines</h2></div>
+      <div class="catalog" id="catalog"></div>
+      <div class="section-head"><h2>Any model from Hugging Face</h2></div>
+      <div class="card">
+        <div class="btns" style="flex-wrap:nowrap">
+          <input id="hf-repo" placeholder="owner/repo, e.g. unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF" autocomplete="off">
+          <button id="hf-list">List files</button>
+        </div>
+        <div id="hf-files" style="margin-top:10px"></div>
+      </div>
+      <div class="section-head"><h2>llama.cpp builds</h2><span class="spacer"></span><button id="rt-check" class="small">Check for a newer llama.cpp</button></div>
+      <p class="hint">The controller downloads the matching build from llama.cpp's GitHub releases the first time a node needs it: Vulkan for nodes with a GPU, CPU otherwise.</p>
+      <div id="runtimes"></div>
+    </section>
+
+    <!-- UPDATES -->
+    <section data-page="updates" class="hidden">
+      <div class="section-head"><h2>Controller and nodes</h2><span class="spacer"></span><button id="btn-upd-all">Update all</button></div>
+      <div class="table-wrap" id="upd-table"></div>
+      <div class="section-head"><h2>Uploaded releases</h2></div>
+      <label class="drop" id="drop">
+        <input type="file" id="drop-input" multiple class="hidden">
+        <b>Drop new Outpost binaries here</b> or click to choose. Upload one per platform you use
+        (for example <code>outpost-linux-amd64</code>); the controller reads each file's platform and version.
+      </label>
+      <div id="releases" style="margin-top:10px"></div>
+      <p class="sub wrap" id="ctl-info" style="margin-top:14px"></p>
+    </section>
+
+    <!-- SETTINGS -->
+    <section data-page="settings" class="hidden">
+      <div class="settings">
+        <div class="section-head"><h2>Claude</h2></div>
+        <div class="card">
+          <p class="hint">Claude plans tasks, writes anything the local models cannot, and fixes failing tests. Use a separate API key for Outpost and set a monthly limit on it in the Claude Console as a backstop.</p>
+          <label for="set-key">API key <span id="set-key-state"></span></label>
+          <div class="btns" style="flex-wrap:nowrap"><input id="set-key" type="password" placeholder="sk-ant-…" autocomplete="off"><button id="set-key-save">Save</button><button id="set-key-clear" class="danger">Remove</button></div>
+          <div class="row2">
+            <div><label for="set-model">Default Claude model</label><select id="set-model"></select></div>
+            <div><label for="set-cap">Default spending cap per task (USD)</label><input id="set-cap" type="number" min="0.05" step="0.25"></div>
+          </div>
+          <label for="set-planner">Default planner</label><select id="set-planner"></select>
+          <div class="modal-foot"><button class="primary" id="set-save">Save defaults</button></div>
+        </div>
+        <div class="section-head"><h2>Hugging Face</h2></div>
+        <div class="card">
+          <p class="hint">Only needed for gated models (accept the model's license on huggingface.co first).</p>
+          <label for="set-hf">Access token <span id="set-hf-state"></span></label>
+          <div class="btns" style="flex-wrap:nowrap"><input id="set-hf" type="password" placeholder="hf_…" autocomplete="off"><button id="set-hf-save">Save</button><button id="set-hf-clear" class="danger">Remove</button></div>
+        </div>
+        <div class="section-head"><h2>Admin password</h2></div>
+        <div class="card">
+          <form id="pw-form">
+            <label for="pw-cur">Current password</label><input id="pw-cur" type="password" autocomplete="current-password">
+            <div class="row2">
+              <div><label for="pw-new">New password (8+ characters)</label><input id="pw-new" type="password" autocomplete="new-password"></div>
+              <div><label for="pw-new2">Repeat new password</label><input id="pw-new2" type="password" autocomplete="new-password"></div>
+            </div>
+            <div class="error-msg hidden" id="pw-err"></div>
+            <div class="modal-foot"><button class="primary" type="submit">Change password</button></div>
+          </form>
+          <p class="hint">Locked out? On the controller run <code>sudo outpost reset-password</code>.</p>
+        </div>
+      </div>
+    </section>
+    </main>
+  </div>
+</div>
+
+<!-- MODALS -->
+<div id="modal-add" class="overlay hidden">
+  <div class="modal">
+    <h3>Add a node</h3>
+    <p class="hint">Linux: installs a service that starts at boot and runs as the user who ran <code>sudo</code>. Windows: runs in the background with a tray icon and starts at sign-in. Each code works once and expires in 1 hour. Once a node joins with it, a new code appears here, so you can add the next node straight away.</p>
+    <div id="add-note" class="note hidden" style="margin:8px 0"></div>
+    <label for="ssh-target">Run over SSH from this computer (optional, e.g. admin@192.0.2.11)</label>
+    <input id="ssh-target" placeholder="user@host" autocomplete="off">
+    <label>Linux (copy <code>outpost-linux-amd64</code> to the node's home folder first, e.g. <code>scp outpost-linux-amd64 admin@IP:~/</code>)</label>
+    <div class="codebox"><span id="cmd-linux"></span><button data-copy="cmd-linux">Copy</button></div>
+    <label>Windows (PowerShell in the folder with <code>outpost-windows-amd64.exe</code>; runs in the background with a tray icon and starts at sign-in)</label>
+    <div class="codebox"><span id="cmd-win"></span><button data-copy="cmd-win">Copy</button></div>
+    <label>macOS (runs in the foreground for now)</label>
+    <div class="codebox"><span id="cmd-mac"></span><button data-copy="cmd-mac">Copy</button></div>
+    <p class="hint" style="margin-top:10px">The node connects to <code id="add-url"></code>. If that address is wrong, reinstall the controller with <code>--advertise https://IP:8443</code>.</p>
+    <div class="modal-foot"><button id="add-regen" title="Make a new code and cancel the current one">New code</button><button data-close>Done</button></div>
+  </div>
+</div>
+
+<div id="modal-load" class="overlay hidden">
+  <div class="modal">
+    <h3>Load a model on <span id="load-node"></span></h3>
+    <p class="hint">Outpost installs llama.cpp on the node if needed, gets the model onto the node (from Hugging Face or the controller, depending on the model), and starts it. Large models take a while the first time.</p>
+    <label for="load-model">Model</label>
+    <select id="load-model"></select>
+    <div id="load-fit" class="note hidden"></div>
+    <div class="row2">
+      <div><label for="load-ctx">Context size (tokens)</label><input id="load-ctx" type="number" min="512" step="1024"></div>
+      <div><label for="load-ngl">GPU layers</label><select id="load-ngl"><option value="">Automatic (fit to VRAM)</option><option value="all">All on GPU</option><option value="0">CPU only</option></select></div>
+    </div>
+    <details id="load-pool-wrap" style="margin-top:8px"><summary class="hint">Pool memory from other nodes (for models too big for this one)</summary>
+      <p class="hint" style="margin-top:6px">Helpers lend their RAM and VRAM over your network with llama.cpp's RPC mode; this node runs the model. Helpers stop their own model while lending, and only this node's address can connect to them. Expect slower generation over a home network: best for models that would not fit otherwise.</p>
+      <div id="load-pool"></div>
+    </details>
+    <details style="margin-top:8px"><summary class="hint">Advanced</summary>
+      <div class="row2">
+        <div><label for="load-threads">CPU threads (0 = automatic)</label><input id="load-threads" type="number" min="0" value="0"></div>
+        <div><label for="load-extra">Extra llama-server arguments</label><input id="load-extra" placeholder="--n-cpu-moe 20" class="mono"></div>
+      </div>
+    </details>
+    <div class="error-msg hidden" id="load-err"></div>
+    <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="load-go">Load</button></div>
+  </div>
+</div>
+
+<div id="modal-run" class="overlay hidden">
+  <div class="modal">
+    <h3>Run a command on <span id="run-node"></span></h3>
+    <p class="hint">Runs in a fresh workspace on the node. The workspace is deleted when the job ends.</p>
+    <label for="run-cmd">Command</label>
+    <input id="run-cmd" placeholder="uname -a; ls -la; cat input.txt | wc -w" autocomplete="off" class="mono">
+    <div class="row2">
+      <div><label for="run-in-name">Input file name (optional)</label><input id="run-in-name" placeholder="input.txt"></div>
+      <div><label for="run-collect">Collect files (comma-separated globs)</label><input id="run-collect" placeholder="out/*, result.txt"></div>
+    </div>
+    <label for="run-in-text">Input file contents (optional, pushed to the node before running)</label>
+    <textarea id="run-in-text" rows="4" class="mono"></textarea>
+    <div class="row2">
+      <div><label for="run-timeout">Timeout (seconds)</label><input id="run-timeout" type="number" value="600" min="1"></div>
+      <div></div>
+    </div>
+    <div class="error-msg hidden" id="run-err"></div>
+    <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="run-go">Run</button></div>
+  </div>
+</div>
+
+<div id="modal-job" class="overlay hidden">
+  <div class="modal wide">
+    <div style="display:flex;align-items:center;gap:10px">
+      <h3 style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="job-title"></h3>
+      <span id="job-status" class="pill"></span>
+    </div>
+    <div class="kv" id="job-kv"></div>
+    <pre class="out" id="job-out"></pre>
+    <div class="error-msg hidden" id="job-err"></div>
+    <div class="files" id="job-files"></div>
+    <div class="cleaned hidden" id="job-cleaned"></div>
+    <div class="modal-foot"><button class="danger hidden" id="job-cancel">Cancel job</button><button data-close>Close</button></div>
+  </div>
+</div>
+
+<div id="modal-activity" class="overlay hidden">
+  <div class="modal wide">
+    <h3>Activity</h3>
+    <p class="hint">Everything the controller did for this task, newest at the bottom.</p>
+    <div class="events" id="tv-events" style="max-height:60vh"></div>
+    <div class="modal-foot"><button data-close>Close</button></div>
+  </div>
+</div>
+
+<div id="modal-files" class="overlay hidden">
+  <div class="modal">
+    <h3>Project files</h3>
+    <p class="hint" id="files-hint"></p>
+    <div class="filelist" id="tv-files"></div>
+    <div class="modal-foot"><a id="files-dl"><button class="primary">Download .zip</button></a><button data-close>Close</button></div>
+  </div>
+</div>
+
+<div id="modal-file" class="overlay hidden">
+  <div class="modal wide">
+    <h3 id="file-title" class="mono" style="font-size:14px"></h3>
+    <pre class="out" id="file-body" style="max-height:65vh"></pre>
+    <div class="modal-foot"><button data-close>Close</button></div>
+  </div>
+</div>
+
+<div id="toast" class="hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>

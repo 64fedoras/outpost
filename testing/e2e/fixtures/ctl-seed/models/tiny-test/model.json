@@ -1,0 +1,1 @@
+{"name": "tiny-test", "label": "Tiny test model", "repo": "local", "hf_files": ["tiny.gguf"], "files": [{"path": "tiny.gguf", "sha256": "764df4ade7af4ec439da9a769e69610fd60932a23c6e6b060b2d8b2d84b350d3", "bytes": 468512}], "ctx": 2048, "status": "ready", "bytes_done": 468512, "bytes_total": 468512, "added": "2026-10-24T00:00:00Z"}
