@@ -1,2 +1,237 @@
-# outpost
-Distributed Ai Harness
+# Outpost v0.6.1
+
+Self-hosted AI cluster. One binary runs as the **controller** (web UI, planning, job dispatch) or as a
+**node** (runs local models with llama.cpp, runs commands, keeps nothing after a job).
+
+You describe a programming task; a planner (Claude, or a local model on one of your nodes) splits it
+into small subtasks; you approve the plan; your nodes write the pieces in parallel; Outpost runs the
+tests, fixes failures, and gives you a zip to download.
+
+## Install (starts at boot)
+
+Linux with systemd. Copy the binary to each machine, then install it as a service. Re-running an
+install is safe: it updates the service and keeps existing data and passwords.
+
+### Controller
+
+```bash
+scp outpost-linux-amd64 sysmaint@10.0.4.130:~/
+ssh -t sysmaint@10.0.4.130 'sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install controller --advertise https://10.0.4.130:8443'
+```
+
+On a first install this prints the **admin password**. Open the web UI, accept the self-signed
+certificate warning and sign in. Change the password under **Settings → Admin password**.
+
+### Nodes
+
+Copy the binary to the node, then on the **Nodes** tab click **Add node**. Type the node's SSH target
+(for example `sysmaint@10.0.4.132`) and paste the command it gives you:
+
+```bash
+scp outpost-linux-amd64 sysmaint@10.0.4.132:~/
+ssh -t sysmaint@10.0.4.132 'sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install node --join <token>'
+```
+
+The node service runs as the user who ran `sudo`, keeps its data in `~/.outpost/node`, and runs jobs
+as that user. A machine that already joined becomes a service with `sudo outpost install node`.
+
+Nodes need nothing else installed. The controller fetches llama.cpp and models once and copies
+them to nodes, and the Outpost binary carries the small system library llama.cpp needs that minimal
+Linux installs lack (`libgomp`), dropping it next to llama.cpp only when the machine is missing it.
+The one exception is GPU drivers: GPU nodes use llama.cpp's Vulkan build, which needs the system's
+Vulkan driver (`sudo apt install libvulkan1 mesa-vulkan-drivers`). The node card tells you if it is
+missing.
+
+**Windows:** in PowerShell, in the folder with the exe, run the command from **Add node**:
+
+```powershell
+.\outpost-windows-amd64.exe install node --join <token>
+```
+
+This copies Outpost to `C:\ProgramData\outpost\outpost.exe` and starts it in the background with a
+tray icon. It starts again each time you sign in. No admin rights needed. Logs:
+`C:\ProgramData\outpost\node\node.log`.
+
+**macOS:** run `./outpost-darwin-arm64 node --join <token>` in a terminal (no service or tray yet).
+
+### Tray icon (desktop machines)
+
+Desktop nodes get a tent icon in the system tray (notification area): **green** while taking work,
+**amber** while paused, **gray** while disconnected or stopped. Its menu:
+
+- Status, the controller it is joined to, and the loaded model.
+- **Accept new work:** untick it to stop the controller sending tasks and jobs here (for example
+  while you game). Models stay loaded and pools keep lending. The node card in the web UI says
+  *Paused on the node*. The setting survives restarts.
+- **Open controller web UI.**
+- **Join a different controller…:** opens a small local page where you paste a join code from
+  the other controller's **Add node** dialog. Models stay on disk; the old settings are kept as
+  `node.json.prev`.
+- **Quit Outpost:** stops the node and closes the icon. On Linux the service stays stopped until
+  **Start Outpost** in the tray (asks for your password), `sudo systemctl start outpost-node`, or
+  the next boot.
+- **Close this icon only:** the node keeps running.
+
+On Linux, `install node` adds the icon to your desktop login when the machine has a desktop. It shows
+at your next login, or run `outpost tray &` from a terminal on the desktop. GNOME needs the
+AppIndicator extension, which Ubuntu includes. Linux servers without a desktop get no icon.
+
+
+**Windows and Microsoft Defender.** Defender sometimes flags Outpost (a false positive common for
+unsigned Go programs that download and run new versions of themselves), which breaks updates from
+the web UI. Exclude Outpost's folder once, in an admin PowerShell:
+
+```powershell
+Add-MpPreference -ExclusionPath 'C:\ProgramData\outpost'   # installed exe, updates, models, llama.cpp
+```
+
+Then click **Update** again. `outpost hwinfo` prints the CPU, RAM and GPUs a machine reports, so you
+can check detection without joining.
+
+## First run
+
+1. **Models** (sidebar): add a model to the library. For the 4 GB test VMs, *Qwen2.5-Coder 3B*. For the
+   9070 XT, *Qwen3-Coder 30B-A3B*; for the 9060 XT, *Qwen2.5-Coder 14B*. Choose where it lives:
+   - **Add · nodes download** (default): each node downloads it from Hugging Face when you load it.
+     Uses no space on the controller; nodes need internet access.
+   - **Store on controller:** downloaded once to the controller and copied to nodes over your
+     network. Uses controller space; nodes need no internet.
+   You can switch later: **Free controller space** or **Store on controller** on the library row.
+2. **Nodes** (sidebar): click **Load model** on a node. Outpost installs llama.cpp on the node (Vulkan for
+   GPUs, CPU otherwise), gets the model onto the node, and starts it. Downloads resume if
+   interrupted and are checked against Hugging Face's SHA-256. Progress shows on the card. The node
+   reloads the same model by itself after a reboot or update.
+3. Tick **exec** on at least one node so tasks can run their tests.
+4. **Settings:** add a Claude API key if you want Claude as the planner (recommended).
+5. **New task:** describe what to build and click **Plan it**. See below.
+
+## Working with tasks
+
+The web UI is laid out like a chat app. The sidebar lists your tasks; an amber dot means a task is
+waiting for you, green means it is working. Cluster pages (Nodes, Models, Updates, Settings) are at
+the bottom of the sidebar.
+
+Each task is a conversation:
+
+1. **You describe the task.** Pick the planner (Claude or a local model), the Claude model and a
+   spending cap, and whether nodes review each other's work.
+2. **The planner may ask questions** when the request leaves open a choice that changes the design
+   (language, storage, interface). Click the answers, type your own, or skip any. It asks at most
+   once per request; clear requests go straight to a plan.
+3. **The plan appears as a card.** Approve it, adjust the cap, or reply with changes ("use SQLite
+   instead", "drop the web UI") and it revises the plan. Nothing runs until you approve.
+4. **Progress is live.** A strip fills in as subtasks finish, with which node wrote and checked each.
+   You can **steer while it works**: a message like "keep the output sorted" goes to every subtask,
+   review and test fix that starts after it.
+5. **The result card** lists the files, the test outcome, and a **Download .zip** button.
+6. **Follow-ups build on the same code.** Send another message after a task finishes ("add a --top N
+   flag") and the planner plans only the files to add or change; workers get the current version
+   of each file they change. Claude spend and the cap carry across follow-ups.
+
+**Stop** halts a task and keeps its files; a later message continues from there. **Activity** shows
+the controller's full log for the task, and **Files** lets you read any file.
+
+## Nodes working together
+
+There are two ways for nodes to share one task.
+
+### Peer review (on by default)
+
+When a node finishes a subtask, a *different* node checks it against the plan: names, signatures,
+imports, file paths and obvious bugs. It answers "OK" or sends corrected files. Each subtask
+on the task page shows who reviewed it and whether it was fixed. Reviews catch mistakes before
+the test run, so fewer Claude fix rounds are needed. Turn it off per task with **Peer review**
+on the new-task form.
+
+A review never holds up or fails a task. It is skipped when only one node has a model loaded,
+when no other node frees up within 2 minutes, or when the reviewer's answer looks broken (for
+example, a rewrite much shorter than the original).
+
+### Pooling memory (experimental)
+
+For a model too big for any single machine, open **Load model** on the node that should run it
+and pick helpers under **Pool memory from other nodes**. The size check counts the whole pool's
+RAM and VRAM. Helpers lend memory through llama.cpp's RPC mode:
+
+- Helpers stop their own model while lending. Their card says **Lending memory to X**.
+- Every machine in the pool runs the same llama.cpp build; Outpost installs it.
+- Security: llama.cpp's RPC server has no authentication, so Outpost binds it to `127.0.0.1` and
+  puts a gatekeeper in front (port 50052) that accepts connections only from the main node's
+  address. Refused connections are logged.
+- Pools come back on their own: if a helper or the main node restarts or reboots, the controller
+  loads the pooled model again once everyone is online (usually within 15 seconds).
+- **Unload** on the main node ends the pool and frees the helpers.
+
+Expect slower generation than a single machine. Every token crosses your network, so wired
+gigabit or faster is best. Use it for models that would not fit otherwise, not for speed.
+
+## Claude usage and the spending cap
+
+Claude only plans, writes subtasks the local models could not finish, and fixes failing tests; all
+routine code writing runs on your nodes. Every Claude call is metered live on the task page.
+
+- **Soft cap per task** (default $2, set when you approve the plan): before a call that would pass
+  the cap, the task **pauses**. Raise the cap, or finish with a local planner. Nothing is thrown away.
+- **Backstop:** use a separate API key for Outpost and set a monthly spend limit on it in the
+  Claude Console.
+- The key is stored encrypted on the controller and never sent to nodes.
+
+## Updating
+
+1. **Updates tab:** drop in the new binaries, one per platform you use (`outpost-linux-amd64`, …).
+2. Click **Update** on the controller row (updates the web UI too; you stay signed in), then
+   **Update N nodes**. Each row shows the machine's status, its version and a live progress bar.
+
+Nodes verify the download's SHA-256, run it once to confirm the version, and restart into it.
+Updates need no root and survive reboots. Nodes with running jobs wait until they are idle.
+
+### Rolling back
+
+Every machine keeps the last few Outpost versions it has run in its data folder (`agent/`). On the
+**Updates** tab, **Roll back to vX** restarts the controller or a node on the previous version, and it
+stays there across reboots until you install an update. Each node also keeps its previous llama.cpp
+build on disk.
+
+## Passwords
+
+- Change it in **Settings → Admin password** (8+ characters; other browsers are signed out).
+- Locked out: on the controller run `sudo outpost reset-password`. It asks for a new password
+  (or generates one if you leave it blank) and restarts the service.
+- The password is stored as a PBKDF2 hash in `/var/lib/outpost/controller/admin.json` and persists
+  across restarts, reboots and updates.
+
+## Where things live
+
+| | Controller (`/var/lib/outpost/controller`) | Node (`~/.outpost/node`) |
+| --- | --- | --- |
+| Config | `tls.crt/key`, `admin.json`, `settings.json` (secrets encrypted with `secret.key`), `nodes.json` | `node.json` (node key) |
+| Models | `models/<name>/` (only for models stored on the controller) | `models/<name>/` (from Hugging Face or the controller) |
+| llama.cpp | `runtime/<variant>/` (from GitHub releases) | `llama/<build>-<variant>/` |
+| Work | `tasks/<id>/repo` and `result.zip` | `work/` — deleted after every job |
+| Updates | `releases/`, `agent/` | `agent/` |
+
+## Known limits
+
+- One model per node at a time; each node runs one model call at a time. A node lending memory
+  to a pool runs no model of its own.
+- Files over 1 MiB are not sent to test runs.
+- The low-level job history (Home → Recent jobs) is kept in memory and clears on restart; tasks
+  and their files are kept on disk.
+- Service install is Linux-only.
+
+## Third-party code inside the binary
+
+Linux x86-64 builds include `libgomp.so.1` from GCC (GPLv3 with the GCC Runtime Library Exception),
+unmodified, from Debian's `libgomp1` package; its license is in `bundled/LICENSE-libgomp.txt` and its
+source is available from Debian (`apt source gcc`). Outpost writes it to disk only on machines that
+lack it.
+
+## Build from source
+
+Go 1.24+:
+
+```bash
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o outpost .
+```
+
+Cross-compile with `GOOS=windows|darwin|linux GOARCH=amd64|arm64`.

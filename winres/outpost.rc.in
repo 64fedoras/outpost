@@ -1,0 +1,30 @@
+#define VS_FF_NONE 0x0L
+1 VERSIONINFO
+FILEVERSION @MA@,@MI@,@PA@,0
+PRODUCTVERSION @MA@,@MI@,@PA@,0
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0x0L
+FILEOS 0x40004L
+FILETYPE 0x1L
+FILESUBTYPE 0x0L
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904b0"
+    BEGIN
+      VALUE "CompanyName", "Outpost (self-hosted)"
+      VALUE "FileDescription", "Outpost node and controller for a self-hosted local AI cluster"
+      VALUE "FileVersion", "@V@"
+      VALUE "InternalName", "outpost"
+      VALUE "LegalCopyright", "Outpost authors"
+      VALUE "OriginalFilename", "outpost.exe"
+      VALUE "ProductName", "Outpost"
+      VALUE "ProductVersion", "@V@"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END
+1 24 "outpost.manifest"

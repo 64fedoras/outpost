@@ -1,0 +1,1012 @@
+'use strict';
+const $ = (id) => document.getElementById(id);
+let state = null, models = null, tasks = [], settings = null, taskDetail = null;
+let stateTimer = null, jobTimer = null, taskTimer = null, openJobId = null, loadNodeId = null, runNodeId = null;
+
+// ---------- helpers ----------
+async function api(path, opts = {}) {
+  const r = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, ...opts });
+  let body = null;
+  try { body = await r.json(); } catch (e) {}
+  if (r.status === 401 && path !== '/api/login') { showLogin(); throw new Error('login required'); }
+  if (!r.ok) throw new Error((body && (body.error || body.message)) || r.statusText);
+  return body;
+}
+const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
+function toast(msg, ms = 2600) {
+  const t = $('toast'); t.textContent = msg; t.classList.remove('hidden');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), ms);
+}
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function bytes(n) {
+  if (!n) return '0 B';
+  const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)) + ' ' + u[i];
+}
+function usd(v) { v = v || 0; return '$' + (v >= 0.1 || v === 0 ? v.toFixed(2) : v.toFixed(3)); }
+function ago(t) {
+  if (!t) return '';
+  const s = Math.max(0, (Date.now() - new Date(t)) / 1000);
+  if (s < 60) return Math.floor(s) + 's ago';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+function clock(t) { return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }); }
+function bar(pct, cls = '') {
+  const p = Math.max(0, Math.min(100, pct || 0));
+  return `<div class="bar"><i class="${cls || (p > 85 ? 'hot' : '')}" style="width:${p}%"></i></div>`;
+}
+const label = (s) => String(s || '').replace(/_/g, ' ');
+const pill = (s, text) => `<span class="pill st-${esc(s)}">${esc(text || label(s))}</span>`;
+// setHTML only touches the DOM when content changed, so typing and focus survive polling.
+function setHTML(el, html) { if (typeof el === 'string') el = $(el); if (el._h !== html) { el.innerHTML = html; el._h = html; } }
+const nodeName = (n) => n.name || (n.hello && n.hello.hostname) || n.id;
+const nodeById = (id) => state && state.nodes.find((n) => n.id === id);
+
+// ---------- auth + routing ----------
+function showLogin() {
+  clearInterval(stateTimer); stateTimer = null;
+  $('app').classList.add('hidden'); $('login').classList.remove('hidden'); $('pw').focus();
+}
+function showApp() {
+  $('login').classList.add('hidden'); $('app').classList.remove('hidden'); route();
+  refresh(); if (!stateTimer) stateTimer = setInterval(refresh, 2000);
+}
+$('login-form').onsubmit = async (e) => {
+  e.preventDefault(); $('login-err').classList.add('hidden');
+  try { await post('/api/login', { password: $('pw').value }); $('pw').value = ''; showApp(); }
+  catch (err) { $('login-err').textContent = err.message; $('login-err').classList.remove('hidden'); }
+};
+$('btn-logout').onclick = async () => { await post('/api/logout').catch(() => {}); showLogin(); };
+
+const PAGES = ['new', 'task', 'nodes', 'models', 'updates', 'settings'];
+let page = 'new', pageArg = null;
+function route() {
+  const m = location.hash.match(/^#\/(\w+)(?:\/([\w-]+))?/) || [];
+  page = m[1] === 'tasks' && m[2] ? 'task' : PAGES.includes(m[1]) ? m[1] : 'new';
+  pageArg = page === 'task' ? m[2] : null;
+  document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
+  document.querySelectorAll('.side-nav a').forEach((a) => a.classList.toggle('active', a.dataset.tab === page));
+  document.querySelector('.page-plain').classList.toggle('hidden', !['nodes', 'models', 'updates', 'settings'].includes(page));
+  document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task' }[page] || page[0].toUpperCase() + page.slice(1));
+  closeSide();
+  clearTimeout(taskTimer);
+  if (page === 'task') { taskDetail = null; threadReset(); pollTask(); }
+  if (page === 'new') setTimeout(() => $('nt-prompt').focus(), 0);
+  if (page === 'settings') loadSettings();
+  renderSideTasks();
+  if (state) refresh();
+}
+window.addEventListener('hashchange', route);
+
+// Sidebar on small screens
+function openSide() { $('side').classList.add('open'); $('scrim').classList.remove('hidden'); }
+function closeSide() { $('side').classList.remove('open'); $('scrim').classList.add('hidden'); }
+$('side-open').onclick = openSide; $('side-close').onclick = closeSide; $('scrim').onclick = closeSide;
+
+// ---------- polling ----------
+let failures = 0;
+async function refresh() {
+  try { state = await api('/api/state'); failures = 0; $('offline-banner').classList.add('hidden'); }
+  catch (e) {
+    if (e.message === 'login required') return;
+    if (++failures >= 2) $('offline-banner').classList.remove('hidden');
+    return;
+  }
+  const needModels = ['nodes', 'models', 'new'].includes(page) || !models;
+  await Promise.all([
+    needModels ? api('/api/models').then((m) => { models = m; }).catch(() => {}) : null,
+    api('/api/tasks').then((t) => { tasks = t; }).catch(() => {}),
+  ]);
+  $('hdr-meta').textContent = `v${state.version}`;
+  $('hdr-meta').title = state.advertise;
+  $('ctl-info').textContent = `Controller ${state.advertise} · ${state.platform} · certificate SHA-256 ${state.fingerprint}`;
+  renderBadges();
+  renderSideTasks();
+  renderSideCluster();
+  if (page === 'new') renderNew();
+  if (page === 'nodes') { renderNodes(); renderJobs(); }
+  if (page === 'models') renderModels();
+  if (page === 'updates') renderUpdates();
+}
+
+const ACTIVE = ['planning', 'awaiting_answers', 'awaiting_approval', 'running', 'testing', 'fixing', 'paused_cap'];
+const WORKING = ['planning', 'running', 'testing', 'fixing'];
+function workerCount() { return state.nodes.filter((n) => n.online && n.heartbeat && n.heartbeat.inference_ready && !n.heartbeat.paused).length; }
+function execCount() { return state.nodes.filter((n) => n.online && n.exec_enabled && !(n.heartbeat && n.heartbeat.paused)).length; }
+function updatesAvailable() { return state.nodes.filter((n) => n.update_to).length + (state.controller_update_to ? 1 : 0); }
+
+function renderBadges() {
+  const offline = state.nodes.filter((n) => !n.online).length;
+  const bn = $('badge-nodes'); bn.textContent = offline; bn.className = 'badge warn' + (offline ? '' : ' hidden'); bn.title = `${offline} offline`;
+  const up = updatesAvailable();
+  const bu = $('badge-updates'); bu.textContent = up; bu.className = 'badge' + (up ? '' : ' hidden');
+}
+
+// What a task's status means to the person, in a few words.
+const STATUS_WORDS = {
+  planning: 'Planning', awaiting_answers: 'Has questions', awaiting_approval: 'Plan ready', running: 'Working',
+  testing: 'Testing', fixing: 'Fixing tests', paused_cap: 'Paused at cap', interrupted: 'Interrupted',
+  done: 'Done', failed: 'Failed', cancelled: 'Stopped',
+};
+function statusWord(t) {
+  if (t.status === 'done' && t.test_status === 'failing') return 'Done, tests fail';
+  return STATUS_WORDS[t.status] || label(t.status);
+}
+function taskTone(t) {
+  if (t.needs_you) return 'needs';
+  if (WORKING.includes(t.status)) return 'work';
+  if (t.status === 'failed' || (t.status === 'done' && t.test_status === 'failing')) return 'bad';
+  return 'idle';
+}
+
+function renderSideTasks() {
+  if (!tasks) return;
+  const html = tasks.length ? tasks.map((t) => `<a href="#/tasks/${t.id}" class="side-task ${page === 'task' && pageArg === t.id ? 'active' : ''}">
+      <span class="tdot ${taskTone(t)}" aria-hidden="true"></span>
+      <span class="side-task-text"><span class="side-task-title">${esc(t.title)}</span>
+      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>`).join('')
+    : `<p class="side-empty">Tasks you start show up here.</p>`;
+  setHTML('side-tasks', html);
+}
+
+function renderSideCluster() {
+  const n = state.nodes, on = n.filter((x) => x.online).length, w = workerCount();
+  setHTML('side-cluster', `<a href="#/nodes" class="cluster-link"><span class="tdot ${w ? 'work' : on ? 'needs' : 'idle'}"></span>${on} of ${n.length} node${n.length === 1 ? '' : 's'} online · ${w} model${w === 1 ? '' : 's'} ready</a>`);
+}
+
+function renderJobs() {
+  const jobs = state.jobs.slice(0, 15);
+  setHTML('jobs', !jobs.length ? `<div class="empty">No jobs yet.</div>` :
+    `<div class="table-wrap"><table><thead><tr><th>Status</th><th>Node</th><th>What</th><th>Started</th></tr></thead><tbody>${
+      jobs.map((j) => `<tr class="click" data-act="open-job" data-id="${j.id}"><td>${pill(j.status)}</td><td>${esc(j.node_name)}</td><td class="cmd">${esc(j.command)}</td><td>${ago(j.created)}</td></tr>`).join('')
+    }</tbody></table></div>`);
+}
+
+// ---------- new task ----------
+function plannerOptions(selected) {
+  const opts = [];
+  opts.push(`<option value="claude" ${state.has_claude_key ? '' : 'disabled'} ${selected === 'claude' ? 'selected' : ''}>Planner: Claude${state.has_claude_key ? '' : ' (add an API key in Settings)'}</option>`);
+  for (const n of state.nodes) {
+    const hb = n.online && n.heartbeat, model = hb && hb.loaded_model;
+    const v = 'node:' + n.id;
+    opts.push(`<option value="${v}" ${selected === v ? 'selected' : ''}>Planner: ${esc(nodeName(n))}${model ? ' (' + esc(model) + ')' : ' (no model loaded)'}</option>`);
+  }
+  return opts.join('');
+}
+function claudeModelOptions(selected, short) {
+  const list = (settings && settings.claude_models) || [{ id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', in: 2, out: 10 }, { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', in: 4, out: 20 }, { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', in: 0.1, out: 0.5 }];
+  return list.map((m) => `<option value="${m.id}" ${m.id === selected ? 'selected' : ''} title="$${m.in} in / $${m.out} out per million tokens">${esc(short ? m.label.replace(/^Claude /, '') : m.label)}${short ? '' : ` ($${m.in} / $${m.out} per M tokens)`}</option>`).join('');
+}
+const STARTERS = [
+  ['A command-line tool', 'A Python command-line tool that renames photos in a folder by the date they were taken (EXIF), with a dry-run flag and unit tests.'],
+  ['A small web API', 'A small REST API in Go for a to-do list, stored in SQLite, with handler tests.'],
+  ['A log summariser', 'A script that reads an nginx access log and prints the top 10 paths, status codes and client IPs, with tests on a sample log.'],
+];
+let ntInit = false;
+function renderNew() {
+  const sel = $('nt-planner');
+  const cur = sel.value || state.default_planner || 'claude';
+  setHTML(sel, plannerOptions(state.has_claude_key || cur !== 'claude' ? cur : (state.nodes[0] ? 'node:' + state.nodes[0].id : 'claude')));
+  if (!ntInit) {
+    ntInit = true;
+    $('nt-cap').value = state.default_cap_usd || 2;
+    if (!settings) api('/api/settings').then((s) => { settings = s; setHTML('nt-model', claudeModelOptions(state.claude_model, true)); }).catch(() => {});
+    setHTML('nt-model', claudeModelOptions(state.claude_model, true));
+    setHTML('nt-starters', STARTERS.map(([t, p], i) => `<button class="starter" data-act="starter" data-i="${i}"><b>${esc(t)}</b><span>${esc(p)}</span></button>`).join(''));
+  }
+  const claude = sel.value === 'claude';
+  $('nt-model').classList.toggle('hidden', !claude);
+  $('nt-cap-wrap').classList.toggle('hidden', !claude);
+  const w = workerCount(), ex = execCount(), on = state.nodes.filter((n) => n.online).length;
+  setHTML('new-cluster', state.nodes.length
+    ? `${on} of ${state.nodes.length} nodes online, ${w} with a model ready${ex ? `, ${ex} can run tests` : '. No node can run tests yet (tick exec on the Nodes page)'}.`
+    : 'No nodes yet. Add one on the Nodes page, then come back here.');
+  const steps = [];
+  if (!state.nodes.length) steps.push(`Add a node on the <a href="#/nodes">Nodes</a> page.`);
+  if (models && !models.models.some((m) => m.status === 'ready')) steps.push(`Add a model on the <a href="#/models">Models</a> page.`);
+  if (state.nodes.length && !w) steps.push(`Load a model on a node (<a href="#/nodes">Nodes</a> → Load model).`);
+  if (!state.has_claude_key) steps.push(`Optional: add a Claude API key in <a href="#/settings">Settings</a> to plan with Claude.`);
+  if (!state.nodes.some((n) => n.exec_enabled)) steps.push(`Optional: tick <b>exec</b> on a node so tasks can run their tests.`);
+  setHTML('home-setup', steps.length ? `<div class="setup"><b>Before your first task</b><ol>${steps.map((s) => `<li>${s}</li>`).join('')}</ol></div>` : '');
+}
+$('nt-planner').addEventListener('change', () => renderNew());
+async function startTask() {
+  $('nt-err').classList.add('hidden');
+  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked };
+  if (!body.prompt.trim()) { $('nt-prompt').focus(); return; }
+  $('nt-go').disabled = true;
+  try {
+    const r = await post('/api/tasks', body);
+    $('nt-prompt').value = '';
+    location.hash = '#/tasks/' + r.id;
+    refresh();
+  } catch (e) { $('nt-err').textContent = e.message; $('nt-err').classList.remove('hidden'); }
+  $('nt-go').disabled = false;
+}
+$('nt-go').onclick = startTask;
+$('nt-prompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) startTask(); });
+
+// ---------- task thread ----------
+async function pollTask() {
+  clearTimeout(taskTimer);
+  if (page !== 'task') return;
+  const id = pageArg;
+  try { taskDetail = await api('/api/tasks/' + id); }
+  catch (e) { setHTML('tv-title', esc(e.message)); return; }
+  if (id !== pageArg) return;
+  renderTask(taskDetail);
+  taskTimer = setTimeout(pollTask, WORKING.includes(taskDetail.status) ? 1500 : 4000);
+}
+
+function threadReset() {
+  const th = $('thread'); th.innerHTML = ''; th._items = {};
+  $('tm-text').value = '';
+  ['tv-title', 'tv-status', 'tv-spend'].forEach((id) => { $(id).innerHTML = ''; $(id)._h = null; });
+}
+
+// Keyed rendering: each thread item is only rebuilt when its HTML changes,
+// so choices, typed text and focus inside a card survive polling.
+function renderThreadItems(items) {
+  const th = $('thread');
+  th._items = th._items || {};
+  const nearBottom = th.scrollHeight - th.scrollTop - th.clientHeight < 140;
+  const keep = new Set(items.map((i) => i.key));
+  for (const k of Object.keys(th._items)) if (!keep.has(k)) { th._items[k].remove(); delete th._items[k]; }
+  let prev = null, grew = false;
+  for (const it of items) {
+    let el = th._items[it.key];
+    if (!el) { el = document.createElement('div'); th._items[it.key] = el; grew = true; }
+    if (el._h !== it.html) { el.className = 'item ' + it.cls; el.innerHTML = it.html; el._h = it.html; grew = true; }
+    const want = prev ? prev.nextSibling : th.firstChild;
+    if (want !== el) th.insertBefore(el, want);
+    prev = el;
+  }
+  if (grew && (nearBottom || !th._scrolled)) { th.scrollTop = th.scrollHeight; th._scrolled = true; }
+}
+
+function renderTask(t) {
+  setHTML('tv-title', esc(t.title || firstWords(t.prompt)));
+  setHTML('tv-status', `<span class="tdot ${taskTone({ ...t, needs_you: ['awaiting_answers', 'awaiting_approval', 'paused_cap', 'interrupted'].includes(t.status) })}"></span>${esc(statusWord(t))}`);
+  $('tv-status').className = 'status-chip';
+  setHTML('tv-spend', t.planner === 'claude' || t.cost_usd > 0 ? spendMeter(t) : '');
+  const files = t.files || [];
+  $('tv-files-btn').classList.toggle('hidden', !files.length);
+  $('tv-download').classList.toggle('hidden', !files.length || !['done', 'cancelled', 'failed'].includes(t.status));
+  $('tv-download').href = `/api/tasks/${t.id}/download`;
+  $('tv-stop').classList.toggle('hidden', !ACTIVE.includes(t.status));
+  $('tv-delete').classList.toggle('hidden', ACTIVE.includes(t.status));
+  renderThreadItems(threadItems(t));
+  renderComposer(t);
+  if (!$('modal-activity').classList.contains('hidden')) renderActivity(t);
+  if (!$('modal-files').classList.contains('hidden')) renderFiles(t);
+}
+const firstWords = (s) => { s = String(s || '').trim().split('\n')[0]; return s.length > 70 ? s.slice(0, 70) + '…' : s; };
+
+function spendMeter(t) {
+  const pct = t.cap_usd ? Math.min(100, 100 * t.cost_usd / t.cap_usd) : 0;
+  return `<span class="spend" title="Claude spend on this task: ${usd(t.cost_usd)} of a ${usd(t.cap_usd)} cap">${usd(t.cost_usd)}<span class="spend-bar"><i class="${pct >= 100 ? 'bad' : pct > 80 ? 'hot' : ''}" style="width:${pct}%"></i></span>${usd(t.cap_usd)}</span>`;
+}
+
+// The conversation, plus live cards for the current round.
+function threadItems(t) {
+  const items = [];
+  const msgs = t.messages || [];
+  const round = t.round || 1;
+  const lastIdx = (kind) => { for (let i = msgs.length - 1; i >= 0; i--) if (msgs[i].kind === kind) return i; return -1; };
+  const lastQ = lastIdx('questions'), lastPlan = lastIdx('plan');
+  const started = t.approved && ['running', 'testing', 'fixing', 'paused_cap', 'done', 'failed', 'cancelled', 'interrupted'].includes(t.status) && t.subtasks && t.subtasks.length;
+  let progressPlaced = false;
+  msgs.forEach((m, i) => {
+    // The live progress card sits right after this round's approval.
+    const approvedHere = started && !progressPlaced && m.round === round && m.kind === 'event' && /approved the plan/.test(m.text || '');
+    items.push(msgItem(t, m, i === lastQ && t.status === 'awaiting_answers', i === lastPlan && t.status === 'awaiting_approval'));
+    if (approvedHere) { items.push({ key: 'progress-' + round, cls: 'card-row', html: progressCard(t) }); progressPlaced = true; }
+  });
+  if (started && !progressPlaced) items.push({ key: 'progress-' + round, cls: 'card-row', html: progressCard(t) });
+  const tail = statusCard(t);
+  if (tail) items.push(tail);
+  return items;
+}
+
+function msgItem(t, m, liveQuestions, livePlan) {
+  const key = m.id;
+  if (m.role === 'user') {
+    const tag = m.kind === 'steer' ? '<span class="bubble-tag">note while working</span>' : m.kind === 'answers' ? '<span class="bubble-tag">answers</span>' : '';
+    return { key, cls: 'from-user', html: `<div class="bubble">${tag}${esc(m.text)}</div>` };
+  }
+  if (m.role === 'event' || m.kind === 'event') return { key, cls: 'event-row', html: `<span>${esc(m.text)}</span>` };
+  switch (m.kind) {
+    case 'questions': return { key, cls: 'card-row', html: questionsCard(m, liveQuestions) };
+    case 'plan': return { key, cls: 'card-row', html: planCard(t, m, livePlan) };
+    case 'result': return { key, cls: 'card-row', html: resultCard(t, m) };
+    case 'error': return { key, cls: 'card-row', html: `<div class="card-msg bad"><div class="card-head">Something went wrong</div><p>${esc(m.text)}</p>${t.status === 'failed' && m.round === (t.round || 1) ? '<div class="card-actions"><button class="primary" data-act="task-resume">Try again</button><span class="hint">or send a message to change course</span></div>' : ''}</div>` };
+    default: return { key, cls: 'from-planner', html: `<div class="said">${esc(m.text)}</div>` };
+  }
+}
+
+function questionsCard(m, live) {
+  if (!live) {
+    return `<div class="card-msg quiet"><div class="card-head">The planner asked</div><ul class="asked">${(m.questions || []).map((q) => `<li>${esc(q.question)}</li>`).join('')}</ul></div>`;
+  }
+  const qs = (m.questions || []).map((q) => {
+    const type = q.multi ? 'checkbox' : 'radio';
+    return `<fieldset class="q" data-q="${esc(q.id)}" ${live ? '' : 'disabled'}><legend>${esc(q.question)}</legend>
+      <div class="opts">${(q.options || []).map((o) => `<label class="opt"><input type="${type}" name="${esc(m.id + q.id)}" value="${esc(o)}"><span>${esc(o)}</span></label>`).join('')}
+      ${live ? `<input class="opt-other" placeholder="Something else…" aria-label="Your own answer to: ${esc(q.question)}">` : ''}</div></fieldset>`;
+  }).join('');
+  return `<div class="card-msg"><div class="card-head">A few questions before planning</div>${m.text ? `<p>${esc(m.text)}</p>` : ''}${qs}
+    ${live ? `<div class="card-actions"><button class="primary" data-act="task-answer" data-msg="${esc(m.id)}">Send answers</button><span class="hint">Skip any you don't mind; the planner picks a sensible default.</span></div>` : ''}</div>`;
+}
+
+function planCard(t, m, live) {
+  const p = m.plan || {};
+  const subs = (p.subtasks || []).map((s) => `<li><details><summary><span class="st-title">${esc(s.title)}</span><span class="st-files">${s.files.map(esc).join(', ')}</span></summary>
+      <p class="st-ins">${esc(s.instructions)}</p>${s.depends_on && s.depends_on.length ? `<p class="st-dep">Starts after ${s.depends_on.map(esc).join(', ')}</p>` : ''}</details></li>`).join('');
+  const facts = [p.language ? esc(p.language) : '', p.test_command ? `tests: <code>${esc(p.test_command)}</code>` : 'no automated tests', `${(p.subtasks || []).length} subtasks`].filter(Boolean).join(' · ');
+  let actions = '';
+  if (live) {
+    const warn = [];
+    if (p.test_command && !t.exec_nodes) warn.push('No node has exec on, so the tests will be skipped.');
+    if (!t.workers_online) warn.push('No node has a model ready; work waits until one does.');
+    const est = t.planner === 'claude' && t.estimate_usd ? `Planning cost ${usd(t.cost_usd)}; the rest is estimated at about ${usd(Math.max(0, t.estimate_usd - t.cost_usd))}.` : '';
+    actions = `${warn.length || est ? `<p class="card-note">${esc([est, ...warn].filter(Boolean).join(' '))}</p>` : ''}
+      <div class="card-actions">${t.planner === 'claude' ? `<label class="chip-input">cap $<input id="ta-cap" type="number" min="0.05" step="0.25" value="${t.cap_usd}" aria-label="Spending cap in US dollars"></label>` : ''}
+      <button class="primary" data-act="task-approve">Approve and start</button><span class="hint">or reply below to change the plan</span></div>`;
+  }
+  return `<div class="card-msg plan ${live ? 'live' : ''}"><div class="card-head">Plan · ${esc(p.title || '')}</div>
+    ${m.text ? `<p>${esc(m.text)}</p>` : ''}<p class="plan-summary">${esc(p.summary || '')}</p><p class="plan-facts">${facts}</p>
+    <ol class="plan-steps">${subs}</ol>${actions}</div>`;
+}
+
+const ST_ICON = { pending: '', running: '', reviewing: '', written: '', done: '✓', failed: '✕' };
+function progressCard(t) {
+  const plan = t.plan || { subtasks: [] };
+  const byId = {}; (t.subtasks || []).forEach((s) => { byId[s.id] = s; });
+  const specs = plan.subtasks || [];
+  const done = specs.filter((s) => (byId[s.id] || {}).status === 'done').length;
+  const strip = specs.map((s) => `<i class="seg s-${(byId[s.id] || {}).status || 'pending'}" title="${esc(s.title)}"></i>`).join('');
+  const rows = specs.map((s) => {
+    const x = byId[s.id] || { status: 'pending' };
+    let who = '';
+    if (x.status === 'running') who = `writing on ${esc(x.node_name || '…')}${x.attempts ? ` · try ${x.attempts + 1}` : ''}`;
+    else if (x.status === 'reviewing' || x.status === 'written') who = `${esc(x.node_name || '')} wrote it · ${esc(x.reviewer || 'another node')} is checking`;
+    else if (x.status === 'done') who = `${x.by_planner ? 'written by the planner' : esc(x.node_name || '')}${x.reviewer ? ` · checked by ${esc(x.reviewer)}${x.review_fixed ? ', who fixed it' : ''}` : ''}`;
+    else if (x.status === 'failed') who = esc(x.error || 'failed');
+    else who = s.depends_on && s.depends_on.length ? `waits for ${s.depends_on.map(esc).join(', ')}` : 'waiting for a free node';
+    return `<li class="p-${x.status}"><span class="p-ico" aria-hidden="true">${ST_ICON[x.status] || ''}</span><span class="p-title">${esc(s.title)}</span><span class="p-who">${who}</span></li>`;
+  }).join('');
+  let phase = '';
+  if (t.status === 'testing') phase = 'Running the tests…';
+  else if (t.status === 'fixing') phase = `Tests failed; fixing (round ${t.fix_rounds + 1} of 3)…`;
+  else if (t.status === 'running' && !t.workers_online) phase = 'Waiting for a node with a model ready. Load one on the Nodes page.';
+  const head = t.status === 'running' || t.status === 'testing' || t.status === 'fixing'
+    ? `Working · ${done} of ${specs.length} subtasks done` : `${done} of ${specs.length} subtasks done`;
+  return `<div class="card-msg progress"><div class="card-head">${head}</div><div class="strip" role="img" aria-label="${done} of ${specs.length} subtasks done">${strip}</div>
+    <ul class="p-list">${rows}</ul>${phase ? `<p class="card-note">${esc(phase)}</p>` : ''}</div>`;
+}
+
+function resultCard(t, m) {
+  const latest = m.round === (t.round || 1);
+  const files = (m.files || []).map((f) => `<a href="#" data-act="view-file" data-path="${esc(f)}">${esc(f)}</a>`).join('');
+  const tone = /tests still fail/.test(m.text) ? 'warn' : 'good';
+  return `<div class="card-msg result ${tone}"><div class="card-head">${tone === 'good' ? 'Finished' : 'Finished with failing tests'}</div><p>${esc(m.text)}</p>
+    ${files ? `<div class="changed"><span class="hint">${m.round > 1 ? 'Changed in this request' : 'Files'}</span>${files}</div>` : ''}
+    ${latest && t.test_output && t.test_status !== 'passed' ? `<details class="testout"><summary>Last test output</summary><pre class="out">${esc(t.test_output)}</pre></details>` : ''}
+    ${latest ? `<div class="card-actions"><a href="/api/tasks/${t.id}/download"><button class="primary">Download .zip</button></a><span class="hint">Want changes? Send a follow-up below; it builds on these files.</span></div>` : ''}</div>`;
+}
+
+// A card for states that need the person, at the end of the thread.
+function statusCard(t) {
+  const locals = state ? state.nodes.filter((n) => n.online && n.heartbeat && n.heartbeat.loaded_model)
+    .map((n) => `<option value="node:${n.id}">${esc(nodeName(n))} (${esc(n.heartbeat.loaded_model)})</option>`).join('') : '';
+  switch (t.status) {
+    case 'planning':
+      return { key: 'tail-planning', cls: 'from-planner', html: `<div class="said thinking">Thinking it through with ${esc(t.planner_label)}<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></div>` };
+    case 'paused_cap':
+      return { key: 'tail-cap', cls: 'card-row', html: `<div class="card-msg warn"><div class="card-head">Paused at the spending cap</div>
+        <p>Spent ${usd(t.cost_usd)} of ${usd(t.cap_usd)}. Raise the cap to keep going with Claude, or finish with a local planner.</p>
+        <div class="card-actions"><label class="chip-input">new cap $<input id="ta-newcap" type="number" min="0.05" step="0.25" value="${(Math.ceil((t.cap_usd * 2) * 4) / 4).toFixed(2)}"></label><button class="primary" data-act="task-raise">Raise cap and continue</button></div>
+        ${locals ? `<div class="card-actions"><select id="ta-local" class="chip-select">${locals}</select><button data-act="task-local">Finish with this local planner</button></div>` : ''}</div>` };
+    case 'interrupted':
+      return { key: 'tail-int', cls: 'card-row', html: `<div class="card-msg warn"><div class="card-head">Interrupted</div><p>The controller restarted while this task was active. Resume picks up where it stopped; finished subtasks are kept.</p>
+        <div class="card-actions"><button class="primary" data-act="task-resume">Resume</button></div></div>` };
+  }
+  return null;
+}
+
+function renderComposer(t) {
+  const box = $('tm-text');
+  const modes = {
+    awaiting_answers: ['Or answer in your own words…', 'Your reply goes to the planner with the questions above.'],
+    planning: ['Add something before the plan is ready…', 'Sending restarts planning with your message.'],
+    awaiting_approval: ['Ask for changes to the plan…', 'The planner revises the plan; nothing runs until you approve.'],
+    running: ['Steer the work, e.g. "use SQLite, not JSON files"…', 'Notes apply to subtasks that start from now on, reviews and test fixes.'],
+    paused_cap: ['Steer the work…', 'Notes apply to the rest of this request.'],
+    interrupted: ['Ask for something new…', 'Resume first to finish the current request; a message starts a new one on these files.'],
+  };
+  modes.testing = modes.fixing = modes.running;
+  const [ph, hint] = modes[t.status] || ['Ask for a follow-up change…', 'Builds on this project\'s files: the planner plans only what changes.'];
+  if (box.placeholder !== ph) box.placeholder = ph;
+  setHTML('tm-hint', esc(hint));
+}
+
+async function sendTaskMessage() {
+  const box = $('tm-text'), text = box.value.trim();
+  if (!text || !pageArg) return;
+  $('tm-send').disabled = true;
+  try { await post(`/api/tasks/${pageArg}/messages`, { text }); box.value = ''; autoGrow(box); $('thread')._scrolled = false; }
+  catch (e) { toast(e.message, 4000); }
+  $('tm-send').disabled = false;
+  pollTask(); refresh();
+}
+$('tm-send').onclick = sendTaskMessage;
+$('tm-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendTaskMessage(); } });
+function autoGrow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 220) + 'px'; }
+$('tm-text').addEventListener('input', (e) => autoGrow(e.target));
+
+// Answers from the live questions card (the only one whose fieldsets are enabled).
+function collectAnswers() {
+  const answers = {};
+  document.querySelectorAll('.q:not([disabled])').forEach((f) => {
+    const id = f.dataset.q, picked = [...f.querySelectorAll('input:checked')].map((i) => i.value);
+    const other = (f.querySelector('.opt-other') || {}).value;
+    if (other && other.trim()) picked.push(other.trim());
+    if (picked.length) answers[id] = picked;
+  });
+  return answers;
+}
+
+function renderActivity(t) {
+  const ev = $('tv-events');
+  setHTML(ev, (t.events || []).map((e) => `<div class="${e.level}"><span class="time">${clock(e.time)}</span><span class="msg">${esc(e.text)}</span></div>`).join(''));
+  ev.scrollTop = ev.scrollHeight;
+}
+function renderFiles(t) {
+  const files = t.files || [];
+  setHTML('files-hint', `${files.length} file${files.length === 1 ? '' : 's'} in the project so far. Click one to read it.`);
+  setHTML('tv-files', files.map((f) => `<a href="#" data-act="view-file" data-path="${esc(f.path)}">${esc(f.path)} <span class="muted">(${bytes(f.bytes)})</span></a>`).join(''));
+  $('files-dl').href = `/api/tasks/${t.id}/download`;
+}
+
+async function taskAction(act, el) {
+  const id = pageArg;
+  try {
+    switch (act) {
+      case 'task-approve': await post(`/api/tasks/${id}/approve`, { cap_usd: parseFloat(($('ta-cap') || {}).value) || 0 }); break;
+      case 'task-answer': {
+        const answers = collectAnswers();
+        await post(`/api/tasks/${id}/answers`, { answers });
+        break;
+      }
+      case 'task-cancel': if (!confirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return; await post(`/api/tasks/${id}/cancel`); break;
+      case 'task-raise': await post(`/api/tasks/${id}/resume`, { cap_usd: parseFloat($('ta-newcap').value) || 0 }); toast('Continuing'); break;
+      case 'task-local': await post(`/api/tasks/${id}/resume`, { planner: $('ta-local').value }); toast('Continuing with the local planner'); break;
+      case 'task-resume': await post(`/api/tasks/${id}/resume`); toast('Resumed'); break;
+      case 'task-delete': if (!confirm('Delete this task, its conversation and its files?')) return; await api(`/api/tasks/${id}`, { method: 'DELETE' }); location.hash = '#/new'; refresh(); return;
+      case 'task-activity': if (taskDetail) { renderActivity(taskDetail); open('modal-activity'); } return;
+      case 'task-files': if (taskDetail) { renderFiles(taskDetail); open('modal-files'); } return;
+    }
+  } catch (e) { toast(e.message, 4000); }
+  $('thread')._scrolled = false;
+  pollTask(); refresh();
+}
+
+async function viewFile(path) {
+  $('file-title').textContent = path; $('file-body').textContent = 'Loading…'; open('modal-file');
+  try {
+    const r = await fetch(`/api/tasks/${pageArg}/file?path=${encodeURIComponent(path)}`, { credentials: 'same-origin' });
+    $('file-body').textContent = await r.text();
+  } catch (e) { $('file-body').textContent = e.message; }
+}
+
+// ---------- nodes ----------
+function renderNodes() {
+  const nodes = state.nodes;
+  const online = nodes.filter((n) => n.online).length;
+  setHTML('node-count', nodes.length ? `${online} of ${nodes.length} online` : '');
+  setHTML('nodes', !nodes.length ? `<div class="empty" style="grid-column:1/-1">No nodes yet. Click <b>Add node</b> to get the install command.</div>` : nodes.map(nodeCard).join(''));
+}
+
+function opView(n) {
+  const o = state.ops && state.ops[n.id];
+  if (!o || !o.op) return '';
+  const age = (Date.now() - new Date(o.updated)) / 1000;
+  const what = { runtime: 'llama.cpp', 'model.push': 'Copying model from controller', 'model.fetch': 'Downloading from Hugging Face', rpc: 'Lending memory', 'model.load': 'Loading model', 'model.unload': 'Unloading', 'model.remove': 'Removing model' }[o.op] || o.op;
+  if (o.state === 'failed') return age < 3600 ? `<div class="note bad" style="margin:8px 0 0">${esc(what)} failed: ${esc(o.error)}</div>` : '';
+  if (['done', 'ready'].includes(o.state)) return '';
+  const pct = o.bytes_total ? 100 * o.bytes_done / o.bytes_total : (o.state === 'loading' ? 100 : 0);
+  return `<div class="prog" style="margin-top:8px"><span>${esc(what)}${o.target ? ' · ' + esc(o.target) : ''}: ${esc(o.state)}${o.bytes_total ? ` ${bytes(o.bytes_done)} of ${bytes(o.bytes_total)}` : '…'}</span>${bar(pct, 'good')}</div>`;
+}
+
+function nodeCard(n) {
+  const h = n.hello || {}, hb = n.online ? n.heartbeat : null, cpu = h.cpu || {};
+  const os = h.os ? `${h.os}/${h.arch}` : 'unknown';
+  const ramPct = hb && hb.ram_total_bytes ? (100 * hb.ram_used_bytes / hb.ram_total_bytes) : 0;
+  const gpus = (h.gpus || []).map((g, i) => {
+    const used = hb && hb.vram_used_bytes ? hb.vram_used_bytes[i] : 0;
+    const util = hb && hb.gpu_util_pct ? hb.gpu_util_pct[i] : 0;
+    return `<div class="metric"><span class="k">GPU</span>${bar(util)}<span class="v">${util || 0}% · ${bytes(used)}/${bytes(g.vram_bytes)}</span></div>
+      <div class="sub" style="margin:0 0 4px 52px">${esc(g.name)}</div>`;
+  }).join('');
+  const status = n.online ? `online · ${n.running_jobs}/${n.max_jobs} jobs` : (n.last_seen ? `offline · seen ${ago(n.last_seen)}` : 'never connected');
+  const paused = n.online && hb && hb.paused;
+  const loaded = hb && hb.loaded_model, ready = hb && hb.inference_ready;
+  const stored = (h.models || []);
+  const needsVulkan = h.os === 'linux' && (h.gpus || []).some((g) => g.vendor !== 'apple') && !h.vulkan_available;
+  const modelBox = n.lending_to ? `<div class="model-box">
+      <div class="row"><span class="dot ${hb && hb.rpc_endpoint ? 'on' : 'busy'}"></span><span class="grow">Lending memory to <b>${esc(n.lending_to)}</b>${hb && hb.rpc_endpoint ? '' : ' · starting'}</span></div>
+      <div class="sub wrap" style="margin:6px 0 0">Its RAM${(h.gpus || []).length ? ' and VRAM' : ''} hold part of ${esc(n.lending_to)}'s model. Unload that model to get this node back.</div>
+      ${opView(n)}
+    </div>` : `<div class="model-box">
+      <div class="row"><span class="dot ${ready ? 'on' : loaded ? 'busy' : ''}"></span><span class="grow">${loaded ? `<b>${esc(loaded)}</b> · ${ready ? (hb.inference_busy ? 'working' : 'ready') : 'starting'}` : '<span class="muted">No model loaded</span>'}</span>
+        ${n.online ? `<button class="small" data-act="load" data-id="${n.id}">${loaded ? 'Change' : 'Load model'}…</button>${loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : ''}</div>
+      ${n.pool_names && n.pool_names.length ? `<div class="sub wrap" style="margin:6px 0 0">Pooled with <b>${n.pool_names.map(esc).join(', ')}</b></div>` : ''}
+      <div class="sub" style="margin:6px 0 0">${h.runtime ? `llama.cpp ${esc(h.runtime.build)} · ${esc(h.runtime.variant)}` : 'llama.cpp installs on first load'}${stored.length ? ' · stored: ' + stored.map((m) => `${esc(m.name)} <a href="#" data-act="rm-node-model" data-id="${n.id}" data-name="${esc(m.name)}" title="Delete from this node">×</a>`).join(', ') : ''}</div>
+      ${hb && hb.llama_error && !ready ? `<div class="note bad" style="margin:6px 0 0">${esc(hb.llama_error)}</div>` : ''}
+      ${needsVulkan ? `<div class="note warn" style="margin:6px 0 0">GPU found, but no Vulkan driver, so models run on CPU. On the node: <code>sudo apt install libvulkan1 mesa-vulkan-drivers</code>, then load the model again.</div>` : ''}
+      ${opView(n)}
+    </div>`;
+  return `<div class="card">
+    <div class="node-top"><span class="dot ${n.online ? 'on' : ''}"></span><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span><span class="tag">${h.agent_version ? 'v' + esc(h.agent_version) + ' · ' : ''}${esc(os)}</span></div>
+    <div class="sub">${esc(cpu.model || 'CPU')} · ${(cpu.sockets || 1) > 1 ? cpu.sockets + ' sockets · ' : ''}${cpu.cores || '?'}C/${cpu.threads || '?'}T</div>
+    <div class="metric"><span class="k">CPU</span>${bar(hb ? hb.cpu_pct : 0)}<span class="v">${hb ? hb.cpu_pct.toFixed(1) + '%' : '—'}</span></div>
+    <div class="metric"><span class="k">RAM</span>${bar(ramPct)}<span class="v">${hb ? bytes(hb.ram_used_bytes) + '/' + bytes(hb.ram_total_bytes) : '—'}</span></div>
+    ${gpus}
+    ${paused ? `<div class="note warn" style="margin:8px 0 0"><b>Paused on the node.</b> It takes no new work until someone ticks <b>Accept new work</b> in its tray icon.</div>` : ''}
+    <div class="sub" style="margin:8px 0 0">${status}${hb && hb.swap_used_bytes ? ` · swap ${bytes(hb.swap_used_bytes)}` : ''}${n.addr ? ` · ${esc(n.addr.split(':')[0])}` : ''}</div>
+    ${modelBox}
+    <div class="node-foot">
+      <label class="toggle" title="Allow this node to run shell commands (needed for tests)"><input type="checkbox" data-exec="${n.id}" ${n.exec_enabled ? 'checked' : ''}> exec</label>
+      <span style="flex:1"></span>
+      <button class="small" data-act="restart" data-id="${n.id}" ${n.online && !n.restarting ? '' : 'disabled'} title="Restart the Outpost service on this node">${n.restarting ? 'Restarting…' : 'Restart'}</button>
+      <button class="small" data-act="rename" data-id="${n.id}">Rename</button>
+      <button class="small danger" data-act="remove" data-id="${n.id}">Remove</button>
+      <button class="small" data-act="run" data-id="${n.id}" ${n.online && n.exec_enabled ? '' : 'disabled'} title="${n.exec_enabled ? '' : 'Enable exec first'}">Run…</button>
+    </div>
+  </div>`;
+}
+
+async function setExec(id, on) {
+  try { await post(`/api/nodes/${id}/settings`, { exec_enabled: on }); toast(`exec ${on ? 'enabled' : 'disabled'}`); refresh(); }
+  catch (e) { toast(e.message); }
+}
+async function renameNode(id) {
+  const n = nodeById(id);
+  const name = prompt('Node name', nodeName(n));
+  if (name === null) return;
+  await post(`/api/nodes/${id}/settings`, { name }).catch((e) => toast(e.message));
+  refresh();
+}
+async function removeNode(id) {
+  const n = nodeById(id);
+  if (!confirm(`Remove ${nodeName(n)}? Its key is revoked; if it is online it wipes its work directory and config and stops. Downloaded models stay on its disk.`)) return;
+  await api(`/api/nodes/${id}`, { method: 'DELETE' }).catch((e) => toast(e.message));
+  refresh();
+}
+
+// Load-model dialog
+function openLoad(id) {
+  loadNodeId = id;
+  const n = nodeById(id);
+  $('load-node').textContent = nodeName(n);
+  $('load-err').classList.add('hidden');
+  const ready = (models && models.models || []).filter((m) => m.status === 'ready');
+  const pref = n.load_prefs || {};
+  $('load-model').innerHTML = ready.length ? ready.map((m) => `<option value="${esc(m.name)}" ${pref.name === m.name ? 'selected' : ''}>${esc(m.label || m.name)} · ${bytes(m.bytes_total)} · ${isDirect(m) ? 'node downloads' : 'from controller'}</option>`).join('')
+    : '<option value="">No models in the library yet; add one on the Models tab</option>';
+  $('load-ngl').value = pref.gpu_layers || '';
+  $('load-threads').value = pref.threads || 0;
+  $('load-extra').value = (pref.extra_args || []).join(' ');
+  const helpers = state.nodes.filter((x) => x.id !== id && !(x.pool_names && x.pool_names.length));
+  const inPool = new Set(n.pool || []);
+  $('load-pool').innerHTML = helpers.length ? helpers.map((x) => {
+    const hx = x.hello || {}, vram = (hx.gpus || []).filter((g) => g.vendor !== 'apple').reduce((a, g) => a + g.vram_bytes, 0);
+    const busy = x.lending_to && x.lending_to !== nodeName(n);
+    const own = x.heartbeat && x.heartbeat.loaded_model;
+    return `<label class="toggle" style="margin:4px 0;color:var(--ink)"><input type="checkbox" class="pool-cb" value="${x.id}" ${inPool.has(x.id) ? 'checked' : ''} ${x.online && !busy ? '' : 'disabled'}>
+      ${esc(nodeName(x))} <span class="muted">· ${bytes(hx.ram_bytes)} RAM${vram ? ' + ' + bytes(vram) + ' VRAM' : ''}${!x.online ? ' · offline' : busy ? ' · lending to ' + esc(x.lending_to) : own ? ' · stops its own model (' + esc(own) + ')' : ''}</span></label>`;
+  }).join('') : '<span class="muted">No other nodes.</span>';
+  $('load-pool-wrap').open = inPool.size > 0;
+  $('load-pool').querySelectorAll('.pool-cb').forEach((cb) => cb.addEventListener('change', () => onLoadModelChange(parseInt($('load-ctx').value, 10))));
+  onLoadModelChange(pref.ctx);
+  open('modal-load');
+}
+function onLoadModelChange(ctx) {
+  const m = (models && models.models || []).find((x) => x.name === $('load-model').value);
+  const n = nodeById(loadNodeId);
+  $('load-ctx').value = ctx || (m && m.ctx) || 8192;
+  const fit = $('load-fit');
+  if (!m || !n || !n.hello) { fit.classList.add('hidden'); return; }
+  let vram = (n.hello.gpus || []).filter((g) => g.vendor !== 'apple').reduce((a, g) => a + g.vram_bytes, 0);
+  let ram = n.hello.ram_bytes || 0;
+  const size = m.bytes_total || 0;
+  const pool = [...document.querySelectorAll('.pool-cb:checked')].map((cb) => nodeById(cb.value)).filter(Boolean);
+  for (const p of pool) {
+    const hp = p.hello || {};
+    ram += hp.ram_bytes || 0;
+    vram += (hp.gpus || []).filter((g) => g.vendor !== 'apple').reduce((a, g) => a + g.vram_bytes, 0);
+  }
+  let msg = '', cls = 'note';
+  if (size > ram + vram) { msg = `This model (${bytes(size)}) is larger than this node's RAM${vram ? ' plus VRAM' : ''} (${bytes(ram + vram)}). It will not load.`; cls = 'note bad'; }
+  else if (vram && size <= vram * 0.9) msg = `Fits in this node's ${bytes(vram)} of VRAM: fast.`;
+  else if (vram) msg = `Larger than this node's ${bytes(vram)} of VRAM; llama.cpp keeps the rest in system RAM. Slower, but works.`;
+  else if (size > ram * 0.8) { msg = `Uses most of this node's ${bytes(ram)} of RAM; expect swapping.`; cls = 'note warn'; }
+  else msg = `Runs on CPU with ${bytes(ram)} of RAM.`;
+  if (pool.length) msg = `Pooled with ${pool.map(nodeName).join(', ')}: ${bytes(ram)} RAM${vram ? ' + ' + bytes(vram) + ' VRAM' : ''} in total. ` + msg.replace(/this node's/g, 'the pool\'s');
+  const onNode = (n.hello.models || []).some((x) => x.name === m.name);
+  const free = n.hello.models_free_bytes || 0;
+  if (!onNode) {
+    msg += isDirect(m) ? ` The node downloads ${bytes(size)} from Hugging Face first (it needs internet access).` : ` The controller copies ${bytes(size)} to the node first.`;
+    if (free && size > free) { msg += ` The node has only ${bytes(free)} free, so this will fail.`; cls = 'note bad'; }
+  } else msg += ' Already on this node.';
+  fit.className = cls; fit.textContent = msg;
+}
+$('load-model').addEventListener('change', () => onLoadModelChange());
+$('load-go').onclick = async () => {
+  $('load-err').classList.add('hidden');
+  const body = { name: $('load-model').value, ctx: parseInt($('load-ctx').value, 10) || 0, gpu_layers: $('load-ngl').value,
+    threads: parseInt($('load-threads').value, 10) || 0, extra_args: $('load-extra').value,
+    pool: [...document.querySelectorAll('.pool-cb:checked')].map((cb) => cb.value) };
+  if (!body.name) return;
+  try { await post(`/api/nodes/${loadNodeId}/load`, body); close('modal-load'); toast('Setting up the model; progress shows on the node card'); refresh(); }
+  catch (e) { $('load-err').textContent = e.message; $('load-err').classList.remove('hidden'); }
+};
+
+// ---------- models ----------
+const isDirect = (m) => m.storage === 'direct';
+function storageLabel(m) {
+  return isDirect(m) ? '<span title="Each node downloads it from Hugging Face when you load it">Nodes download</span>'
+    : '<span title="Downloaded once to the controller and copied to nodes over your network">On controller</span>';
+}
+function renderModels() {
+  if (!models) return;
+  setHTML('models-disk', `${bytes(models.disk_free)} free on the controller`);
+  const holders = (name) => state.nodes.filter((n) => n.hello && (n.hello.models || []).some((m) => m.name === name)).map(nodeName);
+  const list = models.models;
+  setHTML('models-list', !list.length ? `<div class="empty">No models yet. Pick one below.</div>` :
+    `<div class="table-wrap"><table><thead><tr><th>Model</th><th>Size</th><th>Stored</th><th>Status</th><th>On nodes</th><th></th></tr></thead><tbody>${list.map((m) => {
+      const pct = m.bytes_total ? 100 * m.bytes_done / m.bytes_total : 0;
+      const status = m.status === 'downloading' ? `<div class="prog"><span>downloading to controller ${bytes(m.bytes_done)} of ${bytes(m.bytes_total)}</span>${bar(pct, 'good')}</div>`
+        : m.status === 'resolving' ? pill('loading', 'checking Hugging Face')
+        : m.status === 'failed' ? `${pill('failed')} <span class="muted">${esc(m.error)}</span>` : pill('ready');
+      const h = holders(m.name), nm = esc(m.name);
+      const acts = [];
+      if (m.status === 'failed') acts.push(`<button class="small" data-act="model-retry" data-name="${nm}">Retry</button>`);
+      if (isDirect(m) && m.status === 'ready') acts.push(`<button class="small" data-act="model-store" data-name="${nm}" title="Download it to the controller too, so nodes copy it over your network instead of from the internet">Store on controller</button>`);
+      if (!isDirect(m) && m.status !== 'failed') acts.push(`<button class="small" data-act="model-unstore" data-name="${nm}" title="Free ${bytes(m.bytes_total)} on the controller; nodes download it from Hugging Face instead">Free controller space</button>`);
+      acts.push(`<button class="small danger" data-act="model-delete" data-name="${nm}">${m.status === 'downloading' ? 'Cancel' : 'Remove'}</button>`);
+      return `<tr><td><b>${esc(m.label || m.name)}</b><div class="sub" style="margin:2px 0 0">${esc(m.repo)}</div></td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td>${storageLabel(m)}</td><td>${status}</td>
+        <td>${h.length ? h.map(esc).join(', ') : '<span class="muted">none</span>'}</td><td class="r"><div class="btns" style="justify-content:flex-end">${acts.join('')}</div></td></tr>`;
+    }).join('')}</tbody></table></div>`);
+  const have = {}; list.forEach((m) => { have[m.name] = m; });
+  setHTML('catalog', models.catalog.map((c) => {
+    const m = have[c.id];
+    const btn = m ? (m.status === 'downloading' ? `<button disabled>Downloading ${m.bytes_total ? Math.floor(100 * m.bytes_done / m.bytes_total) : 0}%</button>`
+        : m.status === 'failed' ? `<button data-act="model-retry" data-name="${c.id}">Retry</button>` : `<button disabled>In library · ${isDirect(m) ? 'nodes download' : 'on controller'}</button>`)
+      : `<button class="primary" data-act="catalog-add" data-id="${c.id}" data-storage="direct" title="Each node downloads it from Hugging Face when you load it; uses no controller space">Add · nodes download</button>
+         <button data-act="catalog-add" data-id="${c.id}" data-storage="controller" title="Download once to the controller (${bytes(c.bytes)}), then copy to nodes over your network">Store on controller</button>`;
+    return `<div class="card"><span class="for">${esc(c.for)}</span><h3>${esc(c.label)}</h3><p>${esc(c.notes)}</p><div class="btns">${btn}</div><span class="muted" style="font-size:12px;margin-top:6px">${bytes(c.bytes)} · needs ~${c.min_ram_gb} GB RAM+VRAM</span></div>`;
+  }).join(''));
+  const rts = models.runtimes || [];
+  setHTML('runtimes', !rts.length ? `<div class="empty">None downloaded yet.</div>` :
+    `<div class="table-wrap"><table><thead><tr><th>Build</th><th>For</th><th>Size</th><th>Downloaded</th></tr></thead><tbody>${rts.map((r) => `<tr><td>${esc(r.build)}</td><td>${esc(r.variant)}</td><td>${bytes(r.bytes)}</td><td>${ago(r.downloaded)}</td></tr>`).join('')}</tbody></table></div>`);
+}
+let hfRepo = '', hfGroups = [];
+$('hf-list').onclick = async () => {
+  setHTML('hf-files', '<span class="muted">Loading…</span>');
+  try {
+    const r = await api('/api/hf/files?repo=' + encodeURIComponent($('hf-repo').value.trim()));
+    hfRepo = r.repo; hfGroups = r.groups;
+    setHTML('hf-files', !r.groups.length ? '<span class="muted">No .gguf files in that repo.</span>' :
+      `<div class="table-wrap"><table><tbody>${r.groups.map((g, i) => `<tr><td class="mono">${esc(g.name)}${g.files.length > 1 ? ` <span class="muted">(${g.files.length} parts)</span>` : ''}</td><td>${bytes(g.bytes)}</td><td class="r"><div class="btns" style="justify-content:flex-end"><button class="small primary" data-act="hf-add" data-i="${i}" data-storage="direct">Add · nodes download</button><button class="small" data-act="hf-add" data-i="${i}" data-storage="controller">Store on controller</button></div></td></tr>`).join('')}</tbody></table></div>`);
+  } catch (e) { setHTML('hf-files', `<span class="error-msg">${esc(e.message)}</span>`); }
+};
+$('hf-repo').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('hf-list').click(); });
+$('rt-check').onclick = async () => {
+  try { const r = await post('/api/runtime/check'); toast(`Newest llama.cpp with binaries: ${r.latest}. Nodes pick it up the next time a model loads.`, 5000); }
+  catch (e) { toast(e.message); }
+};
+
+// ---------- updates ----------
+const UPD_BUSY = ['sent', 'downloading', 'installing', 'restarting'];
+let ctlUpdating = false;
+function renderUpdates() {
+  const rows = [];
+  const cu = state.controller_update_to;
+  rows.push(`<tr><td><span class="dot on"></span></td><td><b>Controller</b></td><td>${esc(state.platform)}</td><td>v${esc(state.version)}</td>
+    <td>${cu ? 'v' + esc(cu) : '<span class="muted">up to date</span>'}</td>
+    <td>${ctlUpdating ? `<div class="prog"><span>installing and restarting…</span>${bar(100, 'good')}</div>` : ''}</td>
+    <td class="r">${cu && !ctlUpdating ? `<button class="small primary" data-act="ctl-update">Update</button>` : ''}
+      ${state.controller_rollback_to && !ctlUpdating ? `<button class="small" data-act="ctl-rollback" title="Restart the controller on the previous version">Roll back to v${esc(state.controller_rollback_to)}</button>` : ''}</td></tr>`);
+  for (const n of state.nodes) {
+    const h = n.hello || {}, u = n.update;
+    let prog = '';
+    if (u && UPD_BUSY.includes(u.state) && (Date.now() - new Date(u.updated)) < 600000) {
+      const pct = u.state === 'downloading' && u.bytes_total ? 100 * u.bytes_done / u.bytes_total : u.state === 'sent' ? 2 : u.state === 'downloading' ? 5 : u.state === 'installing' ? 85 : 95;
+      const what = { sent: 'requested', downloading: u.bytes_total ? `downloading ${bytes(u.bytes_done)} of ${bytes(u.bytes_total)}` : 'downloading', installing: 'verifying and installing', restarting: 'restarting' }[u.state];
+      prog = `<div class="prog"><span>${esc(what)}</span>${bar(pct, 'good')}</div>`;
+    } else if (u && u.state === 'failed') prog = `<span class="error-msg" style="margin:0">${esc(u.error)}</span>`;
+    else if (u && u.state === 'done' && (Date.now() - new Date(u.updated)) < 600000) prog = `<span class="st-done">✓ updated</span>`;
+    const busy = u && UPD_BUSY.includes(u.state);
+    const canUpdate = n.update_to && n.online && !busy;
+    rows.push(`<tr><td><span class="dot ${n.online ? 'on' : ''}" title="${n.online ? 'service online' : 'offline'}"></span></td><td><b>${esc(nodeName(n))}</b><div class="sub" style="margin:0">${n.online ? 'online' : n.last_seen ? 'offline · seen ' + ago(n.last_seen) : 'never connected'}</div></td>
+      <td>${esc(h.os ? h.os + '-' + h.arch : '?')}</td><td>${h.agent_version ? 'v' + esc(h.agent_version) : '?'}</td>
+      <td>${n.update_to ? 'v' + esc(n.update_to) : '<span class="muted">' + (state.releases.some((r) => r.platform === (h.os + '-' + h.arch)) ? 'up to date' : 'no release uploaded') + '</span>'}</td>
+      <td>${prog}</td>
+      <td class="r">${canUpdate ? `<button class="small primary" data-act="node-update" data-id="${n.id}" ${n.running_jobs ? 'disabled title="Waits until running jobs finish"' : ''}>Update</button>` : ''}
+        ${h.rollback_to && n.online && !busy ? `<button class="small" data-act="node-rollback" data-id="${n.id}" title="Restart this node on the previous version">Roll back to v${esc(h.rollback_to)}</button>` : ''}</td></tr>`);
+  }
+  setHTML('upd-table', `<table><thead><tr><th style="width:24px"></th><th>Machine</th><th>Platform</th><th>Running</th><th>Available</th><th>Progress</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`);
+  const outdated = state.nodes.filter((n) => n.online && n.update_to && !(n.update && UPD_BUSY.includes(n.update.state))).length;
+  const b = $('btn-upd-all');
+  b.disabled = !outdated; b.className = outdated ? 'primary' : '';
+  b.textContent = outdated ? `Update ${outdated} node${outdated === 1 ? '' : 's'}` : 'All nodes up to date';
+  const rel = state.releases || [];
+  setHTML('releases', rel.length ? `<div class="table-wrap"><table><thead><tr><th>Platform</th><th>Version</th><th>Size</th><th>SHA-256</th><th>Uploaded</th><th></th></tr></thead><tbody>${
+    rel.map((r) => `<tr><td>${esc(r.platform)}</td><td>v${esc(r.version)}</td><td>${bytes(r.bytes)}</td><td class="mono" title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 12))}…</td><td>${ago(r.uploaded)}</td>
+      <td class="r"><button class="small danger" data-act="del-release" data-platform="${esc(r.platform)}">Delete</button></td></tr>`).join('')}</tbody></table></div>` : '');
+}
+$('btn-upd-all').onclick = async () => {
+  try { const r = await post('/api/update-all'); toast(`Started ${r.started} update(s)`); refresh(); } catch (e) { toast(e.message); }
+};
+async function rollbackController() {
+  const to = state.controller_rollback_to;
+  if (!confirm(`Roll the controller back to v${to}? It restarts on that version and stays there until you install an update.`)) return;
+  try { await post('/api/controller/rollback'); } catch (e) { toast(e.message); return; }
+  ctlUpdating = true; renderUpdates(); toast('Controller restarting…');
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const r = await fetch('/api/state', { credentials: 'same-origin' });
+      if (r.ok && (await r.json()).version === to) { location.reload(); return; }
+    } catch (e) {}
+  }
+  ctlUpdating = false;
+  toast('The controller did not come back on the old version; check journalctl -u outpost-controller', 6000);
+}
+
+async function updateController() {
+  if (!confirm(`Update the controller to v${state.controller_update_to} and restart it? Tasks pause for a moment; running jobs keep going on their nodes.`)) return;
+  const target = state.controller_update_to;
+  try { await post('/api/controller/update'); } catch (e) { toast(e.message); return; }
+  ctlUpdating = true; renderUpdates(); toast('Controller restarting…');
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const r = await fetch('/api/state', { credentials: 'same-origin' });
+      if (r.ok && (await r.json()).version === target) { location.reload(); return; }
+    } catch (e) {}
+  }
+  ctlUpdating = false;
+  toast('The controller did not come back on the new version; check journalctl -u outpost-controller', 6000);
+}
+async function uploadFiles(files) {
+  for (const f of files) {
+    toast(`Uploading ${f.name}…`, 60000);
+    try {
+      const r = await fetch('/api/releases', { method: 'POST', credentials: 'same-origin', headers: { 'X-Filename': f.name }, body: f });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || r.statusText);
+      toast(`${f.name}: ${body.platform} v${body.version}`);
+    } catch (e) { toast(`${f.name}: ${e.message}`, 4000); await new Promise((r) => setTimeout(r, 2500)); }
+  }
+  refresh();
+}
+(() => {
+  const d = $('drop');
+  ['dragenter', 'dragover'].forEach((ev) => d.addEventListener(ev, (e) => { e.preventDefault(); d.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) => d.addEventListener(ev, (e) => { e.preventDefault(); d.classList.remove('over'); }));
+  d.addEventListener('drop', (e) => uploadFiles([...e.dataTransfer.files]));
+  $('drop-input').onchange = (e) => { uploadFiles([...e.target.files]); e.target.value = ''; };
+})();
+
+// ---------- settings ----------
+async function loadSettings() {
+  try { settings = await api('/api/settings'); } catch (e) { return; }
+  $('set-key-state').innerHTML = settings.has_anthropic_key ? `<span class="st-done">· saved (${esc(settings.anthropic_key_hint)})</span>` : '<span class="muted">· not set</span>';
+  $('set-hf-state').innerHTML = settings.has_hf_token ? '<span class="st-done">· saved</span>' : '<span class="muted">· not set</span>';
+  $('set-model').innerHTML = claudeModelOptions(settings.claude_model);
+  $('set-cap').value = settings.default_cap_usd;
+  if (!state) state = await api('/api/state').catch(() => null);
+  if (state) $('set-planner').innerHTML = plannerOptions(settings.default_planner);
+}
+async function saveSettings(body, msg) {
+  try { settings = await post('/api/settings', body); toast(msg); loadSettings(); refresh(); } catch (e) { toast(e.message); }
+}
+$('set-key-save').onclick = () => { const v = $('set-key').value.trim(); if (!v) return; $('set-key').value = ''; saveSettings({ anthropic_key: v }, 'API key saved'); };
+$('set-key-clear').onclick = () => { if (confirm('Remove the Claude API key?')) saveSettings({ anthropic_key: '' }, 'API key removed'); };
+$('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
+$('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
+$('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value }, 'Defaults saved');
+$('pw-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const err = $('pw-err'); err.classList.add('hidden');
+  if ($('pw-new').value !== $('pw-new2').value) { err.textContent = 'The new passwords do not match.'; err.classList.remove('hidden'); return; }
+  try {
+    await post('/api/password', { current: $('pw-cur').value, new: $('pw-new').value });
+    ['pw-cur', 'pw-new', 'pw-new2'].forEach((id) => { $(id).value = ''; });
+    toast('Password changed. Other browsers were signed out.', 4000);
+  } catch (x) { err.textContent = x.message; err.classList.remove('hidden'); }
+};
+
+// ---------- add node ----------
+let addToken = null;
+function renderAddCmds() {
+  if (!addToken) return;
+  const target = $('ssh-target').value.trim();
+  const install = `sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install node --join ${addToken.token}`;
+  $('cmd-linux').textContent = target ? `ssh -t ${target} '${install}'` : install;
+}
+$('ssh-target').addEventListener('input', () => {
+  try { localStorage.setItem('outpost.sshTarget', $('ssh-target').value.trim()); } catch (e) {}
+  renderAddCmds();
+});
+// The code stays the same until a node uses it (or it nearly expires); then a
+// fresh one replaces it, even while the dialog is open.
+async function freshAddToken() {
+  if (addToken && addToken.id) {
+    try {
+      const st = await api(`/api/tokens/${addToken.id}`);
+      const left = st.expires ? new Date(st.expires) - Date.now() : 0;
+      if (st.status === 'valid' && left > 5 * 60 * 1000) return null;
+      if (st.status === 'used') {
+        addToken = await post('/api/tokens');
+        return `${st.node || 'A node'} joined with the last code. This is a new one.`;
+      }
+    } catch (e) { if (e.message === 'login required') throw e; }
+  }
+  addToken = await post('/api/tokens');
+  return null;
+}
+function showAddToken(note) {
+  renderAddCmds();
+  $('cmd-win').textContent = '.\\' + addToken.windows.replace(/^outpost\.exe/, 'outpost-windows-amd64.exe');
+  $('cmd-mac').textContent = 'chmod +x ./outpost-darwin-arm64 && ./outpost-darwin-arm64 ' + addToken.macos.replace(/^outpost /, '');
+  const n = $('add-note');
+  n.textContent = note || ''; n.classList.toggle('hidden', !note);
+}
+let addTimer = null;
+async function pollAddToken() {
+  clearTimeout(addTimer);
+  if ($('modal-add').classList.contains('hidden')) return;
+  try {
+    const before = addToken && addToken.id;
+    const note = await freshAddToken();
+    if (addToken.id !== before) showAddToken(note);
+  } catch (e) {}
+  addTimer = setTimeout(pollAddToken, 3000);
+}
+$('add-regen').onclick = async () => {
+  try {
+    addToken = await post('/api/tokens', { replace: addToken && addToken.id });
+    showAddToken('New code made. The previous code no longer works.');
+  } catch (e) { toast(e.message); }
+};
+$('btn-add').onclick = async () => {
+  try {
+    await freshAddToken();
+    try { $('ssh-target').value = localStorage.getItem('outpost.sshTarget') || ''; } catch (e) {}
+    showAddToken(null);
+    $('add-url').textContent = state ? state.advertise : '';
+    open('modal-add');
+    addTimer = setTimeout(pollAddToken, 3000);
+  } catch (e) { toast(e.message); }
+};
+
+// ---------- run + job modals ----------
+function openRun(id) {
+  runNodeId = id;
+  $('run-node').textContent = nodeName(nodeById(id));
+  $('run-err').classList.add('hidden');
+  open('modal-run'); $('run-cmd').focus();
+}
+$('run-cmd').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('run-go').click(); });
+$('run-go').onclick = async () => {
+  $('run-err').classList.add('hidden');
+  const body = { command: $('run-cmd').value, input_name: $('run-in-name').value, input_text: $('run-in-text').value,
+    collect: $('run-collect').value, timeout_s: parseInt($('run-timeout').value, 10) || 600 };
+  try { const r = await post(`/api/nodes/${runNodeId}/jobs`, body); close('modal-run'); openJob(r.job_id); refresh(); }
+  catch (e) { $('run-err').textContent = e.message; $('run-err').classList.remove('hidden'); }
+};
+function openJob(id) { openJobId = id; $('job-out').innerHTML = ''; $('job-out')._h = null; open('modal-job'); pollJob(); }
+async function pollJob() {
+  if (!openJobId) return;
+  const id = openJobId;
+  let j;
+  try { j = await api(`/api/jobs/${id}`); } catch (e) { return; }
+  if (id !== openJobId) return;
+  $('job-title').textContent = j.command;
+  $('job-status').className = `pill st-${j.status}`; $('job-status').textContent = label(j.status);
+  const dur = j.ended ? ((new Date(j.ended) - new Date(j.created)) / 1000).toFixed(1) + ' s' : 'running…';
+  const inf = j.inference;
+  $('job-kv').innerHTML = `<span>${j.kind === 'inference' ? 'model call' : 'command'} on <b>${esc(j.node_name)}</b></span><span>time <b>${dur}</b></span>${
+    j.exec_output ? `<span>exit code <b>${j.exec_output.exit_code}</b></span>` : ''}${
+    inf ? `<span>model <b>${esc(inf.model)}</b></span><span>tokens <b>${inf.prompt_tokens} in / ${inf.output_tokens} out</b></span><span>speed <b>${inf.tokens_per_s} tok/s</b></span>` : ''}`;
+  const out = $('job-out'), atBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 20;
+  let html = (j.chunks || []).map((c) => c.stream === 'stderr' ? `<span class="err">${esc(c.data)}</span>` : esc(c.data)).join('');
+  if (!html && j.exec_output) html = esc(j.exec_output.stdout_tail) + (j.exec_output.stderr_tail ? `<span class="err">${esc(j.exec_output.stderr_tail)}</span>` : '');
+  if (!html && inf) html = esc(inf.text);
+  if (j.truncated) html += '\n<span class="err">[output truncated in the UI after 1 MB]</span>';
+  setHTML(out, html || '<span style="opacity:.5">(no output yet)</span>');
+  if (atBottom) out.scrollTop = out.scrollHeight;
+  const err = j.result && j.result.error;
+  $('job-err').classList.toggle('hidden', !err);
+  if (err) $('job-err').textContent = `${err.code}: ${err.message}`;
+  const files = (j.result && j.result.files) || [];
+  $('job-files').innerHTML = files.length ? 'Collected: ' + files.map((f) =>
+    `<a download="${esc(f.path.split('/').pop())}" href="data:application/octet-stream;base64,${f.inline_b64}">${esc(f.path)} (${bytes(f.bytes)})</a>`).join('') : '';
+  $('job-cleaned').classList.toggle('hidden', !j.cleaned);
+  if (j.cleaned) $('job-cleaned').textContent = `✓ Workspace deleted on the node (${bytes(j.cleaned.bytes_freed)} freed).`;
+  const live = j.status === 'running' || j.status === 'dispatched';
+  $('job-cancel').classList.toggle('hidden', !live);
+  $('job-cancel').onclick = () => post(`/api/jobs/${id}/cancel`).then(() => toast('Cancel sent')).catch((e) => toast(e.message));
+  const recent = j.ended && (Date.now() - new Date(j.ended)) < 15000;
+  if (live || (j.kind === 'exec' && !j.cleaned && recent)) jobTimer = setTimeout(pollJob, live ? 500 : 1500);
+}
+
+// ---------- modals + delegated events ----------
+function open(id) { $(id).classList.remove('hidden'); }
+function close(id) { $(id).classList.add('hidden'); if (id === 'modal-job') { clearTimeout(jobTimer); openJobId = null; } }
+document.querySelectorAll('.overlay').forEach((ov) => {
+  ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(ov.id); });
+  ov.querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => close(ov.id); });
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.overlay:not(.hidden)').forEach((o) => close(o.id)); });
+document.querySelectorAll('[data-copy]').forEach((b) => { b.onclick = async () => {
+  try { await navigator.clipboard.writeText($(b.dataset.copy).textContent); toast('Copied'); }
+  catch (e) { const r = document.createRange(); r.selectNodeContents($(b.dataset.copy)); getSelection().removeAllRanges(); getSelection().addRange(r); toast('Selected — press Ctrl+C'); }
+}; });
+
+document.addEventListener('change', (e) => {
+  const cb = e.target.closest('[data-exec]');
+  if (cb) setExec(cb.dataset.exec, cb.checked);
+});
+document.addEventListener('click', async (e) => {
+  const row = e.target.closest('[data-href]');
+  if (row && !e.target.closest('button, a')) { location.hash = row.dataset.href; return; }
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const act = el.dataset.act, id = el.dataset.id;
+  if (el.tagName === 'A') e.preventDefault();
+  try {
+    switch (act) {
+      case 'open-job': openJob(id); break;
+      case 'load': openLoad(id); break;
+      case 'unload': await post(`/api/nodes/${id}/unload`); toast('Unloading'); break;
+      case 'rm-node-model': if (confirm(`Delete ${el.dataset.name} from this node's disk?`)) { await api(`/api/nodes/${id}/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); toast('Deleting'); } break;
+      case 'rename': renameNode(id); break;
+      case 'restart': {
+        const n = nodeById(id);
+        const jobs = n.running_jobs ? ` ${n.running_jobs} running job(s) will be cancelled.` : '';
+        if (!confirm(`Restart Outpost on ${nodeName(n)}?${jobs} Its model is loaded again afterwards.`)) return;
+        await post(`/api/nodes/${id}/restart`); toast('Restarting'); break;
+      }
+      case 'remove': removeNode(id); break;
+      case 'run': openRun(id); break;
+      case 'catalog-add': await post('/api/models', { catalog_id: id, storage: el.dataset.storage }); toast(el.dataset.storage === 'direct' ? 'Added. Nodes download it when you load it.' : 'Downloading to the controller'); break;
+      case 'hf-add': { const g = hfGroups[+el.dataset.i]; await post('/api/models', { repo: hfRepo, files: g.files, storage: el.dataset.storage }); toast(el.dataset.storage === 'direct' ? 'Added. Nodes download it when you load it.' : 'Downloading to the controller'); break; }
+      case 'model-store': await post(`/api/models/${encodeURIComponent(el.dataset.name)}/store`); toast('Downloading to the controller'); break;
+      case 'model-unstore': if (confirm(`Delete ${el.dataset.name}'s files from the controller? It stays in the library; nodes that need it download it from Hugging Face. Copies already on nodes stay.`)) { await post(`/api/models/${encodeURIComponent(el.dataset.name)}/unstore`); toast('Freed controller space'); } break;
+      case 'model-retry': await post(`/api/models/${encodeURIComponent(el.dataset.name)}/retry`); toast('Resuming download'); break;
+      case 'model-delete': if (confirm(`Remove ${el.dataset.name} from the library (and its files from the controller, if stored there)? Copies already on nodes stay; delete those on the node card.`)) await api(`/api/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); break;
+      case 'node-update': await post(`/api/nodes/${id}/update`); toast('Update sent'); break;
+      case 'ctl-update': await updateController(); return;
+      case 'ctl-rollback': await rollbackController(); return;
+      case 'node-rollback': {
+        const n = nodeById(id);
+        if (!confirm(`Roll ${nodeName(n)} back to v${n.hello.rollback_to}? It restarts on that version and stays there until you update it again.`)) return;
+        await post(`/api/nodes/${id}/rollback`); toast('Rolling back'); break;
+      }
+      case 'del-release': if (confirm(`Delete the uploaded ${el.dataset.platform} release?`)) await api(`/api/releases/${el.dataset.platform}`, { method: 'DELETE' }); break;
+      case 'view-file': viewFile(el.dataset.path); return;
+      case 'starter': $('nt-prompt').value = STARTERS[+el.dataset.i][1]; $('nt-prompt').focus(); return;
+      default: if (act.startsWith('task-')) { await taskAction(act, el); return; }
+    }
+  } catch (x) { toast(x.message, 4000); }
+  refresh();
+});
+
+api('/api/state').then(showApp).catch(() => {});
