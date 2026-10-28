@@ -123,8 +123,14 @@ can check detection without joining.
    estimate: the weights plus a rough KV cache at the suggested context size, not read from the file.
    **Suggested coding models** ranks the built-in coding models by what fits your nodes. On a ready model,
    **Load on N nodes it fits** loads it on every online node where it fits fully in VRAM (this replaces
-   whatever those nodes had loaded).
-2. **Nodes** (sidebar): click **Load model** on a node. Outpost installs llama.cpp on the node (Vulkan for
+   whatever those nodes had loaded). **Load on…** opens a node picker (fit per node, and which model it
+   would replace). A built-in model that is not in the library yet has **Add and load on…**, which adds it
+   (nodes download it) and loads it in one step. A **Recommended** tag shows which node a model is the pick for.
+2. **Nodes** (sidebar): each online node card shows **Recommended**: the best coding model that fits that
+   node (fully in VRAM first, then VRAM plus RAM, then RAM; skipped if the node's disk is too small, or
+   if no llama.cpp build exists for it), with the reason and a one-click **Load**. A node running the
+   CPU build (for example a Linux node with a GPU but no Vulkan driver) is sized as a CPU machine.
+   Otherwise click **Load model** on a node. Outpost installs llama.cpp on the node (Vulkan for
    GPUs, CPU otherwise), gets the model onto the node, and starts it. Downloads resume if
    interrupted and are checked against Hugging Face's SHA-256. Progress shows on the card. The node
    reloads the same model by itself after a reboot or update.
