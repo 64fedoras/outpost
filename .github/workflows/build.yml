@@ -1,7 +1,8 @@
 name: Build binaries
 
 # Builds the five platform binaries after every merge to main (and on demand).
-# It bumps nothing: the version is whatever `Version` in proto.go says.
+# Every push gets the next patch version (see .github/next-version.sh), stamped into the build
+# workspace only; nothing is committed back, so there is no push loop and no merge conflict.
 on:
   push:
     branches: [main]
@@ -20,22 +21,35 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: Install llvm (for Windows version info)
         run: sudo apt-get update && sudo apt-get install -y llvm
+      - name: Stamp version
+        id: ver
+        run: |
+          V=$(sh .github/next-version.sh)
+          sed -i "s/^const Version = \".*\"/const Version = \"$V\"/" proto.go
+          echo "OUTPOST_VERSION=$V" >> "$GITHUB_ENV"
+          echo "Building Outpost $V"
       - name: Vet and test
         run: go vet ./... && go test ./...
       - name: Build
         id: build
         run: |
-          V=$(sed -n 's/^const Version = "\(.*\)"/\1/p' proto.go)
+          V=$OUTPOST_VERSION
           echo "version=$V" >> "$GITHUB_OUTPUT"
           sh build.sh "$PWD/dist/outpost-$V"
           cp README.md "dist/outpost-$V/"
           (cd dist && zip -qr "outpost-$V.zip" "outpost-$V")
           (cd "dist/outpost-$V/bin" && sha256sum * > SHA256SUMS)
+          # The stamped binary must report the stamped version, and the updater must be able to read it.
+          ./dist/outpost-$V/bin/outpost-linux-amd64 version | grep -F "$V"
+          grep -aF "OUTPOST_BUILD_INFO|$V|" dist/outpost-$V/bin/outpost-linux-amd64 >/dev/null
       - uses: actions/upload-artifact@v6
         with:
           name: outpost-${{ steps.build.outputs.version }}
@@ -53,7 +67,8 @@ jobs:
             for i in 1 2 3; do
               gh release create "v$V" "dist/outpost-$V.zip" dist/outpost-$V/bin/* \
                 --target "$GITHUB_SHA" --title "Outpost $V" \
-                --notes "Binaries for the Updates tab (unsigned unless noted). Built from $GITHUB_SHA." && exit 0
+                --notes "Binaries for the Updates tab (unsigned unless noted). Built from $GITHUB_SHA; version stamped at build time." \
+                && exit 0
               gh release view "v$V" >/dev/null 2>&1 && exit 0
               sleep $((i * 10))
             done

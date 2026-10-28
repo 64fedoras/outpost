@@ -21,7 +21,7 @@ shipped by 0.8.0) and the notes on what is untested.
 - Linux machines use the login name `sysmaint`.
 - The Add-node command shown in the UI must be a single paste with no scp line:
   `sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install node --join TOKEN`
-- Update README.md for every user-visible change, and bump `Version` for every release.
+- Update README.md for every user-visible change. **Patch versions are automatic**: every push to `main` is built as the next patch after the latest `v*` tag (0.8.0 -> 0.8.1 -> 0.8.2), stamped at build time by `.github/next-version.sh` and `OUTPOST_VERSION` in `build.sh`, with nothing committed back. PRs must not bump `Version`. `const Version` in `proto.go` is only the base: change it by hand (to 0.9.0, 1.0.0, ...) for a minor or major release, and the next build uses it if it is higher than the next patch.
 
 ## The cluster it runs on
 Controller `outpost-controller01` (Proxmox VM, https://10.0.4.130:8443). Nodes: outpost-node01
@@ -51,7 +51,7 @@ although it is imported directly; harmless.
 
 ## Release routine
 1. Change code; add or update tests.
-2. Bump `Version` in `proto.go`; run `sh winres/gen.sh`.
+2. Only for a minor/major release: set the new base in `Version` in `proto.go` and run `sh winres/gen.sh`. Otherwise leave it.
 3. `go vet ./... && go test ./...`; run the e2e rig for anything touching tasks, the UI or updates.
 4. `sh build.sh`; copy README and source next to `bin/`; zip as `outpost-<version>.zip`.
    GitHub Actions (`.github/workflows/build.yml`) does this on every push to `main`: it runs vet and
