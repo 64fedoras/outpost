@@ -128,6 +128,12 @@ can check detection without joining.
    interrupted and are checked against Hugging Face's SHA-256. Progress shows on the card. The node
    reloads the same model by itself after a reboot or update.
 3. Tick **exec** on at least one node so tasks can run their tests.
+   Exec nodes list the tools they have (Go, Python, Node, gcc, git, zip, Chromium; rescanned hourly)
+   on their card. The planner is told what each node has and which shell it uses, and each test or
+   setup command goes to a node that has the tool it starts with. For Go, click **Install Go** on the
+   node you choose: the controller downloads the official release once, checks its SHA-256 and
+   sends it; Outpost keeps it in its own data folder and puts it on the PATH of exec jobs. Other
+   tools are detected, not installed. Windows exec nodes run commands in PowerShell, not `sh`.
 4. **Settings:** add a Claude API key if you want Claude as the planner (recommended), or an
    OpenRouter key to plan with any model OpenRouter offers.
 5. **New task:** describe what to build and click **Plan it**. See below.
@@ -324,6 +330,7 @@ prompt). Nodes reconnect on their own because the node keys and certificate come
 - One model per node at a time; each node runs one model call at a time. A node lending memory
   to a pool runs no model of its own.
 - Files over 1 MiB are not sent to test runs.
+- Go is the only tool Outpost installs (Chromium is detected only); the Go install and PowerShell test runs are untested on real Windows.
 - A plan cannot delete files: a subtask that "removes" a file still has to write it, usually as a
   short stub. Delete it from the downloaded zip.
 - The low-level job history (Home → Recent jobs) is kept in memory and clears on restart; tasks

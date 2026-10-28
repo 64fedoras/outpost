@@ -104,6 +104,8 @@ type Hello struct {
 	LoadedModel       string       `json:"loaded_model"`
 	RollbackTo        string       `json:"rollback_to,omitempty"` // previous installed Outpost version
 	Paused            bool         `json:"paused,omitempty"`
+	Tools             []ToolInfo   `json:"tools,omitempty"` // developer tools found, rescanned hourly
+	Shell             string       `json:"shell,omitempty"` // sh | powershell | cmd: what exec jobs run in
 }
 
 // NodeRollback asks a node to restart into an older installed version.

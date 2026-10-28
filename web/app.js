@@ -605,7 +605,7 @@ function opView(n) {
   const o = state.ops && state.ops[n.id];
   if (!o || !o.op) return '';
   const age = (Date.now() - new Date(o.updated)) / 1000;
-  const what = { runtime: 'llama.cpp', 'model.push': 'Copying model from controller', 'model.fetch': 'Downloading from Hugging Face', rpc: 'Lending memory', 'model.load': 'Loading model', 'model.unload': 'Unloading', 'model.remove': 'Removing model' }[o.op] || o.op;
+  const what = { runtime: 'llama.cpp', toolchain: 'Installing Go', 'model.push': 'Copying model from controller', 'model.fetch': 'Downloading from Hugging Face', rpc: 'Lending memory', 'model.load': 'Loading model', 'model.unload': 'Unloading', 'model.remove': 'Removing model' }[o.op] || o.op;
   if (o.state === 'failed') return age < 3600 ? `<div class="note bad" style="margin:8px 0 0">${esc(what)} failed: ${esc(o.error)}</div>` : '';
   if (['done', 'ready'].includes(o.state)) return '';
   const pct = o.bytes_total ? 100 * o.bytes_done / o.bytes_total : (o.state === 'loading' ? 100 : 0);
@@ -649,6 +649,7 @@ function nodeCard(n) {
     ${paused ? `<div class="note warn" style="margin:8px 0 0"><b>Paused on the node.</b> It takes no new work until someone ticks <b>Accept new work</b> in its tray icon.</div>` : ''}
     <div class="sub" style="margin:8px 0 0">${status}${hb && hb.swap_used_bytes ? ` · swap ${bytes(hb.swap_used_bytes)}` : ''}${n.addr ? ` · ${esc(n.addr.split(':')[0])}` : ''}</div>
     ${modelBox}
+    ${toolsBox(n)}
     <div class="node-foot">
       <label class="toggle" title="Allow this node to run shell commands (needed for tests)"><input type="checkbox" data-exec="${n.id}" ${n.exec_enabled ? 'checked' : ''}> exec</label>
       <span style="flex:1"></span>
@@ -658,6 +659,17 @@ function nodeCard(n) {
       <button class="small" data-act="run" data-id="${n.id}" ${n.online && n.exec_enabled ? '' : 'disabled'} title="${n.exec_enabled ? '' : 'Enable exec first'}">Run…</button>
     </div>
   </div>`;
+}
+
+function toolsBox(n) {
+  const h = n.hello || {};
+  if (!n.exec_enabled || !h.shell) return n.exec_enabled ? '<div class="sub" style="margin:8px 0 0">Tools: unknown until the node updates</div>' : '';
+  const tools = h.tools || [];
+  const chips = tools.map((t) => `<span class="tag" title="${esc(t.path || '')}${t.managed ? ' (installed by Outpost)' : ''}">${esc(t.name)}${t.version ? ' ' + esc(t.version) : ''}</span>`).join(' ');
+  const hasGo = tools.some((t) => t.name === 'go');
+  return `<div class="sub wrap" style="margin:8px 0 0">Runs commands in ${esc(h.shell)} · ${chips || 'no tools found'}
+    ${n.online ? `<a href="#" data-act="install-tool" data-tool="go" data-id="${n.id}">${hasGo ? 'Reinstall' : 'Install'} Go</a>` : ''}</div>
+`;
 }
 
 async function setExec(id, on) {
@@ -1168,6 +1180,7 @@ document.addEventListener('click', async (e) => {
       case 'model-unstore': if (confirm(`Delete ${el.dataset.name}'s files from the controller? It stays in the library; nodes that need it download it from Hugging Face. Copies already on nodes stay.`)) { await post(`/api/models/${encodeURIComponent(el.dataset.name)}/unstore`); toast('Freed controller space'); } break;
       case 'model-retry': await post(`/api/models/${encodeURIComponent(el.dataset.name)}/retry`); toast('Resuming download'); break;
       case 'model-delete': if (confirm(`Remove ${el.dataset.name} from the library (and its files from the controller, if stored there)? Copies already on nodes stay; delete those on the node card.`)) await api(`/api/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); break;
+      case 'install-tool': await post(`/api/nodes/${id}/toolchain`, { tool: el.dataset.tool }); toast('Downloading Go to the controller, then the node'); break;
       case 'node-update': await post(`/api/nodes/${id}/update`); toast('Update sent'); break;
       case 'ctl-update': await updateController(); return;
       case 'ctl-rollback': await rollbackController(); return;
