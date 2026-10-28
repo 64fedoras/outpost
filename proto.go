@@ -14,7 +14,7 @@ const ProtocolVersion = 1
 
 // Version is a constant so buildInfo lands in the binary as one literal the controller
 // can find when you upload a release.
-const Version = "0.7.0"
+const Version = "0.7.1"
 
 const buildInfo = "OUTPOST_BUILD_INFO|" + Version + "|"
 

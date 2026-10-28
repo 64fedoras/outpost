@@ -1,4 +1,4 @@
-# Outpost v0.7.0
+# Outpost v0.7.1
 
 Self-hosted AI cluster. One binary runs as the **controller** (web UI, planning, job dispatch) or as a
 **node** (runs local models with llama.cpp, runs commands, keeps nothing after a job).
@@ -143,6 +143,15 @@ Each task is a conversation:
    flag") and the planner plans only the files to add or change; workers get the current version
    of each file they change. Claude spend and the cap carry across follow-ups.
 
+**Which node gets the work.** Subtasks go to the free node with the biggest loaded model first, and
+reviews to the next biggest, so a small test model only gets work when the bigger nodes are busy.
+To keep a node out of tasks altogether, unload its model on the Nodes tab.
+
+**When the tests fail**, the planner gets up to 3 fix rounds. Each round sees the test output, the
+project files (files named in the test output first, so they still fit a local planner's smaller
+window) and which files earlier rounds changed. It treats the tests as the specification and
+only edits a test that is clearly wrong.
+
 **Stop** halts a task and keeps its files; a later message continues from there. **Activity** shows
 the controller's full log for the task, and **Files** lets you read any file.
 
@@ -259,6 +268,8 @@ prompt). Nodes reconnect on their own because the node keys and certificate come
 - One model per node at a time; each node runs one model call at a time. A node lending memory
   to a pool runs no model of its own.
 - Files over 1 MiB are not sent to test runs.
+- A plan cannot delete files: a subtask that "removes" a file still has to write it, usually as a
+  short stub. Delete it from the downloaded zip.
 - The low-level job history (Home → Recent jobs) is kept in memory and clears on restart; tasks
   and their files are kept on disk.
 - Service install is Linux-only.
