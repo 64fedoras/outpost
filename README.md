@@ -461,6 +461,21 @@ subtasks the nodes could not finish, fixing failing tests).
 
 Every merge to `main` is built by GitHub Actions as the next patch version (0.8.1, 0.8.2, ...) and published as a release `v<version>` with the five binaries, a zip and `SHA256SUMS`, so each build shows up as a newer version in the Updates tab. Minor and major versions (0.9, 0.10, 1.0) are set by hand, and versions compare numerically (0.8.10 is newer than 0.8.9) in `proto.go`.
 
+**From GitHub (on by default).** The controller checks this repository's latest release every 6 hours
+(and when you click **Check now** on the Updates tab) and downloads the binaries for its own platform
+and for the platforms of the nodes it knows. Each file must match the release's `SHA256SUMS` and be an
+Outpost binary of that version, or it is discarded; accepted ones show up under *Uploaded releases*
+exactly like a manual upload, so the Update buttons and rollback work unchanged. `SHA256SUMS` catches
+corrupt downloads but is not signed, so it does not protect against a tampered repository. Under
+**Settings → Updates from GitHub** you can switch the checks off, or switch on **Install them
+automatically**: idle nodes update first (busy ones are retried at the next check), then the
+controller, and only when no task is planning, running or testing. **Check and install** on the Updates
+tab does the same once, on request. After a rollback, automatic install skips the version you left
+(and older ones) until a newer release appears. Nothing but the version check and the downloads goes to
+GitHub. This path has only been tested against a stub server, not the live GitHub API.
+
+Or by hand:
+
 1. **Updates tab:** drop the new binaries anywhere on the page (or click the box to choose them), one per platform you use (`outpost-linux-amd64`, …).
 2. Click **Update** on the controller row (updates the web UI too; you stay signed in), then
    **Update N nodes**. Each row shows the machine's status, its version and a live progress bar.

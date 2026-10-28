@@ -271,6 +271,7 @@ func (c *Controller) handleRollbackNode(w http.ResponseWriter, r *http.Request) 
 	}
 	running := c.runningLocked(id)
 	if to != "" && nc != nil && running == 0 {
+		c.holdAfterRollbackLocked(n.Hello.AgentVersion)
 		c.updates[id] = &UpdateStatus{Version: to, State: "sent", Updated: time.Now()}
 	}
 	c.mu.Unlock()
@@ -302,6 +303,9 @@ func (c *Controller) handleRollbackController(w http.ResponseWriter, r *http.Req
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
+	c.mu.Lock()
+	c.holdAfterRollbackLocked(Version)
+	c.mu.Unlock()
 	log.Printf("controller rollback to %s; restarting", to)
 	writeJSON(w, 200, map[string]string{"version": to})
 	go func() {
