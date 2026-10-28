@@ -2,7 +2,7 @@
 
 Status: **Rows 1 to 4 shipped in 0.7.0; rows 5 to 23 shipped together in 0.8.0.** The code is at v0.8.0. Plan written 2026-10-26 and edited 2026-10-27; status updated 2026-10-28.
 The release labels below (0.8, 0.9, 1.0, 1.1) are the original grouping. At the owner's request they were folded into one release, **0.8.0**, so nothing here ships as 0.9, 1.0 or 1.1. The next release after 0.8.0 is 0.9.
-Release numbers go up by one digit only (0.9 is followed by 1.0, then 1.1).
+Version policy: patch numbers go up automatically on every merge to main (0.8.1, 0.8.2, ...); minor and major bumps (0.9, 0.10, 1.0) are chosen deliberately. Two-digit parts such as 0.10.0 are allowed.
 
 All rows were approved by the owner on 2026-10-28 and built. **Nothing in 0.8.0 has been tested on the real cluster, real Windows or a real Mac**; see the 0.8.0 build notes below.
 
