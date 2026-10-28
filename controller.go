@@ -94,6 +94,8 @@ type JobRec struct {
 
 type Controller struct {
 	mu          sync.Mutex
+	inferStub   func(ctx context.Context, nodeID string, spec InferenceSpec) (*InferenceOutput, error)           // tests: stands in for node inference
+	execStub    func(ctx context.Context, nodeID string, argv []string, inputs []FileEntry) (*ExecOutput, error) // tests: stands in for the best-of-N syntax check
 	dataDir     string
 	advertise   string
 	fingerprint string
