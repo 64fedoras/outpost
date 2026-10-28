@@ -1,4 +1,4 @@
-# Outpost v0.6.1
+# Outpost v0.7.0
 
 Self-hosted AI cluster. One binary runs as the **controller** (web UI, planning, job dispatch) or as a
 **node** (runs local models with llama.cpp, runs commands, keeps nothing after a job).
@@ -48,9 +48,21 @@ missing.
 .\outpost-windows-amd64.exe install node --join <token>
 ```
 
-This copies Outpost to `C:\ProgramData\outpost\outpost.exe` and starts it in the background with a
-tray icon. It starts again each time you sign in. No admin rights needed. Logs:
-`C:\ProgramData\outpost\node\node.log`.
+Run it from an **Administrator** PowerShell and Outpost installs the **Outpost Node** Windows
+service: it starts at boot with no one signed in, restarts if it stops, and updates from the web UI
+swap the exe and restart it by themselves. The installer also adds the Microsoft Defender exclusion
+for `C:\ProgramData\outpost` (and prints how to undo it; skip with `--no-defender-exclusion`). The
+tray icon still starts when you sign in; **Quit Outpost** there stops the service. Remove it with
+`outpost.exe uninstall node` (admin; data and models are kept).
+
+Without admin rights (or with `--no-service`) it falls back to the old per-user mode: a background
+process with a tray icon that starts when you sign in. Run the install again from an admin
+PowerShell to switch to the service. Either way the exe lives in `C:\ProgramData\outpost\outpost.exe`
+and logs go to `C:\ProgramData\outpost\node\node.log`.
+
+*Untested on real Windows:* the service, and whether llama.cpp's Vulkan backend can use the GPU
+when run by a service (session 0). If a GPU node shows no GPU after switching, reinstall with
+`--no-service`.
 
 **macOS:** run `./outpost-darwin-arm64 node --join <token>` in a terminal (no service or tray yet).
 
@@ -200,11 +212,40 @@ build on disk.
 - The password is stored as a PBKDF2 hash in `/var/lib/outpost/controller/admin.json` and persists
   across restarts, reboots and updates.
 
+## Sign-in security, API tokens, certificate and backups
+
+**Settings → Sign-in security.** After 10 failed sign-ins from one address in 15 minutes that address
+is blocked for 15 minutes (the page shows the failure count). It lists every signed-in browser with
+Sign out, and **Sign out everywhere**. **API tokens** are named, shown once, stored hashed, and sent
+as `Authorization: Bearer opt_…` to any `/api/` endpoint a script needs (state, tasks and so on).
+Tokens cannot manage tokens, sessions, the certificate or backups; only a browser sign-in can.
+
+**Settings → HTTPS certificate.** Paste a certificate chain and key (PEM) from your own CA or a
+Let's Encrypt DNS-01 certificate. Connected nodes (0.7.0 and newer) are told the new fingerprint
+first and confirm it, then the controller switches without a restart. Nodes that were offline, or
+are still on an older version, keep the old pin: the page lists them, and on each run
+`outpost repin --fingerprint <sha256>` (add `--data DIR` if needed). The node picks it up on its next
+connection attempt. Update nodes to 0.7.0 before replacing the certificate.
+
+**Settings → Backup.** *Download backup* gives one encrypted `.opb` file (AES-256-GCM, key from your
+passphrase with PBKDF2) holding settings, the encrypted Claude key and `secret.key`, node keys, the
+TLS certificate, API tokens and all tasks. Models, runtimes and releases are left out unless you tick
+the box. The passphrase cannot be recovered. On a fresh machine:
+
+```sh
+sudo outpost install controller --advertise https://IP:8443 --restore outpost-backup-….opb
+```
+
+(add `--force` to overwrite an existing controller's data; set `OUTPOST_BACKUP_PASSPHRASE` to skip the
+prompt). Nodes reconnect on their own because the node keys and certificate come back unchanged.
+*Nightly backup* writes a copy to a folder on the controller (for example an NFS mount) about every
+24 hours and keeps the last 7. Its passphrase is stored encrypted with `secret.key`.
+
 ## Where things live
 
 | | Controller (`/var/lib/outpost/controller`) | Node (`~/.outpost/node`) |
 | --- | --- | --- |
-| Config | `tls.crt/key`, `admin.json`, `settings.json` (secrets encrypted with `secret.key`), `nodes.json` | `node.json` (node key) |
+| Config | `tls.crt/key`, `admin.json`, `api_tokens.json`, `settings.json` (secrets encrypted with `secret.key`), `nodes.json` | `node.json` (node key) |
 | Models | `models/<name>/` (only for models stored on the controller) | `models/<name>/` (from Hugging Face or the controller) |
 | llama.cpp | `runtime/<variant>/` (from GitHub releases) | `llama/<build>-<variant>/` |
 | Work | `tasks/<id>/repo` and `result.zip` | `work/` — deleted after every job |

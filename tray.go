@@ -31,6 +31,7 @@ import (
 type trayApp struct {
 	dataDir string
 	client  *http.Client
+	service bool // the node runs as a Windows service; the tray never starts it
 
 	mu        sync.Mutex
 	last      *controlStatus
@@ -51,6 +52,7 @@ type trayApp struct {
 func runTray(args []string) error {
 	fsf := flag.NewFlagSet("tray", flag.ExitOnError)
 	data := fsf.String("data", defaultDataDir("node"), "the node's data directory")
+	service := fsf.Bool("service", false, "the node runs as a Windows service")
 	_ = fsf.Parse(args)
 	if _, err := os.Stat(filepath.Join(*data, "node.json")); err != nil {
 		return fmt.Errorf("no node config in %s; join first with `outpost install node --join TOKEN` (or --data DIR)", *data)
@@ -61,7 +63,7 @@ func runTray(args []string) error {
 	}
 	defer release()
 	trayDetachConsole(*data)
-	t := &trayApp{dataDir: *data, client: &http.Client{Timeout: 4 * time.Second}}
+	t := &trayApp{dataDir: *data, service: *service, client: &http.Client{Timeout: 4 * time.Second}}
 	systray.Run(t.onReady, func() {})
 	return nil
 }
@@ -179,7 +181,7 @@ func (t *trayApp) loop() {
 		} else {
 			misses = 0
 		}
-		if st == nil && runtime.GOOS == "windows" && (first || (!recent && misses >= 3)) {
+		if st == nil && runtime.GOOS == "windows" && !t.service && (first || (!recent && misses >= 3)) {
 			t.startNode()
 			misses = 0
 		}
@@ -289,6 +291,10 @@ func (t *trayApp) openJoin() {
 }
 
 func (t *trayApp) startNode() {
+	if t.service {
+		log.Printf("tray: the Outpost Node service starts at boot; to start it now run `sc start OutpostNode` as administrator")
+		return
+	}
 	t.mu.Lock()
 	t.starting = time.Now()
 	t.mu.Unlock()

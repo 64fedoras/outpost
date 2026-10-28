@@ -317,3 +317,8 @@ fieldset.q[disabled] .opt span { opacity: .6; cursor: default; }
   .bubble { max-width: 92%; }
 }
 @media (prefers-reduced-motion: reduce) { .side { transition: none; } }
+
+.rowline { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.rowline > span { min-width: 0; overflow-wrap: anywhere; }
+label.check { display: flex; align-items: center; gap: 8px; }
+label.check input { width: auto; }
