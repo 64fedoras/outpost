@@ -119,3 +119,56 @@ func TestValidatePlanDifficulty(t *testing.T) {
 		t.Errorf("difficulties = %q, %q", p.Subtasks[0].Difficulty, p.Subtasks[1].Difficulty)
 	}
 }
+
+func TestLightBench(t *testing.T) {
+	cpu := &NodeRec{Hello: &Hello{CPU: CPUInfo{Threads: 4}}}
+	if !lightBench(cpu, "m") {
+		t.Error("a 4-thread CPU-only node should use the short benchmark")
+	}
+	big := &NodeRec{Hello: &Hello{CPU: CPUInfo{Threads: 62}}}
+	if lightBench(big, "m") {
+		t.Error("a big CPU node should use the full benchmark")
+	}
+	gpu := &NodeRec{Hello: &Hello{CPU: CPUInfo{Threads: 4}, GPUs: []GPUInfo{{Name: "x"}}}}
+	if lightBench(gpu, "m") {
+		t.Error("a GPU node should use the full benchmark")
+	}
+	big.BenchFail = &BenchFail{Model: "m"}
+	if !lightBench(big, "m") || lightBench(big, "other") {
+		t.Error("a failure should switch to the short benchmark for that model only")
+	}
+	full, _ := benchPromptFor(false)
+	if p, n := benchPromptFor(true); len(p) >= len(full) || n >= 256 {
+		t.Error("the short benchmark should be smaller")
+	}
+}
+
+func TestBenchBlocked(t *testing.T) {
+	c := &Controller{
+		conns: map[string]*nodeConn{"n": {}}, nodes: map[string]*NodeRec{"n": {ID: "n"}},
+		lastHB:   map[string]*Heartbeat{"n": {LoadedModel: "m", InferenceRdy: true}},
+		reserved: map[string]bool{}, pipelines: map[string]*pipeline{},
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if why := c.benchBlockedLocked("n"); why != "" {
+		t.Fatalf("idle ready node blocked: %s", why)
+	}
+	c.reserved["n"] = true
+	if c.benchBlockedLocked("n") == "" {
+		t.Error("a reserved node should be busy")
+	}
+	delete(c.reserved, "n")
+	c.nodes["n"].Benching = true
+	if c.benchBlockedLocked("n") == "" {
+		t.Error("a running benchmark should block another")
+	}
+	c.nodes["n"].Benching = false
+	c.lastHB["n"].InferenceRdy = false
+	if c.benchBlockedLocked("n") == "" {
+		t.Error("a node with no ready model should be blocked")
+	}
+	if c.benchBlockedLocked("missing") == "" {
+		t.Error("an unknown node should be blocked")
+	}
+}

@@ -790,6 +790,20 @@ async function viewFile(path) {
 }
 
 // ---------- nodes ----------
+// benchLine shows a node's measured speed, a running or failed benchmark, and the re-run link.
+function benchLine(n, loaded, ready) {
+  if (!loaded || !n.online) return '';
+  const b = n.bench && n.bench.model === loaded ? n.bench : null;
+  const f = n.bench_fail && n.bench_fail.model === loaded ? n.bench_fail : null;
+  const rerun = ready && !n.benching ? ` · <a href="#" data-act="benchmark" data-id="${n.id}" title="Measure this node's speed again">${b || f ? 'Re-run' : 'Run'} benchmark</a>` : '';
+  let txt;
+  if (n.benching) txt = 'Benchmarking…';
+  else if (b) txt = `Speed ${b.tok_per_s.toFixed(1)} tok/s${b.prompt_tps ? ' · reads ' + Math.round(b.prompt_tps) + ' tok/s' : ''}${b.samples ? ' · ' + b.samples + ' subtask' + (b.samples === 1 ? '' : 's') : b.light ? ' · short benchmark' : ' · benchmark'}`;
+  else if (f) txt = `<span class="muted" title="${esc(f.error)}">Benchmark failed (${esc(f.error.length > 60 ? f.error.slice(0, 60) + '…' : f.error)}); retries in a few minutes with a shorter test. Real subtasks fill in the speed meanwhile.</span>`;
+  else txt = '<span class="muted">Not benchmarked yet</span>';
+  return `<div class="sub wrap" style="margin:6px 0 0" title="Benchmark when the model loaded, then a rolling average of real subtasks">${txt}${rerun}</div>`;
+}
+
 function renderNodes() {
   const nodes = state.nodes;
   const online = nodes.filter((n) => n.online).length;
@@ -844,7 +858,7 @@ function nodeCard(n) {
       <div class="row"><span class="dot ${ready ? 'on' : loaded ? 'busy' : ''}"></span><span class="grow">${loaded ? `<b>${esc(loaded)}</b> · ${ready ? (hb.inference_busy ? 'working' : 'ready') : 'starting'}` : '<span class="muted">No model loaded</span>'}</span>
         ${n.online ? `<button class="small" data-act="load" data-id="${n.id}">${loaded ? 'Change' : 'Load model'}…</button>${loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : ''}</div>
       ${recRow(n, loaded)}
-      ${loaded && n.bench && n.bench.model === loaded ? `<div class="sub" style="margin:6px 0 0" title="Benchmark when the model loaded, then a rolling average of real subtasks">Speed ${n.bench.tok_per_s.toFixed(1)} tok/s${n.bench.prompt_tps ? ' · reads ' + Math.round(n.bench.prompt_tps) + ' tok/s' : ''}${n.bench.samples ? ' · ' + n.bench.samples + ' subtask' + (n.bench.samples === 1 ? '' : 's') : ' · benchmark'}</div>` : ''}
+      ${benchLine(n, loaded, ready)}
       ${n.pool_names && n.pool_names.length ? `<div class="sub wrap" style="margin:6px 0 0">Pooled with <b>${n.pool_names.map(esc).join(', ')}</b></div>` : ''}
       <div class="sub" style="margin:6px 0 0">${h.runtime ? `llama.cpp ${esc(h.runtime.build)} · ${esc(h.runtime.variant)}` : 'llama.cpp installs on first load'}${stored.length ? ' · stored: ' + stored.map((m) => `${esc(m.name)} <a href="#" data-act="rm-node-model" data-id="${n.id}" data-name="${esc(m.name)}" title="Delete from this node">×</a>`).join(', ') : ''}</div>
       ${hb && hb.llama_error && !ready ? `<div class="note bad" style="margin:6px 0 0">${esc(hb.llama_error)}</div>` : ''}
@@ -1465,6 +1479,7 @@ document.addEventListener('click', async (e) => {
       case 'load': openLoad(id); break;
       case 'load-rec': await loadOnNode(id, el.dataset.name, el.dataset.lib !== '1'); break;
       case 'pick-model': openPick(el.dataset.name, el.dataset.catalog === '1'); break;
+      case 'benchmark': await post(`/api/nodes/${id}/benchmark`); toast('Benchmark started'); break;
       case 'unload': await post(`/api/nodes/${id}/unload`); toast('Unloading'); break;
       case 'rm-node-model': if (confirm(`Delete ${el.dataset.name} from this node's disk?`)) { await api(`/api/nodes/${id}/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); toast('Deleting'); } break;
       case 'rename': renameNode(id); break;
