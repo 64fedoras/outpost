@@ -61,6 +61,7 @@ type Node struct {
 	paused      bool // no new work (tray icon); kept in <data>/paused
 	online      bool // connected and welcomed by the controller
 	tools       toolCache
+	peer        peerState
 }
 
 func (n *Node) agentDir() string { return filepath.Join(n.dataDir, "agent") }
@@ -124,6 +125,7 @@ func runNode(args []string) error {
 	go n.workspaceJanitor()
 	go n.autoload()
 	go n.autostartRPC()
+	n.startPeerServer()
 
 	backoff := time.Second
 	lostSince := time.Now()
@@ -344,6 +346,11 @@ func (n *Node) sessionInner(welcomed *bool) error {
 			if json.Unmarshal(env.Body, &mp) == nil {
 				go n.pushModel(mp)
 			}
+		case "peer.grant":
+			var pg PeerGrant
+			if json.Unmarshal(env.Body, &pg) == nil {
+				n.peerGrant(pg)
+			}
 		case "model.fetch":
 			var mf ModelFetch
 			if json.Unmarshal(env.Body, &mf) == nil {
@@ -469,6 +476,7 @@ func (n *Node) hello() Hello {
 		h.Runtime = &rt.RuntimeInfo
 	}
 	h.LoadedModel, _, _, _ = n.llama.status()
+	h.Peer = n.peerInfo()
 	return h
 }
 
