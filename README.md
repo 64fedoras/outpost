@@ -15,8 +15,8 @@ install is safe: it updates the service and keeps existing data and passwords.
 ### Controller
 
 ```bash
-scp outpost-linux-amd64 admin@192.0.2.10:~/
-ssh -t admin@192.0.2.10 'sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install controller --advertise https://192.0.2.10:8443'
+scp outpost-linux-amd64 admin@controller.example.local:~/
+ssh -t admin@controller.example.local 'sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install controller --advertise https://192.0.2.10:8443'
 ```
 
 On a first install this prints the **admin password**. Open the web UI, accept the self-signed
@@ -25,11 +25,11 @@ certificate warning and sign in. Change the password under **Settings → Admin 
 ### Nodes
 
 Copy the binary to the node, then on the **Nodes** tab click **Add node**. Type the node's SSH target
-(for example `admin@192.0.2.11`) and paste the command it gives you:
+(for example `admin@node1.example.local`) and paste the command it gives you:
 
 ```bash
-scp outpost-linux-amd64 admin@192.0.2.11:~/
-ssh -t admin@192.0.2.11 'sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install node --join <token>'
+scp outpost-linux-amd64 admin@node1.example.local:~/
+ssh -t admin@node1.example.local 'sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install node --join <token>'
 ```
 
 The node service runs as the user who ran `sudo`, keeps its data in `~/.outpost/node`, and runs jobs
@@ -107,8 +107,8 @@ can check detection without joining.
 
 ## First run
 
-1. **Models** (sidebar): add a model to the library. For the 4 GB test VMs, *Qwen2.5-Coder 3B*. For the
-   16 GB GPU, *Qwen3-Coder 30B-A3B*; for the 16 GB GPU, *Qwen2.5-Coder 14B*. Newer options to compare on your own
+   16 GB GPU, *Qwen3-Coder 30B-A3B*, or *Qwen2.5-Coder 14B* for a tighter fit. Newer options to compare on your own
+   16 GB GPU, *Qwen3-Coder 30B-A3B* (or *Qwen2.5-Coder 14B* if it is tight), *Qwen2.5-Coder 14B*. Newer options to compare on your own
    tasks (not yet tested on the cluster, and they need a current llama.cpp build): *Qwen3.6 35B-A3B* for the
    CPU node or a 16 GB GPU with RAM offload, *Qwen3.6 27B* for 16 GB GPUs, and *Gemma 4 26B-A4B* as a second
    opinion for review. These three can also read images (marked **Vision**): their vision projector file
