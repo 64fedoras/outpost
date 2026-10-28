@@ -28,11 +28,12 @@ accepted for this step; to allow others add `--setup-allow-from 203.0.113.0/24,1
 
 ### Nodes
 
-Copy the binary to the node, then on the **Nodes** tab click **Add node**. Type the node's SSH target
-(for example `admin@node1.example.local`) and paste the command it gives you:
+Put `outpost-linux-amd64` in the node's home folder (any way you like), then on the **Nodes** tab
+click **Add node** and paste the one command it gives you. If you type the node's SSH target (for
+example `admin@node1.example.local`) it wraps the command in `ssh -t` so you can run it from your own
+computer:
 
 ```bash
-scp outpost-linux-amd64 admin@node1.example.local:~/
 ssh -t admin@node1.example.local 'sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install node --join <token>'
 ```
 

@@ -1,4 +1,4 @@
-# Outpost architecture (v0.8.0)
+# Outpost architecture
 
 ## Processes and data
 **Controller** (`outpost controller`, default :8443, HTTPS with a self-signed certificate). Data dir (`/var/lib/outpost/controller` as root on Linux): `admin.json` (PBKDF2 password hash), `secret.key` (encrypts the Claude and Hugging Face keys), `settings.json`, `sessions.json`, `nodes.json`, `tls.crt`/`tls.key`, `tasks/<id>/` (task.json and repo files), `api_tokens.json`, `tls_repin.json`, `projects/<id>/` (see Projects), `models/<name>/` (controller-stored models, now an optional seed), `runtime/<variant>/` (llama.cpp archives), `toolchains/<tool>/` (Go archive pushed to nodes), `releases/<platform>` (uploaded Outpost binaries), `agent/`. A task folder also holds `rounds/<n>/` (previous copies of files each request changed), `images/`, `attachments/`, `shots/` (screenshots) and `artifacts/` (build outputs fetched from a node), beside `task.json`, `repo/` (unless the task is in a project) and `result.zip`.
