@@ -116,6 +116,7 @@ type Controller struct {
 	updates    map[string]*UpdateStatus
 
 	settings  Settings
+	nt        notifier
 	waiters   map[string]chan *JobResult
 	models    map[string]*ModelRec
 	runtimes  map[string]*RuntimeRec
@@ -219,6 +220,8 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /v1/models/{name}/files/{index}", c.handleServeModelFile)
 	mux.HandleFunc("GET /api/settings", c.auth(c.handleGetSettings))
 	mux.HandleFunc("POST /api/settings", c.auth(c.handleSaveSettings))
+	mux.HandleFunc("GET /api/notifications", c.auth(c.handleNotifications))
+	mux.HandleFunc("POST /api/notifications/test", c.auth(c.handleNotifyTest))
 	mux.HandleFunc("GET /api/openrouter/models", c.auth(c.handleOpenRouterModels))
 	mux.HandleFunc("POST /api/password", c.auth(c.handleChangePassword))
 	mux.HandleFunc("GET /api/models", c.auth(c.handleListModels))
@@ -949,6 +952,7 @@ func (c *Controller) offlineSweeper() {
 				c.finishJobLocked(j, "lost", errf("lost", true, "node offline for more than 60 s"))
 			}
 		}
+		c.sweepOfflineNodes(now)
 		for s, exp := range c.tokens {
 			if now.After(exp) {
 				delete(c.tokens, s)
