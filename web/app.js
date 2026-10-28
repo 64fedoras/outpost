@@ -392,7 +392,7 @@ function renderThreadItems(items) {
 
 function renderTask(t) {
   setHTML('tv-title', esc(t.title || firstWords(t.prompt)));
-  setHTML('tv-status', `<span class="tdot ${taskTone({ ...t, needs_you: ['awaiting_answers', 'awaiting_approval', 'paused_cap', 'interrupted'].includes(t.status) })}"></span>${esc(statusWord(t))}`);
+  setHTML('tv-status', `<span class="tdot ${taskTone({ ...t, needs_you: ['awaiting_answers', 'awaiting_approval', 'paused_cap', 'interrupted'].includes(t.status) || (t.messages || []).some((m) => m.pending) })}"></span>${esc(statusWord(t))}`);
   $('tv-status').className = 'status-chip';
   setHTML('tv-spend', t.planner === 'claude' || t.planner === 'openrouter' || t.cost_usd > 0 ? spendMeter(t) : '');
   const files = t.files || [];
@@ -440,13 +440,14 @@ function threadItems(t) {
 function msgItem(t, m, liveQuestions, livePlan) {
   const key = m.id;
   if (m.role === 'user') {
-    const tag = m.kind === 'steer' ? '<span class="bubble-tag">note while working</span>' : m.kind === 'answers' ? '<span class="bubble-tag">answers</span>' : '';
+    const tag = m.kind === 'agent_answer' ? '<span class="bubble-tag">answer to the agent</span>' : m.kind === 'steer' ? '<span class="bubble-tag">note while working</span>' : m.kind === 'answers' ? '<span class="bubble-tag">answers</span>' : '';
     const pics = (m.images || []).length ? `<div class="bubble-imgs">${m.images.map((n) => `<a href="/api/tasks/${t.id}/image?name=${encodeURIComponent(n)}" target="_blank" rel="noopener"><img src="/api/tasks/${t.id}/image?name=${encodeURIComponent(n)}" alt="attached image" loading="lazy"></a>`).join('')}</div>` : '';
     return { key, cls: 'from-user', html: `<div class="bubble">${tag}${esc(m.text)}${pics}</div>` };
   }
   if (m.role === 'event' || m.kind === 'event') return { key, cls: 'event-row', html: `<span>${esc(m.text)}</span>` };
   switch (m.kind) {
     case 'questions': return { key, cls: 'card-row', html: questionsCard(m, liveQuestions) };
+    case 'agent_question': return { key, cls: 'card-row', html: agentQuestionCard(m) };
     case 'plan': return { key, cls: 'card-row', html: planCard(t, m, livePlan) };
     case 'result': return { key, cls: 'card-row', html: resultCard(t, m) };
     case 'error': return { key, cls: 'card-row', html: `<div class="card-msg bad"><div class="card-head">Something went wrong</div><p>${esc(m.text)}</p>${t.status === 'failed' && m.round === (t.round || 1) ? '<div class="card-actions"><button class="primary" data-act="task-resume">Try again</button><span class="hint">or send a message to change course</span></div>' : ''}</div>` };
@@ -468,9 +469,19 @@ function questionsCard(m, live) {
     ${live ? `<div class="card-actions"><button class="primary" data-act="task-answer" data-msg="${esc(m.id)}">Send answers</button><span class="hint">Skip any you don't mind; the planner picks a sensible default.</span></div>` : ''}</div>`;
 }
 
+// A question an agent asked while working; the answer goes straight back to it.
+function agentQuestionCard(m) {
+  const q = (m.questions || [])[0] || { question: m.text, options: [] };
+  if (!m.pending) return `<div class="card-msg quiet"><div class="card-head">A worker asked</div><p>${esc(q.question)}</p></div>`;
+  const opts = (q.options || []).map((o) => `<button class="small" data-act="task-agent-answer" data-msg="${esc(m.id)}" data-answer="${esc(o)}">${esc(o)}</button>`).join('');
+  return `<div class="card-msg"><div class="card-head">A worker needs a decision</div><p>${esc(q.question)}</p>
+    ${opts ? `<div class="card-actions">${opts}</div>` : ''}
+    <div class="card-actions"><input class="opt-other" id="aq-${esc(m.id)}" placeholder="Your answer…" aria-label="Your answer"><button class="primary" data-act="task-agent-answer" data-msg="${esc(m.id)}">Send answer</button><span class="hint">Only that worker waits; the rest keeps going.</span></div></div>`;
+}
+
 function planCard(t, m, live) {
   const p = m.plan || {};
-  const subs = (p.subtasks || []).map((s) => `<li><details><summary><span class="st-title">${esc(s.title)}</span><span class="st-files">${s.files.map(esc).join(', ')}</span></summary>
+  const subs = (p.subtasks || []).map((s) => `<li><details><summary><span class="st-title">${esc(s.title)}</span><span class="st-files">${s.kind === 'investigate' ? 'investigates, writes no files' : s.files.map(esc).join(', ')}</span></summary>
       <p class="st-ins">${esc(s.instructions)}</p>${s.depends_on && s.depends_on.length ? `<p class="st-dep">Starts after ${s.depends_on.map(esc).join(', ')}</p>` : ''}</details></li>`).join('');
   const facts = [p.language ? esc(p.language) : '', p.test_command ? `tests: <code>${esc(p.test_command)}</code>` : 'no automated tests', `${(p.subtasks || []).length} subtasks`].filter(Boolean).join(' · ');
   let actions = '';
@@ -498,7 +509,10 @@ function progressCard(t) {
   const rows = specs.map((s) => {
     const x = byId[s.id] || { status: 'pending' };
     let who = '';
-    if (x.status === 'running') who = `writing on ${esc(x.node_name || '…')}${x.attempts ? ` · try ${x.attempts + 1}` : ''}`;
+    if (x.waiting) who = `${esc(x.node_name || 'a worker')} asked you a question`;
+    else if (x.status === 'running' && s.kind === 'investigate') who = `investigating on ${esc(x.node_name || '…')}${x.agent_calls ? ` · ${x.agent_calls} tool calls` : ''}`;
+    else if (x.status === 'running') who = `writing on ${esc(x.node_name || '…')}${x.attempts ? ` · try ${x.attempts + 1}` : ''}`;
+    else if (s.kind === 'investigate' && (x.status === 'written' || x.status === 'done')) who = `investigated on ${esc(x.node_name || 'the planner')}${x.agent_calls ? ` · ${x.agent_calls} tool calls` : ''}`;
     else if (x.status === 'reviewing' || x.status === 'written') who = `${esc(x.node_name || '')} wrote it · ${esc(x.reviewer || 'another node')} is checking`;
     else if (x.status === 'done') who = `${x.by_planner ? 'written by the planner' : esc(x.node_name || '')}${x.reviewer ? ` · checked by ${esc(x.reviewer)}${x.review_fixed ? ', who fixed it' : ''}` : ''}`;
     else if (x.status === 'failed') who = esc(x.error || 'failed');
@@ -508,7 +522,7 @@ function progressCard(t) {
   }).join('');
   let phase = '';
   if (t.status === 'testing') phase = 'Running the tests…';
-  else if (t.status === 'fixing') phase = `Tests failed; fixing (round ${t.fix_rounds + 1} of 3)…`;
+  else if (t.status === 'fixing') phase = `Tests failed; fixing (round ${t.fix_rounds + 1} of 3). The fixer reads, edits and re-runs on its own.`;
   else if (t.status === 'running' && !t.workers_online) phase = 'Waiting for a node with a model ready. Load one on the Nodes page.';
   const head = t.status === 'running' || t.status === 'testing' || t.status === 'fixing'
     ? `Working · ${done} of ${specs.length} subtasks done` : `${done} of ${specs.length} subtasks done`;
@@ -689,6 +703,12 @@ async function taskAction(act, el) {
       case 'task-answer': {
         const answers = collectAnswers();
         await post(`/api/tasks/${id}/answers`, { answers });
+        break;
+      }
+      case 'task-agent-answer': {
+        const msg = el.dataset.msg, answer = el.dataset.answer || ($('aq-' + msg) || {}).value || '';
+        if (!answer.trim()) { toast('Write an answer first'); return; }
+        await post(`/api/tasks/${id}/agent-answer`, { id: msg, answer });
         break;
       }
       case 'task-cancel': if (!confirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return; await post(`/api/tasks/${id}/cancel`); break;
@@ -1053,7 +1073,7 @@ async function loadSettings() {
   $('set-model').innerHTML = claudeModelOptions(settings.claude_model);
   $('set-cap').value = settings.default_cap_usd;
   $('set-instr').value = settings.instructions || '';
-  $('set-websearch').checked = !!settings.web_search; $('set-webprivate').checked = !!settings.web_allow_private;
+  $('set-agent').checked = settings.agent_mode !== false; $('set-websearch').checked = !!settings.web_search; $('set-webprivate').checked = !!settings.web_allow_private;
   if (!state) state = await api('/api/state').catch(() => null);
   if (state) $('set-planner').innerHTML = plannerOptions(settings.default_planner);
   loadSecurity();
@@ -1126,7 +1146,7 @@ $('set-or-model-save').onclick = () => saveSettings({ openrouter_model: $('set-o
 $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-instr-save').onclick = () => saveSettings({ instructions: $('set-instr').value }, 'Instructions saved');
-$('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked }, 'Defaults saved');
+$('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, agent_mode: $('set-agent').checked, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked }, 'Defaults saved');
 $('pw-form').onsubmit = async (e) => {
   e.preventDefault();
   const err = $('pw-err'); err.classList.add('hidden');

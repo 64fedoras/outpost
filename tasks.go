@@ -53,6 +53,7 @@ type PlanSubtask struct {
 	Files        []string `json:"files"`
 	DependsOn    []string `json:"depends_on"`
 	Instructions string   `json:"instructions"`
+	Kind         string   `json:"kind,omitempty"` // "" (write the files) or "investigate" (agent mode: read, search, run, report)
 }
 
 type SubtaskState struct {
@@ -68,6 +69,9 @@ type SubtaskState struct {
 	Reviewer   string     `json:"reviewer,omitempty"`     // node that reviewed it
 	ReviewFix  bool       `json:"review_fixed,omitempty"` // the reviewer changed the files
 	ReviewNote string     `json:"review_note,omitempty"`  // why the review was skipped or rejected
+	Report     string     `json:"report,omitempty"`       // investigate subtasks: what the agent found
+	AgentCalls int        `json:"agent_calls,omitempty"`  // tool calls so far in agent mode
+	Waiting    bool       `json:"waiting,omitempty"`      // the agent asked the user something
 	Started    *time.Time `json:"started,omitempty"`
 	Ended      *time.Time `json:"ended,omitempty"`
 }
@@ -123,6 +127,7 @@ type Task struct {
 	repo   string // working files; the project's repo for a project task, else <dir>/repo
 	cancel context.CancelFunc
 	resume chan struct{}
+	asks   map[string]chan string // agent questions waiting for an answer, by message id
 }
 
 func (c *Controller) tasksDir() string { return filepath.Join(c.dataDir, "tasks") }
@@ -199,6 +204,12 @@ func (c *Controller) loadTasks() {
 			t.Events = append(t.Events, TaskEvent{Time: time.Now(), Level: "warn", Text: "The controller restarted while this task was active. Click Resume to continue where it stopped."})
 			t.saveLocked()
 		}
+		for i := range t.Messages {
+			t.Messages[i].Pending = false // no agent is waiting after a restart
+		}
+		for _, s := range t.Subtasks {
+			s.Waiting = false
+		}
 		t.migrateMessages()
 		c.tasks[t.ID] = t
 	}
@@ -231,6 +242,8 @@ func (t *Task) summaryLocked() taskSummary {
 	switch t.Status {
 	case "awaiting_answers", "awaiting_approval", "paused_cap", "interrupted":
 		s.NeedsYou = true
+	default:
+		s.NeedsYou = t.hasPendingAsk()
 	}
 	if n := len(t.Messages); n > 0 {
 		s.Updated = t.Messages[n-1].Time
@@ -793,9 +806,9 @@ func (c *Controller) plannerCall(ctx context.Context, t *Task, req llmRequest) (
 		var est float64
 		if planner == "openrouter" {
 			_ = openRouterModels.refresh(ctx, c.openRouterKey(), false) // for prices; cached for an hour
-			est = openRouterEstimate(orModel, len(req.System)+len(req.User)+imageTokenChars*len(req.Images), req.MaxTokens/2)
+			est = openRouterEstimate(orModel, req.size(), req.MaxTokens/2)
 		} else {
-			est = estimateCost(model, len(req.System)+len(req.User)+imageTokenChars*len(req.Images), req.MaxTokens/2)
+			est = estimateCost(model, req.size(), req.MaxTokens/2)
 			if req.WebSearch {
 				est += webSearchUses * webSearchUSD
 			}
@@ -902,6 +915,10 @@ func (c *Controller) nodeCall(ctx context.Context, t *Task, nodeID string, req l
 	}
 	spec := InferenceSpec{Messages: []ChatMessage{{Role: "system", Content: req.System}, user},
 		Params: InferenceParams{Temperature: &temp, MaxTokens: req.MaxTokens}}
+	if len(req.Msgs) > 0 {
+		spec.Messages = append([]ChatMessage{{Role: "system", Content: req.System}}, openAIMessages(req.Msgs)...)
+		spec.Tools = toolDefs(req.Tools)
+	}
 	start := time.Now()
 	live := taskLive.begin(t.ID, req.Sub, req.Label, c.nodeLabel(nodeID), false)
 	defer live.End()
@@ -912,7 +929,7 @@ func (c *Controller) nodeCall(ctx context.Context, t *Task, nodeID string, req l
 		}
 		return nil, err
 	}
-	return &llmResponse{Text: out.Text, InTokens: out.PromptTokens, OutTokens: out.OutputTokens, Model: out.Model,
+	return &llmResponse{Text: out.Text, Calls: fromWireCalls(out.ToolCalls), InTokens: out.PromptTokens, OutTokens: out.OutputTokens, Model: out.Model,
 		TokensPerSec: out.TokensPerSec, ElapsedSecond: time.Since(start).Seconds()}, nil
 }
 
@@ -1113,6 +1130,9 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 		if indexed {
 			req.System += plannerIndexHelp
 		}
+		if c.agentEnabled() {
+			req.System += plannerInvestigateHelp
+		}
 		if !mayAsk {
 			req.User += "\n\nYou have already asked your questions for this request. Do not ask again; produce the plan, using sensible defaults for anything still open."
 		}
@@ -1243,7 +1263,12 @@ func validatePlan(p *Plan) error {
 			return fmt.Errorf("subtask ids must be unique and non-empty (%q)", s.ID)
 		}
 		ids[s.ID] = true
-		if len(s.Files) == 0 {
+		if k := strings.ToLower(strings.TrimSpace(s.Kind)); k == "investigate" {
+			s.Kind = k
+		} else {
+			s.Kind = ""
+		}
+		if len(s.Files) == 0 && s.Kind != "investigate" {
 			return fmt.Errorf("subtask %s lists no files", s.ID)
 		}
 		for j, f := range s.Files {
@@ -1405,7 +1430,7 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 					t.mu.Lock()
 					review := t.Review
 					t.mu.Unlock()
-					if review {
+					if review && specs[id].Kind != "investigate" {
 						c.reviewSubtask(ctx, t, specs[id], node)
 					}
 					t.mu.Lock()
@@ -1466,6 +1491,9 @@ Output only your assigned files, with no explanations before or after.`
 
 // runSubtask asks a worker node to write a subtask's files, retrying with feedback.
 func (c *Controller) runSubtask(ctx context.Context, t *Task, spec PlanSubtask, node string) error {
+	if spec.Kind == "investigate" {
+		return c.investigate(ctx, t, spec, node)
+	}
 	ctxTokens := c.nodeCtx(node)
 	maxOut := 4096
 	if maxOut > ctxTokens/2 {
@@ -1589,6 +1617,7 @@ func (c *Controller) subtaskPromptWith(t *Task, spec PlanSubtask, budget int, wi
 			fmt.Fprintf(&b, "<<<FILE %s>>>\n%s<<<END>>>\n", f, s)
 		}
 	}
+	b.WriteString(c.dependencyReports(t, spec))
 	// Dependencies' files, trimmed to fit the worker's context window.
 	var depFiles []string
 	for _, d := range spec.DependsOn {
@@ -1694,6 +1723,9 @@ const plannerWriteSystem = `You are the lead engineer. A worker could not comple
 ` + fileFormatHelp
 
 func (c *Controller) plannerWritesSubtask(ctx context.Context, t *Task, spec PlanSubtask) error {
+	if spec.Kind == "investigate" {
+		return c.investigate(ctx, t, spec, "")
+	}
 	user := c.subtaskPrompt(t, spec, c.plannerBudget(t)/2) + "\n\nCurrent project files:\n" + repoSnapshot(t.repoDir(), c.plannerBudget(t)/2)
 	resp, err := c.plannerCall(ctx, t, llmRequest{System: plannerWriteSystem, User: user, MaxTokens: 16000, Temperature: 0.2, Label: "Writing " + spec.ID})
 	if err != nil {
@@ -1819,30 +1851,56 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		}
 		t.logf("warn", "Tests failed; fix round %d of %d.", round+1, maxFixRounds)
 		t.setStatus("fixing")
-		budget := c.plannerBudget(t)
-		// A local planner has a small window: keep the test output to a third
-		// of it so the code under test still fits.
-		shown := output
-		if limit := budget / 3; len(shown) > limit && limit > 0 {
-			shown = "…" + shown[len(shown)-limit:]
-		}
-		var earlier strings.Builder
-		if len(history) > 0 {
-			earlier.WriteString("\n\nEarlier fix rounds (the tests still failed after each):\n")
-			for _, h := range history {
-				earlier.WriteString("- " + h + "\n")
+		var changed []string
+		agentDone := false
+		if c.agentEnabled() {
+			ch, err := c.agentFix(ctx, t, plan, cmd, output, history, round)
+			switch {
+			case errors.Is(err, errCancelled) || ctx.Err() != nil:
+				return
+			case err == nil:
+				changed, agentDone = ch, true
+			case errors.Is(err, errAgentUnsupported):
+				t.logf("warn", "The planner cannot use tools here; fixing with a single request instead.")
+			default:
+				c.failTask(t, err)
+				return
 			}
 		}
-		user := t.instructionsBlock() + fmt.Sprintf("Project: %s\n%s\n\nTest command: %s\n\nTest output:\n%s%s\n\nProject files:\n%s",
-			plan.Title, plan.Summary, cmd, shown, earlier.String(),
-			repoSnapshotFirst(t.repoDir(), budget-len(shown)-earlier.Len()-4000, output)) + t.steeringText()
-		resp, err := c.plannerCall(ctx, t, llmRequest{System: fixSystem, User: user, MaxTokens: 16000, Temperature: 0.2, Label: fmt.Sprintf("Fix round %d", round+1)})
-		if err != nil {
-			c.failTask(t, err)
-			return
+		if !agentDone {
+			budget := c.plannerBudget(t)
+			// A local planner has a small window: keep the test output to a third
+			// of it so the code under test still fits.
+			shown := output
+			if limit := budget / 3; len(shown) > limit && limit > 0 {
+				shown = "…" + shown[len(shown)-limit:]
+			}
+			var earlier strings.Builder
+			if len(history) > 0 {
+				earlier.WriteString("\n\nEarlier fix rounds (the tests still failed after each):\n")
+				for _, h := range history {
+					earlier.WriteString("- " + h + "\n")
+				}
+			}
+			user := t.instructionsBlock() + fmt.Sprintf("Project: %s\n%s\n\nTest command: %s\n\nTest output:\n%s%s\n\nProject files:\n%s",
+				plan.Title, plan.Summary, cmd, shown, earlier.String(),
+				repoSnapshotFirst(t.repoDir(), budget-len(shown)-earlier.Len()-4000, output)) + t.steeringText()
+			resp, err := c.plannerCall(ctx, t, llmRequest{System: fixSystem, User: user, MaxTokens: 16000, Temperature: 0.2, Label: fmt.Sprintf("Fix round %d", round+1)})
+			if err != nil {
+				c.failTask(t, err)
+				return
+			}
+			for _, b := range parseFileBlocks(resp.Text) {
+				p := strings.TrimPrefix(b.Path, "./")
+				if err := t.writeFile(p, b.Content); err != nil {
+					t.logf("warn", "Ignored a fix for %s: %v", p, err)
+					continue
+				}
+				changed = append(changed, p)
+			}
+			t.touch(changed...)
 		}
-		blocks := parseFileBlocks(resp.Text)
-		if len(blocks) == 0 {
+		if len(changed) == 0 {
 			t.mu.Lock()
 			t.TestStatus = "failing"
 			t.mu.Unlock()
@@ -1850,16 +1908,6 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 			c.finishTask(t)
 			return
 		}
-		var changed []string
-		for _, b := range blocks {
-			p := strings.TrimPrefix(b.Path, "./")
-			if err := t.writeFile(p, b.Content); err != nil {
-				t.logf("warn", "Ignored a fix for %s: %v", p, err)
-				continue
-			}
-			changed = append(changed, p)
-		}
-		t.touch(changed...)
 		t.mu.Lock()
 		t.FixRounds++
 		t.mu.Unlock()
