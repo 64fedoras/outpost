@@ -12,6 +12,31 @@ import (
 
 const ProtocolVersion = 1
 
+// MinProtocolVersion is the oldest protocol this build still speaks. Nodes advertise every
+// version from MinProtocolVersion to ProtocolVersion and the controller picks the highest it
+// shares, so a protocol bump can overlap one release instead of locking out older nodes.
+const MinProtocolVersion = 1
+
+// supportedProtocols lists the protocol versions this build speaks, oldest first.
+func supportedProtocols() []int {
+	var v []int
+	for i := MinProtocolVersion; i <= ProtocolVersion; i++ {
+		v = append(v, i)
+	}
+	return v
+}
+
+// negotiateProtocol returns the highest protocol both sides speak.
+func negotiateProtocol(theirs []int) (int, bool) {
+	best, ok := 0, false
+	for _, v := range theirs {
+		if v >= MinProtocolVersion && v <= ProtocolVersion && v > best {
+			best, ok = v, true
+		}
+	}
+	return best, ok
+}
+
 // Version is a constant so buildInfo lands in the binary as one literal the controller
 // can find when you upload a release.
 const Version = "0.8.0"

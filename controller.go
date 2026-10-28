@@ -395,8 +395,8 @@ type nodeView struct {
 	RunningJobs int           `json:"running_jobs"`
 	UpdateTo    string        `json:"update_to,omitempty"`
 	Restarting  bool          `json:"restarting,omitempty"`
-	LendingTo   string        `json:"lending_to,omitempty"` // name of the node this one lends memory to
-	PoolNames   []string      `json:"pool_names,omitempty"` // names of nodes lending memory to this one
+	LendingTo   string        `json:"lending_to,omitempty"`  // name of the node this one lends memory to
+	PoolNames   []string      `json:"pool_names,omitempty"`  // names of nodes lending memory to this one
 	IdleNow     string        `json:"idle_unload_effective"` // the idle unload wait that applies, as text ("1h", "never")
 	Update      *UpdateStatus `json:"update,omitempty"`
 }
@@ -840,7 +840,8 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 		conn.Close(websocket.StatusPolicyViolation, "expected node.hello")
 		return
 	}
-	if !containsInt(hello.Protocol, ProtocolVersion) {
+	proto, protoOK := negotiateProtocol(hello.Protocol)
+	if !protoOK {
 		_ = nc.send("node.welcome", Welcome{Accepted: false, Error: errf("unsupported_protocol", false, "controller speaks v%d", ProtocolVersion)})
 		conn.Close(websocket.StatusPolicyViolation, "protocol")
 		return
@@ -882,7 +883,7 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 	log.Printf("node %s (%s, %s/%s) connected from %s", n.ID, hello.Hostname, hello.OS, hello.Arch, r.RemoteAddr)
 	c.clearRepin(n.ID)
 
-	if err := nc.send("node.welcome", Welcome{Accepted: true, Protocol: ProtocolVersion, Settings: settings}); err != nil {
+	if err := nc.send("node.welcome", Welcome{Accepted: true, Protocol: proto, Settings: settings}); err != nil {
 		return
 	}
 

@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseSums(t *testing.T) {
@@ -194,5 +195,41 @@ func TestCheckGitHubPrivateRepoUsesToken(t *testing.T) {
 	defer other.Close()
 	if resp, err := c.ghGet(context.Background(), other.URL+"/x", "*/*", "sekrit"); err == nil {
 		resp.Body.Close()
+	}
+}
+
+func TestWaitNodeUpdates(t *testing.T) {
+	oldPoll := nodeUpdatePoll
+	nodeUpdatePoll = 5 * time.Millisecond
+	defer func() { nodeUpdatePoll = oldPoll }()
+	c := &Controller{updates: map[string]*UpdateStatus{"a": {State: "downloading"}}}
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		c.mu.Lock()
+		c.updates["a"].State = "restarting"
+		c.mu.Unlock()
+	}()
+	if !c.waitNodeUpdates([]string{"a"}, 2*time.Second) {
+		t.Fatal("expected the wait to settle once the node reached restarting")
+	}
+	c.updates["b"] = &UpdateStatus{State: "installing"}
+	if c.waitNodeUpdates([]string{"b"}, 30*time.Millisecond) {
+		t.Fatal("expected the wait to give up at the cap")
+	}
+	c.updates["c"] = &UpdateStatus{State: "failed"}
+	if !c.waitNodeUpdates([]string{"c"}, time.Second) {
+		t.Fatal("a failed update must not hold the controller")
+	}
+}
+
+func TestNegotiateProtocol(t *testing.T) {
+	if v, ok := negotiateProtocol(supportedProtocols()); !ok || v != ProtocolVersion {
+		t.Fatalf("own list: %d %v", v, ok)
+	}
+	if _, ok := negotiateProtocol([]int{ProtocolVersion + 1}); ok {
+		t.Fatal("a protocol newer than this build must be refused")
+	}
+	if v, ok := negotiateProtocol([]int{0, MinProtocolVersion, ProtocolVersion + 5}); !ok || v != MinProtocolVersion {
+		t.Fatalf("overlap: %d %v", v, ok)
 	}
 }

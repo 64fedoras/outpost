@@ -469,7 +469,7 @@ func (n *Node) hello() Hello {
 	execOn := n.execEnabled
 	n.mu.Unlock()
 	h := Hello{
-		AgentVersion: Version, Protocol: []int{ProtocolVersion}, NodeID: n.cfg.NodeID,
+		AgentVersion: Version, Protocol: supportedProtocols(), NodeID: n.cfg.NodeID,
 		Hostname: host, OS: runtime.GOOS, Arch: runtime.GOARCH,
 		CPU: hw.CPU, RAMBytes: hw.RAMBytes, GPUs: hw.GPUs, Backends: hw.Backends,
 		Models: n.listModels(), WorkFreeBytes: diskFree(n.workRoot), ModelsFreeBytes: diskFree(filepath.Join(n.dataDir, "models")),
