@@ -15,10 +15,11 @@ tests, fixes failures, and gives you a zip to download.
 
 **Contents:** [Install](#install-starts-at-boot) · [First run](#first-run) · [Working with tasks](#working-with-tasks) ·
 [Nodes working together](#nodes-working-together) · [Updating](#updating) ·
-[Sign-in security and backups](#sign-in-security-api-tokens-certificate-and-backups) · [Known limits](#known-limits) ·
+[Sign-in security and backups](#sign-in-security-api-tokens-certificate-and-backups) · [Security policy](SECURITY.md) · [Known limits](#known-limits) ·
 [License](#license) · [Building and verifying](#building-and-verifying)
 
-**More documentation:** [docs/BUILDING.md](docs/BUILDING.md) (verify downloads, build from source) ·
+**More documentation:** [SECURITY.md](SECURITY.md) (threat model, protections, known limits, reporting) ·
+[docs/BUILDING.md](docs/BUILDING.md) (verify downloads, build from source) ·
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (data folders, connection, task lifecycle) ·
 [docs/ROADMAP.md](docs/ROADMAP.md) (what was built and what is untested) · [testing/README.md](testing/README.md)
 
@@ -580,6 +581,8 @@ you fill it in (set it if you reach the controller by a name or IP different fro
 | Updates | `releases/`, `agent/` | `agent/` |
 
 ## Known limits
+
+See also [SECURITY.md](SECURITY.md) for the security model and its limits (unsandboxed node commands, unsigned binaries and checksums).
 
 - One model per node at a time; each node runs one model call at a time. A node lending memory
   to a pool runs no model of its own.
