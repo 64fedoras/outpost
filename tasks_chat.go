@@ -29,6 +29,7 @@ type TaskMessage struct {
 	Plan      *Plan      `json:"plan,omitempty"`
 	Files     []string   `json:"files,omitempty"`  // result: files added or changed in this round
 	Images    []string   `json:"images,omitempty"` // user: attached image file names (see handleTaskImage)
+	Shots     []Shot     `json:"shots,omitempty"`  // shots, mockup: rendered pages (see visual.go)
 	Round     int        `json:"round"`
 }
 
@@ -248,21 +249,26 @@ func (c *Controller) handleTaskMessage(w http.ResponseWriter, r *http.Request) {
 		t.mu.Unlock()
 		t.logf("info", "Note from you: %s", firstLine(text, 200))
 	case "done", "failed", "cancelled", "interrupted":
-		t.mu.Lock()
-		t.Round++
-		t.Asked, t.Steering, t.Touched = false, nil, nil
-		t.Plan, t.Approved, t.Ended = nil, nil, nil
-		t.Subtasks = []*SubtaskState{}
-		t.TestStatus, t.TestOutput, t.FixRounds, t.Error, t.PausedFrom = "", "", 0, "", ""
-		t.BuildStatus, t.BuildOutput = "", ""
-		t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: text, Images: imgNames})
-		t.mu.Unlock()
-		c.replan(t, "Planning the follow-up on the existing project.")
+		c.startFollowUp(t, text, imgNames)
 	default:
 		writeJSON(w, 409, map[string]string{"error": "this task cannot take messages right now"})
 		return
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// startFollowUp begins a new round on a finished task's files.
+func (c *Controller) startFollowUp(t *Task, text string, imgNames []string) {
+	t.mu.Lock()
+	t.Round++
+	t.Asked, t.Steering, t.Touched = false, nil, nil
+	t.Plan, t.Approved, t.Ended = nil, nil, nil
+	t.Subtasks = []*SubtaskState{}
+	t.TestStatus, t.TestOutput, t.FixRounds, t.Error, t.PausedFrom = "", "", 0, "", ""
+	t.BuildStatus, t.BuildOutput = "", ""
+	t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: text, Images: imgNames})
+	t.mu.Unlock()
+	c.replan(t, "Planning the follow-up on the existing project.")
 }
 
 // replan (re)starts planning for the current round.
@@ -330,6 +336,9 @@ func (c *Controller) handleTaskAnswers(w http.ResponseWriter, r *http.Request) {
 func resultText(t *Task) string {
 	n := len(t.Subtasks)
 	var s string
+	if t.Mockup && t.Plan != nil && t.Plan.Mockup {
+		return fmt.Sprintf("%d mockup variants are ready above. Pick one to build the real code from it, or reply to ask for changes.", n)
+	}
 	switch t.TestStatus {
 	case "passed":
 		s = "Done, and the tests pass."

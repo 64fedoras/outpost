@@ -47,6 +47,11 @@ type Plan struct {
 	Artifacts    []string      `json:"artifacts,omitempty"`     // glob patterns (relative to the project root) of files the build produces
 	Subtasks     []PlanSubtask `json:"subtasks"`
 	Note         string        `json:"note,omitempty"` // a sentence or two to the user, shown with the plan
+	// Visual checks (visual.go): what to screenshot after the work.
+	PreviewPage    string `json:"preview_page,omitempty"`    // HTML file to render
+	PreviewCommand string `json:"preview_command,omitempty"` // starts the app (Linux and macOS nodes)
+	PreviewURL     string `json:"preview_url,omitempty"`     // where it listens, on the node
+	Mockup         bool   `json:"mockup,omitempty"`          // variants to pick from, no real code yet
 }
 
 type PlanSubtask struct {
@@ -122,6 +127,7 @@ type Task struct {
 	ProjectID    string          `json:"project_id,omitempty"`   // "" = unfiled; see projects.go
 	Seeded       bool            `json:"seeded,omitempty"`       // the repo started with files (project or attached zip)
 	Attachments  []Attachment    `json:"attachments,omitempty"`
+	Mockup       bool            `json:"mockup,omitempty"` // plan 2 or 3 design variants first (visual.go)
 
 	mu     sync.Mutex
 	dir    string
@@ -333,7 +339,7 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	var t *Task
 	review := req.Review == nil || *req.Review
 	t = &Task{ProjectID: req.Project, ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, ORModel: req.ORModel, Review: review,
-		Instructions: set.Instructions, CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1}
+		Instructions: set.Instructions, Mockup: req.Mockup, CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1}
 	t.dir = filepath.Join(c.tasksDir(), t.ID)
 	if proj != nil {
 		t.repo = proj.repoDir()
@@ -1093,6 +1099,7 @@ Each worker sees only: the project summary, the list of all subtasks, its own in
 - If the project can be tested automatically, include small tests and give a test_command that runs them from the project root on Linux (for example "python3 -m unittest discover -s tests"). Use setup_command only if something must be installed or built first. Leave test_command empty if testing is not practical.
 - If the project produces something to ship (a binary, a package, a bundle), give a build_command that builds it from the project root (for example "sh build.sh") and artifacts, the glob patterns of the files it produces (for example ["dist/*"]; one * matches within a directory, there is no **). The build runs after the tests pass. Leave both empty for a project that is only source code.
 - Use at most 12 subtasks.
+- If the project has a web page, set preview_page to its HTML file (for example "index.html") so it can be screenshotted and checked. For a server app that needs running first, set preview_command (starts it, e.g. "python3 app.py") and preview_url (where it listens, e.g. "http://127.0.0.1:8000"). Leave them empty otherwise.
 
 Follow-up requests on an existing project include its current files. Plan only the files to add or change; a subtask that changes an existing file lists it, and its worker gets the file's current content and outputs the complete new version. Keep the summary describing the whole project, and keep test_command running the whole test suite, and keep build_command and artifacts unless the build changes.
 
@@ -1101,7 +1108,7 @@ Questions: if the request leaves open a choice that would change the design (lan
 Use at most 4 questions with 2 to 4 short options each; the user can also type their own answer.
 
 Otherwise answer with only a JSON object, no other text:
-{"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "build_command": "", "artifacts": [], "note": "one or two sentences to the user: the approach and any assumption you made", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "instructions": "precise instructions"}]}`
+{"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "preview_page": "", "preview_command": "", "preview_url": "", "build_command": "", "artifacts": [], "note": "one or two sentences to the user: the approach and any assumption you made", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "instructions": "precise instructions"}]}`
 
 // plannerIndexHelp is added to the planner's instructions when the project is
 // too large to paste in, so it sees an index instead.
@@ -1123,6 +1130,9 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 	webSearch = webSearch && t.Planner == "claude"
 	t.mu.Unlock()
 	indexed := t.roundHasFiles() && repoNeedsIndex(t.repoDir(), budget)
+	t.mu.Lock()
+	mockup := t.Mockup
+	t.mu.Unlock()
 	fetched := false
 	var plan *Plan
 	var lastErr error
@@ -1130,6 +1140,9 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 		req := llmRequest{System: plannerSystem + c.toolsPrompt(), User: user, MaxTokens: 8000, Temperature: 0.2, Label: "Planning", WebSearch: webSearch, Images: t.roundImages()}
 		if indexed {
 			req.System += plannerIndexHelp
+		}
+		if mockup {
+			req.System += mockupHelp
 		}
 		if !mayAsk {
 			req.User += "\n\nYou have already asked your questions for this request. Do not ask again; produce the plan, using sensible defaults for anything still open."
@@ -1183,6 +1196,13 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 		if err := validatePlan(p); err != nil {
 			lastErr = err
 			continue
+		}
+		if mockup {
+			p.Mockup, p.SetupCommand, p.TestCommand = true, "", ""
+			if err := validateMockupPlan(p); err != nil {
+				lastErr = err
+				continue
+			}
 		}
 		plan = p
 	}
@@ -1485,6 +1505,10 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 			}
 		case <-time.After(2 * time.Second):
 		}
+	}
+	c.visualCheck(ctx, t)
+	if ctx.Err() != nil {
+		return
 	}
 	c.testAndFix(ctx, t)
 }
