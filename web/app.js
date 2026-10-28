@@ -916,6 +916,7 @@ async function loadSettings() {
   $('set-model').innerHTML = claudeModelOptions(settings.claude_model);
   $('set-cap').value = settings.default_cap_usd;
   $('set-instr').value = settings.instructions || '';
+  $('set-websearch').checked = !!settings.web_search; $('set-webprivate').checked = !!settings.web_allow_private;
   if (!state) state = await api('/api/state').catch(() => null);
   if (state) $('set-planner').innerHTML = plannerOptions(settings.default_planner);
   loadSecurity();
@@ -988,7 +989,8 @@ $('set-or-model-save').onclick = () => saveSettings({ openrouter_model: $('set-o
 $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-instr-save').onclick = () => saveSettings({ instructions: $('set-instr').value }, 'Instructions saved');
-$('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value }, 'Defaults saved');
+.onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value }, 'Defaults saved');
+$('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked }, 'Defaults saved');
 $('pw-form').onsubmit = async (e) => {
   e.preventDefault();
   const err = $('pw-err'); err.classList.add('hidden');
