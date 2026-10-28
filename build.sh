@@ -4,6 +4,10 @@
 # stripped, metadata-free Go executables are a common antivirus false positive.
 set -e
 cd "$(dirname "$0")"
+# OUTPOST_VERSION stamps proto.go in this checkout (CI does this; never commit the result).
+if [ -n "$OUTPOST_VERSION" ]; then
+  sed -i.bak "s/^const Version = \".*\"/const Version = \"$OUTPOST_VERSION\"/" proto.go && rm -f proto.go.bak
+fi
 V=$(sed -n 's/^const Version = "\(.*\)"/\1/p' proto.go)
 D=${1:-../dist/outpost-$V}
 sh winres/gen.sh
