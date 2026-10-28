@@ -103,7 +103,10 @@ can check detection without joining.
 ## First run
 
 1. **Models** (sidebar): add a model to the library. For the 4 GB test VMs, *Qwen2.5-Coder 3B*. For the
-   9070 XT, *Qwen3-Coder 30B-A3B*; for the 9060 XT, *Qwen2.5-Coder 14B*. Choose where it lives:
+   9070 XT, *Qwen3-Coder 30B-A3B*; for the 9060 XT, *Qwen2.5-Coder 14B*. Newer options to compare on your own
+   tasks (not yet tested on the cluster, and they need a current llama.cpp build): *Qwen3.6 35B-A3B* for the
+   CPU node or a 16 GB GPU with RAM offload, *Qwen3.6 27B* for 16 GB GPUs, and *Gemma 4 26B-A4B* as a second
+   opinion for review. Choose where it lives:
    - **Add · nodes download** (default): each node downloads it from Hugging Face when you load it.
      Uses no space on the controller; nodes need internet access.
    - **Store on controller:** downloaded once to the controller and copied to nodes over your
