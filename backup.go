@@ -44,7 +44,7 @@ const (
 var (
 	backupFiles = []string{"admin.json", "settings.json", "nodes.json", "sessions.json", "sessions.json.meta",
 		"api_tokens.json", "secret.key", "tls.crt", "tls.key", "tls_repin.json"}
-	backupDirs    = []string{"tasks"}
+	backupDirs    = []string{"tasks", "projects"}
 	backupBigDirs = []string{"models", "runtimes", "releases"}
 )
 

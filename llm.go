@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -35,6 +36,12 @@ type llmRequest struct {
 	MaxTokens   int
 	Temperature float64
 	Label       string
+	WebSearch   bool        // Claude only: allow the web search tool (priced per search)
+	Sub         string      // subtask id, for the live view
+	Live        *liveHandle // streamed text goes here (cloud planners)
+	Images      []llmImage  // attached to the user turn (planner only)
+	Msgs        []agentMsg  // agent mode: the conversation so far; replaces User
+	Tools       []agentTool
 }
 
 type llmResponse struct {
@@ -44,6 +51,8 @@ type llmResponse struct {
 	CacheRead     int
 	CacheWrite    int
 	CostUSD       float64
+	WebSearches   int
+	Calls         []toolCall // agent mode: tools the model asked for
 	Model         string
 	TokensPerSec  float64
 	ElapsedSecond float64
@@ -88,16 +97,29 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 		"model":      model,
 		"max_tokens": req.MaxTokens,
 		"system":     []map[string]any{{"type": "text", "text": req.System, "cache_control": map[string]string{"type": "ephemeral"}}},
-		"messages":   []map[string]any{{"role": "user", "content": req.User}},
+		"messages":   []map[string]any{{"role": "user", "content": claudeUser(req)}},
+	}
+	if len(req.Msgs) > 0 {
+		body["messages"] = claudeMessages(req.Msgs)
+	}
+	if req.WebSearch {
+		body["tools"] = []map[string]any{{"type": "web_search_20250305", "name": "web_search", "max_uses": webSearchUses}}
+	}
+	if len(req.Tools) > 0 {
+		body["tools"] = claudeTools(req.Tools)
 	}
 	if req.Temperature > 0 {
 		body["temperature"] = req.Temperature
+	}
+	if req.Live != nil {
+		body["stream"] = true
 	}
 	b, _ := json.Marshal(body)
 	client := &http.Client{Timeout: 10 * time.Minute}
 	start := time.Now()
 	var lastErr error
 	for attempt := 0; attempt < 6; attempt++ {
+		req.Live.Reset()
 		hr, _ := http.NewRequestWithContext(ctx, "POST", anthropicBaseURL()+"/v1/messages", bytes.NewReader(b))
 		hr.Header.Set("x-api-key", key)
 		hr.Header.Set("anthropic-version", "2023-06-01")
@@ -109,34 +131,67 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 			}
 			lastErr = err
 		} else {
+			if resp.StatusCode == 200 && strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+				r, serr := readClaudeStream(resp.Body, req.Live)
+				resp.Body.Close()
+				if serr == nil {
+					r.Model, r.ElapsedSecond = model, time.Since(start).Seconds()
+					r.CostUSD = usageCost(model, r.InTokens, r.OutTokens, r.CacheWrite, r.CacheRead)
+					return r, nil
+				}
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				lastErr = serr
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(time.Duration(2<<attempt) * time.Second):
+				}
+				continue
+			}
 			raw, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 			resp.Body.Close()
 			if resp.StatusCode == 200 {
 				var out struct {
 					Content []struct {
-						Type string `json:"type"`
-						Text string `json:"text"`
+						Type  string          `json:"type"`
+						Text  string          `json:"text"`
+						ID    string          `json:"id"`
+						Name  string          `json:"name"`
+						Input json.RawMessage `json:"input"`
 					} `json:"content"`
 					Usage struct {
 						In     int `json:"input_tokens"`
 						Out    int `json:"output_tokens"`
 						CacheW int `json:"cache_creation_input_tokens"`
 						CacheR int `json:"cache_read_input_tokens"`
+						Server struct {
+							Searches int `json:"web_search_requests"`
+						} `json:"server_tool_use"`
 					} `json:"usage"`
 				}
 				if err := json.Unmarshal(raw, &out); err != nil {
 					return nil, fmt.Errorf("Claude API: bad response: %v", err)
 				}
 				var text strings.Builder
+				var calls []toolCall
 				for _, c := range out.Content {
 					if c.Type == "text" {
 						text.WriteString(c.Text)
 					}
+					if c.Type == "tool_use" {
+						args := string(c.Input)
+						if strings.TrimSpace(args) == "" {
+							args = "{}"
+						}
+						calls = append(calls, toolCall{ID: c.ID, Name: c.Name, Args: args})
+					}
 				}
-				r := &llmResponse{Text: text.String(), InTokens: out.Usage.In, OutTokens: out.Usage.Out,
+				r := &llmResponse{Text: text.String(), Calls: calls, InTokens: out.Usage.In, OutTokens: out.Usage.Out,
 					CacheRead: out.Usage.CacheR, CacheWrite: out.Usage.CacheW, Model: model,
-					ElapsedSecond: time.Since(start).Seconds()}
-				r.CostUSD = usageCost(model, r.InTokens, r.OutTokens, r.CacheWrite, r.CacheRead)
+					WebSearches: out.Usage.Server.Searches, ElapsedSecond: time.Since(start).Seconds()}
+				r.CostUSD = usageCost(model, r.InTokens, r.OutTokens, r.CacheWrite, r.CacheRead) + float64(r.WebSearches)*webSearchUSD
 				return r, nil
 			}
 			var e struct {
@@ -233,4 +288,121 @@ func extractJSON(text string) string {
 		return ""
 	}
 	return text[i : j+1]
+}
+
+// sseData calls fn with the data payload of each server-sent event in r.
+func sseData(r io.Reader, fn func(data string) bool) error {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 1<<20), 16<<20)
+	for sc.Scan() {
+		if line := sc.Text(); strings.HasPrefix(line, "data:") {
+			if !fn(strings.TrimSpace(strings.TrimPrefix(line, "data:"))) {
+				return nil
+			}
+		}
+	}
+	return sc.Err()
+}
+
+// readClaudeStream reads a streamed Messages response, sending text to live as it arrives.
+func readClaudeStream(body io.Reader, live *liveHandle) (*llmResponse, error) {
+	r := &llmResponse{}
+	var text strings.Builder
+	type pendingCall struct {
+		toolCall
+		args strings.Builder
+	}
+	tools := map[int]*pendingCall{} // tool_use blocks by content index; arguments arrive as JSON pieces
+	var order []int
+	var streamErr error
+	done := false
+	err := sseData(body, func(data string) bool {
+		var ev struct {
+			Type         string `json:"type"`
+			Index        int    `json:"index"`
+			ContentBlock struct {
+				Type string `json:"type"`
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"content_block"`
+			Delta struct {
+				Type        string `json:"type"`
+				Text        string `json:"text"`
+				PartialJSON string `json:"partial_json"`
+			} `json:"delta"`
+			Message struct {
+				Usage struct {
+					In     int `json:"input_tokens"`
+					CacheW int `json:"cache_creation_input_tokens"`
+					CacheR int `json:"cache_read_input_tokens"`
+				} `json:"usage"`
+			} `json:"message"`
+			Usage struct {
+				Out int `json:"output_tokens"`
+			} `json:"usage"`
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal([]byte(data), &ev) != nil {
+			return true
+		}
+		switch ev.Type {
+		case "message_start":
+			r.InTokens, r.CacheWrite, r.CacheRead = ev.Message.Usage.In, ev.Message.Usage.CacheW, ev.Message.Usage.CacheR
+		case "content_block_start":
+			if ev.ContentBlock.Type == "tool_use" {
+				tools[ev.Index] = &pendingCall{toolCall: toolCall{ID: ev.ContentBlock.ID, Name: ev.ContentBlock.Name}}
+				order = append(order, ev.Index)
+			}
+		case "content_block_delta":
+			if ev.Delta.Type == "text_delta" && ev.Delta.Text != "" {
+				text.WriteString(ev.Delta.Text)
+				live.Write(ev.Delta.Text)
+			}
+			if ev.Delta.Type == "input_json_delta" && tools[ev.Index] != nil {
+				tools[ev.Index].args.WriteString(ev.Delta.PartialJSON)
+			}
+		case "message_delta":
+			r.OutTokens = ev.Usage.Out
+		case "message_stop":
+			done = true
+			return false
+		case "error":
+			streamErr = fmt.Errorf("Claude API stream: %s", ev.Error.Message)
+			return false
+		}
+		return true
+	})
+	if streamErr != nil {
+		return nil, streamErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !done {
+		return nil, errors.New("Claude API stream ended early")
+	}
+	r.Text = text.String()
+	for _, i := range order {
+		c := tools[i]
+		c.Args = strings.TrimSpace(c.args.String())
+		if c.Args == "" {
+			c.Args = "{}"
+		}
+		r.Calls = append(r.Calls, c.toolCall)
+	}
+	return r, nil
+}
+
+// claudeUser is the user turn: plain text, or image blocks followed by the text.
+func claudeUser(req llmRequest) any {
+	if len(req.Images) == 0 {
+		return req.User
+	}
+	blocks := make([]map[string]any, 0, len(req.Images)+1)
+	for _, img := range req.Images {
+		blocks = append(blocks, map[string]any{"type": "image", "source": map[string]string{"type": "base64", "media_type": img.Media, "data": img.B64}})
+	}
+	return append(blocks, map[string]any{"type": "text", "text": req.User})
 }

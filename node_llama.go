@@ -452,10 +452,12 @@ func (n *Node) pushModel(mp ModelPush) {
 	for _, f := range mp.Files {
 		total += f.Bytes
 	}
+	var badPeers []string
 	fail := func(format string, a ...any) {
 		msg := fmt.Sprintf(format, a...)
 		log.Printf("model %s: %s", mp.Name, msg)
-		n.opStatus(op, mp.Name, "failed", 0, total, msg)
+		st := OpStatus{Op: op, Target: mp.Name, State: "failed", BytesTotal: total, Error: msg, BadPeers: badPeers}
+		_ = n.send("node.op_status", st)
 	}
 	if !validName(mp.Name) || len(mp.Files) == 0 {
 		fail("bad model name")
@@ -487,9 +489,15 @@ func (n *Node) pushModel(mp ModelPush) {
 			continue
 		}
 		base := before
-		err := n.fetchFile(fmt.Sprintf("/v1/models/%s/files/%d", mp.Name, i), dst, f.SHA256, f.Bytes, func(d int64) {
-			n.opStatus(op, mp.Name, "downloading", base+d, total, "")
-		})
+		report := func(d int64) { n.opStatus(op, mp.Name, "downloading", base+d, total, "") }
+		var err error
+		if len(mp.Peers) > 0 {
+			var bad []string
+			bad, err = n.fetchFromPeers(mp, f, dst, report)
+			badPeers = append(badPeers, bad...)
+		} else {
+			err = n.fetchFile(fmt.Sprintf("/v1/models/%s/files/%d", mp.Name, i), dst, f.SHA256, f.Bytes, report)
+		}
 		if err != nil {
 			fail("download %s: %v", f.Path, err)
 			return
@@ -633,8 +641,17 @@ func (l *llamaMgr) load(ml ModelLoad) {
 	}
 	l.stop()
 	files := make([]string, 0, len(m.Files))
+	ml.MMProj = ""
 	for _, f := range m.Files {
+		if strings.Contains(strings.ToLower(f.Path), "mmproj") {
+			ml.MMProj = filepath.Join(l.n.modelsDir(), ml.Name, f.Path) // vision projector, passed as --mmproj
+			continue
+		}
 		files = append(files, f.Path)
+	}
+	if len(files) == 0 {
+		fail("model %s has no model file", ml.Name)
+		return
 	}
 	sort.Strings(files) // split models: llama.cpp is given the first part
 	modelPath := filepath.Join(l.n.modelsDir(), ml.Name, files[0])
@@ -655,12 +672,24 @@ func (l *llamaMgr) load(ml ModelLoad) {
 	l.n.resendHello()
 }
 
+func hasJinjaArg(args []string) bool {
+	for _, a := range args {
+		if a == "--jinja" || a == "--no-jinja" {
+			return true
+		}
+	}
+	return false
+}
+
 func (l *llamaMgr) start(rt *runtimeRecord, ml ModelLoad, modelPath string, restarts int) error {
 	port, err := freePort()
 	if err != nil {
 		return err
 	}
 	args := []string{"-m", modelPath, "--host", "127.0.0.1", "--port", strconv.Itoa(port), "--no-webui", "-a", ml.Name}
+	if ml.MMProj != "" {
+		args = append(args, "--mmproj", ml.MMProj)
+	}
 	if ml.Ctx > 0 {
 		args = append(args, "-c", strconv.Itoa(ml.Ctx))
 	}
@@ -677,6 +706,9 @@ func (l *llamaMgr) start(rt *runtimeRecord, ml ModelLoad, modelPath string, rest
 	}
 	if len(ml.RPC) > 0 {
 		args = append(args, "--rpc", strings.Join(ml.RPC, ","))
+	}
+	if !hasJinjaArg(ml.ExtraArgs) {
+		args = append(args, "--jinja") // the model's own chat template, which tool calling needs
 	}
 	args = append(args, ml.ExtraArgs...)
 	cmd := exec.Command(rt.ServerPath, args...)
@@ -784,7 +816,7 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 		l.mu.Unlock()
 	}()
 
-	body := map[string]any{"messages": spec.Messages, "stream": true, "stream_options": map[string]bool{"include_usage": true}}
+	body := map[string]any{"messages": chatPayload(spec.Messages), "stream": true, "stream_options": map[string]bool{"include_usage": true}}
 	if spec.Params.Temperature != nil {
 		body["temperature"] = *spec.Params.Temperature
 	}
@@ -793,6 +825,9 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 	}
 	if len(spec.Params.Stop) > 0 {
 		body["stop"] = spec.Params.Stop
+	}
+	if len(spec.Tools) > 0 {
+		body["tools"] = spec.Tools
 	}
 	b, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, "POST", l.baseURL()+"/v1/chat/completions", bytes.NewReader(b))
@@ -816,6 +851,7 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 	}
 	out := &InferenceOutput{Model: model}
 	var text strings.Builder
+	var calls []WireToolCall
 	var firstTok time.Time
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
@@ -831,7 +867,15 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content *string `json:"content"`
+					Content   *string `json:"content"`
+					ToolCalls []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
@@ -851,6 +895,17 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 				text.WriteString(*c.Delta.Content)
 				emit(*c.Delta.Content)
 			}
+			for _, tc := range c.Delta.ToolCalls { // arrives in pieces, keyed by index
+				for len(calls) <= tc.Index {
+					calls = append(calls, WireToolCall{Type: "function"})
+				}
+				w := &calls[tc.Index]
+				if tc.ID != "" {
+					w.ID = tc.ID
+				}
+				w.Function.Name += tc.Function.Name
+				w.Function.Arguments += tc.Function.Arguments
+			}
 			if c.FinishReason != nil {
 				out.FinishReason = *c.FinishReason
 			}
@@ -866,6 +921,11 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 		return nil, nil
 	}
 	out.Text = text.String()
+	for _, w := range calls {
+		if w.Function.Name != "" {
+			out.ToolCalls = append(out.ToolCalls, w)
+		}
+	}
 	if !firstTok.IsZero() && out.OutputTokens > 1 {
 		if d := time.Since(firstTok).Seconds(); d > 0 {
 			out.TokensPerSec = float64(int(10*float64(out.OutputTokens-1)/d)) / 10
@@ -885,7 +945,7 @@ func (n *Node) runInference(ctx context.Context, jd JobDispatch, res *JobResult)
 	}
 	sw := newStreamer(n, jd.JobID, spec.Stream)
 	w := sw.writer("tokens")
-	out, e := n.llama.chat(ctx, spec, func(s string) { _, _ = w.Write([]byte(s)) })
+	out, e := n.llama.chat(ctx, spec, func(s string) { _, _ = w.Write([]byte(s)); sw.token() })
 	sw.close()
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
@@ -1088,4 +1148,30 @@ func (n *Node) fetchModel(mf ModelFetch) {
 	log.Printf("model %s downloaded from Hugging Face (%s)", mf.Name, humanBytes(total))
 	n.resendHello() // before "done": the controller checks the model list next
 	n.opStatus(op, mf.Name, "done", total, total, "")
+}
+
+// chatPayload turns messages into llama-server's OpenAI-style form. A message
+// with images becomes a list of content parts (text, then one image_url data
+// URI per image); plain messages are sent unchanged.
+func chatPayload(msgs []ChatMessage) []any {
+	out := make([]any, 0, len(msgs))
+	for _, m := range msgs {
+		if len(m.Images) == 0 {
+			msg := map[string]any{"role": m.Role, "content": m.Content}
+			if len(m.ToolCalls) > 0 { // agent mode
+				msg["tool_calls"] = m.ToolCalls
+			}
+			if m.ToolCallID != "" {
+				msg["tool_call_id"] = m.ToolCallID
+			}
+			out = append(out, msg)
+			continue
+		}
+		parts := []map[string]any{{"type": "text", "text": m.Content}}
+		for _, img := range m.Images {
+			parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]string{"url": img}})
+		}
+		out = append(out, map[string]any{"role": m.Role, "content": parts})
+	}
+	return out
 }

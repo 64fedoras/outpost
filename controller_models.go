@@ -36,37 +36,43 @@ type CatalogEntry struct {
 	Notes    string   `json:"notes"`
 	Ctx      int      `json:"ctx"` // suggested context size
 	MinRAMGB int      `json:"min_ram_gb"`
+	Coding   bool     `json:"coding"`           // a good local coding model; ranked in Suggested
+	MMProj   string   `json:"mmproj,omitempty"` // vision projector file in the same repo; its size is included in Bytes
 }
+
+// isMMProj reports whether a model file is a vision projector (loaded with
+// llama-server's --mmproj) rather than the model itself.
+func isMMProj(file string) bool { return strings.Contains(strings.ToLower(path.Base(file)), "mmproj") }
 
 // File names and sizes checked against Hugging Face on 2026-10-24 (the Qwen3.6 and Gemma 4 sizes are rounded from the web listing, not exact).
 var modelCatalog = []CatalogEntry{
-	{ID: "qwen2.5-coder-3b-q4km", Label: "Qwen2.5-Coder 3B Instruct (Q4_K_M)", Repo: "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
+	{ID: "qwen2.5-coder-3b-q4km", Coding: true, Label: "Qwen2.5-Coder 3B Instruct (Q4_K_M)", Repo: "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
 		Files: []string{"qwen2.5-coder-3b-instruct-q4_k_m.gguf"}, Bytes: 2104932800, For: "Test VMs, 4 GB RAM CPU nodes",
 		Notes: "Small and quick on CPU. Good for testing the pipeline; weak at multi-file code.", Ctx: 8192, MinRAMGB: 4},
-	{ID: "qwen2.5-coder-7b-q4km", Label: "Qwen2.5-Coder 7B Instruct (Q4_K_M)", Repo: "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF",
+	{ID: "qwen2.5-coder-7b-q4km", Coding: true, Label: "Qwen2.5-Coder 7B Instruct (Q4_K_M)", Repo: "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF",
 		Files: []string{"Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf"}, Bytes: 4683074336, For: "CPU nodes with 8 GB+ RAM",
 		Notes: "Solid for narrow tasks like one function and its tests.", Ctx: 8192, MinRAMGB: 8},
-	{ID: "qwen2.5-coder-14b-q4km", Label: "Qwen2.5-Coder 14B Instruct (Q4_K_M)", Repo: "bartowski/Qwen2.5-Coder-14B-Instruct-GGUF",
+	{ID: "qwen2.5-coder-14b-q4km", Coding: true, Label: "Qwen2.5-Coder 14B Instruct (Q4_K_M)", Repo: "bartowski/Qwen2.5-Coder-14B-Instruct-GGUF",
 		Files: []string{"Qwen2.5-Coder-14B-Instruct-Q4_K_M.gguf"}, Bytes: 8988111072, For: "16 GB GPU (16 GB)",
 		Notes: "Fits fully in 16 GB VRAM with room for context.", Ctx: 16384, MinRAMGB: 12},
-	{ID: "qwen3-coder-30b-a3b-q4km", Label: "Qwen3-Coder 30B-A3B Instruct (Q4_K_M)", Repo: "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+	{ID: "qwen3-coder-30b-a3b-q4km", Coding: true, Label: "Qwen3-Coder 30B-A3B Instruct (Q4_K_M)", Repo: "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
 		Files: []string{"Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"}, Bytes: 18556689568, For: "16 GB GPU (16 GB) — default worker",
 		Notes: "Mixture of experts, ~3B active per token, so it is fast. llama.cpp keeps what does not fit in VRAM in system RAM.", Ctx: 16384, MinRAMGB: 24},
-	{ID: "devstral-small-2-24b-q4km", Label: "Devstral Small 2 24B (Q4_K_M)", Repo: "unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF",
+	{ID: "devstral-small-2-24b-q4km", Coding: true, Label: "Devstral Small 2 24B (Q4_K_M)", Repo: "unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF",
 		Files: []string{"Devstral-Small-2-24B-Instruct-2512-Q4_K_M.gguf"}, Bytes: 14334446752, For: "16 GB GPU — alternative",
 		Notes: "Built for agentic coding; fits a 16 GB card. Compare it with Qwen3-Coder on your tasks.", Ctx: 16384, MinRAMGB: 16},
-	{ID: "qwen3-coder-next-q4km", Label: "Qwen3-Coder-Next 80B-A3B (Q4_K_M)", Repo: "unsloth/Qwen3-Coder-Next-GGUF",
+	{ID: "qwen3-coder-next-q4km", Coding: true, Label: "Qwen3-Coder-Next 80B-A3B (Q4_K_M)", Repo: "unsloth/Qwen3-Coder-Next-GGUF",
 		Files: []string{"Qwen3-Coder-Next-Q4_K_M.gguf"}, Bytes: 48528320544, For: "CPU server (64 GB+ RAM, CPU)",
 		Notes: "~3B active per token, so reasonable on many CPU cores. Planner-quality local model.", Ctx: 32768, MinRAMGB: 64},
-	{ID: "qwen3.6-35b-a3b-q4km", Label: "Qwen3.6 35B-A3B (Q4_K_M)", Repo: "unsloth/Qwen3.6-35B-A3B-GGUF",
-		Files: []string{"Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"}, Bytes: 22100000000, For: "CPU server (CPU) or 16 GB GPU with RAM offload",
-		Notes: "Newer than Qwen3-Coder 30B-A3B; ~3B active per token. Needs a current llama.cpp build. Compare it with Qwen3-Coder on your tasks.", Ctx: 16384, MinRAMGB: 32},
-	{ID: "qwen3.6-27b-q4km", Label: "Qwen3.6 27B (Q4_K_M)", Repo: "unsloth/Qwen3.6-27B-GGUF",
-		Files: []string{"Qwen3.6-27B-Q4_K_M.gguf"}, Bytes: 16800000000, For: "16 GB GPUs with RAM offload",
-		Notes: "Dense, so slower per token than the A3B models and a tight fit in 16 GB VRAM. Needs a current llama.cpp build.", Ctx: 8192, MinRAMGB: 24},
+	{ID: "qwen3.6-35b-a3b-q4km", Coding: true, Label: "Qwen3.6 35B-A3B (Q4_K_M)", Repo: "unsloth/Qwen3.6-35B-A3B-GGUF",
+		Files: []string{"Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"}, MMProj: "mmproj-F16.gguf", Bytes: 23000000000, For: "CPU server (CPU) or 16 GB GPU with RAM offload",
+		Notes: "Newer than Qwen3-Coder 30B-A3B; ~3B active per token. Reads images (Vision). Needs a current llama.cpp build. Compare it with Qwen3-Coder on your tasks.", Ctx: 16384, MinRAMGB: 32},
+	{ID: "qwen3.6-27b-q4km", Coding: true, Label: "Qwen3.6 27B (Q4_K_M)", Repo: "unsloth/Qwen3.6-27B-GGUF",
+		Files: []string{"Qwen3.6-27B-Q4_K_M.gguf"}, MMProj: "mmproj-F16.gguf", Bytes: 17700000000, For: "16 GB GPUs with RAM offload",
+		Notes: "Dense, so slower per token than the A3B models and a tight fit in 16 GB VRAM. Reads images (Vision). Needs a current llama.cpp build.", Ctx: 8192, MinRAMGB: 24},
 	{ID: "gemma-4-26b-a4b-q4km", Label: "Gemma 4 26B-A4B (Q4_K_M)", Repo: "unsloth/gemma-4-26B-A4B-it-GGUF",
-		Files: []string{"gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"}, Bytes: 16900000000, For: "CPU server (CPU) or 16 GB GPUs with RAM offload",
-		Notes: "Google MoE, ~4B active per token, Apache 2.0. Strong general model; worth a second opinion in review. Text only here (vision needs an mmproj file). Needs a current llama.cpp build.", Ctx: 16384, MinRAMGB: 24},
+		Files: []string{"gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"}, MMProj: "mmproj-F16.gguf", Bytes: 18100000000, For: "CPU server (CPU) or 16 GB GPUs with RAM offload",
+		Notes: "Google MoE, ~4B active per token, Apache 2.0. Strong general model; worth a second opinion in review. Reads images (Vision): the projector file is downloaded with it. Needs a current llama.cpp build.", Ctx: 16384, MinRAMGB: 24},
 }
 
 type ModelRec struct {
@@ -81,8 +87,19 @@ type ModelRec struct {
 	BytesDone  int64       `json:"bytes_done"`
 	BytesTotal int64       `json:"bytes_total"`
 	Error      string      `json:"error,omitempty"`
+	Vision     bool        `json:"vision"` // has a vision projector (mmproj) file, so it can read images
 	Added      time.Time   `json:"added"`
 	cancel     context.CancelFunc
+}
+
+// hasVision reports whether the model comes with a vision projector file.
+func (m *ModelRec) hasVision() bool {
+	for _, f := range m.HFFiles {
+		if isMMProj(f) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Controller) modelsStoreDir() string { return filepath.Join(c.dataDir, "models") }
@@ -105,11 +122,13 @@ func (c *Controller) loadModels() {
 		if m.Status == "downloading" || m.Status == "resolving" {
 			m.Status, m.Error = "failed", "interrupted by a controller restart; click Retry to resume"
 		}
+		m.Vision = m.hasVision()
 		c.models[m.Name] = &m
 	}
 }
 
 func (c *Controller) saveModelLocked(m *ModelRec) {
+	m.Vision = m.hasVision()
 	dir := filepath.Join(c.modelsStoreDir(), m.Name)
 	_ = os.MkdirAll(dir, 0o755)
 	b, _ := json.MarshalIndent(m, "", "  ")
@@ -143,6 +162,7 @@ func (c *Controller) handleAddModel(w http.ResponseWriter, r *http.Request) {
 		CatalogID string   `json:"catalog_id"`
 		Repo      string   `json:"repo"`
 		Files     []string `json:"files"`
+		MMProj    string   `json:"mmproj"` // optional vision projector file of a custom repo
 		Name      string   `json:"name"`
 		Storage   string   `json:"storage"` // "direct" (default) or "controller"
 	}
@@ -165,7 +185,11 @@ func (c *Controller) handleAddModel(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 400, map[string]string{"error": "unknown catalog entry"})
 			return
 		}
-		m.Name, m.Label, m.Repo, m.HFFiles, m.Ctx = ce.ID, ce.Label, ce.Repo, ce.Files, ce.Ctx
+		m.Name, m.Label, m.Repo, m.Ctx = ce.ID, ce.Label, ce.Repo, ce.Ctx
+		m.HFFiles = append([]string{}, ce.Files...)
+		if ce.MMProj != "" {
+			m.HFFiles = append(m.HFFiles, ce.MMProj)
+		}
 	} else {
 		if !hfRepoRe.MatchString(req.Repo) || len(req.Files) == 0 {
 			writeJSON(w, 400, map[string]string{"error": "give a Hugging Face repo (owner/name) and at least one .gguf file"})
@@ -179,6 +203,13 @@ func (c *Controller) handleAddModel(w http.ResponseWriter, r *http.Request) {
 		}
 		sort.Strings(req.Files)
 		m.Repo, m.HFFiles = req.Repo, req.Files
+		if req.MMProj != "" {
+			if !isMMProj(req.MMProj) || !strings.HasSuffix(req.MMProj, ".gguf") || strings.Contains(req.MMProj, "..") || strings.HasPrefix(req.MMProj, "/") {
+				writeJSON(w, 400, map[string]string{"error": "the vision projector must be an mmproj .gguf path inside the repo"})
+				return
+			}
+			m.HFFiles = append(m.HFFiles, req.MMProj)
+		}
 		m.Name = req.Name
 		if m.Name == "" {
 			m.Name = modelNameFromFile(req.Files[0])
@@ -466,13 +497,19 @@ func (c *Controller) handleHFFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type group struct {
-		Name  string   `json:"name"`
-		Files []string `json:"files"`
-		Bytes int64    `json:"bytes"`
+		Name  string    `json:"name"`
+		Files []string  `json:"files"`
+		Bytes int64     `json:"bytes"`
+		Fits  []NodeFit `json:"fits"`
 	}
 	groups := map[string]*group{}
+	mmprojs := []string{} // vision projectors, offered separately
 	for _, t := range tree {
-		if t.Type != "file" || !strings.HasSuffix(t.Path, ".gguf") || strings.Contains(strings.ToLower(path.Base(t.Path)), "mmproj") {
+		if t.Type == "file" && strings.HasSuffix(t.Path, ".gguf") && isMMProj(t.Path) {
+			mmprojs = append(mmprojs, t.Path)
+			continue
+		}
+		if t.Type != "file" || !strings.HasSuffix(t.Path, ".gguf") {
 			continue
 		}
 		key := splitPartRe.ReplaceAllString(strings.TrimSuffix(t.Path, ".gguf"), "")
@@ -485,12 +522,20 @@ func (c *Controller) handleHFFiles(w http.ResponseWriter, r *http.Request) {
 		g.Bytes += t.Size
 	}
 	out := []*group{}
+	ctx := 8192
+	if v, err := strconv.Atoi(r.URL.Query().Get("ctx")); err == nil && v > 0 {
+		ctx = v
+	}
 	for _, g := range groups {
 		sort.Strings(g.Files)
+		c.mu.Lock()
+		g.Fits = c.nodeFitsLocked(g.Bytes, ctx)
+		c.mu.Unlock()
 		out = append(out, g)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Bytes < out[j].Bytes })
-	writeJSON(w, 200, map[string]any{"repo": repo, "groups": out})
+	sort.Strings(mmprojs)
+	writeJSON(w, 200, map[string]any{"repo": repo, "groups": out, "mmproj": mmprojs})
 }
 
 // ---------- node model operations ----------
@@ -649,7 +694,12 @@ func (c *Controller) loadPipeline(ctx context.Context, id string, ml ModelLoad) 
 		}
 		ml.RPC = endpoints
 	}
-	// 2. model files
+	// 2. model files: from another node first, checked against the controller's hash
+	if !c.nodeHasModel(id, ml.Name) {
+		if err := c.copyFromPeers(ctx, id, m); err != nil && ctx.Err() == nil {
+			log.Printf("node %s: copy of %s from other nodes failed (%v); using the usual route", id, ml.Name, err)
+		}
+	}
 	if !c.nodeHasModel(id, ml.Name) && m.Storage == "direct" {
 		files := make([]ModelFetchFile, len(m.Files))
 		for i, f := range m.Files {
@@ -736,10 +786,21 @@ func (c *Controller) handleListModels(w http.ResponseWriter, r *http.Request) {
 	for _, rt := range c.runtimes {
 		rts = append(rts, rt)
 	}
+	fits := map[string][]NodeFit{}
+	catFits := map[string][]NodeFit{}
+	for _, m := range models {
+		if m.Status == "ready" {
+			fits[m.Name] = c.nodeFitsLocked(m.BytesTotal, m.Ctx)
+		}
+	}
+	for _, e := range modelCatalog {
+		catFits[e.ID] = c.nodeFitsLocked(e.Bytes, e.Ctx)
+	}
 	c.mu.Unlock()
 	sort.Slice(models, func(i, j int) bool { return models[i].Added.Before(models[j].Added) })
 	sort.Slice(rts, func(i, j int) bool { return rts[i].Variant < rts[j].Variant })
 	writeJSON(w, 200, map[string]any{"catalog": modelCatalog, "models": models, "runtimes": rts,
+		"fits": fits, "catalog_fits": catFits, "suggested": suggestCoding(modelCatalog, catFits, 4),
 		"disk_free": diskFree(c.modelsStoreDir())})
 }
 

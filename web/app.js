@@ -1,6 +1,6 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
-let state = null, models = null, tasks = [], settings = null, taskDetail = null;
+let state = null, models = null, tasks = [], projects = [], settings = null, taskDetail = null;
 let stateTimer = null, jobTimer = null, taskTimer = null, openJobId = null, loadNodeId = null, runNodeId = null;
 
 // ---------- helpers ----------
@@ -61,7 +61,7 @@ $('login-form').onsubmit = async (e) => {
 };
 $('btn-logout').onclick = async () => { await post('/api/logout').catch(() => {}); showLogin(); };
 
-const PAGES = ['new', 'task', 'nodes', 'models', 'updates', 'settings'];
+const PAGES = ['new', 'task', 'projects', 'nodes', 'models', 'updates', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
   const m = location.hash.match(/^#\/(\w+)(?:\/([\w-]+))?/) || [];
@@ -69,11 +69,12 @@ function route() {
   pageArg = page === 'task' ? m[2] : null;
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
   document.querySelectorAll('.side-nav a').forEach((a) => a.classList.toggle('active', a.dataset.tab === page));
-  document.querySelector('.page-plain').classList.toggle('hidden', !['nodes', 'models', 'updates', 'settings'].includes(page));
+  document.querySelector('.page-plain').classList.toggle('hidden', !['projects', 'nodes', 'models', 'updates', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task' }[page] || page[0].toUpperCase() + page.slice(1));
   closeSide();
   clearTimeout(taskTimer);
-  if (page === 'task') { taskDetail = null; threadReset(); pollTask(); }
+  liveClose();
+  if (page === 'task') { taskDetail = null; threadReset(); liveOpen(pageArg); pollTask(); }
   if (page === 'new') setTimeout(() => $('nt-prompt').focus(), 0);
   if (page === 'settings') loadSettings();
   renderSideTasks();
@@ -99,6 +100,7 @@ async function refresh() {
   await Promise.all([
     needModels ? api('/api/models').then((m) => { models = m; }).catch(() => {}) : null,
     api('/api/tasks').then((t) => { tasks = t; }).catch(() => {}),
+    api('/api/projects').then((p) => { projects = p; }).catch(() => {}),
   ]);
   $('hdr-meta').textContent = `v${state.version}`;
   $('hdr-meta').title = state.advertise;
@@ -107,13 +109,14 @@ async function refresh() {
   renderSideTasks();
   renderSideCluster();
   if (page === 'new') renderNew();
+  if (page === 'projects') renderProjects();
   if (page === 'nodes') { renderNodes(); renderJobs(); }
   if (page === 'models') renderModels();
   if (page === 'updates') renderUpdates();
 }
 
-const ACTIVE = ['planning', 'awaiting_answers', 'awaiting_approval', 'running', 'testing', 'fixing', 'paused_cap'];
-const WORKING = ['planning', 'running', 'testing', 'fixing'];
+const ACTIVE = ['queued', 'planning', 'awaiting_answers', 'awaiting_approval', 'running', 'testing', 'building', 'fixing', 'paused_cap'];
+const WORKING = ['planning', 'running', 'testing', 'building', 'fixing'];
 function workerCount() { return state.nodes.filter((n) => n.online && n.heartbeat && n.heartbeat.inference_ready && !n.heartbeat.paused).length; }
 function execCount() { return state.nodes.filter((n) => n.online && n.exec_enabled && !(n.heartbeat && n.heartbeat.paused)).length; }
 function updatesAvailable() { return state.nodes.filter((n) => n.update_to).length + (state.controller_update_to ? 1 : 0); }
@@ -127,8 +130,8 @@ function renderBadges() {
 
 // What a task's status means to the person, in a few words.
 const STATUS_WORDS = {
-  planning: 'Planning', awaiting_answers: 'Has questions', awaiting_approval: 'Plan ready', running: 'Working',
-  testing: 'Testing', fixing: 'Fixing tests', paused_cap: 'Paused at cap', interrupted: 'Interrupted',
+  queued: 'Waiting for project', planning: 'Planning', awaiting_answers: 'Has questions', awaiting_approval: 'Plan ready', running: 'Working',
+  testing: 'Testing', building: 'Building', fixing: 'Fixing tests', paused_cap: 'Paused at cap', interrupted: 'Interrupted',
   done: 'Done', failed: 'Failed', cancelled: 'Stopped',
 };
 function statusWord(t) {
@@ -142,13 +145,25 @@ function taskTone(t) {
   return 'idle';
 }
 
-function renderSideTasks() {
-  if (!tasks) return;
-  const html = tasks.length ? tasks.map((t) => `<a href="#/tasks/${t.id}" class="side-task ${page === 'task' && pageArg === t.id ? 'active' : ''}">
+function sideTaskHTML(t) {
+  return `<a href="#/tasks/${t.id}" class="side-task ${page === 'task' && pageArg === t.id ? 'active' : ''}">
       <span class="tdot ${taskTone(t)}" aria-hidden="true"></span>
       <span class="side-task-text"><span class="side-task-title">${esc(t.title)}</span>
-      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>`).join('')
-    : `<p class="side-empty">Tasks you start show up here.</p>`;
+      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>`;
+}
+function renderSideTasks() {
+  if (!tasks) return;
+  if (!tasks.length) { setHTML('side-tasks', `<p class="side-empty">Tasks you start show up here.</p>`); return; }
+  // Tasks in a project are grouped under its name; unfiled tasks come first.
+  const names = {};
+  (projects || []).forEach((p) => { names[p.id] = p.name; });
+  const groups = [];
+  const unfiled = tasks.filter((t) => !t.project_id || !names[t.project_id]);
+  let html = unfiled.map(sideTaskHTML).join('');
+  (projects || []).forEach((p) => {
+    const mine = tasks.filter((t) => t.project_id === p.id);
+    if (mine.length) html += `<a class="side-group" href="#/projects">${esc(p.name)}</a>` + mine.map(sideTaskHTML).join('');
+  });
   setHTML('side-tasks', html);
 }
 
@@ -188,6 +203,7 @@ const STARTERS = [
   ['A log summariser', 'A script that reads an nginx access log and prints the top 10 paths, status codes and client IPs, with tests on a sample log.'],
 ];
 let ntInit = false;
+let ntFiles = [];
 function renderNew() {
   const sel = $('nt-planner');
   const cur = sel.value || state.default_planner || 'claude';
@@ -199,6 +215,8 @@ function renderNew() {
     setHTML('nt-model', claudeModelOptions(state.claude_model, true));
     setHTML('nt-starters', STARTERS.map(([t, p], i) => `<button class="starter" data-act="starter" data-i="${i}"><b>${esc(t)}</b><span>${esc(p)}</span></button>`).join(''));
   }
+  const psel = $('nt-project'), pcur = psel.value || localStorage.getItem('nt-project') || '';
+  setHTML(psel, `<option value="">No project</option>` + projects.map((p) => `<option value="${p.id}" ${p.id === pcur ? 'selected' : ''}>Project: ${esc(p.name)}</option>`).join(''));
   $('nt-model').classList.toggle('hidden', sel.value !== 'claude');
   $('nt-cap-wrap').classList.toggle('hidden', sel.value !== 'claude' && sel.value !== 'openrouter');
   const w = workerCount(), ex = execCount(), on = state.nodes.filter((n) => n.online).length;
@@ -213,15 +231,29 @@ function renderNew() {
   if (!state.nodes.some((n) => n.exec_enabled)) steps.push(`Optional: tick <b>exec</b> on a node so tasks can run their tests.`);
   setHTML('home-setup', steps.length ? `<div class="setup"><b>Before your first task</b><ol>${steps.map((s) => `<li>${s}</li>`).join('')}</ol></div>` : '');
 }
-$('nt-planner').addEventListener('change', () => renderNew());
+$('nt-planner').addEventListener('change', () => { renderNew(); ntImg.refresh(); });
+$('nt-project').addEventListener('change', () => { try { localStorage.setItem('nt-project', $('nt-project').value); } catch (e) {} });
+$('nt-files').addEventListener('change', () => {
+  ntFiles = Array.from($('nt-files').files);
+  $('nt-attach-n').textContent = ntFiles.length ? `${ntFiles.length} file${ntFiles.length === 1 ? '' : 's'}` : 'Attach';
+});
 async function startTask() {
   $('nt-err').classList.add('hidden');
-  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked };
+  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, mockup: $('nt-mockup').checked, project: $('nt-project').value, images: ntImg.payload() };
   if (!body.prompt.trim()) { $('nt-prompt').focus(); return; }
   $('nt-go').disabled = true;
   try {
-    const r = await post('/api/tasks', body);
-    $('nt-prompt').value = '';
+    let r;
+    if (ntFiles.length) {
+      const fd = new FormData();
+      fd.append('payload', JSON.stringify(body));
+      ntFiles.forEach((f) => fd.append('files', f, f.name));
+      const resp = await fetch('/api/tasks', { method: 'POST', credentials: 'same-origin', body: fd });
+      r = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(r.error || resp.statusText);
+    } else r = await post('/api/tasks', body);
+    ntFiles = []; $('nt-files').value = ''; $('nt-attach-n').textContent = 'Attach';
+    $('nt-prompt').value = ''; ntImg.clear();
     location.hash = '#/tasks/' + r.id;
     refresh();
   } catch (e) { $('nt-err').textContent = e.message; $('nt-err').classList.remove('hidden'); }
@@ -229,6 +261,50 @@ async function startTask() {
 }
 $('nt-go').onclick = startTask;
 $('nt-prompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) startTask(); });
+
+// ---------- projects ----------
+function renderProjects() {
+  setHTML('projects-list', !projects.length ? `<div class="empty">No projects yet. Tasks outside a project work as before.</div>` :
+    projects.map((p) => `<div class="card" style="margin-bottom:10px">
+      <div class="section-head" style="margin:0 0 6px"><b>${esc(p.name)}</b><span class="spacer"></span>
+        <a href="/api/projects/${p.id}/download"><button>Download .zip</button></a>
+        <button class="danger" data-act="project-delete" data-id="${p.id}">Delete</button></div>
+      <p class="hint">${p.files} file${p.files === 1 ? '' : 's'} · ${p.tasks} task${p.tasks === 1 ? '' : 's'}${p.git_url ? ` · ${esc(p.git_url)} → branch <code>${esc(p.git_branch)}</code>${p.git_push ? ' (pushed after each round)' : ' (committed, not pushed)'}${p.last_push ? ' · last push ' + ago(p.last_push) : ''}` : ''}${p.last_pr ? ` · <a href="${esc(p.last_pr)}" target="_blank" rel="noopener">last pull request</a>` : ''}</p>
+      <div class="btns" style="flex-wrap:wrap;align-items:center">
+        <label class="chip-input">tests <input data-pf="test_command" data-id="${p.id}" value="${esc(p.test_command)}" placeholder="none"></label>
+        <label class="toggle"><input type="checkbox" data-pf="review" data-id="${p.id}" ${p.review === false ? '' : 'checked'}> peer review</label>
+        ${p.git_url ? `<label class="toggle"><input type="checkbox" data-pf="git_push" data-id="${p.id}" ${p.git_push ? 'checked' : ''}> push</label>
+        <label class="toggle"><input type="checkbox" data-pf="git_pr" data-id="${p.id}" ${p.git_pr ? 'checked' : ''}> open PR</label>` : ''}
+        <button data-act="project-save" data-id="${p.id}">Save</button>
+        <a href="#/new" data-act="project-use" data-id="${p.id}"><button class="primary">New task here</button></a></div></div>`).join(''));
+}
+$('np-go').onclick = async () => {
+  const err = $('np-err'); err.classList.add('hidden');
+  $('np-go').disabled = true; $('np-go').textContent = $('np-url').value.trim() ? 'Cloning…' : 'Creating…';
+  try {
+    await post('/api/projects', { name: $('np-name').value, git_url: $('np-url').value.trim(), git_branch: $('np-branch').value.trim(), git_token: $('np-token').value, git_ssh_key: $('np-key').value,
+      test_command: $('np-test').value, git_push: $('np-push').checked, git_pr: $('np-pr').checked });
+    ['np-name', 'np-url', 'np-branch', 'np-token', 'np-key', 'np-test'].forEach((i) => { $(i).value = ''; });
+    $('np-push').checked = $('np-pr').checked = false;
+    toast('Project created'); refresh();
+  } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
+  $('np-go').disabled = false; $('np-go').textContent = 'Create project';
+};
+async function projectAction(act, el) {
+  const id = el.dataset.id;
+  if (act === 'project-delete') {
+    if (!confirm('Delete this project and its files? Its git remote is not touched.')) return;
+    await api(`/api/projects/${id}`, { method: 'DELETE' }); toast('Project deleted');
+  } else if (act === 'project-save') {
+    const f = (k) => document.querySelector(`[data-pf="${k}"][data-id="${id}"]`);
+    const body = { test_command: f('test_command').value, review: f('review').checked };
+    if (f('git_push')) { body.git_push = f('git_push').checked; body.git_pr = f('git_pr').checked; }
+    await post(`/api/projects/${id}`, body); toast('Saved');
+  } else if (act === 'project-use') {
+    try { localStorage.setItem('nt-project', id); } catch (e) {}
+    $('nt-project').value = id;
+  }
+}
 
 // ---------- task thread ----------
 async function pollTask() {
@@ -238,9 +314,55 @@ async function pollTask() {
   try { taskDetail = await api('/api/tasks/' + id); }
   catch (e) { setHTML('tv-title', esc(e.message)); return; }
   if (id !== pageArg) return;
+  await loadRounds();
+  if (id !== pageArg) return;
   renderTask(taskDetail);
-  taskTimer = setTimeout(pollTask, WORKING.includes(taskDetail.status) ? 1500 : 4000);
+  // With the live stream open, "changed" events trigger refreshes; polling is only the fallback.
+  const live = liveES && liveES.readyState === 1;
+  taskTimer = setTimeout(pollTask, live ? 15000 : WORKING.includes(taskDetail.status) ? 1500 : 4000);
 }
+
+// ---------- live output (server-sent events) ----------
+let liveES = null, liveCalls = {}, liveKick = null;
+const liveClosed = new Set();   // subtask ids whose live pane the user collapsed
+function liveClose() {
+  if (liveES) liveES.close();
+  liveES = null; liveCalls = {}; clearTimeout(liveKick);
+}
+function liveOpen(id) {
+  if (!window.EventSource) return;
+  liveES = new EventSource(`/api/tasks/${id}/events`);
+  liveES.onmessage = (e) => {
+    let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
+    if (ev.t === 'start') liveCalls[ev.call] = { sub: ev.sub || '', label: ev.label, node: ev.node, text: ev.text || '', tok: ev.tok || 0, tps: ev.tps || 0, est: !!ev.est };
+    else if (ev.t === 'reset' && liveCalls[ev.call]) Object.assign(liveCalls[ev.call], { text: '', tok: 0, tps: 0 });
+    else if (ev.t === 'end') delete liveCalls[ev.call];
+    else if (ev.t === 'delta' && liveCalls[ev.call]) {
+      const c = liveCalls[ev.call];
+      c.text = (c.text + ev.text).slice(-LIVE_MAX); c.tok = ev.tok; c.tps = ev.tps;
+      const pre = document.querySelector(`[data-live="${ev.call}"]`);
+      if (pre) { setLiveText(pre, c); const m = pre.parentNode.querySelector('.live-rate'); if (m) m.textContent = liveRate(c); return; }
+    }
+    // Anything but a delta for an already visible pane changes the layout: re-render soon.
+    clearTimeout(liveKick);
+    liveKick = setTimeout(() => { if (page === 'task') pollTask(); }, ev.t === 'changed' ? 250 : 50);
+  };
+}
+const LIVE_MAX = 8000;   // characters shown per call; the controller keeps 64 KB
+function liveRate(c) { return c.tps ? `${c.est ? '~' : ''}${c.tps} tok/s` : ''; }
+function setLiveText(pre, c) {
+  const stick = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 24;
+  pre.textContent = c.text;
+  if (stick) pre.scrollTop = pre.scrollHeight;
+}
+function livePane(c, id) {
+  const open = !liveClosed.has(c.sub || id);
+  return `<details class="live" data-sub="${esc(c.sub || id)}" ${open ? 'open' : ''}><summary>live output <span class="live-rate">${esc(liveRate(c))}</span></summary><pre class="live-text" data-live="${esc(id)}">${esc(c.text)}</pre></details>`;
+}
+document.addEventListener('toggle', (e) => {
+  const d = e.target;
+  if (d.classList && d.classList.contains('live')) d.open ? liveClosed.delete(d.dataset.sub) : liveClosed.add(d.dataset.sub);
+}, true);
 
 function threadReset() {
   const th = $('thread'); th.innerHTML = ''; th._items = {};
@@ -270,7 +392,7 @@ function renderThreadItems(items) {
 
 function renderTask(t) {
   setHTML('tv-title', esc(t.title || firstWords(t.prompt)));
-  setHTML('tv-status', `<span class="tdot ${taskTone({ ...t, needs_you: ['awaiting_answers', 'awaiting_approval', 'paused_cap', 'interrupted'].includes(t.status) })}"></span>${esc(statusWord(t))}`);
+  setHTML('tv-status', `<span class="tdot ${taskTone({ ...t, needs_you: ['awaiting_answers', 'awaiting_approval', 'paused_cap', 'interrupted'].includes(t.status) || (t.messages || []).some((m) => m.pending) })}"></span>${esc(statusWord(t))}`);
   $('tv-status').className = 'status-chip';
   setHTML('tv-spend', t.planner === 'claude' || t.planner === 'openrouter' || t.cost_usd > 0 ? spendMeter(t) : '');
   const files = t.files || [];
@@ -298,7 +420,7 @@ function threadItems(t) {
   const round = t.round || 1;
   const lastIdx = (kind) => { for (let i = msgs.length - 1; i >= 0; i--) if (msgs[i].kind === kind) return i; return -1; };
   const lastQ = lastIdx('questions'), lastPlan = lastIdx('plan');
-  const started = t.approved && ['running', 'testing', 'fixing', 'paused_cap', 'done', 'failed', 'cancelled', 'interrupted'].includes(t.status) && t.subtasks && t.subtasks.length;
+  const started = t.approved && ['running', 'testing', 'building', 'fixing', 'paused_cap', 'done', 'failed', 'cancelled', 'interrupted'].includes(t.status) && t.subtasks && t.subtasks.length;
   let progressPlaced = false;
   msgs.forEach((m, i) => {
     // The live progress card sits right after this round's approval.
@@ -307,6 +429,9 @@ function threadItems(t) {
     if (approvedHere) { items.push({ key: 'progress-' + round, cls: 'card-row', html: progressCard(t) }); progressPlaced = true; }
   });
   if (started && !progressPlaced) items.push({ key: 'progress-' + round, cls: 'card-row', html: progressCard(t) });
+  // Planner and other calls that belong to no subtask.
+  const loose = Object.entries(liveCalls).filter(([, c]) => !c.sub);
+  if (loose.length) items.push({ key: 'live-loose', cls: 'card-row', html: `<div class="card-msg quiet"><div class="card-head">${loose.map(([, c]) => esc(c.node ? `Writing on ${c.node}` : 'Working')).join(' · ')}</div>${loose.map(([id, c]) => livePane(c, id)).join('')}</div>` });
   const tail = statusCard(t);
   if (tail) items.push(tail);
   return items;
@@ -315,17 +440,35 @@ function threadItems(t) {
 function msgItem(t, m, liveQuestions, livePlan) {
   const key = m.id;
   if (m.role === 'user') {
-    const tag = m.kind === 'steer' ? '<span class="bubble-tag">note while working</span>' : m.kind === 'answers' ? '<span class="bubble-tag">answers</span>' : '';
-    return { key, cls: 'from-user', html: `<div class="bubble">${tag}${esc(m.text)}</div>` };
+    const tag = m.kind === 'agent_answer' ? '<span class="bubble-tag">answer to the agent</span>' : m.kind === 'steer' ? '<span class="bubble-tag">note while working</span>' : m.kind === 'answers' ? '<span class="bubble-tag">answers</span>' : '';
+    const pics = (m.images || []).length ? `<div class="bubble-imgs">${m.images.map((n) => `<a href="/api/tasks/${t.id}/image?name=${encodeURIComponent(n)}" target="_blank" rel="noopener"><img src="/api/tasks/${t.id}/image?name=${encodeURIComponent(n)}" alt="attached image" loading="lazy"></a>`).join('')}</div>` : '';
+    return { key, cls: 'from-user', html: `<div class="bubble">${tag}${esc(m.text)}${pics}</div>` };
   }
   if (m.role === 'event' || m.kind === 'event') return { key, cls: 'event-row', html: `<span>${esc(m.text)}</span>` };
   switch (m.kind) {
     case 'questions': return { key, cls: 'card-row', html: questionsCard(m, liveQuestions) };
+    case 'agent_question': return { key, cls: 'card-row', html: agentQuestionCard(m) };
     case 'plan': return { key, cls: 'card-row', html: planCard(t, m, livePlan) };
     case 'result': return { key, cls: 'card-row', html: resultCard(t, m) };
+    case 'shots': case 'mockup': return { key, cls: 'card-row', html: shotsCard(t, m, msgs_lastMockup(t) === m.id) };
     case 'error': return { key, cls: 'card-row', html: `<div class="card-msg bad"><div class="card-head">Something went wrong</div><p>${esc(m.text)}</p>${t.status === 'failed' && m.round === (t.round || 1) ? '<div class="card-actions"><button class="primary" data-act="task-resume">Try again</button><span class="hint">or send a message to change course</span></div>' : ''}</div>` };
     default: return { key, cls: 'from-planner', html: `<div class="said">${esc(m.text)}</div>` };
   }
+}
+
+function msgs_lastMockup(t) {
+  const ms = (t.messages || []).filter((m) => m.kind === 'mockup');
+  return ms.length ? ms[ms.length - 1].id : '';
+}
+
+// Screenshots of what a round built; for a mockup, one column per variant with a Pick button.
+function shotsCard(t, m, pickable) {
+  const mock = m.kind === 'mockup';
+  const img = (n, cls) => `<a href="/api/tasks/${t.id}/shot?name=${encodeURIComponent(n)}" target="_blank" rel="noopener"><img class="${cls}" src="/api/tasks/${t.id}/shot?name=${encodeURIComponent(n)}" alt="screenshot" loading="lazy"></a>`;
+  const cols = (m.shots || []).map((s) => `<figure class="shot"><figcaption><b>${esc(mock ? 'Variant ' + s.label.toUpperCase() : s.page)}</b>${mock ? ` <span class="muted mono">${esc(s.page)}</span>` : ''}</figcaption>
+    <div class="shot-pair">${img(s.desktop, 'shot-desktop')}${img(s.phone, 'shot-phone')}</div>
+    ${mock && pickable && t.mockup && t.status === 'done' ? `<button class="primary" data-act="task-pick" data-page="${esc(s.page)}">Build this one</button>` : ''}</figure>`).join('');
+  return `<div class="card-msg shots"><div class="card-head">${mock ? 'Mockup variants' : 'Screenshots'}</div><p>${esc(m.text)}</p><div class="shot-grid">${cols}</div></div>`;
 }
 
 function questionsCard(m, live) {
@@ -342,11 +485,21 @@ function questionsCard(m, live) {
     ${live ? `<div class="card-actions"><button class="primary" data-act="task-answer" data-msg="${esc(m.id)}">Send answers</button><span class="hint">Skip any you don't mind; the planner picks a sensible default.</span></div>` : ''}</div>`;
 }
 
+// A question an agent asked while working; the answer goes straight back to it.
+function agentQuestionCard(m) {
+  const q = (m.questions || [])[0] || { question: m.text, options: [] };
+  if (!m.pending) return `<div class="card-msg quiet"><div class="card-head">A worker asked</div><p>${esc(q.question)}</p></div>`;
+  const opts = (q.options || []).map((o) => `<button class="small" data-act="task-agent-answer" data-msg="${esc(m.id)}" data-answer="${esc(o)}">${esc(o)}</button>`).join('');
+  return `<div class="card-msg"><div class="card-head">A worker needs a decision</div><p>${esc(q.question)}</p>
+    ${opts ? `<div class="card-actions">${opts}</div>` : ''}
+    <div class="card-actions"><input class="opt-other" id="aq-${esc(m.id)}" placeholder="Your answer…" aria-label="Your answer"><button class="primary" data-act="task-agent-answer" data-msg="${esc(m.id)}">Send answer</button><span class="hint">Only that worker waits; the rest keeps going.</span></div></div>`;
+}
+
 function planCard(t, m, live) {
   const p = m.plan || {};
-  const subs = (p.subtasks || []).map((s) => `<li><details><summary><span class="st-title">${esc(s.title)}</span><span class="st-files">${s.files.map(esc).join(', ')}</span></summary>
+  const subs = (p.subtasks || []).map((s) => `<li><details><summary><span class="st-title">${esc(s.title)}</span><span class="st-files">${s.kind === 'investigate' ? 'investigates, writes no files' : s.files.map(esc).join(', ')}</span></summary>
       <p class="st-ins">${esc(s.instructions)}</p>${s.depends_on && s.depends_on.length ? `<p class="st-dep">Starts after ${s.depends_on.map(esc).join(', ')}</p>` : ''}</details></li>`).join('');
-  const facts = [p.language ? esc(p.language) : '', p.test_command ? `tests: <code>${esc(p.test_command)}</code>` : 'no automated tests', `${(p.subtasks || []).length} subtasks`].filter(Boolean).join(' · ');
+  const facts = [p.language ? esc(p.language) : '', p.test_command ? `tests: <code>${esc(p.test_command)}</code>` : 'no automated tests', p.build_command ? `build: <code>${esc(p.build_command)}</code>` : '', `${(p.subtasks || []).length} subtasks`].filter(Boolean).join(' · ');
   let actions = '';
   if (live) {
     const warn = [];
@@ -372,21 +525,38 @@ function progressCard(t) {
   const rows = specs.map((s) => {
     const x = byId[s.id] || { status: 'pending' };
     let who = '';
-    if (x.status === 'running') who = `writing on ${esc(x.node_name || '…')}${x.attempts ? ` · try ${x.attempts + 1}` : ''}`;
+    if (x.waiting) who = `${esc(x.node_name || 'a worker')} asked you a question`;
+    else if (x.status === 'running' && s.kind === 'investigate') who = `investigating on ${esc(x.node_name || '…')}${x.agent_calls ? ` · ${x.agent_calls} tool calls` : ''}`;
+    else if (x.status === 'running') who = `writing on ${esc(x.node_name || '…')}${x.attempts ? ` · try ${x.attempts + 1}` : ''}`;
+    else if (s.kind === 'investigate' && (x.status === 'written' || x.status === 'done')) who = `investigated on ${esc(x.node_name || 'the planner')}${x.agent_calls ? ` · ${x.agent_calls} tool calls` : ''}`;
     else if (x.status === 'reviewing' || x.status === 'written') who = `${esc(x.node_name || '')} wrote it · ${esc(x.reviewer || 'another node')} is checking`;
     else if (x.status === 'done') who = `${x.by_planner ? 'written by the planner' : esc(x.node_name || '')}${x.reviewer ? ` · checked by ${esc(x.reviewer)}${x.review_fixed ? ', who fixed it' : ''}` : ''}`;
     else if (x.status === 'failed') who = esc(x.error || 'failed');
     else who = s.depends_on && s.depends_on.length ? `waits for ${s.depends_on.map(esc).join(', ')}` : 'waiting for a free node';
-    return `<li class="p-${x.status}"><span class="p-ico" aria-hidden="true">${ST_ICON[x.status] || ''}</span><span class="p-title">${esc(s.title)}</span><span class="p-who">${who}</span></li>`;
+    const lives = Object.entries(liveCalls).filter(([, c]) => c.sub === s.id).map(([id, c]) => livePane(c, id)).join('');
+    return `<li class="p-${x.status}"><span class="p-ico" aria-hidden="true">${ST_ICON[x.status] || ''}</span><span class="p-title">${esc(s.title)}</span><span class="p-who">${who}</span>${lives}</li>`;
   }).join('');
   let phase = '';
   if (t.status === 'testing') phase = 'Running the tests…';
-  else if (t.status === 'fixing') phase = `Tests failed; fixing (round ${t.fix_rounds + 1} of 3)…`;
+  else if (t.status === 'building') phase = 'Building…';
+  else if (t.status === 'fixing') phase = `Tests failed; fixing (round ${t.fix_rounds + 1} of 3). The fixer reads, edits and re-runs on its own.`;
   else if (t.status === 'running' && !t.workers_online) phase = 'Waiting for a node with a model ready. Load one on the Nodes page.';
-  const head = t.status === 'running' || t.status === 'testing' || t.status === 'fixing'
+  const head = t.status === 'running' || t.status === 'testing' || t.status === 'building' || t.status === 'fixing'
     ? `Working · ${done} of ${specs.length} subtasks done` : `${done} of ${specs.length} subtasks done`;
   return `<div class="card-msg progress"><div class="card-head">${head}</div><div class="strip" role="img" aria-label="${done} of ${specs.length} subtasks done">${strip}</div>
     <ul class="p-list">${rows}</ul>${phase ? `<p class="card-note">${esc(phase)}</p>` : ''}</div>`;
+}
+
+// Build outputs: one link each, plus zips. Sizes use the same bytes() as the file browser.
+function artifactsBlock(t) {
+  const arts = t.artifacts || [];
+  if (t.build_status === 'failed') return `<details class="testout"><summary>The build failed</summary><pre class="out">${esc(t.build_output || '')}</pre></details>`;
+  if (!arts.length) return '';
+  const links = arts.map((a) => `<a href="/api/tasks/${t.id}/artifact?path=${encodeURIComponent(a.path)}">${esc(a.path)} <span class="muted">(${bytes(a.bytes)})</span></a>`).join('');
+  const publish = arts.some((a) => /^(.*\/)?outpost-(linux|darwin|windows)-(amd64|arm64)(\.exe)?$/.test(a.path))
+    ? '<button class="small" data-act="task-publish" title="Upload the outpost-&lt;platform&gt; binaries as releases. Updating the controller and nodes stays a click on the Updates tab.">Publish to Updates</button>' : '';
+  return `<div class="changed"><span class="hint">Build outputs</span>${links}</div>
+    <div class="card-actions">${publish}<a href="/api/tasks/${t.id}/artifacts.zip"><button class="small">artifacts.zip</button></a><a href="/api/tasks/${t.id}/download?artifacts=1"><button class="small">Source and artifacts .zip</button></a></div>`;
 }
 
 function resultCard(t, m) {
@@ -395,7 +565,9 @@ function resultCard(t, m) {
   const tone = /tests still fail/.test(m.text) ? 'warn' : 'good';
   return `<div class="card-msg result ${tone}"><div class="card-head">${tone === 'good' ? 'Finished' : 'Finished with failing tests'}</div><p>${esc(m.text)}</p>
     ${files ? `<div class="changed"><span class="hint">${m.round > 1 ? 'Changed in this request' : 'Files'}</span>${files}</div>` : ''}
+    ${latest ? artifactsBlock(t) : ''}
     ${latest && t.test_output && t.test_status !== 'passed' ? `<details class="testout"><summary>Last test output</summary><pre class="out">${esc(t.test_output)}</pre></details>` : ''}
+    ${(taskRounds || []).some((r) => r.round === m.round) ? `<div class="card-actions"><button class="small" data-act="show-changes" data-round="${m.round}">Changes</button></div>` : ''}
     ${latest ? `<div class="card-actions"><a href="/api/tasks/${t.id}/download"><button class="primary">Download .zip</button></a><span class="hint">Want changes? Send a follow-up below; it builds on these files.</span></div>` : ''}</div>`;
 }
 
@@ -438,7 +610,7 @@ async function sendTaskMessage() {
   const box = $('tm-text'), text = box.value.trim();
   if (!text || !pageArg) return;
   $('tm-send').disabled = true;
-  try { await post(`/api/tasks/${pageArg}/messages`, { text }); box.value = ''; autoGrow(box); $('thread')._scrolled = false; }
+  try { await post(`/api/tasks/${pageArg}/messages`, { text, images: tmImg.payload() }); box.value = ''; tmImg.clear(); autoGrow(box); $('thread')._scrolled = false; }
   catch (e) { toast(e.message, 4000); }
   $('tm-send').disabled = false;
   pollTask(); refresh();
@@ -466,10 +638,91 @@ function renderActivity(t) {
   ev.scrollTop = ev.scrollHeight;
 }
 function renderFiles(t) {
-  const files = t.files || [];
+  const files = (t.files || []).slice().sort((x, y) => x.path.localeCompare(y.path));
   setHTML('files-hint', `${files.length} file${files.length === 1 ? '' : 's'} in the project so far. Click one to read it.`);
-  setHTML('tv-files', files.map((f) => `<a href="#" data-act="view-file" data-path="${esc(f.path)}">${esc(f.path)} <span class="muted">(${bytes(f.bytes)})</span></a>`).join(''));
+  const seen = new Set();
+  setHTML('tv-files', files.map((f) => {
+    const parts = f.path.split('/'), out = [];
+    parts.slice(0, -1).forEach((d, i) => { const k = parts.slice(0, i + 1).join('/'); if (!seen.has(k)) { seen.add(k); out.push(`<div class="fb-dir" style="padding-left:${i * 14}px">${esc(d)}/</div>`); } });
+    out.push(`<div class="fb-row" style="padding-left:${(parts.length - 1) * 14}px"><input type="checkbox" class="fb-tick" value="${esc(f.path)}" aria-label="Tick ${esc(f.path)}"><a href="#" data-act="view-file" data-path="${esc(f.path)}">${esc(parts[parts.length - 1])} <span class="muted">(${bytes(f.bytes)})</span></a></div>`);
+    return out.join('');
+  }).join(''));
   $('files-dl').href = `/api/tasks/${t.id}/download`;
+}
+
+let taskRounds = [];
+async function loadRounds() {
+  if (!pageArg) return;
+  try { taskRounds = (await api(`/api/tasks/${pageArg}/rounds`)).rounds || []; } catch (e) { taskRounds = []; }
+}
+
+// A small keyword highlighter; it only colours, never changes the text.
+function highlight(code, path) {
+  const e = esc(code);
+  if (!/\.(go|js|ts|py|rs|c|h|cpp|java|sh|json|html|css|rb|php|cs|kt|swift)$/i.test(path)) return e;
+  return e.replace(/(&quot;(?:[^&\n]|&(?!quot;))*?&quot;|&#39;[^\n]*?&#39;|\/\/[^\n]*|#[^\n]*)|\b(func|function|def|class|return|if|else|elif|for|while|import|from|package|const|let|var|struct|type|fn|pub|use|true|false|null|nil|None|True|False|self|this|new|try|catch|except|throw|async|await)\b|\b(\d+(?:\.\d+)?)\b/g,
+    (m, str, kw, num) => str ? `<span class="hl-s">${m}</span>` : kw ? `<span class="hl-k">${m}</span>` : `<span class="hl-n">${m}</span>`);
+}
+function numbered(code, path) {
+  const lines = highlight(code, path).split('\n');
+  return lines.map((l, i) => `<span class="ln">${i + 1}</span>${l}`).join('\n');
+}
+
+// Line diff: trims the shared start and end, then a longest-common-subsequence table.
+function diffLines(a, b) {
+  const x = a === '' ? [] : a.split('\n'), y = b === '' ? [] : b.split('\n');
+  let s = 0;
+  while (s < x.length && s < y.length && x[s] === y[s]) s++;
+  let ex = x.length, ey = y.length;
+  while (ex > s && ey > s && x[ex - 1] === y[ey - 1]) { ex--; ey--; }
+  const mid = [], n = ex - s, m = ey - s;
+  if (n * m > 4e6) {
+    for (let i = s; i < ex; i++) mid.push(['-', x[i]]);
+    for (let j = s; j < ey; j++) mid.push(['+', y[j]]);
+  } else {
+    const L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+      L[i][j] = x[s + i] === y[s + j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (x[s + i] === y[s + j]) { mid.push([' ', x[s + i]]); i++; j++; }
+      else if (L[i + 1][j] >= L[i][j + 1]) mid.push(['-', x[s + i++]]);
+      else mid.push(['+', y[s + j++]]);
+    }
+    while (i < n) mid.push(['-', x[s + i++]]);
+    while (j < m) mid.push(['+', y[s + j++]]);
+  }
+  const all = [];
+  for (let i = 0; i < s; i++) all.push([' ', x[i]]);
+  all.push(...mid);
+  for (let i = ex; i < x.length; i++) all.push([' ', x[i]]);
+  return all;
+}
+// Unified view: changed lines with 3 lines of context.
+function unified(a, b) {
+  const d = diffLines(a, b), keep = d.map(() => false);
+  d.forEach((r, i) => { if (r[0] !== ' ') for (let k = Math.max(0, i - 3); k <= Math.min(d.length - 1, i + 3); k++) keep[k] = true; });
+  let out = '', gap = false;
+  d.forEach((r, i) => {
+    if (!keep[i]) { gap = true; return; }
+    if (gap && out) out += '<span class="d-gap">…</span>\n';
+    gap = false;
+    out += `<span class="d-${r[0] === '+' ? 'add' : r[0] === '-' ? 'del' : 'ctx'}">${r[0]} ${esc(r[1])}</span>\n`;
+  });
+  return out || '<span class="d-ctx">(no differences)</span>';
+}
+
+let changesRound = 0;
+async function showChanges(round) {
+  changesRound = round;
+  setHTML('ch-body', '<span class="muted">Loading…</span>'); $('ch-undo').classList.add('hidden');
+  $('ch-title').textContent = `Changes in request ${round}`; open('modal-changes');
+  try {
+    const r = await api(`/api/tasks/${pageArg}/changes?round=${round}`);
+    setHTML('ch-hint', `${r.files.length} file${r.files.length === 1 ? '' : 's'} changed. Shown against the files as they are now.`);
+    setHTML('ch-body', r.files.map((f) => `<details open><summary class="mono">${esc(f.path)} <span class="muted">${f.status === 'added' ? 'new file' : 'changed'}${f.gone ? ', since deleted' : ''}</span></summary><pre class="out code diff">${unified(f.before, f.after)}</pre></details>`).join(''));
+    $('ch-undo').classList.toggle('hidden', !r.undoable);
+  } catch (e) { setHTML('ch-body', `<span class="error-msg">${esc(e.message)}</span>`); }
 }
 
 async function taskAction(act, el) {
@@ -477,10 +730,23 @@ async function taskAction(act, el) {
   try {
     switch (act) {
       case 'task-approve': await post(`/api/tasks/${id}/approve`, { cap_usd: parseFloat(($('ta-cap') || {}).value) || 0 }); break;
+      case 'task-pick': await post(`/api/tasks/${id}/pick`, { page: el.dataset.page }); toast('Building from that variant'); break;
       case 'task-answer': {
         const answers = collectAnswers();
         await post(`/api/tasks/${id}/answers`, { answers });
         break;
+      }
+      case 'task-agent-answer': {
+        const msg = el.dataset.msg, answer = el.dataset.answer || ($('aq-' + msg) || {}).value || '';
+        if (!answer.trim()) { toast('Write an answer first'); return; }
+        await post(`/api/tasks/${id}/agent-answer`, { id: msg, answer });
+        break;
+      }
+      case 'task-publish': {
+        const r = await post(`/api/tasks/${id}/publish`);
+        const bad = Object.entries(r.refused || {}).map(([k, v]) => `${k}: ${v}`);
+        toast(`${(r.published || []).length} published to Updates` + (bad.length ? `. Refused: ${bad.join('; ')}` : '. Update the controller and nodes from the Updates tab.'), bad.length ? 9000 : 4000);
+        return;
       }
       case 'task-cancel': if (!confirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return; await post(`/api/tasks/${id}/cancel`); break;
       case 'task-raise': await post(`/api/tasks/${id}/resume`, { cap_usd: parseFloat($('ta-newcap').value) || 0 }); toast('Continuing'); break;
@@ -488,6 +754,8 @@ async function taskAction(act, el) {
       case 'task-resume': await post(`/api/tasks/${id}/resume`); toast('Resumed'); break;
       case 'task-delete': if (!confirm('Delete this task, its conversation and its files?')) return; await api(`/api/tasks/${id}`, { method: 'DELETE' }); location.hash = '#/new'; refresh(); return;
       case 'task-activity': if (taskDetail) { renderActivity(taskDetail); open('modal-activity'); } return;
+      case 'show-changes': showChanges(parseInt(el.dataset.round, 10)); return;
+      case 'undo-round': if (!confirm('Put the files back as they were before this request?')) return; await post(`/api/tasks/${id}/undo?round=${changesRound}`); close('modal-changes'); toast('Round undone'); break;
       case 'task-files': if (taskDetail) { renderFiles(taskDetail); open('modal-files'); } return;
     }
   } catch (e) { toast(e.message, 4000); }
@@ -495,12 +763,27 @@ async function taskAction(act, el) {
   pollTask(); refresh();
 }
 
+// Zip the ticked files: a form post, so the browser streams the download.
+$('files-zip').onclick = () => {
+  const paths = [...document.querySelectorAll('.fb-tick:checked')].map((c) => c.value);
+  if (!paths.length) { toast('Tick the files to zip first'); return; }
+  const f = document.createElement('form');
+  f.method = 'POST'; f.action = `/api/tasks/${pageArg}/zip`;
+  const i = document.createElement('input');
+  i.type = 'hidden'; i.name = 'paths'; i.value = paths.join('\n');
+  f.appendChild(i); document.body.appendChild(f); f.submit(); f.remove();
+};
+
 async function viewFile(path) {
-  $('file-title').textContent = path; $('file-body').textContent = 'Loading…'; open('modal-file');
+  if (taskDetail) renderFiles(taskDetail);
+  open('modal-files');
+  $('fb-title').textContent = path; $('fb-body').textContent = 'Loading…';
+  $('fb-dl').classList.remove('hidden');
+  $('fb-dl').href = `/api/tasks/${pageArg}/file?path=${encodeURIComponent(path)}&download=1`;
   try {
     const r = await fetch(`/api/tasks/${pageArg}/file?path=${encodeURIComponent(path)}`, { credentials: 'same-origin' });
-    $('file-body').textContent = await r.text();
-  } catch (e) { $('file-body').textContent = e.message; }
+    setHTML('fb-body', numbered(await r.text(), path));
+  } catch (e) { $('fb-body').textContent = e.message; }
 }
 
 // ---------- nodes ----------
@@ -515,7 +798,7 @@ function opView(n) {
   const o = state.ops && state.ops[n.id];
   if (!o || !o.op) return '';
   const age = (Date.now() - new Date(o.updated)) / 1000;
-  const what = { runtime: 'llama.cpp', 'model.push': 'Copying model from controller', 'model.fetch': 'Downloading from Hugging Face', rpc: 'Lending memory', 'model.load': 'Loading model', 'model.unload': 'Unloading', 'model.remove': 'Removing model' }[o.op] || o.op;
+  const what = { runtime: 'llama.cpp', toolchain: 'Installing Go', 'model.push': 'Copying model from controller', 'model.fetch': 'Downloading from Hugging Face', rpc: 'Lending memory', 'model.load': 'Loading model', 'model.unload': 'Unloading', 'model.remove': 'Removing model' }[o.op] || o.op;
   if (o.state === 'failed') return age < 3600 ? `<div class="note bad" style="margin:8px 0 0">${esc(what)} failed: ${esc(o.error)}</div>` : '';
   if (['done', 'ready'].includes(o.state)) return '';
   const pct = o.bytes_total ? 100 * o.bytes_done / o.bytes_total : (o.state === 'loading' ? 100 : 0);
@@ -559,6 +842,7 @@ function nodeCard(n) {
     ${paused ? `<div class="note warn" style="margin:8px 0 0"><b>Paused on the node.</b> It takes no new work until someone ticks <b>Accept new work</b> in its tray icon.</div>` : ''}
     <div class="sub" style="margin:8px 0 0">${status}${hb && hb.swap_used_bytes ? ` · swap ${bytes(hb.swap_used_bytes)}` : ''}${n.addr ? ` · ${esc(n.addr.split(':')[0])}` : ''}</div>
     ${modelBox}
+    ${toolsBox(n)}
     <div class="node-foot">
       <label class="toggle" title="Allow this node to run shell commands (needed for tests)"><input type="checkbox" data-exec="${n.id}" ${n.exec_enabled ? 'checked' : ''}> exec</label>
       <span style="flex:1"></span>
@@ -568,6 +852,17 @@ function nodeCard(n) {
       <button class="small" data-act="run" data-id="${n.id}" ${n.online && n.exec_enabled ? '' : 'disabled'} title="${n.exec_enabled ? '' : 'Enable exec first'}">Run…</button>
     </div>
   </div>`;
+}
+
+function toolsBox(n) {
+  const h = n.hello || {};
+  if (!n.exec_enabled || !h.shell) return n.exec_enabled ? '<div class="sub" style="margin:8px 0 0">Tools: unknown until the node updates</div>' : '';
+  const tools = h.tools || [];
+  const chips = tools.map((t) => `<span class="tag" title="${esc(t.path || '')}${t.managed ? ' (installed by Outpost)' : ''}">${esc(t.name)}${t.version ? ' ' + esc(t.version) : ''}</span>`).join(' ');
+  const hasGo = tools.some((t) => t.name === 'go');
+  return `<div class="sub wrap" style="margin:8px 0 0">Runs commands in ${esc(h.shell)} · ${chips || 'no tools found'}
+    ${n.online ? `<a href="#" data-act="install-tool" data-tool="go" data-id="${n.id}">${hasGo ? 'Reinstall' : 'Install'} Go</a>` : ''}</div>
+`;
 }
 
 async function setExec(id, on) {
@@ -662,6 +957,12 @@ function storageLabel(m) {
   return isDirect(m) ? '<span title="Each node downloads it from Hugging Face when you load it">Nodes download</span>'
     : '<span title="Downloaded once to the controller and copied to nodes over your network">On controller</span>';
 }
+const FIT_TEXT = { vram: 'fits in VRAM', split: 'split VRAM + RAM (slower)', ram: 'runs on CPU', no: 'does not fit' };
+const FIT_CLS = { vram: 'st-done', split: 'st-loading', ram: 'st-loading', no: 'st-failed' };
+function fitBadges(fits) {
+  if (!fits || !fits.length) return '';
+  return `<div class="fit-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${fits.map((f) => `<span class="pill ${FIT_CLS[f.fit]}" title="${esc(f.name)}: ${FIT_TEXT[f.fit]}; needs about ${bytes(f.need_bytes)}${f.online ? '' : ' (node offline)'}">${esc(f.name)} · ${FIT_TEXT[f.fit]}</span>`).join('')}</div>`;
+}
 function renderModels() {
   if (!models) return;
   setHTML('models-disk', `${bytes(models.disk_free)} free on the controller`);
@@ -678,19 +979,24 @@ function renderModels() {
       if (m.status === 'failed') acts.push(`<button class="small" data-act="model-retry" data-name="${nm}">Retry</button>`);
       if (isDirect(m) && m.status === 'ready') acts.push(`<button class="small" data-act="model-store" data-name="${nm}" title="Download it to the controller too, so nodes copy it over your network instead of from the internet">Store on controller</button>`);
       if (!isDirect(m) && m.status !== 'failed') acts.push(`<button class="small" data-act="model-unstore" data-name="${nm}" title="Free ${bytes(m.bytes_total)} on the controller; nodes download it from Hugging Face instead">Free controller space</button>`);
+      const vf = ((models.fits || {})[m.name] || []).filter((f) => f.fit === 'vram' && f.can_load);
+      if (m.status === 'ready' && vf.length) acts.unshift(`<button class="small primary" data-act="model-load-fit" data-name="${nm}" title="Loads it on: ${esc(vf.map((f) => f.name).join(', '))}. Replaces any model those nodes have loaded.">Load on ${vf.length} node${vf.length > 1 ? 's' : ''} it fits</button>`);
       acts.push(`<button class="small danger" data-act="model-delete" data-name="${nm}">${m.status === 'downloading' ? 'Cancel' : 'Remove'}</button>`);
-      return `<tr><td><b>${esc(m.label || m.name)}</b><div class="sub" style="margin:2px 0 0">${esc(m.repo)}</div></td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td>${storageLabel(m)}</td><td>${status}</td>
+      return `<tr><td><b>${esc(m.label || m.name)}</b>${m.vision ? ' <span class="pill st-ready" title="Reads images: loaded with its vision projector">Vision</span>' : ''}<div class="sub" style="margin:2px 0 0">${esc(m.repo)}</div>${m.status === 'ready' ? fitBadges((models.fits || {})[m.name]) : ''}</td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td>${storageLabel(m)}</td><td>${status}</td>
         <td>${h.length ? h.map(esc).join(', ') : '<span class="muted">none</span>'}</td><td class="r"><div class="btns" style="justify-content:flex-end">${acts.join('')}</div></td></tr>`;
     }).join('')}</tbody></table></div>`);
   const have = {}; list.forEach((m) => { have[m.name] = m; });
-  setHTML('catalog', models.catalog.map((c) => {
+  const catCard = (c) => {
     const m = have[c.id];
     const btn = m ? (m.status === 'downloading' ? `<button disabled>Downloading ${m.bytes_total ? Math.floor(100 * m.bytes_done / m.bytes_total) : 0}%</button>`
         : m.status === 'failed' ? `<button data-act="model-retry" data-name="${c.id}">Retry</button>` : `<button disabled>In library · ${isDirect(m) ? 'nodes download' : 'on controller'}</button>`)
       : `<button class="primary" data-act="catalog-add" data-id="${c.id}" data-storage="direct" title="Each node downloads it from Hugging Face when you load it; uses no controller space">Add · nodes download</button>
          <button data-act="catalog-add" data-id="${c.id}" data-storage="controller" title="Download once to the controller (${bytes(c.bytes)}), then copy to nodes over your network">Store on controller</button>`;
-    return `<div class="card"><span class="for">${esc(c.for)}</span><h3>${esc(c.label)}</h3><p>${esc(c.notes)}</p><div class="btns">${btn}</div><span class="muted" style="font-size:12px;margin-top:6px">${bytes(c.bytes)} · needs ~${c.min_ram_gb} GB RAM+VRAM</span></div>`;
-  }).join(''));
+    return `<div class="card"><span class="for">${esc(c.for)}</span><h3>${esc(c.label)}${c.mmproj ? ' <span class="pill st-ready" title="Reads images">Vision</span>' : ''}</h3><p>${esc(c.notes)}</p><div class="btns">${btn}</div><span class="muted" style="font-size:12px;margin-top:6px">${bytes(c.bytes)} · needs ~${c.min_ram_gb} GB RAM+VRAM</span>${fitBadges((models.catalog_fits || {})[c.id])}</div>`;
+  };
+  setHTML('catalog', models.catalog.map(catCard).join(''));
+  const byId = {}; models.catalog.forEach((c) => { byId[c.id] = c; });
+  setHTML('suggested', (models.suggested || []).length ? models.suggested.map((sg) => byId[sg.id] && catCard(byId[sg.id])).join('') : '<div class="empty">No nodes are connected yet, so nothing can be sized.</div>');
   const rts = models.runtimes || [];
   setHTML('runtimes', !rts.length ? `<div class="empty">None downloaded yet.</div>` :
     `<div class="table-wrap"><table><thead><tr><th>Build</th><th>For</th><th>Size</th><th>Downloaded</th></tr></thead><tbody>${rts.map((r) => `<tr><td>${esc(r.build)}</td><td>${esc(r.variant)}</td><td>${bytes(r.bytes)}</td><td>${ago(r.downloaded)}</td></tr>`).join('')}</tbody></table></div>`);
@@ -702,7 +1008,7 @@ $('hf-list').onclick = async () => {
     const r = await api('/api/hf/files?repo=' + encodeURIComponent($('hf-repo').value.trim()));
     hfRepo = r.repo; hfGroups = r.groups;
     setHTML('hf-files', !r.groups.length ? '<span class="muted">No .gguf files in that repo.</span>' :
-      `<div class="table-wrap"><table><tbody>${r.groups.map((g, i) => `<tr><td class="mono">${esc(g.name)}${g.files.length > 1 ? ` <span class="muted">(${g.files.length} parts)</span>` : ''}</td><td>${bytes(g.bytes)}</td><td class="r"><div class="btns" style="justify-content:flex-end"><button class="small primary" data-act="hf-add" data-i="${i}" data-storage="direct">Add · nodes download</button><button class="small" data-act="hf-add" data-i="${i}" data-storage="controller">Store on controller</button></div></td></tr>`).join('')}</tbody></table></div>`);
+      `<div class="table-wrap"><table><tbody>${r.mmproj && r.mmproj.length ? `<tr><td colspan="3"><label class="muted">Vision projector (optional, makes the model read images) <select id="hf-mmproj"><option value="">none</option>${r.mmproj.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join('')}</select></label></td></tr>` : ''}${r.groups.map((g, i) => `<tr><td class="mono">${esc(g.name)}${g.files.length > 1 ? ` <span class="muted">(${g.files.length} parts)</span>` : ''}${fitBadges(g.fits)}</td><td>${bytes(g.bytes)}</td><td class="r"><div class="btns" style="justify-content:flex-end"><button class="small primary" data-act="hf-add" data-i="${i}" data-storage="direct">Add · nodes download</button><button class="small" data-act="hf-add" data-i="${i}" data-storage="controller">Store on controller</button></div></td></tr>`).join('')}</tbody></table></div>`);
   } catch (e) { setHTML('hf-files', `<span class="error-msg">${esc(e.message)}</span>`); }
 };
 $('hf-repo').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('hf-list').click(); });
@@ -815,6 +1121,8 @@ async function loadSettings() {
   $('set-model').innerHTML = claudeModelOptions(settings.claude_model);
   $('set-cap').value = settings.default_cap_usd;
   $('set-autoresume').checked = !!settings.auto_resume;
+  $('set-instr').value = settings.instructions || '';
+  $('set-agent').checked = settings.agent_mode !== false; $('set-websearch').checked = !!settings.web_search; $('set-webprivate').checked = !!settings.web_allow_private;
   if (!state) state = await api('/api/state').catch(() => null);
   if (state) $('set-planner').innerHTML = plannerOptions(settings.default_planner);
   loadSecurity();
@@ -886,7 +1194,8 @@ $('set-or-key-clear').onclick = () => { if (confirm('Remove the OpenRouter API k
 $('set-or-model-save').onclick = () => saveSettings({ openrouter_model: $('set-or-model').value.trim() }, 'OpenRouter model saved');
 $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
-$('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, auto_resume: $('set-autoresume').checked }, 'Defaults saved');
+$('set-instr-save').onclick = () => saveSettings({ instructions: $('set-instr').value }, 'Instructions saved');
+$('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, agent_mode: $('set-agent').checked, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked, auto_resume: $('set-autoresume').checked }, 'Defaults saved');
 $('pw-form').onsubmit = async (e) => {
   e.preventDefault();
   const err = $('pw-err'); err.classList.add('hidden');
@@ -1053,11 +1362,18 @@ document.addEventListener('click', async (e) => {
       case 'remove': removeNode(id); break;
       case 'run': openRun(id); break;
       case 'catalog-add': await post('/api/models', { catalog_id: id, storage: el.dataset.storage }); toast(el.dataset.storage === 'direct' ? 'Added. Nodes download it when you load it.' : 'Downloading to the controller'); break;
-      case 'hf-add': { const g = hfGroups[+el.dataset.i]; await post('/api/models', { repo: hfRepo, files: g.files, storage: el.dataset.storage }); toast(el.dataset.storage === 'direct' ? 'Added. Nodes download it when you load it.' : 'Downloading to the controller'); break; }
+      case 'model-load-fit': {
+        const fits = ((models.fits || {})[el.dataset.name] || []).filter((f) => f.fit === 'vram' && f.can_load);
+        const res = await Promise.allSettled(fits.map((f) => post(`/api/nodes/${f.node_id}/load`, { name: el.dataset.name })));
+        const bad = res.filter((r) => r.status === 'rejected').length;
+        toast(bad ? `Started on ${fits.length - bad} node(s); ${bad} failed to start` : `Loading on ${fits.map((f) => f.name).join(', ')}; progress shows on the node cards`); break;
+      }
+      case 'hf-add': { const g = hfGroups[+el.dataset.i]; await post('/api/models', { repo: hfRepo, files: g.files, mmproj: ($('hf-mmproj') || {}).value || '', storage: el.dataset.storage }); toast(el.dataset.storage === 'direct' ? 'Added. Nodes download it when you load it.' : 'Downloading to the controller'); break; }
       case 'model-store': await post(`/api/models/${encodeURIComponent(el.dataset.name)}/store`); toast('Downloading to the controller'); break;
       case 'model-unstore': if (confirm(`Delete ${el.dataset.name}'s files from the controller? It stays in the library; nodes that need it download it from Hugging Face. Copies already on nodes stay.`)) { await post(`/api/models/${encodeURIComponent(el.dataset.name)}/unstore`); toast('Freed controller space'); } break;
       case 'model-retry': await post(`/api/models/${encodeURIComponent(el.dataset.name)}/retry`); toast('Resuming download'); break;
       case 'model-delete': if (confirm(`Remove ${el.dataset.name} from the library (and its files from the controller, if stored there)? Copies already on nodes stay; delete those on the node card.`)) await api(`/api/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); break;
+      case 'install-tool': await post(`/api/nodes/${id}/toolchain`, { tool: el.dataset.tool }); toast('Downloading Go to the controller, then the node'); break;
       case 'node-update': await post(`/api/nodes/${id}/update`); toast('Update sent'); break;
       case 'ctl-update': await updateController(); return;
       case 'ctl-rollback': await rollbackController(); return;
@@ -1069,6 +1385,7 @@ document.addEventListener('click', async (e) => {
       case 'del-release': if (confirm(`Delete the uploaded ${el.dataset.platform} release?`)) await api(`/api/releases/${el.dataset.platform}`, { method: 'DELETE' }); break;
       case 'view-file': viewFile(el.dataset.path); return;
       case 'starter': $('nt-prompt').value = STARTERS[+el.dataset.i][1]; $('nt-prompt').focus(); return;
+      case 'project-delete': case 'project-save': case 'project-use': await projectAction(act, el); break;
       default: if (act.startsWith('task-')) { await taskAction(act, el); return; }
     }
   } catch (x) { toast(x.message, 4000); }
@@ -1076,3 +1393,66 @@ document.addEventListener('click', async (e) => {
 });
 
 api('/api/state').then(showApp).catch(() => {});
+
+// ---------- image attachments (row 19) ----------
+// Images become data URIs in memory and go with the message; the controller
+// keeps them with the task. Big photos are scaled down first (Claude takes 5 MB per image).
+const IMG_MAX = 5, IMG_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+function readImage(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error(file.name + ': could not read'));
+    fr.onload = () => {
+      if (file.size <= 4 * 1024 * 1024 || file.type === 'image/gif') return resolve({ name: file.name || 'image', data: fr.result });
+      const img = new Image();
+      img.onerror = () => resolve({ name: file.name, data: fr.result });
+      img.onload = () => {
+        const k = Math.min(1, 2048 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve({ name: (file.name || 'image').replace(/\.\w+$/, '') + '.jpg', data: c.toDataURL('image/jpeg', 0.85) });
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+// visionProblem says why a planner cannot read images, or '' if it can (or we cannot tell here; the controller checks again).
+function visionProblem(planner) {
+  if (!planner || !planner.startsWith('node:')) return '';
+  const n = state && state.nodes.find((x) => 'node:' + x.id === planner), hb = n && n.heartbeat;
+  const name = hb && hb.loaded_model;
+  if (!name) return 'The local planner has no model loaded, so it cannot read images.';
+  const m = models && models.models.find((x) => x.name === name);
+  if (m && m.vision) return '';
+  if (!models) return '';
+  return `${name} cannot read images. Load a Vision model (Qwen3.6 or Gemma 4 from the Models page) on that node, or plan with Claude or OpenRouter.`;
+}
+function imageAttach(pre, getPlanner, warnEl) {
+  let items = [];
+  const strip = $(pre + '-imgs'), file = $(pre + '-file');
+  function refresh() {
+    setHTML(strip, items.map((it, i) => `<span class="img-chip"><img src="${it.data}" alt=""><button type="button" data-i="${i}" aria-label="Remove image">×</button></span>`).join(''));
+    const w = items.length ? visionProblem(getPlanner()) : '';
+    warnEl.textContent = w; warnEl.classList.toggle('hidden', !w);
+  }
+  async function add(files) {
+    for (const f of files) {
+      if (!IMG_TYPES.includes(f.type)) { toast(`${f.name || 'That file'} is not a PNG, JPEG, WebP or GIF image`, 4000); continue; }
+      if (items.length >= IMG_MAX) { toast(`At most ${IMG_MAX} images per message`, 4000); break; }
+      try { items.push(await readImage(f)); } catch (e) { toast(e.message, 4000); }
+    }
+    refresh();
+  }
+  $(pre + '-attach').onclick = () => file.click();
+  file.onchange = () => { add([...file.files]); file.value = ''; };
+  strip.onclick = (e) => { const b = e.target.closest('button[data-i]'); if (b) { items.splice(+b.dataset.i, 1); refresh(); } };
+  const box = pre === 'nt' ? $('nt-prompt') : $('tm-text');
+  box.addEventListener('paste', (e) => { const fs = [...(e.clipboardData ? e.clipboardData.files : [])].filter((f) => f.type.startsWith('image/')); if (fs.length) { e.preventDefault(); add(fs); } });
+  const comp = box.closest('.composer');
+  comp.addEventListener('dragover', (e) => { if ([...(e.dataTransfer.types || [])].includes('Files')) e.preventDefault(); });
+  comp.addEventListener('drop', (e) => { const fs = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/')); if (fs.length) { e.preventDefault(); add(fs); } });
+  return { payload: () => items.map((i) => ({ name: i.name, data: i.data })), clear: () => { items = []; refresh(); }, refresh };
+}
+const ntImg = imageAttach('nt', () => $('nt-planner').value, $('nt-img-warn'));
+const tmImg = imageAttach('tm', () => taskDetail && taskDetail.planner, $('tm-img-warn'));
