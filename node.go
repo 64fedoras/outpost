@@ -834,6 +834,7 @@ type streamer struct {
 	seq    int
 	cur    string
 	buf    []byte
+	tok    int
 	done   chan struct{}
 	closed sync.Once
 }
@@ -882,6 +883,13 @@ func (w streamWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// token counts one model token toward the next flush.
+func (s *streamer) token() {
+	s.mu.Lock()
+	s.tok++
+	s.mu.Unlock()
+}
+
 func (s *streamer) flush() {
 	s.mu.Lock()
 	s.flushLocked()
@@ -892,8 +900,9 @@ func (s *streamer) flushLocked() {
 	if len(s.buf) == 0 {
 		return
 	}
-	_ = s.n.send("job.output", JobOutput{JobID: s.jobID, Seq: s.seq, Stream: s.cur, Data: string(s.buf)})
+	_ = s.n.send("job.output", JobOutput{JobID: s.jobID, Seq: s.seq, Stream: s.cur, Data: string(s.buf), Tokens: s.tok})
 	s.seq++
+	s.tok = 0
 	s.buf = s.buf[:0]
 }
 

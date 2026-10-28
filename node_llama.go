@@ -885,7 +885,7 @@ func (n *Node) runInference(ctx context.Context, jd JobDispatch, res *JobResult)
 	}
 	sw := newStreamer(n, jd.JobID, spec.Stream)
 	w := sw.writer("tokens")
-	out, e := n.llama.chat(ctx, spec, func(s string) { _, _ = w.Write([]byte(s)) })
+	out, e := n.llama.chat(ctx, spec, func(s string) { _, _ = w.Write([]byte(s)); sw.token() })
 	sw.close()
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):

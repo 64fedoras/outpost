@@ -148,6 +148,10 @@ Each task is a conversation:
 3. **The plan appears as a card.** Approve it, adjust the cap, or reply with changes ("use SQLite
    instead", "drop the web UI") and it revises the plan. Nothing runs until you approve.
 4. **Progress is live.** A strip fills in as subtasks finish, with which node wrote and checked each.
+   A running subtask expands to show the text its node is writing, with tokens per second, and
+   planning with Claude or OpenRouter streams the same way. The page also updates as soon as the
+   task changes instead of waiting for the next refresh. Live text is kept in controller memory only
+   (the last 64 KB per call) and is gone when the call ends.
    You can **steer while it works**: a message like "keep the output sorted" goes to every subtask,
    review and test fix that starts after it.
 5. **The result card** lists the files, the test outcome, and a **Download .zip** button.

@@ -73,7 +73,8 @@ function route() {
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task' }[page] || page[0].toUpperCase() + page.slice(1));
   closeSide();
   clearTimeout(taskTimer);
-  if (page === 'task') { taskDetail = null; threadReset(); pollTask(); }
+  liveClose();
+  if (page === 'task') { taskDetail = null; threadReset(); liveOpen(pageArg); pollTask(); }
   if (page === 'new') setTimeout(() => $('nt-prompt').focus(), 0);
   if (page === 'settings') loadSettings();
   renderSideTasks();
@@ -241,8 +242,52 @@ async function pollTask() {
   await loadRounds();
   if (id !== pageArg) return;
   renderTask(taskDetail);
-  taskTimer = setTimeout(pollTask, WORKING.includes(taskDetail.status) ? 1500 : 4000);
+  // With the live stream open, "changed" events trigger refreshes; polling is only the fallback.
+  const live = liveES && liveES.readyState === 1;
+  taskTimer = setTimeout(pollTask, live ? 15000 : WORKING.includes(taskDetail.status) ? 1500 : 4000);
 }
+
+// ---------- live output (server-sent events) ----------
+let liveES = null, liveCalls = {}, liveKick = null;
+const liveClosed = new Set();   // subtask ids whose live pane the user collapsed
+function liveClose() {
+  if (liveES) liveES.close();
+  liveES = null; liveCalls = {}; clearTimeout(liveKick);
+}
+function liveOpen(id) {
+  if (!window.EventSource) return;
+  liveES = new EventSource(`/api/tasks/${id}/events`);
+  liveES.onmessage = (e) => {
+    let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
+    if (ev.t === 'start') liveCalls[ev.call] = { sub: ev.sub || '', label: ev.label, node: ev.node, text: ev.text || '', tok: ev.tok || 0, tps: ev.tps || 0, est: !!ev.est };
+    else if (ev.t === 'reset' && liveCalls[ev.call]) Object.assign(liveCalls[ev.call], { text: '', tok: 0, tps: 0 });
+    else if (ev.t === 'end') delete liveCalls[ev.call];
+    else if (ev.t === 'delta' && liveCalls[ev.call]) {
+      const c = liveCalls[ev.call];
+      c.text = (c.text + ev.text).slice(-LIVE_MAX); c.tok = ev.tok; c.tps = ev.tps;
+      const pre = document.querySelector(`[data-live="${ev.call}"]`);
+      if (pre) { setLiveText(pre, c); const m = pre.parentNode.querySelector('.live-rate'); if (m) m.textContent = liveRate(c); return; }
+    }
+    // Anything but a delta for an already visible pane changes the layout: re-render soon.
+    clearTimeout(liveKick);
+    liveKick = setTimeout(() => { if (page === 'task') pollTask(); }, ev.t === 'changed' ? 250 : 50);
+  };
+}
+const LIVE_MAX = 8000;   // characters shown per call; the controller keeps 64 KB
+function liveRate(c) { return c.tps ? `${c.est ? '~' : ''}${c.tps} tok/s` : ''; }
+function setLiveText(pre, c) {
+  const stick = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 24;
+  pre.textContent = c.text;
+  if (stick) pre.scrollTop = pre.scrollHeight;
+}
+function livePane(c, id) {
+  const open = !liveClosed.has(c.sub || id);
+  return `<details class="live" data-sub="${esc(c.sub || id)}" ${open ? 'open' : ''}><summary>live output <span class="live-rate">${esc(liveRate(c))}</span></summary><pre class="live-text" data-live="${esc(id)}">${esc(c.text)}</pre></details>`;
+}
+document.addEventListener('toggle', (e) => {
+  const d = e.target;
+  if (d.classList && d.classList.contains('live')) d.open ? liveClosed.delete(d.dataset.sub) : liveClosed.add(d.dataset.sub);
+}, true);
 
 function threadReset() {
   const th = $('thread'); th.innerHTML = ''; th._items = {};
@@ -309,6 +354,9 @@ function threadItems(t) {
     if (approvedHere) { items.push({ key: 'progress-' + round, cls: 'card-row', html: progressCard(t) }); progressPlaced = true; }
   });
   if (started && !progressPlaced) items.push({ key: 'progress-' + round, cls: 'card-row', html: progressCard(t) });
+  // Planner and other calls that belong to no subtask.
+  const loose = Object.entries(liveCalls).filter(([, c]) => !c.sub);
+  if (loose.length) items.push({ key: 'live-loose', cls: 'card-row', html: `<div class="card-msg quiet"><div class="card-head">${loose.map(([, c]) => esc(c.node ? `Writing on ${c.node}` : 'Working')).join(' · ')}</div>${loose.map(([id, c]) => livePane(c, id)).join('')}</div>` });
   const tail = statusCard(t);
   if (tail) items.push(tail);
   return items;
@@ -379,7 +427,8 @@ function progressCard(t) {
     else if (x.status === 'done') who = `${x.by_planner ? 'written by the planner' : esc(x.node_name || '')}${x.reviewer ? ` · checked by ${esc(x.reviewer)}${x.review_fixed ? ', who fixed it' : ''}` : ''}`;
     else if (x.status === 'failed') who = esc(x.error || 'failed');
     else who = s.depends_on && s.depends_on.length ? `waits for ${s.depends_on.map(esc).join(', ')}` : 'waiting for a free node';
-    return `<li class="p-${x.status}"><span class="p-ico" aria-hidden="true">${ST_ICON[x.status] || ''}</span><span class="p-title">${esc(s.title)}</span><span class="p-who">${who}</span></li>`;
+    const lives = Object.entries(liveCalls).filter(([, c]) => c.sub === s.id).map(([id, c]) => livePane(c, id)).join('');
+    return `<li class="p-${x.status}"><span class="p-ico" aria-hidden="true">${ST_ICON[x.status] || ''}</span><span class="p-title">${esc(s.title)}</span><span class="p-who">${who}</span>${lives}</li>`;
   }).join('');
   let phase = '';
   if (t.status === 'testing') phase = 'Running the tests…';
@@ -989,7 +1038,6 @@ $('set-or-model-save').onclick = () => saveSettings({ openrouter_model: $('set-o
 $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-instr-save').onclick = () => saveSettings({ instructions: $('set-instr').value }, 'Instructions saved');
-.onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value }, 'Defaults saved');
 $('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked }, 'Defaults saved');
 $('pw-form').onsubmit = async (e) => {
   e.preventDefault();

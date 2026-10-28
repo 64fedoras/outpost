@@ -242,6 +242,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/tasks/{id}/answers", c.auth(c.handleTaskAnswers))
 	mux.HandleFunc("POST /api/tasks/{id}/cancel", c.auth(c.handleCancelTask))
 	mux.HandleFunc("POST /api/tasks/{id}/resume", c.auth(c.handleResumeTask))
+	mux.HandleFunc("GET /api/tasks/{id}/events", c.auth(c.handleTaskEvents))
 	mux.HandleFunc("GET /api/tasks/{id}/file", c.auth(c.handleTaskFile))
 	mux.HandleFunc("GET /api/tasks/{id}/rounds", c.auth(c.handleTaskRounds))
 	mux.HandleFunc("GET /api/tasks/{id}/changes", c.auth(c.handleTaskChanges))
@@ -849,6 +850,7 @@ func (c *Controller) handleNodeMessage(nodeID string, env *Envelope) {
 		if json.Unmarshal(env.Body, &o) != nil {
 			return
 		}
+		taskLive.jobOutput(o)
 		j := c.jobs[o.JobID]
 		if j == nil {
 			return

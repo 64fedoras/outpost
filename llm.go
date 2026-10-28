@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -35,7 +36,9 @@ type llmRequest struct {
 	MaxTokens   int
 	Temperature float64
 	Label       string
-	WebSearch   bool // Claude only: allow the web search tool (priced per search)
+	WebSearch   bool        // Claude only: allow the web search tool (priced per search)
+	Sub         string      // subtask id, for the live view
+	Live        *liveHandle // streamed text goes here (cloud planners)
 }
 
 type llmResponse struct {
@@ -98,11 +101,15 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 	if req.Temperature > 0 {
 		body["temperature"] = req.Temperature
 	}
+	if req.Live != nil {
+		body["stream"] = true
+	}
 	b, _ := json.Marshal(body)
 	client := &http.Client{Timeout: 10 * time.Minute}
 	start := time.Now()
 	var lastErr error
 	for attempt := 0; attempt < 6; attempt++ {
+		req.Live.Reset()
 		hr, _ := http.NewRequestWithContext(ctx, "POST", anthropicBaseURL()+"/v1/messages", bytes.NewReader(b))
 		hr.Header.Set("x-api-key", key)
 		hr.Header.Set("anthropic-version", "2023-06-01")
@@ -114,6 +121,25 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 			}
 			lastErr = err
 		} else {
+			if resp.StatusCode == 200 && strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+				r, serr := readClaudeStream(resp.Body, req.Live)
+				resp.Body.Close()
+				if serr == nil {
+					r.Model, r.ElapsedSecond = model, time.Since(start).Seconds()
+					r.CostUSD = usageCost(model, r.InTokens, r.OutTokens, r.CacheWrite, r.CacheRead)
+					return r, nil
+				}
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				lastErr = serr
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(time.Duration(2<<attempt) * time.Second):
+				}
+				continue
+			}
 			raw, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 			resp.Body.Close()
 			if resp.StatusCode == 200 {
@@ -241,4 +267,80 @@ func extractJSON(text string) string {
 		return ""
 	}
 	return text[i : j+1]
+}
+
+// sseData calls fn with the data payload of each server-sent event in r.
+func sseData(r io.Reader, fn func(data string) bool) error {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 1<<20), 16<<20)
+	for sc.Scan() {
+		if line := sc.Text(); strings.HasPrefix(line, "data:") {
+			if !fn(strings.TrimSpace(strings.TrimPrefix(line, "data:"))) {
+				return nil
+			}
+		}
+	}
+	return sc.Err()
+}
+
+// readClaudeStream reads a streamed Messages response, sending text to live as it arrives.
+func readClaudeStream(body io.Reader, live *liveHandle) (*llmResponse, error) {
+	r := &llmResponse{}
+	var text strings.Builder
+	var streamErr error
+	done := false
+	err := sseData(body, func(data string) bool {
+		var ev struct {
+			Type  string `json:"type"`
+			Delta struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"delta"`
+			Message struct {
+				Usage struct {
+					In     int `json:"input_tokens"`
+					CacheW int `json:"cache_creation_input_tokens"`
+					CacheR int `json:"cache_read_input_tokens"`
+				} `json:"usage"`
+			} `json:"message"`
+			Usage struct {
+				Out int `json:"output_tokens"`
+			} `json:"usage"`
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal([]byte(data), &ev) != nil {
+			return true
+		}
+		switch ev.Type {
+		case "message_start":
+			r.InTokens, r.CacheWrite, r.CacheRead = ev.Message.Usage.In, ev.Message.Usage.CacheW, ev.Message.Usage.CacheR
+		case "content_block_delta":
+			if ev.Delta.Type == "text_delta" && ev.Delta.Text != "" {
+				text.WriteString(ev.Delta.Text)
+				live.Write(ev.Delta.Text)
+			}
+		case "message_delta":
+			r.OutTokens = ev.Usage.Out
+		case "message_stop":
+			done = true
+			return false
+		case "error":
+			streamErr = fmt.Errorf("Claude API stream: %s", ev.Error.Message)
+			return false
+		}
+		return true
+	})
+	if streamErr != nil {
+		return nil, streamErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !done {
+		return nil, errors.New("Claude API stream ended early")
+	}
+	r.Text = text.String()
+	return r, nil
 }
