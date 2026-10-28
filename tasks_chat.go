@@ -23,12 +23,16 @@ type TaskMessage struct {
 	ID        string     `json:"id"`
 	Time      time.Time  `json:"time"`
 	Role      string     `json:"role"` // user | assistant | event
-	Kind      string     `json:"kind"` // text | answers | steer | questions | plan | result | error | event
+	Kind      string     `json:"kind"` // text | answers | steer | questions | plan | result | error | event | agent_question | agent_answer
 	Text      string     `json:"text,omitempty"`
 	Questions []Question `json:"questions,omitempty"`
 	Plan      *Plan      `json:"plan,omitempty"`
-	Files     []string   `json:"files,omitempty"` // result: files added or changed in this round
+	Files     []string   `json:"files,omitempty"`  // result: files added or changed in this round
+	Images    []string   `json:"images,omitempty"` // user: attached image file names (see handleTaskImage)
+	Shots     []Shot     `json:"shots,omitempty"`  // shots, mockup: rendered pages (see visual.go)
 	Round     int        `json:"round"`
+	Pending   bool       `json:"pending,omitempty"` // agent_question: waiting for the user's answer
+	Subtask   string     `json:"subtask,omitempty"` // agent messages: which subtask they belong to
 }
 
 type Question struct {
@@ -109,12 +113,13 @@ func (t *Task) steeringText() string {
 
 // plannerPrompt is the user turn for planning the current round: the project
 // so far (for follow-ups), earlier requests, and this round's conversation.
-func (c *Controller) plannerPrompt(t *Task, budget int) string {
+func (c *Controller) plannerPrompt(t *Task, budget int, want []string) string {
 	t.mu.Lock()
-	round := t.Round
+	round, seeded := t.Round, t.Seeded
 	msgs := append([]TaskMessage(nil), t.Messages...)
 	t.mu.Unlock()
 	var b strings.Builder
+	b.WriteString(t.instructionsBlock())
 	var prevPlan, roundPlan *Plan
 	var earlier []string
 	for _, m := range msgs {
@@ -125,15 +130,23 @@ func (c *Controller) plannerPrompt(t *Task, budget int) string {
 				roundPlan = m.Plan
 			}
 		}
-		if m.Round < round && m.Role == "user" && m.Kind != "steer" {
+		if m.Round < round && m.Role == "user" && m.Kind != "steer" && m.Kind != "agent_answer" {
 			earlier = append(earlier, m.Text)
 		}
 	}
 	files := listRepo(t.repoDir())
-	if round > 1 && len(files) > 0 {
+	if round == 1 && len(files) > 0 && seeded {
+		b.WriteString("This request starts from existing files (a project or an attached archive). Plan only the files to add or change.\n\n")
+		if tc := c.projectTestCommand(t); tc != "" {
+			fmt.Fprintf(&b, "The project's test command is: %s\n\n", tc)
+		}
+		b.WriteString("Current project files:\n")
+		b.WriteString(repoSnapshot(t.repoDir(), budget/2))
+		b.WriteString("\n")
+	} else if round > 1 && len(files) > 0 {
 		b.WriteString("This is a follow-up request on an existing project. Plan only the files to add or change.\n\n")
 		if prevPlan != nil {
-			fmt.Fprintf(&b, "Project: %s\n%s\nLanguage: %s\nTest command so far: %s\n\n", prevPlan.Title, prevPlan.Summary, prevPlan.Language, prevPlan.TestCommand)
+			fmt.Fprintf(&b, "Project: %s\n%s\nLanguage: %s\nTest command so far: %s\nBuild command so far: %s (artifacts: %s)\n\n", prevPlan.Title, prevPlan.Summary, prevPlan.Language, prevPlan.TestCommand, prevPlan.BuildCommand, strings.Join(prevPlan.Artifacts, ", "))
 		}
 		if len(earlier) > 0 {
 			b.WriteString("Earlier requests and answers, oldest first:\n")
@@ -142,10 +155,20 @@ func (c *Controller) plannerPrompt(t *Task, budget int) string {
 			}
 			b.WriteString("\n")
 		}
-		b.WriteString("Current project files:\n")
-		b.WriteString(repoSnapshot(t.repoDir(), budget/2))
+		if repoNeedsIndex(t.repoDir(), budget) {
+			b.WriteString("Project index (path, size, summary, top-level declarations):\n")
+			b.WriteString(renderIndex(buildIndex(t.repoDir()), budget/3))
+			if len(want) > 0 {
+				b.WriteString("\nFiles you asked for:\n")
+				b.WriteString(wantedFiles(t.repoDir(), want, budget/3))
+			}
+		} else {
+			b.WriteString("Current project files:\n")
+			b.WriteString(repoSnapshot(t.repoDir(), budget/2))
+		}
 		b.WriteString("\n")
 	}
+	b.WriteString(attachmentContext(t, budget/4))
 	b.WriteString("Conversation about this request:\n")
 	for _, m := range msgs {
 		if m.Round != round {
@@ -154,6 +177,9 @@ func (c *Controller) plannerPrompt(t *Task, budget int) string {
 		switch {
 		case m.Role == "user":
 			fmt.Fprintf(&b, "User: %s\n", m.Text)
+			if len(m.Images) > 0 {
+				fmt.Fprintf(&b, "(The user attached %d image(s) to this message; they are shown with this request. Use what they show, e.g. a screenshot of a bug or a design to match.)\n", len(m.Images))
+			}
 		case m.Kind == "questions":
 			b.WriteString("You asked:\n")
 			for _, q := range m.Questions {
@@ -179,24 +205,45 @@ func (c *Controller) handleTaskMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Text string `json:"text"`
+		Text   string        `json:"text"`
+		Images []imageUpload `json:"images"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
+	if err := readJSONBody(w, r, &req); err != nil || strings.TrimSpace(req.Text) == "" {
 		writeJSON(w, 400, map[string]string{"error": "write a message"})
 		return
 	}
 	text := strings.TrimSpace(req.Text)
 	t.mu.Lock()
-	status := t.Status
+	status, planner, orModel := t.Status, t.Planner, t.ORModel
 	t.mu.Unlock()
+	var imgNames []string
+	if len(req.Images) > 0 {
+		switch status {
+		case "running", "testing", "building", "fixing", "paused_cap":
+			writeJSON(w, 409, map[string]string{"error": "images can be added while the plan is being made, or in a follow-up request once this one is done"})
+			return
+		}
+		imgs, err := decodeImages(req.Images)
+		if err == nil {
+			err = c.checkPlannerVision(planner, orModel)
+		}
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		if imgNames, err = t.saveImages(imgs); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	switch status {
 	case "awaiting_answers":
-		t.addMsg(TaskMessage{Role: "user", Kind: "answers", Text: text})
+		t.addMsg(TaskMessage{Role: "user", Kind: "answers", Text: text, Images: imgNames})
 		c.replan(t, "Planning with your answers.")
 	case "planning", "awaiting_approval":
-		t.addMsg(TaskMessage{Role: "user", Kind: "text", Text: text})
+		t.addMsg(TaskMessage{Role: "user", Kind: "text", Text: text, Images: imgNames})
 		c.replan(t, "Revising the plan.")
-	case "running", "testing", "fixing", "paused_cap":
+	case "running", "testing", "building", "fixing", "paused_cap":
 		t.mu.Lock()
 		t.Steering = append(t.Steering, text)
 		t.addMsgLocked(TaskMessage{Role: "user", Kind: "steer", Text: text})
@@ -204,20 +251,26 @@ func (c *Controller) handleTaskMessage(w http.ResponseWriter, r *http.Request) {
 		t.mu.Unlock()
 		t.logf("info", "Note from you: %s", firstLine(text, 200))
 	case "done", "failed", "cancelled", "interrupted":
-		t.mu.Lock()
-		t.Round++
-		t.Asked, t.Steering, t.Touched = false, nil, nil
-		t.Plan, t.Approved, t.Ended = nil, nil, nil
-		t.Subtasks = []*SubtaskState{}
-		t.TestStatus, t.TestOutput, t.FixRounds, t.Error, t.PausedFrom = "", "", 0, "", ""
-		t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: text})
-		t.mu.Unlock()
-		c.replan(t, "Planning the follow-up on the existing project.")
+		c.startFollowUp(t, text, imgNames)
 	default:
 		writeJSON(w, 409, map[string]string{"error": "this task cannot take messages right now"})
 		return
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// startFollowUp begins a new round on a finished task's files.
+func (c *Controller) startFollowUp(t *Task, text string, imgNames []string) {
+	t.mu.Lock()
+	t.Round++
+	t.Asked, t.Steering, t.Touched = false, nil, nil
+	t.Plan, t.Approved, t.Ended = nil, nil, nil
+	t.Subtasks = []*SubtaskState{}
+	t.TestStatus, t.TestOutput, t.FixRounds, t.Error, t.PausedFrom = "", "", 0, "", ""
+	t.BuildStatus, t.BuildOutput = "", ""
+	t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: text, Images: imgNames})
+	t.mu.Unlock()
+	c.replan(t, "Planning the follow-up on the existing project.")
 }
 
 // replan (re)starts planning for the current round.
@@ -281,10 +334,37 @@ func (c *Controller) handleTaskAnswers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
+// handleAgentAnswer takes the user's answer to a question an agent asked:
+// {"id": "m12", "answer": "use SQLite"}
+func (c *Controller) handleAgentAnswer(w http.ResponseWriter, r *http.Request) {
+	t := c.getTask(r.PathValue("id"))
+	if t == nil {
+		writeJSON(w, 404, map[string]string{"error": "no such task"})
+		return
+	}
+	var req struct {
+		ID     string `json:"id"`
+		Answer string `json:"answer"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Answer) == "" {
+		writeJSON(w, 400, map[string]string{"error": "write an answer"})
+		return
+	}
+	if err := t.deliverAnswer(req.ID, strings.TrimSpace(req.Answer)); err != nil {
+		writeJSON(w, 409, map[string]string{"error": err.Error()})
+		return
+	}
+	t.logf("info", "Answer to the agent: %s", firstLine(req.Answer, 200))
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
 // resultText summarises a finished round for the conversation.
 func resultText(t *Task) string {
 	n := len(t.Subtasks)
 	var s string
+	if t.Mockup && t.Plan != nil && t.Plan.Mockup {
+		return fmt.Sprintf("%d mockup variants are ready above. Pick one to build the real code from it, or reply to ask for changes.", n)
+	}
 	switch t.TestStatus {
 	case "passed":
 		s = "Done, and the tests pass."
@@ -313,4 +393,17 @@ func sortedCopy(in []string) []string {
 	out := append([]string(nil), in...)
 	sort.Strings(out)
 	return out
+}
+
+// roundURLs lists the links in the user's messages for the current round (not steering notes).
+func (c *Controller) roundURLs(t *Task) []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var text strings.Builder
+	for _, m := range t.Messages {
+		if m.Round == t.Round && m.Role == "user" && m.Kind != "steer" {
+			text.WriteString(m.Text + "\n")
+		}
+	}
+	return extractURLs(text.String())
 }

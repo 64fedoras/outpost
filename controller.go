@@ -121,8 +121,11 @@ type Controller struct {
 	runtimes  map[string]*RuntimeRec
 	rtCache   *runtimeCache
 	nodeOps   map[string]*nodeOpView
-	pipelines map[string]*pipeline // model setups in progress; cancel stops one
+	pipelines map[string]*pipeline         // model setups in progress; cancel stops one
+	jobBlobs  map[string]map[string]string // job -> input path -> file on the controller, for nodes to download
+	peerBad   map[string]time.Time         // nodes skipped as model sources until then (served data failing its hash)
 	tasks     map[string]*Task
+	projects  map[string]*Project // see projects.go
 	reserved  map[string]bool
 	cooldown  map[string]time.Time
 	restarts  map[string]time.Time
@@ -160,6 +163,7 @@ func runController(args []string) error {
 	c.loadSettings()
 	c.loadModels()
 	c.loadRuntimes()
+	c.loadProjects()
 	c.loadTasks()
 	go c.autoResumeInterrupted(autoResumeWait, 5*time.Second)
 	c.advertise = *advertise
@@ -217,7 +221,9 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/nodes/{id}/restart", c.auth(c.handleRestartNode))
 	mux.HandleFunc("GET /v1/releases/{platform}", c.handleServeRelease)
 	mux.HandleFunc("GET /v1/runtime/{variant}", c.handleServeRuntime)
+	c.toolchainRoutes(mux)
 	mux.HandleFunc("GET /v1/models/{name}/files/{index}", c.handleServeModelFile)
+	mux.HandleFunc("GET /v1/jobs/{id}/inputs", c.handleServeJobInput)
 	mux.HandleFunc("GET /api/settings", c.auth(c.handleGetSettings))
 	mux.HandleFunc("POST /api/settings", c.auth(c.handleSaveSettings))
 	mux.HandleFunc("GET /api/openrouter/models", c.auth(c.handleOpenRouterModels))
@@ -233,6 +239,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/nodes/{id}/load", c.auth(c.handleLoadModel))
 	mux.HandleFunc("POST /api/nodes/{id}/unload", c.auth(c.handleUnloadModel))
 	mux.HandleFunc("DELETE /api/nodes/{id}/models/{name}", c.auth(c.handleRemoveNodeModel))
+	c.projectRoutes(mux)
 	mux.HandleFunc("GET /api/tasks", c.auth(c.handleListTasks))
 	mux.HandleFunc("POST /api/tasks", c.auth(c.handleCreateTask))
 	mux.HandleFunc("GET /api/tasks/{id}", c.auth(c.handleGetTask))
@@ -241,9 +248,21 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/tasks/{id}/replan", c.auth(c.handleReplanTask))
 	mux.HandleFunc("POST /api/tasks/{id}/messages", c.auth(c.handleTaskMessage))
 	mux.HandleFunc("POST /api/tasks/{id}/answers", c.auth(c.handleTaskAnswers))
+	mux.HandleFunc("POST /api/tasks/{id}/agent-answer", c.auth(c.handleAgentAnswer))
 	mux.HandleFunc("POST /api/tasks/{id}/cancel", c.auth(c.handleCancelTask))
 	mux.HandleFunc("POST /api/tasks/{id}/resume", c.auth(c.handleResumeTask))
+	mux.HandleFunc("GET /api/tasks/{id}/events", c.auth(c.handleTaskEvents))
 	mux.HandleFunc("GET /api/tasks/{id}/file", c.auth(c.handleTaskFile))
+	mux.HandleFunc("GET /api/tasks/{id}/artifact", c.auth(c.handleTaskArtifact))
+	mux.HandleFunc("GET /api/tasks/{id}/artifacts.zip", c.auth(c.handleTaskArtifactsZip))
+	mux.HandleFunc("POST /api/tasks/{id}/publish", c.auth(c.handlePublishArtifacts))
+	mux.HandleFunc("POST /api/tasks/{id}/zip", c.auth(c.handleTaskZip))
+	mux.HandleFunc("GET /api/tasks/{id}/rounds", c.auth(c.handleTaskRounds))
+	mux.HandleFunc("GET /api/tasks/{id}/changes", c.auth(c.handleTaskChanges))
+	mux.HandleFunc("POST /api/tasks/{id}/undo", c.auth(c.handleUndoRound))
+	mux.HandleFunc("GET /api/tasks/{id}/image", c.auth(c.handleTaskImage))
+	mux.HandleFunc("GET /api/tasks/{id}/shot", c.auth(c.handleTaskShot))
+	mux.HandleFunc("POST /api/tasks/{id}/pick", c.auth(c.handlePickVariant))
 	mux.HandleFunc("GET /api/tasks/{id}/download", c.auth(c.handleDownloadTask))
 	mux.HandleFunc("POST /v1/node/join", c.handleJoin)
 	mux.HandleFunc("GET /v1/node/ws", c.handleNodeWS)
@@ -589,10 +608,7 @@ func (c *Controller) handleNewJob(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 409, map[string]string{"error": "node is busy (at its job limit)"})
 		return
 	}
-	argv := []string{"sh", "-c", req.Command}
-	if n.Hello != nil && n.Hello.OS == "windows" {
-		argv = []string{"cmd", "/C", req.Command}
-	}
+	argv := shellArgv(n.Hello, req.Command)
 	timeout := req.TimeoutS
 	if timeout <= 0 || timeout > 24*3600 {
 		timeout = 600
@@ -847,6 +863,7 @@ func (c *Controller) handleNodeMessage(nodeID string, env *Envelope) {
 		if json.Unmarshal(env.Body, &o) != nil {
 			return
 		}
+		taskLive.jobOutput(o)
 		j := c.jobs[o.JobID]
 		if j == nil {
 			return

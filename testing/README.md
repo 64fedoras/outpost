@@ -19,13 +19,26 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `mobile.py` | The same pages at phone width. |
 | `shots.py` | Screenshots of every tab (needs a task id edited into the script). |
 
+Agent mode: the stub Claude answers requests that carry `tools` with a scripted fix (list, read,
+write, run the tests, summary), and `fake_llama_server.py` answers them with streamed tool calls
+(search, ask_user, report). A prompt containing "dig first" makes the stub plan an `investigate`
+subtask; answer its question with `POST /api/tasks/<id>/agent-answer`. `run.sh up` repacks the
+stub llama.cpp archive from `fake_llama_server.py` each time.
+
 The fake model writes a deliberate bug in `wordcount/core.py` so the review and test-fix loop
 has something to fix. `mock_claude.py` returns questions when the prompt contains "ask me
 first", a one-subtask plan for follow-ups, and a fixed 3-subtask plan otherwise.
 
 Playwright and Chromium are expected to be installed (`pip install playwright && playwright install chromium`).
 
+## Screenshots (visual.go)
+`TestRenderShotsWithBrowser` and `TestVisualCheckFixesWhatItSees` run a fake node over a real
+WebSocket that executes the Chromium job locally. They use a headless Chromium found under
+`/opt/pw-browsers` or `OUTPOST_TEST_CHROME=/path/to/chrome-headless-shell`, and skip without one.
+
 ## Not covered by any script (test by hand)
+- Screenshots on the real nodes: Chromium on each platform (snap Chromium on Ubuntu, Chrome on Windows
+  and macOS), the 390 px phone width in new headless mode, and `preview_command` apps.
 - Windows: tray icon, install, web-UI update (needs a real Windows machine; Defender behaviour).
 - Real GPUs and Vulkan/ROCm builds of llama.cpp, memory pooling across machines.
 - macOS (builds only).
