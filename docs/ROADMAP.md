@@ -1,16 +1,16 @@
 # Outpost roadmap, 0.7 to 1.1
 
-Status: **planned, nothing built.** The code is at v0.6.1. Plan written 2026-10-26 and edited 2026-10-27.
+Status: **0.7 built (rows 1 to 4, see notes below); 0.8 onward planned.** The code is at v0.7.0. Plan written 2026-10-26 and edited 2026-10-27.
 Release numbers go up by one digit only (0.9 is followed by 1.0, then 1.1).
 
 Before building anything, check the Decision column with the owner. Mark each row Approve, Change, Later or Drop.
 
 | # | Feature | Release | Size | Decision |
 | --- | --- | --- | --- | --- |
-| 1 | Windows service and code signing | 0.7 | L | |
-| 2 | Login hardening and API tokens | 0.7 | S | |
-| 3 | Your own TLS certificate | 0.7 | S | |
-| 4 | Backup and restore | 0.7 | M | |
+| 1 | Windows service and code signing | 0.7 | L | Built in 0.7.0 |
+| 2 | Login hardening and API tokens | 0.7 | S | Built in 0.7.0 |
+| 3 | Your own TLS certificate | 0.7 | S | Built in 0.7.0 |
+| 4 | Backup and restore | 0.7 | M | Built in 0.7.0 |
 | 5 | Node benchmarks and smart routing | 0.8 | M | |
 | 6 | Best-of-N on hard subtasks | 0.8 | M | |
 | 7 | Auto-resume after a restart | 0.8 | S | |
@@ -76,6 +76,13 @@ The controller generates a self-signed certificate, which browsers warn about. S
 - **Scheduled backups:** optional nightly copies to a folder, for example an NFS mount, keeping the last 7.
 
 ---
+
+### 0.7.0 build notes (what shipped and what did not)
+
+- **Row 1:** shipped the `OutpostNode` service (launcher plus job object), the admin-shell installer with automatic Defender exclusion, per-user fallback, `uninstall node`, and an optional signing step (`winres/sign.sh`, `winres/selfsign.sh`). The default is **unsigned**: no certificate is configured, so the build is unchanged until you set `OUTPOST_SIGN_PFX` (osslsigncode) or `OUTPOST_SIGN_CMD`. The Azure Artifact Signing versus self-signed decision is still open. Untested: the service on real Windows, Vulkan under session 0, signing, Defender.
+- **Row 2:** shipped as written (lockout count on Settings, sessions list, Sign out everywhere, hashed bearer tokens).
+- **Row 3:** shipped. Offline nodes are re-pinned with `outpost repin --fingerprint …` on the node, not with a button in the Nodes tab (a node that cannot connect cannot be re-pinned from the controller). Nodes on 0.6.1 ignore the push, so update them first.
+- **Row 4:** shipped, including nightly copies. Restore is `install controller --restore FILE`.
 
 ## 0.8: Smarter cluster
 

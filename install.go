@@ -55,6 +55,9 @@ func runUninstall(args []string) error {
 	if len(args) == 0 || (args[0] != "controller" && args[0] != "node") {
 		return errors.New("usage: outpost uninstall controller|node")
 	}
+	if runtime.GOOS == "windows" && args[0] == "node" {
+		return uninstallNodeWindows()
+	}
 	if err := checkInstallable(); err != nil {
 		return err
 	}
@@ -123,6 +126,8 @@ func installController(args []string) error {
 	listen := fsf.String("listen", ":8443", "address to listen on")
 	data := fsf.String("data", "/var/lib/outpost/controller", "data directory")
 	advertise := fsf.String("advertise", "", "URL nodes use to reach the controller, e.g. https://192.0.2.10:8443")
+	restore := fsf.String("restore", "", "restore this backup file (.opb) into the data directory first")
+	force := fsf.Bool("force", false, "with --restore: overwrite an existing controller's data")
 	_ = fsf.Parse(args)
 
 	if err := copySelfToBin(); err != nil {
@@ -130,6 +135,11 @@ func installController(args []string) error {
 	}
 	if err := os.MkdirAll(*data, 0o700); err != nil {
 		return err
+	}
+	if *restore != "" {
+		if err := runRestore(*restore, *data, *force); err != nil {
+			return err
+		}
 	}
 	if _, _, err := loadOrCreateCert(*data); err != nil {
 		return err

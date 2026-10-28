@@ -1,4 +1,4 @@
-# Outpost architecture (v0.6.1)
+# Outpost architecture (v0.7.0)
 
 ## Processes and data
 **Controller** (`outpost controller`, default :8443, HTTPS with a self-signed certificate). Data dir (`/var/lib/outpost/controller` as root on Linux): `admin.json` (PBKDF2 password hash), `secret.key` (encrypts the Claude and Hugging Face keys), `settings.json`, `sessions.json`, `nodes.json`, `tls.crt`/`tls.key`, `tasks/<id>/` (task.json and repo files), `models/<name>/` (controller-stored models), `runtime/<variant>/` (llama.cpp archives), `releases/<platform>` (uploaded Outpost binaries), `agent/`.
@@ -22,7 +22,10 @@ Claude spend is metered per call and a cap pauses the task (`paused_cap`).
 A model library entry has storage `controller` (downloaded once, copied to nodes) or `direct` (each node downloads from Hugging Face). Files are checked against Hugging Face SHA-256 values. The controller picks the llama.cpp build from GitHub releases per node (Vulkan, CPU, macOS) and pushes it. A node can run llama-server alone, or lend memory to a pool through ggml-rpc-server, bound to loopback behind an IP-allow gatekeeper.
 
 ## Updates
-Binaries are uploaded in the web UI per platform; the controller reads each one's version from an embedded `OUTPOST_BUILD_INFO|<version>|` string, serves it to nodes, and keeps the previous build for rollback. On Windows a running exe cannot be replaced, so the node runs under a launcher that starts the newest installed version and hands over to it (0.6.1: a fresh process and a per-data-dir lock).
+Binaries are uploaded in the web UI per platform; the controller reads each one's version from an embedded `OUTPOST_BUILD_INFO|<version>|` string, serves it to nodes, and keeps the previous build for rollback. On Windows a running exe cannot be replaced, so the node runs under a launcher that starts the newest installed version and hands over to it (0.6.1: a fresh process and a per-data-dir lock). Since 0.7.0 a Windows node installed from an admin shell is the `OutpostNode` service (`service_windows.go`): the service process is only a launcher that runs `outpost node` as a child inside a kill-on-close job object, restarts it on exit code 75 (update), and stops the service on 76 (Quit from the tray). The tray started with `--service` never starts the node itself.
+
+## Hardening (0.7.0)
+`controller_auth.go`: per-IP login lockout (in memory), session metadata in `sessions.json.meta`, API tokens (`api_tokens.json`, SHA-256 hashed; `auth` accepts cookie or bearer, `authSession` only the cookie). `controller_tls.go`: the controller serves `c.cert` through `GetCertificate`; a swap sends `node.repin` to connected nodes, waits for `node.repin_ack`, then writes `tls.crt/key` and switches; nodes that missed it are listed in `tls_repin.json` until they reconnect (`outpost repin` on the node). `backup.go`: tar.gz in 1 MiB AES-GCM chunks (final chunk flagged, so truncation is detected), scheduled copies via `backupLoop`.
 
 ## Web UI
 Vanilla JavaScript single-page app embedded in the binary, no build step: sidebar shell, task thread rendered by keyed items, CSS variables with dark mode, mobile drawer. Talks to a JSON API under `/api/` (state, tasks, messages, answers, approve, models, nodes, tokens, releases, settings) with a session cookie.

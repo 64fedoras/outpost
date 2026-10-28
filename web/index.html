@@ -176,6 +176,36 @@
           </form>
           <p class="hint">Locked out? On the controller run <code>sudo outpost reset-password</code>.</p>
         </div>
+        <div class="section-head"><h2>Sign-in security</h2></div>
+        <div class="card">
+          <p class="hint" id="sec-lock"></p>
+          <label>Signed-in browsers</label>
+          <div id="sessions-list"></div>
+          <div class="modal-foot"><button class="danger" id="sess-all">Sign out everywhere</button></div>
+          <label for="tok-name" style="margin-top:14px">API tokens <span class="muted">· for scripts: <code>Authorization: Bearer …</code></span></label>
+          <div id="tokens-list"></div>
+          <div class="btns" style="flex-wrap:nowrap"><input id="tok-name" placeholder="Token name, e.g. nightly script" autocomplete="off"><button id="tok-create">Create token</button></div>
+          <div class="note hidden" id="tok-new" style="margin-top:8px"></div>
+        </div>
+        <div class="section-head"><h2>HTTPS certificate</h2></div>
+        <div class="card">
+          <p class="hint" id="tls-info"></p>
+          <p class="hint">Upload a certificate chain and key (PEM), for example from your own CA or a Let's Encrypt DNS-01 certificate. Connected nodes are told the new fingerprint first, so they keep working.</p>
+          <label for="tls-cert">Certificate (PEM, leaf first)</label><textarea id="tls-cert" rows="3" spellcheck="false"></textarea>
+          <label for="tls-key">Private key (PEM)</label><textarea id="tls-key" rows="3" spellcheck="false"></textarea>
+          <div class="modal-foot"><button class="primary" id="tls-save">Use this certificate</button></div>
+        </div>
+        <div class="section-head"><h2>Backup</h2></div>
+        <div class="card">
+          <p class="hint">One encrypted file with settings, the Claude key, node keys, the HTTPS certificate and all tasks. Restore on a fresh machine with <code>outpost install controller --restore FILE</code>. Keep the passphrase safe: it cannot be recovered.</p>
+          <label for="bk-pass">Passphrase (8+ characters)</label><input id="bk-pass" type="password" autocomplete="new-password">
+          <label class="check"><input type="checkbox" id="bk-large"> Include models, runtimes and releases (large)</label>
+          <div class="modal-foot"><button class="primary" id="bk-download">Download backup</button></div>
+          <label class="check" style="margin-top:14px"><input type="checkbox" id="bk-on"> Nightly backup to a folder on the controller (keeps the last 7)</label>
+          <label for="bk-dir">Folder (full path, e.g. an NFS mount)</label><input id="bk-dir" placeholder="/mnt/nas/outpost-backups">
+          <label for="bk-sched-pass">Passphrase for scheduled backups <span class="muted" id="bk-pass-state"></span></label><input id="bk-sched-pass" type="password" autocomplete="new-password" placeholder="leave blank to keep the saved one">
+          <div class="modal-foot"><button id="bk-sched-save">Save schedule</button></div>
+        </div>
       </div>
     </section>
     </main>

@@ -13,4 +13,5 @@ for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
   if [ "$o" = windows ]; then ext=.exe; flags=""; fi
   CGO_ENABLED=0 GOOS=$o GOARCH=$a go build -trimpath -ldflags="$flags" -o "$D/bin/outpost-$o-$a$ext" .
 done
+sh winres/sign.sh "$D/bin/outpost-windows-amd64.exe"
 echo "built Outpost $V into $D"

@@ -16,6 +16,8 @@ package main
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"html"
 	"log"
@@ -30,6 +32,10 @@ import (
 // exitQuit is the exit code for a deliberate quit; the systemd unit does not
 // restart on it (RestartPreventExitStatus).
 const exitQuit = 75
+
+// exitQuitService is what a node run by the Windows service exits with on Quit
+// (75 means "relaunch after an update" there).
+const exitQuitService = 76
 
 type controlFile struct {
 	Port  int    `json:"port"`
@@ -152,7 +158,7 @@ func (n *Node) controlStatus() controlStatus {
 	model, ready, _, _ := n.llama.status()
 	st := controlStatus{Version: Version, NodeID: n.cfg.NodeID, Name: host, Controller: n.cfg.Controller,
 		Online: n.isOnline(), Paused: n.isPaused(), Model: model, ModelReady: ready, RunningJobs: n.runningCount(),
-		Service: os.Getenv("INVOCATION_ID") != ""}
+		Service: os.Getenv("INVOCATION_ID") != "" || os.Getenv("OUTPOST_SERVICE") == "1"}
 	if ep := n.rpc.current(); ep != "" {
 		st.Lending = ep
 	}
@@ -176,6 +182,9 @@ func (n *Node) quit() {
 	n.connMu.Unlock()
 	n.sweepWorkRoot()
 	os.Remove(controlPath(n.dataDir))
+	if os.Getenv("OUTPOST_SERVICE") == "1" {
+		os.Exit(exitQuitService)
+	}
 	os.Exit(exitQuit)
 }
 
@@ -260,4 +269,33 @@ go.onclick = async () => {
   } catch (e) { msg.className = 'msg err'; msg.textContent = e.message; go.disabled = false; }
 };
 </script></body></html>`
+}
+
+// runRepin trusts a new controller certificate fingerprint on a node that was
+// offline when the certificate was replaced. Check the fingerprint in the
+// controller's Settings page first.
+func runRepin(args []string) error {
+	fsf := flag.NewFlagSet("repin", flag.ExitOnError)
+	fp := fsf.String("fingerprint", "", "SHA-256 fingerprint shown in the controller's Settings")
+	data := fsf.String("data", defaultDataDir("node"), "the node's data directory")
+	_ = fsf.Parse(args)
+	f := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(*fp), ":", ""))
+	if len(f) != 64 {
+		return errors.New("--fingerprint must be the 64-character SHA-256 fingerprint")
+	}
+	p := filepath.Join(*data, "node.json")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return fmt.Errorf("no node config in %s (use --data DIR)", *data)
+	}
+	var cfg NodeConfig
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return err
+	}
+	cfg.Fingerprint = f
+	if err := writeNodeConfig(p, cfg); err != nil {
+		return err
+	}
+	fmt.Println("Now trusting", f, "- the node picks it up on its next connection attempt.")
+	return nil
 }

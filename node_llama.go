@@ -89,7 +89,7 @@ func vulkanAvailable() bool {
 // ---------- downloads from the controller ----------
 
 func (n *Node) controllerClient(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: &http.Transport{TLSClientConfig: pinnedTLS(n.cfg.Fingerprint)}}
+	return &http.Client{Timeout: timeout, Transport: &http.Transport{TLSClientConfig: pinnedTLS(n.pin())}}
 }
 
 // fetchFile downloads path from the controller into dst, resuming a partial
