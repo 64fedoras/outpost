@@ -45,7 +45,7 @@ sh testing/e2e/run.sh up                 # full local rig with stub Claude + fak
 
 ### Vendoring
 All dependencies are in `vendor/` (fyne.io/systray, godbus/dbus/v5, golang.org/x/sys, coder/websocket).
-The original build machine could not reach proxy.golang.org, so `vendor_sync.sh` re-vendors from local
+The original build machine could not reach proxy.golang.org, so `scripts/vendor_sync.sh` re-vendors from local
 git clones and patches `vendor/modules.txt`. **On a machine with normal network access just run
 `go mod tidy && go mod vendor`** and ignore that script. `go.mod` lists coder/websocket as `// indirect`
 although it is imported directly; harmless.
