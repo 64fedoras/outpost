@@ -111,7 +111,8 @@ can check detection without joining.
    9070 XT, *Qwen3-Coder 30B-A3B*; for the 9060 XT, *Qwen2.5-Coder 14B*. Newer options to compare on your own
    tasks (not yet tested on the cluster, and they need a current llama.cpp build): *Qwen3.6 35B-A3B* for the
    CPU node or a 16 GB GPU with RAM offload, *Qwen3.6 27B* for 16 GB GPUs, and *Gemma 4 26B-A4B* as a second
-   opinion for review. Choose where it lives:
+   opinion for review. These three can also read images (marked **Vision**): their vision projector file
+   (`mmproj`) is downloaded with them and passed to llama-server automatically. Choose where it lives:
    - **Add · nodes download** (default): each node downloads it from Hugging Face when you load it.
      Uses no space on the controller; nodes need internet access.
    - **Store on controller:** downloaded once to the controller and copied to nodes over your
@@ -172,6 +173,15 @@ Each task is a conversation:
 6. **Follow-ups build on the same code.** Send another message after a task finishes ("add a --top N
    flag") and the planner plans only the files to add or change; workers get the current version
    of each file they change. Claude spend and the cap carry across follow-ups.
+
+**Images and screenshots.** Click **🖼 Image** in the composer (or paste or drop up to 5 PNG, JPEG, WebP
+or GIF images) to show the planner a screenshot of a bug or a design to match. They are kept with the task
+(not in the zip), sent only to the planner, and shown in the conversation. Claude always accepts images;
+an OpenRouter model must list image input (Outpost refuses a text-only one); a local planner needs a
+**Vision** model loaded (Qwen3.6 or Gemma 4 from the catalog, or a custom Hugging Face repo where you pick
+its `mmproj` file). Without one the composer warns and the controller refuses with a clear message instead
+of dropping the image. Images can be attached while planning and in follow-ups, not as notes while work
+is running. Workers and reviewers do not see images; the planner's plan carries what matters.
 
 **Which node gets the work.** Subtasks go to the free node with the biggest loaded model first, and
 reviews to the next biggest, so a small test model only gets work when the bigger nodes are busy.

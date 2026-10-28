@@ -27,7 +27,8 @@ type TaskMessage struct {
 	Text      string     `json:"text,omitempty"`
 	Questions []Question `json:"questions,omitempty"`
 	Plan      *Plan      `json:"plan,omitempty"`
-	Files     []string   `json:"files,omitempty"` // result: files added or changed in this round
+	Files     []string   `json:"files,omitempty"`  // result: files added or changed in this round
+	Images    []string   `json:"images,omitempty"` // user: attached image file names (see handleTaskImage)
 	Round     int        `json:"round"`
 }
 
@@ -173,6 +174,9 @@ func (c *Controller) plannerPrompt(t *Task, budget int, want []string) string {
 		switch {
 		case m.Role == "user":
 			fmt.Fprintf(&b, "User: %s\n", m.Text)
+			if len(m.Images) > 0 {
+				fmt.Fprintf(&b, "(The user attached %d image(s) to this message; they are shown with this request. Use what they show, e.g. a screenshot of a bug or a design to match.)\n", len(m.Images))
+			}
 		case m.Kind == "questions":
 			b.WriteString("You asked:\n")
 			for _, q := range m.Questions {
@@ -198,22 +202,43 @@ func (c *Controller) handleTaskMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Text string `json:"text"`
+		Text   string        `json:"text"`
+		Images []imageUpload `json:"images"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
+	if err := readJSONBody(w, r, &req); err != nil || strings.TrimSpace(req.Text) == "" {
 		writeJSON(w, 400, map[string]string{"error": "write a message"})
 		return
 	}
 	text := strings.TrimSpace(req.Text)
 	t.mu.Lock()
-	status := t.Status
+	status, planner, orModel := t.Status, t.Planner, t.ORModel
 	t.mu.Unlock()
+	var imgNames []string
+	if len(req.Images) > 0 {
+		switch status {
+		case "running", "testing", "fixing", "paused_cap":
+			writeJSON(w, 409, map[string]string{"error": "images can be added while the plan is being made, or in a follow-up request once this one is done"})
+			return
+		}
+		imgs, err := decodeImages(req.Images)
+		if err == nil {
+			err = c.checkPlannerVision(planner, orModel)
+		}
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		if imgNames, err = t.saveImages(imgs); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	switch status {
 	case "awaiting_answers":
-		t.addMsg(TaskMessage{Role: "user", Kind: "answers", Text: text})
+		t.addMsg(TaskMessage{Role: "user", Kind: "answers", Text: text, Images: imgNames})
 		c.replan(t, "Planning with your answers.")
 	case "planning", "awaiting_approval":
-		t.addMsg(TaskMessage{Role: "user", Kind: "text", Text: text})
+		t.addMsg(TaskMessage{Role: "user", Kind: "text", Text: text, Images: imgNames})
 		c.replan(t, "Revising the plan.")
 	case "running", "testing", "fixing", "paused_cap":
 		t.mu.Lock()
@@ -229,7 +254,7 @@ func (c *Controller) handleTaskMessage(w http.ResponseWriter, r *http.Request) {
 		t.Plan, t.Approved, t.Ended = nil, nil, nil
 		t.Subtasks = []*SubtaskState{}
 		t.TestStatus, t.TestOutput, t.FixRounds, t.Error, t.PausedFrom = "", "", 0, "", ""
-		t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: text})
+		t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: text, Images: imgNames})
 		t.mu.Unlock()
 		c.replan(t, "Planning the follow-up on the existing project.")
 	default:

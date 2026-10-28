@@ -252,6 +252,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/tasks/{id}/rounds", c.auth(c.handleTaskRounds))
 	mux.HandleFunc("GET /api/tasks/{id}/changes", c.auth(c.handleTaskChanges))
 	mux.HandleFunc("POST /api/tasks/{id}/undo", c.auth(c.handleUndoRound))
+	mux.HandleFunc("GET /api/tasks/{id}/image", c.auth(c.handleTaskImage))
 	mux.HandleFunc("GET /api/tasks/{id}/download", c.auth(c.handleDownloadTask))
 	mux.HandleFunc("POST /v1/node/join", c.handleJoin)
 	mux.HandleFunc("GET /v1/node/ws", c.handleNodeWS)
