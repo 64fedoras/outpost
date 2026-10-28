@@ -192,6 +192,20 @@ its `mmproj` file). Without one the composer warns and the controller refuses wi
 of dropping the image. Images can be attached while planning and in follow-ups, not as notes while work
 is running. Workers and reviewers do not see images; the planner's plan carries what matters.
 
+**Screenshots, visual review and mockups.** When a task writes web pages, an exec node that has Chromium or
+Chrome renders them at desktop (1280 px) and phone (390 px) width and the screenshots appear in the
+conversation, before the tests run. If the planner can read images (Claude, an OpenRouter vision model, or a
+local Vision model) it then looks at the screenshots against your request and, if something is cut off,
+unreadable or scrolls sideways on the phone, rewrites the files and the page is rendered again (at most 2
+rounds; each is a planner call and counts against the spending cap). Pages come from the plan's
+`preview_page`, the HTML files the round wrote, or a running app (`preview_command` plus a
+`http://127.0.0.1:…` `preview_url`, Linux and macOS nodes only). If no exec node has Chromium the thread
+says so and nothing else changes; install it on a node (for example `sudo apt install chromium`) and the
+Nodes page will list it. Tick **mockups first** in the composer to have the planner write 2 or 3 design
+variants (`mockups/a.html`, `b.html`, `c.html`, written in parallel by different nodes) and show them side
+by side; **Build this one** starts a follow-up round that builds the real code from that variant, or reply
+to ask for different variants. Screenshots are kept with the task, not in the zip; nodes keep nothing.
+
 **Which node gets the work.** Subtasks go to the free node with the biggest loaded model first, and
 reviews to the next biggest, so a small test model only gets work when the bigger nodes are busy.
 To keep a node out of tasks altogether, unload its model on the Nodes tab.
@@ -382,7 +396,9 @@ prompt). Nodes reconnect on their own because the node keys and certificate come
 - One model per node at a time; each node runs one model call at a time. A node lending memory
   to a pool runs no model of its own.
 - Files over 1 MiB are not sent to test runs.
-- Go is the only tool Outpost installs (Chromium is detected only); the Go install and PowerShell test runs are untested on real Windows.
+- Go is the only tool Outpost installs (Chromium is detected only, never installed); the Go install and PowerShell test runs are untested on real Windows.
+- Screenshots need a Chromium or Chrome that can run headless on the node. A snap-packaged Chromium may not
+  be able to read Outpost's work folder, and a screenshot over 1 MiB (a very tall page) is not collected.
 - A plan cannot delete files: a subtask that "removes" a file still has to write it, usually as a
   short stub. Delete it from the downloaded zip.
 - The low-level job history (Home → Recent jobs) is kept in memory and clears on restart; tasks
