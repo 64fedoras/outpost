@@ -109,7 +109,7 @@ func (t *Task) steeringText() string {
 
 // plannerPrompt is the user turn for planning the current round: the project
 // so far (for follow-ups), earlier requests, and this round's conversation.
-func (c *Controller) plannerPrompt(t *Task, budget int) string {
+func (c *Controller) plannerPrompt(t *Task, budget int, want []string) string {
 	t.mu.Lock()
 	round := t.Round
 	msgs := append([]TaskMessage(nil), t.Messages...)
@@ -143,8 +143,17 @@ func (c *Controller) plannerPrompt(t *Task, budget int) string {
 			}
 			b.WriteString("\n")
 		}
-		b.WriteString("Current project files:\n")
-		b.WriteString(repoSnapshot(t.repoDir(), budget/2))
+		if repoNeedsIndex(t.repoDir(), budget) {
+			b.WriteString("Project index (path, size, summary, top-level declarations):\n")
+			b.WriteString(renderIndex(buildIndex(t.repoDir()), budget/3))
+			if len(want) > 0 {
+				b.WriteString("\nFiles you asked for:\n")
+				b.WriteString(wantedFiles(t.repoDir(), want, budget/3))
+			}
+		} else {
+			b.WriteString("Current project files:\n")
+			b.WriteString(repoSnapshot(t.repoDir(), budget/2))
+		}
 		b.WriteString("\n")
 	}
 	b.WriteString("Conversation about this request:\n")
