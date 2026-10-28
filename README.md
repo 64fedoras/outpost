@@ -196,10 +196,40 @@ is running. Workers and reviewers do not see images; the planner's plan carries 
 reviews to the next biggest, so a small test model only gets work when the bigger nodes are busy.
 To keep a node out of tasks altogether, unload its model on the Nodes tab.
 
-**When the tests fail**, the planner gets up to 3 fix rounds. Each round sees the test output, the
-project files (files named in the test output first, so they still fit a local planner's smaller
-window) and which files earlier rounds changed. It treats the tests as the specification and
-only edits a test that is clearly wrong.
+**When the tests fail**, the planner gets up to 3 fix rounds. Each round sees the test output and
+which files earlier rounds changed, and works as an agent (below). It treats the tests as the
+specification and only edits a test that is clearly wrong.
+
+### Agent mode
+
+Fix rounds and `investigate` subtasks get tools instead of one-shot answers:
+`list_files`, `read_file` (whole or a line range), `search` (regular expression), `write_file`,
+`run` and `ask_user`. The agent reads the failing test, opens the file it points at, changes it and
+runs the tests again, the way you would at a terminal. Each run is limited to **30 tool calls and
+20 minutes** (time spent waiting for your answer does not count); at the limit the agent is asked
+for a short summary and the round continues with whatever it changed.
+
+- **`run`** executes a command on an exec-enabled node with a fresh copy of the project, on a node
+  that has the tools the command names (see the Nodes tab). Nothing persists between runs, so the
+  agent chains steps with `&&`. With no exec node the agent is told so and reads the code instead.
+- **`ask_user`** posts a question in the thread with optional buttons. Only that subtask waits;
+  other subtasks keep going. A fix round has the whole task waiting. If the controller restarts
+  while a question is open, resuming the task starts that step again.
+- **Investigate subtasks.** When a request needs digging first, the planner may add up to two
+  subtasks with `kind: investigate`. A worker node reads, searches and runs commands (it cannot
+  write files) and posts a short report in the thread; subtasks that depend on it get the report in
+  their prompt. If the worker cannot do it, the planner does.
+- **Which models.** Fix rounds use the task's planner: Claude (tool use), OpenRouter (the chosen
+  model must support tools) or a local model. Investigations use the worker node's model. Local
+  nodes now start llama-server with `--jinja` so the model's own chat template handles tool calls;
+  the model needs to support tool calling (many recent coding models do; check the model card). If a
+  planner refuses tools, the fix round falls back to the old single request, and a model that
+  answers with `<<<FILE>>>` blocks instead of calling tools still gets its files applied.
+- **Cost.** The conversation is sent again on every step, so a long agent run costs more than a
+  single request (the Claude system prompt and the conversation so far are cached). The spending
+  cap is checked before every step. Ordinary subtasks are still written in one request each.
+- **Turn it off** in Settings (**Agent mode**): fix rounds and the planner go back to single
+  requests, and the planner stops proposing investigate subtasks.
 
 **Large projects.** When a follow-up's files are too big to paste into the planner's window, the
 planner gets an index instead: each file's path, size, first comment line and top-level
@@ -381,7 +411,7 @@ prompt). Nodes reconnect on their own because the node keys and certificate come
 
 - One model per node at a time; each node runs one model call at a time. A node lending memory
   to a pool runs no model of its own.
-- Files over 1 MiB are not sent to test runs.
+- Nodes need this Outpost version for agent mode: update nodes before using it with them.
 - Go is the only tool Outpost installs (Chromium is detected only); the Go install and PowerShell test runs are untested on real Windows.
 - A plan cannot delete files: a subtask that "removes" a file still has to write it, usually as a
   short stub. Delete it from the downloaded zip.
