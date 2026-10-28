@@ -219,6 +219,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /v1/models/{name}/files/{index}", c.handleServeModelFile)
 	mux.HandleFunc("GET /api/settings", c.auth(c.handleGetSettings))
 	mux.HandleFunc("POST /api/settings", c.auth(c.handleSaveSettings))
+	mux.HandleFunc("GET /api/openrouter/models", c.auth(c.handleOpenRouterModels))
 	mux.HandleFunc("POST /api/password", c.auth(c.handleChangePassword))
 	mux.HandleFunc("GET /api/models", c.auth(c.handleListModels))
 	mux.HandleFunc("POST /api/models", c.auth(c.handleAddModel))
@@ -427,6 +428,8 @@ func (c *Controller) handleState(w http.ResponseWriter, r *http.Request) {
 		"nodes": nodes, "jobs": jobs, "releases": releases, "ops": c.nodeOps,
 		"has_claude_key": c.settings.AnthropicKeyEnc != "", "default_planner": c.settings.DefaultPlanner,
 		"default_cap_usd": c.settings.DefaultCapUSD, "claude_model": c.settings.ClaudeModel,
+		"has_openrouter_key": c.settings.OpenRouterKeyEnc != "", "openrouter_model": c.settings.OpenRouterModel,
+		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
 	})
 }
 

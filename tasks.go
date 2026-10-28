@@ -5,8 +5,8 @@ package main
 //   (subtasks on worker nodes) → testing ⇄ fixing → done
 // and is a conversation (tasks_chat.go): a message after it finishes starts
 // another round on the same project files.
-// The planner is Claude or a local model on a chosen node. Workers are the
-// nodes that have a model loaded. A task's Claude spend is metered per call and
+// The planner is Claude, a model on OpenRouter, or a local model on a chosen
+// node. Workers are the nodes that have a model loaded. A task's cloud spend is metered per call and
 // the task pauses (paused_cap) before a call that would pass its cap.
 
 import (
@@ -84,9 +84,10 @@ type Task struct {
 	Title        string          `json:"title"`
 	Status       string          `json:"status"`
 	PausedFrom   string          `json:"paused_from,omitempty"`
-	Planner      string          `json:"planner"` // "claude" or "node:<id>"
+	Planner      string          `json:"planner"` // "claude", "openrouter" or "node:<id>"
 	Review       bool            `json:"review"`  // a second node reviews each subtask
 	ClaudeModel  string          `json:"claude_model"`
+	ORModel      string          `json:"openrouter_model,omitempty"`
 	CapUSD       float64         `json:"cap_usd"`
 	CostUSD      float64         `json:"cost_usd"`
 	EstimateUSD  float64         `json:"estimate_usd"`
@@ -271,6 +272,7 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		Prompt      string  `json:"prompt"`
 		Planner     string  `json:"planner"`
 		ClaudeModel string  `json:"claude_model"`
+		ORModel     string  `json:"openrouter_model"`
 		CapUSD      float64 `json:"cap_usd"`
 		Review      *bool   `json:"review"`
 	}
@@ -290,22 +292,25 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	if _, ok := claudePrices[req.ClaudeModel]; !ok {
 		req.ClaudeModel = "claude-sonnet-5-5"
 	}
+	if req.ORModel == "" {
+		req.ORModel = set.OpenRouterModel
+	}
 	if req.CapUSD <= 0 {
 		req.CapUSD = set.DefaultCapUSD
 	}
-	if err := c.checkPlanner(req.Planner); err != nil {
+	if err := c.checkPlanner(req.Planner, req.ORModel); err != nil {
 		writeJSON(w, 409, map[string]string{"error": err.Error()})
 		return
 	}
 	review := req.Review == nil || *req.Review
-	t := &Task{ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, Review: review,
+	t := &Task{ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, ORModel: req.ORModel, Review: review,
 		CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1}
 	t.dir = filepath.Join(c.tasksDir(), t.ID)
 	if err := os.MkdirAll(t.repoDir(), 0o755); err != nil {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
-	t.Events = append(t.Events, TaskEvent{Time: time.Now(), Level: "info", Text: "Task created; planning with " + c.plannerLabel(t.Planner, t.ClaudeModel) + "."})
+	t.Events = append(t.Events, TaskEvent{Time: time.Now(), Level: "info", Text: "Task created; planning with " + c.plannerLabel(t.Planner, t.ClaudeModel, t.ORModel) + "."})
 	t.mu.Lock()
 	t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: t.Prompt})
 	t.mu.Unlock()
@@ -316,10 +321,24 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"id": t.ID})
 }
 
-func (c *Controller) checkPlanner(p string) error {
+// isCloudPlanner reports whether a planner is billed per call (and so has a cap).
+func isCloudPlanner(p string) bool { return p == "claude" || p == "openrouter" }
+
+// checkPlanner checks a planner can be used; orModel is the OpenRouter model
+// the task would use.
+func (c *Controller) checkPlanner(p, orModel string) error {
 	if p == "claude" {
 		if c.anthropicKey() == "" {
 			return errors.New("add a Claude API key in Settings, or pick a node as the planner")
+		}
+		return nil
+	}
+	if p == "openrouter" {
+		if c.openRouterKey() == "" {
+			return errors.New("add an OpenRouter API key in Settings, or pick another planner")
+		}
+		if orModel == "" {
+			return errors.New("pick an OpenRouter model in Settings")
 		}
 		return nil
 	}
@@ -327,14 +346,17 @@ func (c *Controller) checkPlanner(p string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if _, ok := c.nodes[id]; !ok || !strings.HasPrefix(p, "node:") {
-		return errors.New("pick Claude or a node as the planner")
+		return errors.New("pick Claude, OpenRouter or a node as the planner")
 	}
 	return nil
 }
 
-func (c *Controller) plannerLabel(p, model string) string {
+func (c *Controller) plannerLabel(p, model, orModel string) string {
 	if p == "claude" {
 		return claudePrices[model].Label
+	}
+	if p == "openrouter" {
+		return openRouterLabel(orModel)
 	}
 	id := strings.TrimPrefix(p, "node:")
 	c.mu.Lock()
@@ -385,11 +407,11 @@ func (c *Controller) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	workers, execs := c.workerCounts()
 	t.mu.Lock()
 	b, _ := json.Marshal(t)
-	planner, model := t.Planner, t.ClaudeModel
+	planner, model, orModel := t.Planner, t.ClaudeModel, t.ORModel
 	t.mu.Unlock()
 	var copyT Task
 	_ = json.Unmarshal(b, &copyT)
-	writeJSON(w, 200, taskDetail{Task: &copyT, Files: listRepo(t.repoDir()), PlannerLabel: c.plannerLabel(planner, model),
+	writeJSON(w, 200, taskDetail{Task: &copyT, Files: listRepo(t.repoDir()), PlannerLabel: c.plannerLabel(planner, model, orModel),
 		ClaudeKeySet: c.anthropicKey() != "", WorkersOnline: workers, ExecNodes: execs})
 }
 
@@ -514,7 +536,7 @@ func (c *Controller) handleApproveTask(w http.ResponseWriter, r *http.Request) {
 	t.Approved = &now
 	t.Status = "running"
 	ev := "You approved the plan."
-	if t.Planner == "claude" {
+	if isCloudPlanner(t.Planner) {
 		ev = fmt.Sprintf("You approved the plan with a %s cap.", fmtUSD(t.CapUSD))
 	}
 	t.addMsgLocked(TaskMessage{Role: "event", Kind: "event", Text: ev})
@@ -603,8 +625,16 @@ func (c *Controller) handleResumeTask(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]string{"error": "no such task"})
 		return
 	}
-	if req.Planner != "" {
-		if err := c.checkPlanner(req.Planner); err != nil {
+	if req.Planner != "" && t != nil {
+		t.mu.Lock()
+		orModel := t.ORModel
+		t.mu.Unlock()
+		if orModel == "" {
+			c.mu.Lock()
+			orModel = c.settings.OpenRouterModel
+			c.mu.Unlock()
+		}
+		if err := c.checkPlanner(req.Planner, orModel); err != nil {
 			writeJSON(w, 409, map[string]string{"error": err.Error()})
 			return
 		}
@@ -615,6 +645,11 @@ func (c *Controller) handleResumeTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Planner != "" {
 		t.Planner = req.Planner
+		if req.Planner == "openrouter" && t.ORModel == "" {
+			c.mu.Lock()
+			t.ORModel = c.settings.OpenRouterModel
+			c.mu.Unlock()
+		}
 	}
 	status, from, ch := t.Status, t.PausedFrom, t.resume
 	t.saveLocked()
@@ -688,25 +723,37 @@ func (c *Controller) startTask(t *Task, fn func(ctx context.Context, t *Task)) {
 // errCancelled marks work stopped by the user.
 var errCancelled = errors.New("cancelled")
 
-// plannerCall runs one request on the task's planner. For Claude it enforces
-// the soft cap: the task pauses before a call that would exceed it and waits
+// plannerCall runs one request on the task's planner. For Claude and
+// OpenRouter it enforces the soft cap: the task pauses before a call that would exceed it and waits
 // for the user to raise the cap or switch to a local planner.
 func (c *Controller) plannerCall(ctx context.Context, t *Task, req llmRequest) (*llmResponse, error) {
 	for {
 		t.mu.Lock()
-		planner, model, cost, cap := t.Planner, t.ClaudeModel, t.CostUSD, t.CapUSD
+		planner, model, orModel, cost, cap := t.Planner, t.ClaudeModel, t.ORModel, t.CostUSD, t.CapUSD
 		t.mu.Unlock()
-		if planner != "claude" {
+		if !isCloudPlanner(planner) {
 			return c.nodeCall(ctx, t, strings.TrimPrefix(planner, "node:"), req, true)
 		}
-		est := estimateCost(model, len(req.System)+len(req.User), req.MaxTokens/2)
-		if cost+est > cap {
+		var est float64
+		if planner == "openrouter" {
+			_ = openRouterModels.refresh(ctx, c.openRouterKey(), false) // for prices; cached for an hour
+			est = openRouterEstimate(orModel, len(req.System)+len(req.User), req.MaxTokens/2)
+		} else {
+			est = estimateCost(model, len(req.System)+len(req.User), req.MaxTokens/2)
+		}
+		if cost+est > cap || (est == 0 && cost >= cap) {
 			if err := c.pauseForCap(ctx, t, est); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		resp, err := callClaude(ctx, c.anthropicKey(), model, req)
+		var resp *llmResponse
+		var err error
+		if planner == "openrouter" {
+			resp, err = callOpenRouter(ctx, c.openRouterKey(), orModel, req)
+		} else {
+			resp, err = callClaude(ctx, c.anthropicKey(), model, req)
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, errCancelled
@@ -752,7 +799,7 @@ func (c *Controller) pauseForCap(ctx context.Context, t *Task, est float64) erro
 	cost, cap := t.CostUSD, t.CapUSD
 	t.saveLocked()
 	t.mu.Unlock()
-	t.logf("warn", "Paused: the next Claude call (about %s) would pass the %s cap (spent %s). Raise the cap or switch to a local planner to continue.", fmtUSD(est), fmtUSD(cap), fmtUSD(cost))
+	t.logf("warn", "Paused: the next cloud model call (about %s) would pass the %s cap (spent %s). Raise the cap or switch to a local planner to continue.", fmtUSD(est), fmtUSD(cap), fmtUSD(cost))
 	select {
 	case <-ctx.Done():
 		return errCancelled
@@ -1026,13 +1073,18 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 		t.Subtasks[i] = &SubtaskState{ID: s.ID, Status: "pending"}
 	}
 	t.EstimateUSD = 0
-	if t.Planner == "claude" {
+	if isCloudPlanner(t.Planner) {
 		files := 0
 		for _, s := range plan.Subtasks {
 			files += len(s.Files)
 		}
 		repoTok := files * 1200
-		fix := usageCost(t.ClaudeModel, repoTok+3000, repoTok/2+500, 0, 0)
+		var fix float64
+		if t.Planner == "openrouter" {
+			fix = openRouterEstimate(t.ORModel, (repoTok+3000)*3, (repoTok/2+500)*3)
+		} else {
+			fix = usageCost(t.ClaudeModel, repoTok+3000, repoTok/2+500, 0, 0)
+		}
 		t.EstimateUSD = t.CostUSD + 1.5*fix
 	}
 	t.Status = "awaiting_approval"
@@ -1503,10 +1555,17 @@ func repoSnapshotFirst(repo string, budget int, hint string) string {
 
 func (c *Controller) plannerBudget(t *Task) int {
 	t.mu.Lock()
-	planner := t.Planner
+	planner, orModel := t.Planner, t.ORModel
 	t.mu.Unlock()
 	if planner == "claude" {
 		return 400000
+	}
+	if planner == "openrouter" {
+		ctxTok := 128000 // unknown model: assume a common window
+		if m := openRouterModels.get(orModel); m != nil && m.Ctx > 0 {
+			ctxTok = m.Ctx
+		}
+		return min(400000, max(8000, (ctxTok-16384)*3))
 	}
 	ctxTok := c.nodeCtx(strings.TrimPrefix(planner, "node:"))
 	return (ctxTok - 4096) * 3
@@ -1714,7 +1773,7 @@ func (c *Controller) finishTask(t *Task) {
 	cost := t.CostUSD
 	t.addMsgLocked(TaskMessage{Role: "assistant", Kind: "result", Text: resultText(t), Files: sortedCopy(t.Touched)})
 	t.mu.Unlock()
-	t.logf("info", "Finished. Claude cost: %s. Download the result from this page.", fmtUSD(cost))
+	t.logf("info", "Finished. Cloud model cost: %s. Download the result from this page.", fmtUSD(cost))
 }
 
 // ---------- peer review ----------

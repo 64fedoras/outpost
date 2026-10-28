@@ -2,7 +2,7 @@
 
 Self-hosted distributed local-AI cluster, written in Go as **one binary** with two modes:
 `controller` (web UI, planning, job dispatch, model and release storage) and `node` (runs
-llama.cpp, runs commands, keeps no job data). Current version: **0.7.1** (`const Version` in `proto.go`).
+llama.cpp, runs commands, keeps no job data). Current version: **0.7.2** (`const Version` in `proto.go`).
 
 The owner uses it to fan programming tasks out across their home machines, as a supplement to Claude Code.
 You describe a task in the web UI; a planner (Claude API, or a local model on a node) splits it into
@@ -95,6 +95,7 @@ although it is imported directly; harmless.
 - Playwright selectors: starter cards also contain words like "Python"; scope with `.opt >> text=...`.
 
 ## Status
+- v0.7.2 adds OpenRouter as a second cloud planner (`llm_openrouter.go`); the live OpenRouter API is **untested** (no key in the build environment), only a stub (`OUTPOST_OPENROUTER_URL`).
 - v0.7.1 sends task work to the node with the biggest loaded model first and gives fix rounds memory of earlier rounds plus test-named files first.
 - v0.7.0 adds rows 1 to 4 of the roadmap (see `docs/ROADMAP.md`); the Windows service, Defender exclusion and signing are **untested on real Windows**.
 - v0.6.1 was built and was verified on Linux (update, restart, lock). **Windows 0.6.0 to 0.6.1 self-update

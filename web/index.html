@@ -157,6 +157,15 @@
           <label for="set-planner">Default planner</label><select id="set-planner"></select>
           <div class="modal-foot"><button class="primary" id="set-save">Save defaults</button></div>
         </div>
+        <div class="section-head"><h2>OpenRouter</h2></div>
+        <div class="card">
+          <p class="hint">Optional second cloud provider. Pick OpenRouter as the planner to plan, write what the nodes cannot, and fix failing tests with any model it offers. It shares the per-task spending cap above, using the cost OpenRouter reports for each call. Use a separate key and set a credit limit on it at openrouter.ai.</p>
+          <label for="set-or-key">API key <span id="set-or-key-state"></span></label>
+          <div class="btns" style="flex-wrap:nowrap"><input id="set-or-key" type="password" placeholder="sk-or-…" autocomplete="off"><button id="set-or-key-save">Save</button><button id="set-or-key-clear" class="danger">Remove</button></div>
+          <label for="set-or-model">Model <span id="set-or-model-state" class="muted"></span></label>
+          <div class="btns" style="flex-wrap:nowrap"><input id="set-or-model" list="or-models" placeholder="e.g. anthropic/claude-sonnet-5-5" autocomplete="off"><button id="set-or-model-save">Save model</button></div>
+          <datalist id="or-models"></datalist>
+        </div>
         <div class="section-head"><h2>Hugging Face</h2></div>
         <div class="card">
           <p class="hint">Only needed for gated models (accept the model's license on huggingface.co first).</p>
