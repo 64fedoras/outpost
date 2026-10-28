@@ -36,7 +36,7 @@ function ago(t) {
 function clock(t) { return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }); }
 function bar(pct, cls = '') {
   const p = Math.max(0, Math.min(100, pct || 0));
-  return `<div class="bar"><i class="${cls || (p > 85 ? 'hot' : '')}" style="width:${p}%"></i></div>`;
+  return `<div class="bar"><i class="${cls || (p > 85 ? 'hot' : '')} w${Math.round(p)}"></i></div>`;
 }
 const label = (s) => String(s || '').replace(/_/g, ' ');
 const pill = (s, text) => `<span class="pill st-${esc(s)}">${esc(text || label(s))}</span>`;
@@ -299,12 +299,12 @@ $('nt-prompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.
 // ---------- projects ----------
 function renderProjects() {
   setHTML('projects-list', !projects.length ? `<div class="empty">No projects yet. Tasks outside a project work as before.</div>` :
-    projects.map((p) => `<div class="card" style="margin-bottom:10px">
-      <div class="section-head" style="margin:0 0 6px"><b>${esc(p.name)}</b><span class="spacer"></span>
+    projects.map((p) => `<div class="card u12">
+      <div class="section-head u13"><b>${esc(p.name)}</b><span class="spacer"></span>
         <a href="/api/projects/${p.id}/download"><button>Download .zip</button></a>
         <button class="danger" data-act="project-delete" data-id="${p.id}">Delete</button></div>
       <p class="hint">${p.files} file${p.files === 1 ? '' : 's'} · ${p.tasks} task${p.tasks === 1 ? '' : 's'}${p.git_url ? ` · ${esc(p.git_url)} → branch <code>${esc(p.git_branch)}</code>${p.git_push ? ' (pushed after each round)' : ' (committed, not pushed)'}${p.last_push ? ' · last push ' + ago(p.last_push) : ''}` : ''}${p.last_pr ? ` · <a href="${esc(p.last_pr)}" target="_blank" rel="noopener">last pull request</a>` : ''}</p>
-      <div class="btns" style="flex-wrap:wrap;align-items:center">
+      <div class="btns u14">
         <label class="chip-input">tests <input data-pf="test_command" data-id="${p.id}" value="${esc(p.test_command)}" placeholder="none"></label>
         <label class="toggle"><input type="checkbox" data-pf="review" data-id="${p.id}" ${p.review === false ? '' : 'checked'}> peer review</label>
         ${p.git_url ? `<label class="toggle"><input type="checkbox" data-pf="git_push" data-id="${p.id}" ${p.git_push ? 'checked' : ''}> push</label>
@@ -445,7 +445,7 @@ const firstWords = (s) => { s = String(s || '').trim().split('\n')[0]; return s.
 
 function spendMeter(t) {
   const pct = t.cap_usd ? Math.min(100, 100 * t.cost_usd / t.cap_usd) : 0;
-  return `<span class="spend" title="Cloud model spend on this task: ${usd(t.cost_usd)} of a ${usd(t.cap_usd)} cap">${usd(t.cost_usd)}<span class="spend-bar"><i class="${pct >= 100 ? 'bad' : pct > 80 ? 'hot' : ''}" style="width:${pct}%"></i></span>${usd(t.cap_usd)}</span>`;
+  return `<span class="spend" title="Cloud model spend on this task: ${usd(t.cost_usd)} of a ${usd(t.cap_usd)} cap">${usd(t.cost_usd)}<span class="spend-bar"><i class="${pct >= 100 ? 'bad' : pct > 80 ? 'hot' : ''} w${Math.round(pct)}"></i></span>${usd(t.cap_usd)}</span>`;
 }
 
 // The conversation, plus live cards for the current round.
@@ -607,7 +607,7 @@ function readPlanEditor() {
 function planCard(t, m, live) {
   if (planEdit && planEdit.id === m.id && canEditPlan(t, m)) return planEditor(t, m);
   const p = m.plan || {};
-  const diffSel = (s) => live ? `<select class="small" onclick="event.preventDefault()" data-diff="${esc(s.id)}" aria-label="Difficulty of ${esc(s.title)}" title="Hard subtasks go to the strongest model; easy ones to the fastest node">${['easy', 'normal', 'hard'].map((d) => `<option value="${d}" ${(s.difficulty || 'normal') === d ? 'selected' : ''}>${d}</option>`).join('')}</select>`
+  const diffSel = (s) => live ? `<select class="small" data-diff="${esc(s.id)}" aria-label="Difficulty of ${esc(s.title)}" title="Hard subtasks go to the strongest model; easy ones to the fastest node">${['easy', 'normal', 'hard'].map((d) => `<option value="${d}" ${(s.difficulty || 'normal') === d ? 'selected' : ''}>${d}</option>`).join('')}</select>`
     : (s.difficulty && s.difficulty !== 'normal' ? `<span class="tag">${esc(s.difficulty)}</span>` : '');
   const subs = (p.subtasks || []).map((s) => `<li><details><summary><span class="st-title">${esc(s.title)}</span>${diffSel(s)}<span class="st-files">${s.kind === 'investigate' ? 'investigates, writes no files' : s.files.map(esc).join(', ')}</span></summary>
       <p class="st-ins">${esc(s.instructions)}</p>${s.depends_on && s.depends_on.length ? `<p class="st-dep">Starts after ${s.depends_on.map(esc).join(', ')}</p>` : ''}</details></li>`).join('');
@@ -764,8 +764,8 @@ function renderFiles(t) {
   const seen = new Set();
   setHTML('tv-files', files.map((f) => {
     const parts = f.path.split('/'), out = [];
-    parts.slice(0, -1).forEach((d, i) => { const k = parts.slice(0, i + 1).join('/'); if (!seen.has(k)) { seen.add(k); out.push(`<div class="fb-dir" style="padding-left:${i * 14}px">${esc(d)}/</div>`); } });
-    out.push(`<div class="fb-row" style="padding-left:${(parts.length - 1) * 14}px"><input type="checkbox" class="fb-tick" value="${esc(f.path)}" aria-label="Tick ${esc(f.path)}"><a href="#" data-act="view-file" data-path="${esc(f.path)}">${esc(parts[parts.length - 1])} <span class="muted">(${bytes(f.bytes)})</span></a></div>`);
+    parts.slice(0, -1).forEach((d, i) => { const k = parts.slice(0, i + 1).join('/'); if (!seen.has(k)) { seen.add(k); out.push(`<div class="fb-dir pl${Math.min(i, 20)}">${esc(d)}/</div>`); } });
+    out.push(`<div class="fb-row pl${Math.min(parts.length - 1, 20)}"><input type="checkbox" class="fb-tick" value="${esc(f.path)}" aria-label="Tick ${esc(f.path)}"><a href="#" data-act="view-file" data-path="${esc(f.path)}">${esc(parts[parts.length - 1])} <span class="muted">(${bytes(f.bytes)})</span></a></div>`);
     return out.join('');
   }).join(''));
   $('files-dl').href = `/api/tasks/${t.id}/download`;
@@ -974,14 +974,14 @@ function benchLine(n, loaded, ready) {
   else if (b) txt = `Speed ${b.tok_per_s.toFixed(1)} tok/s${b.prompt_tps ? ' · reads ' + Math.round(b.prompt_tps) + ' tok/s' : ''}${b.samples ? ' · ' + b.samples + ' subtask' + (b.samples === 1 ? '' : 's') : b.light ? ' · short benchmark' : ' · benchmark'}`;
   else if (f) txt = `<span class="muted" title="${esc(f.error)}">Benchmark failed (${esc(f.error.length > 60 ? f.error.slice(0, 60) + '…' : f.error)}); retries in a few minutes with a shorter test. Real subtasks fill in the speed meanwhile.</span>`;
   else txt = '<span class="muted">Not benchmarked yet</span>';
-  return `<div class="sub wrap" style="margin:6px 0 0" title="Benchmark when the model loaded, then a rolling average of real subtasks">${txt}${rerun}</div>`;
+  return `<div class="sub wrap u15" title="Benchmark when the model loaded, then a rolling average of real subtasks">${txt}${rerun}</div>`;
 }
 
 function renderNodes() {
   const nodes = state.nodes;
   const online = nodes.filter((n) => n.online).length;
   setHTML('node-count', nodes.length ? `${online} of ${nodes.length} online` : '');
-  setHTML('nodes', !nodes.length ? `<div class="empty" style="grid-column:1/-1">No nodes yet. Click <b>Add node</b> to get the install command.</div>` : nodes.map(nodeCard).join(''));
+  setHTML('nodes', !nodes.length ? `<div class="empty u16">No nodes yet. Click <b>Add node</b> to get the install command.</div>` : nodes.map(nodeCard).join(''));
 }
 
 function opView(n) {
@@ -989,10 +989,10 @@ function opView(n) {
   if (!o || !o.op) return '';
   const age = (Date.now() - new Date(o.updated)) / 1000;
   const what = { runtime: 'llama.cpp', toolchain: 'Installing Go', 'model.push': 'Copying model from controller', 'model.fetch': 'Downloading from Hugging Face', rpc: 'Lending memory', 'model.load': 'Loading model', 'model.unload': 'Unloading', 'model.remove': 'Removing model' }[o.op] || o.op;
-  if (o.state === 'failed') return age < 3600 ? `<div class="note bad" style="margin:8px 0 0">${esc(what)} failed: ${esc(o.error)}</div>` : '';
+  if (o.state === 'failed') return age < 3600 ? `<div class="note bad u17">${esc(what)} failed: ${esc(o.error)}</div>` : '';
   if (['done', 'ready'].includes(o.state)) return '';
   const pct = o.bytes_total ? 100 * o.bytes_done / o.bytes_total : (o.state === 'loading' ? 100 : 0);
-  return `<div class="prog" style="margin-top:8px"><span>${esc(what)}${o.target ? ' · ' + esc(o.target) : ''}: ${esc(o.state)}${o.bytes_total ? ` ${bytes(o.bytes_done)} of ${bytes(o.bytes_total)}` : '…'}</span>${bar(pct, 'good')}</div>`;
+  return `<div class="prog u6"><span>${esc(what)}${o.target ? ' · ' + esc(o.target) : ''}: ${esc(o.state)}${o.bytes_total ? ` ${bytes(o.bytes_done)} of ${bytes(o.bytes_total)}` : '…'}</span>${bar(pct, 'good')}</div>`;
 }
 
 // "Recommended for this node" row: the best coding model that fits, one click to load.
@@ -1006,7 +1006,7 @@ function recRow(n, loaded) {
   const where = rec.in_library ? '' : ' · adds to library';
   return `<div class="rec-row"><span class="pill st-ready">Recommended</span> <b>${esc(rec.label)}</b>
     <button class="small primary" data-act="load-rec" data-id="${n.id}" data-name="${esc(rec.name)}" data-lib="${rec.in_library ? 1 : 0}">${loaded ? 'Switch to this' : 'Load'}</button>
-    <div class="sub wrap" style="margin:4px 0 0">${esc(rec.reason)} · ${bytes(rec.bytes)}${where}</div></div>`;
+    <div class="sub wrap u18">${esc(rec.reason)} · ${bytes(rec.bytes)}${where}</div></div>`;
 }
 function nodeCard(n) {
   const h = n.hello || {}, hb = n.online ? n.heartbeat : null, cpu = h.cpu || {};
@@ -1016,7 +1016,7 @@ function nodeCard(n) {
     const used = hb && hb.vram_used_bytes ? hb.vram_used_bytes[i] : 0;
     const util = hb && hb.gpu_util_pct ? hb.gpu_util_pct[i] : 0;
     return `<div class="metric"><span class="k">GPU</span>${bar(util)}<span class="v">${util || 0}% · ${bytes(used)}/${bytes(g.vram_bytes)}</span></div>
-      <div class="sub" style="margin:0 0 4px 52px">${esc(g.name)}</div>`;
+      <div class="sub u19">${esc(g.name)}</div>`;
   }).join('');
   const status = n.online ? `online · ${n.running_jobs}/${n.max_jobs} jobs` : (n.last_seen ? `offline · seen ${ago(n.last_seen)}` : 'never connected');
   const paused = n.online && hb && hb.paused;
@@ -1025,17 +1025,17 @@ function nodeCard(n) {
   const needsVulkan = h.os === 'linux' && (h.gpus || []).some((g) => g.vendor !== 'apple') && !h.vulkan_available;
   const modelBox = n.lending_to ? `<div class="model-box">
       <div class="row"><span class="dot ${hb && hb.rpc_endpoint ? 'on' : 'busy'}"></span><span class="grow">Lending memory to <b>${esc(n.lending_to)}</b>${hb && hb.rpc_endpoint ? '' : ' · starting'}</span></div>
-      <div class="sub wrap" style="margin:6px 0 0">Its RAM${(h.gpus || []).length ? ' and VRAM' : ''} hold part of ${esc(n.lending_to)}'s model. Unload that model to get this node back.</div>
+      <div class="sub wrap u15">Its RAM${(h.gpus || []).length ? ' and VRAM' : ''} hold part of ${esc(n.lending_to)}'s model. Unload that model to get this node back.</div>
       ${opView(n)}
     </div>` : `<div class="model-box">
       <div class="row"><span class="dot ${ready ? 'on' : loaded ? 'busy' : ''}"></span><span class="grow">${loaded ? `<b>${esc(loaded)}</b> · ${ready ? (hb.inference_busy ? 'working' : 'ready') : 'starting'}` : '<span class="muted">No model loaded</span>'}</span>
         ${n.online ? `<button class="small" data-act="load" data-id="${n.id}">${loaded ? 'Change' : 'Load model'}…</button>${loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : ''}</div>
       ${recRow(n, loaded)}
       ${benchLine(n, loaded, ready)}
-      ${n.pool_names && n.pool_names.length ? `<div class="sub wrap" style="margin:6px 0 0">Pooled with <b>${n.pool_names.map(esc).join(', ')}</b></div>` : ''}
-      <div class="sub" style="margin:6px 0 0">${h.runtime ? `llama.cpp ${esc(h.runtime.build)} · ${esc(h.runtime.variant)}` : 'llama.cpp installs on first load'}${stored.length ? ' · stored: ' + stored.map((m) => `${esc(m.name)} <a href="#" data-act="rm-node-model" data-id="${n.id}" data-name="${esc(m.name)}" title="Delete from this node">×</a>`).join(', ') : ''}</div>
-      ${hb && hb.llama_error && !ready ? `<div class="note bad" style="margin:6px 0 0">${esc(hb.llama_error)}</div>` : ''}
-      ${needsVulkan ? `<div class="note warn" style="margin:6px 0 0">GPU found, but no Vulkan driver, so models run on CPU. On the node: <code>sudo apt install libvulkan1 mesa-vulkan-drivers</code>, then load the model again.</div>` : ''}
+      ${n.pool_names && n.pool_names.length ? `<div class="sub wrap u15">Pooled with <b>${n.pool_names.map(esc).join(', ')}</b></div>` : ''}
+      <div class="sub u15">${h.runtime ? `llama.cpp ${esc(h.runtime.build)} · ${esc(h.runtime.variant)}` : 'llama.cpp installs on first load'}${stored.length ? ' · stored: ' + stored.map((m) => `${esc(m.name)} <a href="#" data-act="rm-node-model" data-id="${n.id}" data-name="${esc(m.name)}" title="Delete from this node">×</a>`).join(', ') : ''}</div>
+      ${hb && hb.llama_error && !ready ? `<div class="note bad u15">${esc(hb.llama_error)}</div>` : ''}
+      ${needsVulkan ? `<div class="note warn u15">GPU found, but no Vulkan driver, so models run on CPU. On the node: <code>sudo apt install libvulkan1 mesa-vulkan-drivers</code>, then load the model again.</div>` : ''}
       ${opView(n)}
     </div>`;
   return `<div class="card">
@@ -1044,13 +1044,13 @@ function nodeCard(n) {
     <div class="metric"><span class="k">CPU</span>${bar(hb ? hb.cpu_pct : 0)}<span class="v">${hb ? hb.cpu_pct.toFixed(1) + '%' : '—'}</span></div>
     <div class="metric"><span class="k">RAM</span>${bar(ramPct)}<span class="v">${hb ? bytes(hb.ram_used_bytes) + '/' + bytes(hb.ram_total_bytes) : '—'}</span></div>
     ${gpus}
-    ${paused ? `<div class="note warn" style="margin:8px 0 0"><b>Paused on the node.</b> It takes no new work until someone ticks <b>Accept new work</b> in its tray icon.</div>` : ''}
-    <div class="sub" style="margin:8px 0 0">${status}${hb && hb.swap_used_bytes ? ` · swap ${bytes(hb.swap_used_bytes)}` : ''}${n.addr ? ` · ${esc(n.addr.split(':')[0])}` : ''}</div>
+    ${paused ? `<div class="note warn u17"><b>Paused on the node.</b> It takes no new work until someone ticks <b>Accept new work</b> in its tray icon.</div>` : ''}
+    <div class="sub u17">${status}${hb && hb.swap_used_bytes ? ` · swap ${bytes(hb.swap_used_bytes)}` : ''}${n.addr ? ` · ${esc(n.addr.split(':')[0])}` : ''}</div>
     ${modelBox}
     ${toolsBox(n)}
     <div class="node-foot">
       <label class="toggle" title="Allow this node to run shell commands (needed for tests)"><input type="checkbox" data-exec="${n.id}" ${n.exec_enabled ? 'checked' : ''}> exec</label>
-      <span style="flex:1"></span>
+      <span class="u20"></span>
       <button class="small" data-act="restart" data-id="${n.id}" ${n.online && !n.restarting ? '' : 'disabled'} title="Restart the Outpost service on this node">${n.restarting ? 'Restarting…' : 'Restart'}</button>
       <button class="small" data-act="rename" data-id="${n.id}">Rename</button>
       <button class="small danger" data-act="remove" data-id="${n.id}">Remove</button>
@@ -1061,11 +1061,11 @@ function nodeCard(n) {
 
 function toolsBox(n) {
   const h = n.hello || {};
-  if (!n.exec_enabled || !h.shell) return n.exec_enabled ? '<div class="sub" style="margin:8px 0 0">Tools: unknown until the node updates</div>' : '';
+  if (!n.exec_enabled || !h.shell) return n.exec_enabled ? '<div class="sub u17">Tools: unknown until the node updates</div>' : '';
   const tools = h.tools || [];
   const chips = tools.map((t) => `<span class="tag" title="${esc(t.path || '')}${t.managed ? ' (installed by Outpost)' : ''}">${esc(t.name)}${t.version ? ' ' + esc(t.version) : ''}</span>`).join(' ');
   const hasGo = tools.some((t) => t.name === 'go');
-  return `<div class="sub wrap" style="margin:8px 0 0">Runs commands in ${esc(h.shell)} · ${chips || 'no tools found'}
+  return `<div class="sub wrap u17">Runs commands in ${esc(h.shell)} · ${chips || 'no tools found'}
     ${n.online ? `<a href="#" data-act="install-tool" data-tool="go" data-id="${n.id}">${hasGo ? 'Reinstall' : 'Install'} Go</a>` : ''}</div>
 `;
 }
@@ -1107,7 +1107,7 @@ function openLoad(id) {
     const hx = x.hello || {}, vram = (hx.gpus || []).filter((g) => g.vendor !== 'apple').reduce((a, g) => a + g.vram_bytes, 0);
     const busy = x.lending_to && x.lending_to !== nodeName(n);
     const own = x.heartbeat && x.heartbeat.loaded_model;
-    return `<label class="toggle" style="margin:4px 0;color:var(--ink)"><input type="checkbox" class="pool-cb" value="${x.id}" ${inPool.has(x.id) ? 'checked' : ''} ${x.online && !busy ? '' : 'disabled'}>
+    return `<label class="toggle u21"><input type="checkbox" class="pool-cb" value="${x.id}" ${inPool.has(x.id) ? 'checked' : ''} ${x.online && !busy ? '' : 'disabled'}>
       ${esc(nodeName(x))} <span class="muted">· ${bytes(hx.ram_bytes)} RAM${vram ? ' + ' + bytes(vram) + ' VRAM' : ''}${!x.online ? ' · offline' : busy ? ' · lending to ' + esc(x.lending_to) : own ? ' · stops its own model (' + esc(own) + ')' : ''}</span></label>`;
   }).join('') : '<span class="muted">No other nodes.</span>';
   $('load-pool-wrap').classList.toggle('hidden', !state.pooling_enabled);
@@ -1191,7 +1191,7 @@ function openPick(name, isCatalog) {
     const rec = (models.recommended || {})[f.node_id];
     const why = !f.online ? 'offline' : !f.can_load ? 'busy' : f.fit === 'no' ? 'too big for this node' : '';
     return `<div class="pick-row"><div class="grow"><b>${esc(f.name)}</b> <span class="pill ${FIT_CLS[f.fit]}">${FIT_TEXT[f.fit]}</span>${rec && rec.name === name ? ' <span class="pill st-ready">Recommended</span>' : ''}
-      <div class="sub wrap" style="margin:2px 0 0">needs about ${bytes(f.need_bytes)}${cur && cur !== name ? ` · replaces ${esc(cur)}` : ''}${why ? ' · ' + why : ''}</div></div>
+      <div class="sub wrap u22">needs about ${bytes(f.need_bytes)}${cur && cur !== name ? ` · replaces ${esc(cur)}` : ''}${why ? ' · ' + why : ''}</div></div>
       <button class="small primary" data-pick-node="${f.node_id}" ${why ? 'disabled' : ''}>Load</button></div>`;
   }).join('') : '<div class="empty">No nodes yet.</div>');
   $('pick-list').onclick = async (e) => {
@@ -1210,7 +1210,7 @@ const FIT_TEXT = { vram: 'fits in VRAM', split: 'split VRAM + RAM (slower)', ram
 const FIT_CLS = { vram: 'st-done', split: 'st-loading', ram: 'st-loading', no: 'st-failed' };
 function fitBadges(fits) {
   if (!fits || !fits.length) return '';
-  return `<div class="fit-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${fits.map((f) => `<span class="pill ${FIT_CLS[f.fit]}" title="${esc(f.name)}: ${FIT_TEXT[f.fit]}; needs about ${bytes(f.need_bytes)}${f.online ? '' : ' (node offline)'}">${esc(f.name)} · ${FIT_TEXT[f.fit]}</span>`).join('')}</div>`;
+  return `<div class="fit-badges u23">${fits.map((f) => `<span class="pill ${FIT_CLS[f.fit]}" title="${esc(f.name)}: ${FIT_TEXT[f.fit]}; needs about ${bytes(f.need_bytes)}${f.online ? '' : ' (node offline)'}">${esc(f.name)} · ${FIT_TEXT[f.fit]}</span>`).join('')}</div>`;
 }
 function renderModels() {
   if (!models) return;
@@ -1232,8 +1232,8 @@ function renderModels() {
       if (m.status === 'ready' && vf.length) acts.unshift(`<button class="small primary" data-act="model-load-fit" data-name="${nm}" title="Loads it on: ${esc(vf.map((f) => f.name).join(', '))}. Replaces any model those nodes have loaded.">Load on ${vf.length} node${vf.length > 1 ? 's' : ''} it fits</button>`);
       if (m.status === 'ready') acts.unshift(`<button class="small" data-act="pick-model" data-name="${nm}">Load on…</button>`);
       acts.push(`<button class="small danger" data-act="model-delete" data-name="${nm}">${m.status === 'downloading' ? 'Cancel' : 'Remove'}</button>`);
-      return `<tr><td><b>${esc(m.label || m.name)}</b>${m.vision ? ' <span class="pill st-ready" title="Reads images: loaded with its vision projector">Vision</span>' : ''}${recFor(m.name)}<div class="sub" style="margin:2px 0 0">${esc(m.repo)}</div>${m.status === 'ready' ? fitBadges((models.fits || {})[m.name]) : ''}</td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td><select class="small" data-tier="${nm}" aria-label="Model strength" title="Used to route hard subtasks to the strongest model">${[['', 'auto (' + (m.tier_guess || 'medium') + ')'], ['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']].map(([v, l]) => `<option value="${v}" ${(m.tier || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td><td>${storageLabel(m)}</td><td>${status}</td>
-        <td>${h.length ? h.map(esc).join(', ') : '<span class="muted">none</span>'}</td><td class="r"><div class="btns" style="justify-content:flex-end">${acts.join('')}</div></td></tr>`;
+      return `<tr><td><b>${esc(m.label || m.name)}</b>${m.vision ? ' <span class="pill st-ready" title="Reads images: loaded with its vision projector">Vision</span>' : ''}${recFor(m.name)}<div class="sub u22">${esc(m.repo)}</div>${m.status === 'ready' ? fitBadges((models.fits || {})[m.name]) : ''}</td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td><select class="small" data-tier="${nm}" aria-label="Model strength" title="Used to route hard subtasks to the strongest model">${[['', 'auto (' + (m.tier_guess || 'medium') + ')'], ['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']].map(([v, l]) => `<option value="${v}" ${(m.tier || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td><td>${storageLabel(m)}</td><td>${status}</td>
+        <td>${h.length ? h.map(esc).join(', ') : '<span class="muted">none</span>'}</td><td class="r"><div class="btns u24">${acts.join('')}</div></td></tr>`;
     }).join('')}</tbody></table></div>`);
   const have = {}; list.forEach((m) => { have[m.name] = m; });
   const catCard = (c) => {
@@ -1243,7 +1243,7 @@ function renderModels() {
       : `<button class="primary" data-act="pick-model" data-name="${c.id}" data-catalog="1" title="Adds it to the library (nodes download it) and loads it on the node you pick">Add and load on…</button>
          <button data-act="catalog-add" data-id="${c.id}" data-storage="direct" title="Each node downloads it from Hugging Face when you load it; uses no controller space">Add · nodes download</button>
          <button data-act="catalog-add" data-id="${c.id}" data-storage="controller" title="Download once to the controller (${bytes(c.bytes)}), then copy to nodes over your network">Store on controller</button>`;
-    return `<div class="card"><span class="for">${esc(c.for)}</span><h3>${esc(c.label)}${recFor(c.id)}${c.mmproj ? ' <span class="pill st-ready" title="Reads images">Vision</span>' : ''}</h3><p>${esc(c.notes)}</p><div class="btns">${btn}</div><span class="muted" style="font-size:12px;margin-top:6px">${bytes(c.bytes)} · needs ~${c.min_ram_gb} GB RAM+VRAM</span>${fitBadges((models.catalog_fits || {})[c.id])}</div>`;
+    return `<div class="card"><span class="for">${esc(c.for)}</span><h3>${esc(c.label)}${recFor(c.id)}${c.mmproj ? ' <span class="pill st-ready" title="Reads images">Vision</span>' : ''}</h3><p>${esc(c.notes)}</p><div class="btns">${btn}</div><span class="muted u25">${bytes(c.bytes)} · needs ~${c.min_ram_gb} GB RAM+VRAM</span>${fitBadges((models.catalog_fits || {})[c.id])}</div>`;
   };
   setHTML('catalog', models.catalog.map(catCard).join(''));
   const byId = {}; models.catalog.forEach((c) => { byId[c.id] = c; });
@@ -1259,7 +1259,7 @@ $('hf-list').onclick = async () => {
     const r = await api('/api/hf/files?repo=' + encodeURIComponent($('hf-repo').value.trim()));
     hfRepo = r.repo; hfGroups = r.groups;
     setHTML('hf-files', !r.groups.length ? '<span class="muted">No .gguf files in that repo.</span>' :
-      `<div class="table-wrap"><table><tbody>${r.mmproj && r.mmproj.length ? `<tr><td colspan="3"><label class="muted">Vision projector (optional, makes the model read images) <select id="hf-mmproj"><option value="">none</option>${r.mmproj.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join('')}</select></label></td></tr>` : ''}${r.groups.map((g, i) => `<tr><td class="mono">${esc(g.name)}${g.files.length > 1 ? ` <span class="muted">(${g.files.length} parts)</span>` : ''}${fitBadges(g.fits)}</td><td>${bytes(g.bytes)}</td><td class="r"><div class="btns" style="justify-content:flex-end"><button class="small primary" data-act="hf-add" data-i="${i}" data-storage="direct">Add · nodes download</button><button class="small" data-act="hf-add" data-i="${i}" data-storage="controller">Store on controller</button></div></td></tr>`).join('')}</tbody></table></div>`);
+      `<div class="table-wrap"><table><tbody>${r.mmproj && r.mmproj.length ? `<tr><td colspan="3"><label class="muted">Vision projector (optional, makes the model read images) <select id="hf-mmproj"><option value="">none</option>${r.mmproj.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join('')}</select></label></td></tr>` : ''}${r.groups.map((g, i) => `<tr><td class="mono">${esc(g.name)}${g.files.length > 1 ? ` <span class="muted">(${g.files.length} parts)</span>` : ''}${fitBadges(g.fits)}</td><td>${bytes(g.bytes)}</td><td class="r"><div class="btns u24"><button class="small primary" data-act="hf-add" data-i="${i}" data-storage="direct">Add · nodes download</button><button class="small" data-act="hf-add" data-i="${i}" data-storage="controller">Store on controller</button></div></td></tr>`).join('')}</tbody></table></div>`);
   } catch (e) { setHTML('hf-files', `<span class="error-msg">${esc(e.message)}</span>`); }
 };
 $('hf-repo').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('hf-list').click(); });
@@ -1286,18 +1286,18 @@ function renderUpdates() {
       const pct = u.state === 'downloading' && u.bytes_total ? 100 * u.bytes_done / u.bytes_total : u.state === 'sent' ? 2 : u.state === 'downloading' ? 5 : u.state === 'installing' ? 85 : 95;
       const what = { sent: 'requested', downloading: u.bytes_total ? `downloading ${bytes(u.bytes_done)} of ${bytes(u.bytes_total)}` : 'downloading', installing: 'verifying and installing', restarting: 'restarting' }[u.state];
       prog = `<div class="prog"><span>${esc(what)}</span>${bar(pct, 'good')}</div>`;
-    } else if (u && u.state === 'failed') prog = `<span class="error-msg" style="margin:0">${esc(u.error)}</span>`;
+    } else if (u && u.state === 'failed') prog = `<span class="error-msg u2">${esc(u.error)}</span>`;
     else if (u && u.state === 'done' && (Date.now() - new Date(u.updated)) < 600000) prog = `<span class="st-done">✓ updated</span>`;
     const busy = u && UPD_BUSY.includes(u.state);
     const canUpdate = n.update_to && n.online && !busy;
-    rows.push(`<tr><td><span class="dot ${n.online ? 'on' : ''}" title="${n.online ? 'service online' : 'offline'}"></span></td><td><b>${esc(nodeName(n))}</b><div class="sub" style="margin:0">${n.online ? 'online' : n.last_seen ? 'offline · seen ' + ago(n.last_seen) : 'never connected'}</div></td>
+    rows.push(`<tr><td><span class="dot ${n.online ? 'on' : ''}" title="${n.online ? 'service online' : 'offline'}"></span></td><td><b>${esc(nodeName(n))}</b><div class="sub u2">${n.online ? 'online' : n.last_seen ? 'offline · seen ' + ago(n.last_seen) : 'never connected'}</div></td>
       <td>${esc(h.os ? h.os + '-' + h.arch : '?')}</td><td>${h.agent_version ? 'v' + esc(h.agent_version) : '?'}</td>
       <td>${n.update_to ? 'v' + esc(n.update_to) : '<span class="muted">' + (state.releases.some((r) => r.platform === (h.os + '-' + h.arch)) ? 'up to date' : 'no release uploaded') + '</span>'}</td>
       <td>${prog}</td>
       <td class="r">${canUpdate ? `<button class="small primary" data-act="node-update" data-id="${n.id}" ${n.running_jobs ? 'disabled title="Waits until running jobs finish"' : ''}>Update</button>` : ''}
         ${h.rollback_to && n.online && !busy ? `<button class="small" data-act="node-rollback" data-id="${n.id}" title="Restart this node on the previous version">Roll back to v${esc(h.rollback_to)}</button>` : ''}</td></tr>`);
   }
-  setHTML('upd-table', `<table><thead><tr><th style="width:24px"></th><th>Machine</th><th>Platform</th><th>Running</th><th>Available</th><th>Progress</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`);
+  setHTML('upd-table', `<table><thead><tr><th class="u26"></th><th>Machine</th><th>Platform</th><th>Running</th><th>Available</th><th>Progress</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`);
   const outdated = state.nodes.filter((n) => n.online && n.update_to && !(n.update && UPD_BUSY.includes(n.update.state))).length;
   const b = $('btn-upd-all');
   b.disabled = !outdated; b.className = outdated ? 'primary' : '';
@@ -1626,7 +1626,7 @@ async function pollJob() {
   if (!html && j.exec_output) html = esc(j.exec_output.stdout_tail) + (j.exec_output.stderr_tail ? `<span class="err">${esc(j.exec_output.stderr_tail)}</span>` : '');
   if (!html && inf) html = esc(inf.text);
   if (j.truncated) html += '\n<span class="err">[output truncated in the UI after 1 MB]</span>';
-  setHTML(out, html || '<span style="opacity:.5">(no output yet)</span>');
+  setHTML(out, html || '<span class="u27">(no output yet)</span>');
   if (atBottom) out.scrollTop = out.scrollHeight;
   const err = j.result && j.result.error;
   $('job-err').classList.toggle('hidden', !err);
@@ -1670,6 +1670,8 @@ document.addEventListener('change', async (e) => {
   const cb = e.target.closest('[data-exec]');
   if (cb) setExec(cb.dataset.exec, cb.checked);
 });
+// A difficulty picker lives inside a <summary>; clicking it must not toggle the details.
+document.addEventListener('click', (e) => { if (e.target.closest('select[data-diff]')) e.preventDefault(); });
 document.addEventListener('click', async (e) => {
   const row = e.target.closest('[data-href]');
   if (row && !e.target.closest('button, a')) { location.hash = row.dataset.href; return; }
