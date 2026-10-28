@@ -65,6 +65,7 @@
             <select id="nt-model" class="chip-select" aria-label="Claude model"></select>
             <label class="chip-input" id="nt-cap-wrap" title="Spending cap for Claude on this task">cap $<input id="nt-cap" type="number" min="0.05" step="0.25" aria-label="Spending cap in US dollars"></label>
             <label class="toggle" title="A second node checks each subtask and fixes mistakes"><input type="checkbox" id="nt-review" checked> peer review</label>
+            <label class="toggle" title="Plan 2 or 3 design variants of the page first, rendered side by side, and build the real code from the one you pick. Needs a node with exec and Chromium."><input type="checkbox" id="nt-mockup"> mockups first</label>
             <span class="spacer"></span>
             <button class="send" id="nt-go" aria-label="Start planning">Plan it</button>
           </div>
