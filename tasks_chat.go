@@ -23,7 +23,7 @@ type TaskMessage struct {
 	ID        string     `json:"id"`
 	Time      time.Time  `json:"time"`
 	Role      string     `json:"role"` // user | assistant | event
-	Kind      string     `json:"kind"` // text | answers | steer | questions | plan | result | error | event
+	Kind      string     `json:"kind"` // text | answers | steer | questions | plan | result | error | event | agent_question | agent_answer
 	Text      string     `json:"text,omitempty"`
 	Questions []Question `json:"questions,omitempty"`
 	Plan      *Plan      `json:"plan,omitempty"`
@@ -31,6 +31,8 @@ type TaskMessage struct {
 	Images    []string   `json:"images,omitempty"` // user: attached image file names (see handleTaskImage)
 	Shots     []Shot     `json:"shots,omitempty"`  // shots, mockup: rendered pages (see visual.go)
 	Round     int        `json:"round"`
+	Pending   bool       `json:"pending,omitempty"` // agent_question: waiting for the user's answer
+	Subtask   string     `json:"subtask,omitempty"` // agent messages: which subtask they belong to
 }
 
 type Question struct {
@@ -128,7 +130,7 @@ func (c *Controller) plannerPrompt(t *Task, budget int, want []string) string {
 				roundPlan = m.Plan
 			}
 		}
-		if m.Round < round && m.Role == "user" && m.Kind != "steer" {
+		if m.Round < round && m.Role == "user" && m.Kind != "steer" && m.Kind != "agent_answer" {
 			earlier = append(earlier, m.Text)
 		}
 	}
@@ -329,6 +331,30 @@ func (c *Controller) handleTaskAnswers(w http.ResponseWriter, r *http.Request) {
 	}
 	t.addMsg(TaskMessage{Role: "user", Kind: "answers", Text: strings.Join(lines, "\n")})
 	c.replan(t, "Planning with your answers.")
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// handleAgentAnswer takes the user's answer to a question an agent asked:
+// {"id": "m12", "answer": "use SQLite"}
+func (c *Controller) handleAgentAnswer(w http.ResponseWriter, r *http.Request) {
+	t := c.getTask(r.PathValue("id"))
+	if t == nil {
+		writeJSON(w, 404, map[string]string{"error": "no such task"})
+		return
+	}
+	var req struct {
+		ID     string `json:"id"`
+		Answer string `json:"answer"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Answer) == "" {
+		writeJSON(w, 400, map[string]string{"error": "write an answer"})
+		return
+	}
+	if err := t.deliverAnswer(req.ID, strings.TrimSpace(req.Answer)); err != nil {
+		writeJSON(w, 409, map[string]string{"error": err.Error()})
+		return
+	}
+	t.logf("info", "Answer to the agent: %s", firstLine(req.Answer, 200))
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 

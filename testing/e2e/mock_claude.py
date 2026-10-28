@@ -17,7 +17,16 @@ PLAN = {
      "instructions": "unittest tests for count_words; README explains usage."}
   ]
 }
+# "dig first" in the request makes the planner add an investigate subtask (agent mode).
+PLAN_INV = dict(PLAN)
+PLAN_INV["subtasks"] = [{"id": "i1", "title": "Find out how words should be split", "kind": "investigate", "files": [], "depends_on": [],
+                         "instructions": "Search the project for how text is split into words and report."}] + [
+    dict(s, depends_on=(s["depends_on"] or ["i1"])) for s in PLAN["subtasks"]]
 calls = {"n": 0}
+
+def tool_use(i, name, **inp):
+    return {"type": "tool_use", "id": "toolu_%d_%s" % (i, name), "name": name, "input": inp}
+FIXED = "def count_words(text):\n    counts = {}\n    for w in text.lower().split():\n        counts[w] = counts.get(w, 0) + 1\n    return counts\n"
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -26,6 +35,15 @@ class H(BaseHTTPRequestHandler):
         if self.headers.get("x-api-key") != "sk-test-key":
             return self.send(401, {"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}})
         calls["n"] += 1
+        if body.get("tools"):
+            # Agent mode: list and read, write the fix, run the tests, then say what was done.
+            n = len(body["messages"])
+            if n == 1: content = [tool_use(1, "list_files"), tool_use(2, "read_file", path="wordcount/core.py")]
+            elif n == 3: content = [tool_use(3, "write_file", path="wordcount/core.py", content=FIXED)]
+            elif n == 5: content = [tool_use(4, "run", command="python3 -m unittest discover -s tests")]
+            else: content = [{"type": "text", "text": "count_words gave every word a count of 1; it now adds up repeats."}]
+            return self.send(200, {"id": "msg_t", "type": "message", "role": "assistant", "model": body["model"], "content": content,
+                "stop_reason": "tool_use" if n < 7 else "end_turn", "usage": {"input_tokens": 900, "output_tokens": 80}})
         system = body["system"][0]["text"]
         user = body["messages"][0]["content"]
         if "planner for Outpost" in system:
@@ -41,6 +59,9 @@ class H(BaseHTTPRequestHandler):
                     "note": "Only the CLI and its README change.",
                     "subtasks": [{"id": "f1", "title": "Add --top N to the CLI", "files": ["wordcount/cli.py", "README.md"], "depends_on": [],
                                   "instructions": "Add a --top N option that prints only the N most frequent words."}]})
+            elif "dig first" in user:
+                plan = dict(PLAN_INV); plan["note"] = "One subtask investigates before the others start."
+                text = json.dumps(plan)
             else:
                 plan = dict(PLAN)
                 if "build artifacts" in user:  # exercises the build step with one blob-sized file

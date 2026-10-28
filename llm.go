@@ -40,6 +40,8 @@ type llmRequest struct {
 	Sub         string      // subtask id, for the live view
 	Live        *liveHandle // streamed text goes here (cloud planners)
 	Images      []llmImage  // attached to the user turn (planner only)
+	Msgs        []agentMsg  // agent mode: the conversation so far; replaces User
+	Tools       []agentTool
 }
 
 type llmResponse struct {
@@ -50,6 +52,7 @@ type llmResponse struct {
 	CacheWrite    int
 	CostUSD       float64
 	WebSearches   int
+	Calls         []toolCall // agent mode: tools the model asked for
 	Model         string
 	TokensPerSec  float64
 	ElapsedSecond float64
@@ -96,8 +99,14 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 		"system":     []map[string]any{{"type": "text", "text": req.System, "cache_control": map[string]string{"type": "ephemeral"}}},
 		"messages":   []map[string]any{{"role": "user", "content": claudeUser(req)}},
 	}
+	if len(req.Msgs) > 0 {
+		body["messages"] = claudeMessages(req.Msgs)
+	}
 	if req.WebSearch {
 		body["tools"] = []map[string]any{{"type": "web_search_20250305", "name": "web_search", "max_uses": webSearchUses}}
+	}
+	if len(req.Tools) > 0 {
+		body["tools"] = claudeTools(req.Tools)
 	}
 	if req.Temperature > 0 {
 		body["temperature"] = req.Temperature
@@ -146,8 +155,11 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 			if resp.StatusCode == 200 {
 				var out struct {
 					Content []struct {
-						Type string `json:"type"`
-						Text string `json:"text"`
+						Type  string          `json:"type"`
+						Text  string          `json:"text"`
+						ID    string          `json:"id"`
+						Name  string          `json:"name"`
+						Input json.RawMessage `json:"input"`
 					} `json:"content"`
 					Usage struct {
 						In     int `json:"input_tokens"`
@@ -163,12 +175,20 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 					return nil, fmt.Errorf("Claude API: bad response: %v", err)
 				}
 				var text strings.Builder
+				var calls []toolCall
 				for _, c := range out.Content {
 					if c.Type == "text" {
 						text.WriteString(c.Text)
 					}
+					if c.Type == "tool_use" {
+						args := string(c.Input)
+						if strings.TrimSpace(args) == "" {
+							args = "{}"
+						}
+						calls = append(calls, toolCall{ID: c.ID, Name: c.Name, Args: args})
+					}
 				}
-				r := &llmResponse{Text: text.String(), InTokens: out.Usage.In, OutTokens: out.Usage.Out,
+				r := &llmResponse{Text: text.String(), Calls: calls, InTokens: out.Usage.In, OutTokens: out.Usage.Out,
 					CacheRead: out.Usage.CacheR, CacheWrite: out.Usage.CacheW, Model: model,
 					WebSearches: out.Usage.Server.Searches, ElapsedSecond: time.Since(start).Seconds()}
 				r.CostUSD = usageCost(model, r.InTokens, r.OutTokens, r.CacheWrite, r.CacheRead) + float64(r.WebSearches)*webSearchUSD
@@ -288,14 +308,27 @@ func sseData(r io.Reader, fn func(data string) bool) error {
 func readClaudeStream(body io.Reader, live *liveHandle) (*llmResponse, error) {
 	r := &llmResponse{}
 	var text strings.Builder
+	type pendingCall struct {
+		toolCall
+		args strings.Builder
+	}
+	tools := map[int]*pendingCall{} // tool_use blocks by content index; arguments arrive as JSON pieces
+	var order []int
 	var streamErr error
 	done := false
 	err := sseData(body, func(data string) bool {
 		var ev struct {
-			Type  string `json:"type"`
-			Delta struct {
+			Type         string `json:"type"`
+			Index        int    `json:"index"`
+			ContentBlock struct {
 				Type string `json:"type"`
-				Text string `json:"text"`
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"content_block"`
+			Delta struct {
+				Type        string `json:"type"`
+				Text        string `json:"text"`
+				PartialJSON string `json:"partial_json"`
 			} `json:"delta"`
 			Message struct {
 				Usage struct {
@@ -317,10 +350,18 @@ func readClaudeStream(body io.Reader, live *liveHandle) (*llmResponse, error) {
 		switch ev.Type {
 		case "message_start":
 			r.InTokens, r.CacheWrite, r.CacheRead = ev.Message.Usage.In, ev.Message.Usage.CacheW, ev.Message.Usage.CacheR
+		case "content_block_start":
+			if ev.ContentBlock.Type == "tool_use" {
+				tools[ev.Index] = &pendingCall{toolCall: toolCall{ID: ev.ContentBlock.ID, Name: ev.ContentBlock.Name}}
+				order = append(order, ev.Index)
+			}
 		case "content_block_delta":
 			if ev.Delta.Type == "text_delta" && ev.Delta.Text != "" {
 				text.WriteString(ev.Delta.Text)
 				live.Write(ev.Delta.Text)
+			}
+			if ev.Delta.Type == "input_json_delta" && tools[ev.Index] != nil {
+				tools[ev.Index].args.WriteString(ev.Delta.PartialJSON)
 			}
 		case "message_delta":
 			r.OutTokens = ev.Usage.Out
@@ -343,6 +384,14 @@ func readClaudeStream(body io.Reader, live *liveHandle) (*llmResponse, error) {
 		return nil, errors.New("Claude API stream ended early")
 	}
 	r.Text = text.String()
+	for _, i := range order {
+		c := tools[i]
+		c.Args = strings.TrimSpace(c.args.String())
+		if c.Args == "" {
+			c.Args = "{}"
+		}
+		r.Calls = append(r.Calls, c.toolCall)
+	}
 	return r, nil
 }
 

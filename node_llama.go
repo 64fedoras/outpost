@@ -672,6 +672,15 @@ func (l *llamaMgr) load(ml ModelLoad) {
 	l.n.resendHello()
 }
 
+func hasJinjaArg(args []string) bool {
+	for _, a := range args {
+		if a == "--jinja" || a == "--no-jinja" {
+			return true
+		}
+	}
+	return false
+}
+
 func (l *llamaMgr) start(rt *runtimeRecord, ml ModelLoad, modelPath string, restarts int) error {
 	port, err := freePort()
 	if err != nil {
@@ -697,6 +706,9 @@ func (l *llamaMgr) start(rt *runtimeRecord, ml ModelLoad, modelPath string, rest
 	}
 	if len(ml.RPC) > 0 {
 		args = append(args, "--rpc", strings.Join(ml.RPC, ","))
+	}
+	if !hasJinjaArg(ml.ExtraArgs) {
+		args = append(args, "--jinja") // the model's own chat template, which tool calling needs
 	}
 	args = append(args, ml.ExtraArgs...)
 	cmd := exec.Command(rt.ServerPath, args...)
@@ -814,6 +826,9 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 	if len(spec.Params.Stop) > 0 {
 		body["stop"] = spec.Params.Stop
 	}
+	if len(spec.Tools) > 0 {
+		body["tools"] = spec.Tools
+	}
 	b, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, "POST", l.baseURL()+"/v1/chat/completions", bytes.NewReader(b))
 	if err != nil {
@@ -836,6 +851,7 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 	}
 	out := &InferenceOutput{Model: model}
 	var text strings.Builder
+	var calls []WireToolCall
 	var firstTok time.Time
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
@@ -851,7 +867,15 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content *string `json:"content"`
+					Content   *string `json:"content"`
+					ToolCalls []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
@@ -871,6 +895,17 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 				text.WriteString(*c.Delta.Content)
 				emit(*c.Delta.Content)
 			}
+			for _, tc := range c.Delta.ToolCalls { // arrives in pieces, keyed by index
+				for len(calls) <= tc.Index {
+					calls = append(calls, WireToolCall{Type: "function"})
+				}
+				w := &calls[tc.Index]
+				if tc.ID != "" {
+					w.ID = tc.ID
+				}
+				w.Function.Name += tc.Function.Name
+				w.Function.Arguments += tc.Function.Arguments
+			}
 			if c.FinishReason != nil {
 				out.FinishReason = *c.FinishReason
 			}
@@ -886,6 +921,11 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 		return nil, nil
 	}
 	out.Text = text.String()
+	for _, w := range calls {
+		if w.Function.Name != "" {
+			out.ToolCalls = append(out.ToolCalls, w)
+		}
+	}
 	if !firstTok.IsZero() && out.OutputTokens > 1 {
 		if d := time.Since(firstTok).Seconds(); d > 0 {
 			out.TokensPerSec = float64(int(10*float64(out.OutputTokens-1)/d)) / 10
@@ -1117,7 +1157,14 @@ func chatPayload(msgs []ChatMessage) []any {
 	out := make([]any, 0, len(msgs))
 	for _, m := range msgs {
 		if len(m.Images) == 0 {
-			out = append(out, map[string]any{"role": m.Role, "content": m.Content})
+			msg := map[string]any{"role": m.Role, "content": m.Content}
+			if len(m.ToolCalls) > 0 { // agent mode
+				msg["tool_calls"] = m.ToolCalls
+			}
+			if m.ToolCallID != "" {
+				msg["tool_call_id"] = m.ToolCallID
+			}
+			out = append(out, msg)
 			continue
 		}
 		parts := []map[string]any{{"type": "text", "text": m.Content}}
