@@ -103,6 +103,7 @@ async function refresh() {
   $('hdr-meta').textContent = `v${state.version}`;
   $('hdr-meta').title = state.advertise;
   $('ctl-info').textContent = `Controller ${state.advertise} · ${state.platform} · certificate SHA-256 ${state.fingerprint}`;
+  pollNotifications();
   renderBadges();
   renderSideTasks();
   renderSideCluster();
@@ -816,6 +817,7 @@ async function loadSettings() {
   $('set-cap').value = settings.default_cap_usd;
   if (!state) state = await api('/api/state').catch(() => null);
   if (state) $('set-planner').innerHTML = plannerOptions(settings.default_planner);
+  loadNotifySettings();
   loadSecurity();
 }
 let orLoaded = false;
@@ -827,6 +829,44 @@ async function loadOpenRouterModels() {
     setHTML('or-models', r.models.map((m) => `<option value="${esc(m.id)}">${esc(m.name)} ($${m.in.toFixed(2)} in / $${m.out.toFixed(2)} out per M tokens)</option>`).join(''));
     $('set-or-model-state').textContent = `· ${r.models.length} models`;
   } catch (e) { $('set-or-model-state').textContent = '· ' + e.message; }
+}
+const NOTIFY_EVENTS = [['question', 'The planner asked a question'], ['plan', 'A plan is ready to approve'], ['done', 'A task finished'], ['failed', 'A task failed'], ['cap', 'The spending cap paused a task'], ['node_offline', 'A node has been offline for 5 minutes']];
+function loadNotifySettings() {
+  setHTML('nf-events', NOTIFY_EVENTS.map(([id, label]) => `<label class="check"><input type="checkbox" data-nf="${id}" ${settings.notify_events[id] ? 'checked' : ''}> ${esc(label)}</label>`).join(''));
+  $('nf-browser').checked = !!settings.notify_browser;
+  $('nf-ntfy').value = settings.notify_ntfy_url || ''; $('nf-webhook').value = settings.notify_webhook_url || ''; $('nf-public').value = settings.notify_public_url || '';
+  $('nf-ntfy-token-state').textContent = settings.notify_has_ntfy_token ? '· saved' : '· not set';
+  $('nf-browser-state').textContent = 'Notification' in window ? (Notification.permission === 'denied' ? '· blocked in this browser' : '') : '· not supported here';
+}
+function notifyBody() {
+  const events = {}; document.querySelectorAll('[data-nf]').forEach((b) => { events[b.dataset.nf] = b.checked; });
+  const n = { browser: $('nf-browser').checked, ntfy_url: $('nf-ntfy').value, webhook_url: $('nf-webhook').value, public_url: $('nf-public').value, events };
+  if ($('nf-ntfy-token').value.trim()) n.ntfy_token = $('nf-ntfy-token').value.trim();
+  return n;
+}
+$('nf-save').onclick = async () => {
+  if ($('nf-browser').checked && 'Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
+  const body = notifyBody(); $('nf-ntfy-token').value = '';
+  saveSettings({ notify: body }, 'Notification settings saved');
+};
+$('nf-test').onclick = async () => {
+  try { await post('/api/settings', { notify: notifyBody() }); $('nf-ntfy-token').value = ''; await post('/api/notifications/test'); toast('Test sent'); loadSettings(); } catch (e) { toast(e.message); }
+};
+// Desktop notifications: the controller keeps recent events; each tab asks for the ones after its last position.
+let notifyLast = null;
+async function pollNotifications() {
+  try {
+    const r = await api('/api/notifications' + (notifyLast === null ? '' : '?since=' + notifyLast));
+    notifyLast = r.last;
+    if (!r.notifications.length || !('Notification' in window) || Notification.permission !== 'granted') return;
+    const s = settings || await api('/api/settings').catch(() => null);
+    if (!s || !s.notify_browser) return;
+    for (const n of r.notifications) {
+      if (!s.notify_events[n.event]) continue;
+      const x = new Notification(n.title, { body: n.message, tag: 'outpost-' + n.id });
+      x.onclick = () => { window.focus(); if (n.task_id) location.hash = '#/tasks/' + n.task_id; else location.hash = '#/nodes'; x.close(); };
+    }
+  } catch (e) {}
 }
 async function loadSecurity() {
   try {
