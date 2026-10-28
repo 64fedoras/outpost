@@ -254,6 +254,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/tasks/{id}/file", c.auth(c.handleTaskFile))
 	mux.HandleFunc("GET /api/tasks/{id}/artifact", c.auth(c.handleTaskArtifact))
 	mux.HandleFunc("GET /api/tasks/{id}/artifacts.zip", c.auth(c.handleTaskArtifactsZip))
+	mux.HandleFunc("POST /api/tasks/{id}/publish", c.auth(c.handlePublishArtifacts))
 	mux.HandleFunc("POST /api/tasks/{id}/zip", c.auth(c.handleTaskZip))
 	mux.HandleFunc("GET /api/tasks/{id}/rounds", c.auth(c.handleTaskRounds))
 	mux.HandleFunc("GET /api/tasks/{id}/changes", c.auth(c.handleTaskChanges))

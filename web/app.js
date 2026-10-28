@@ -537,8 +537,10 @@ function artifactsBlock(t) {
   if (t.build_status === 'failed') return `<details class="testout"><summary>The build failed</summary><pre class="out">${esc(t.build_output || '')}</pre></details>`;
   if (!arts.length) return '';
   const links = arts.map((a) => `<a href="/api/tasks/${t.id}/artifact?path=${encodeURIComponent(a.path)}">${esc(a.path)} <span class="muted">(${bytes(a.bytes)})</span></a>`).join('');
+  const publish = arts.some((a) => /^(.*\/)?outpost-(linux|darwin|windows)-(amd64|arm64)(\.exe)?$/.test(a.path))
+    ? '<button class="small" data-act="task-publish" title="Upload the outpost-&lt;platform&gt; binaries as releases. Updating the controller and nodes stays a click on the Updates tab.">Publish to Updates</button>' : '';
   return `<div class="changed"><span class="hint">Build outputs</span>${links}</div>
-    <div class="card-actions"><a href="/api/tasks/${t.id}/artifacts.zip"><button class="small">artifacts.zip</button></a><a href="/api/tasks/${t.id}/download?artifacts=1"><button class="small">Source and artifacts .zip</button></a></div>`;
+    <div class="card-actions">${publish}<a href="/api/tasks/${t.id}/artifacts.zip"><button class="small">artifacts.zip</button></a><a href="/api/tasks/${t.id}/download?artifacts=1"><button class="small">Source and artifacts .zip</button></a></div>`;
 }
 
 function resultCard(t, m) {
@@ -722,6 +724,12 @@ async function taskAction(act, el) {
         if (!answer.trim()) { toast('Write an answer first'); return; }
         await post(`/api/tasks/${id}/agent-answer`, { id: msg, answer });
         break;
+      }
+      case 'task-publish': {
+        const r = await post(`/api/tasks/${id}/publish`);
+        const bad = Object.entries(r.refused || {}).map(([k, v]) => `${k}: ${v}`);
+        toast(`${(r.published || []).length} published to Updates` + (bad.length ? `. Refused: ${bad.join('; ')}` : '. Update the controller and nodes from the Updates tab.'), bad.length ? 9000 : 4000);
+        return;
       }
       case 'task-cancel': if (!confirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return; await post(`/api/tasks/${id}/cancel`); break;
       case 'task-raise': await post(`/api/tasks/${id}/resume`, { cap_usd: parseFloat($('ta-newcap').value) || 0 }); toast('Continuing'); break;

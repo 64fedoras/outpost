@@ -173,7 +173,11 @@ Each task is a conversation:
    plan has a **build command** (for example `sh build.sh`) and **artifact patterns** (for example
    `dist/*`), the build runs on an exec node after the tests pass and its outputs appear on the card.
    Download them one by one, as `artifacts.zip`, or together with the source. A failed build does not
-   fail the task; the card shows the build output and the source stays available. The Project files
+   fail the task; the card shows the build output and the source stays available. If the outputs
+   include `outpost-<platform>` binaries (the names `build.sh` produces), the card offers **Publish to
+   Updates**: each binary is checked (same hash as the build, a real Outpost binary whose platform matches
+   its name) and uploaded as the release for that platform, like the Updates tab's upload.
+   Updating the controller and nodes stays your click there; a task never updates anything by itself. The Project files
    view has checkboxes and **Zip ticked files**.
    Files of any size up to 2 GB per job move between the controller and exec nodes in hash-checked
    pieces (project files over 1 MiB go to the build node, build outputs come back). A node holds a

@@ -466,3 +466,108 @@ func (c *Controller) handleTaskZip(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="files.zip"`)
 	_ = writeZip(w, items)
 }
+
+// ---------- publish to Updates ----------
+
+// buildArtifactPlatform returns the platform a build output is named for
+// ("outpost-linux-amd64", "outpost-windows-amd64.exe"), or "" if it is not
+// named like an Outpost binary.
+func buildArtifactPlatform(path string) string {
+	name := strings.TrimSuffix(filepath.Base(path), ".exe")
+	plat, ok := strings.CutPrefix(name, "outpost-")
+	if !ok {
+		return ""
+	}
+	if goos, _, _ := strings.Cut(plat, "-"); strings.HasSuffix(filepath.Base(path), ".exe") != (goos == "windows") {
+		return ""
+	}
+	switch plat {
+	case "linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64", "windows-amd64", "windows-arm64":
+		return plat
+	}
+	return ""
+}
+
+// publishArtifacts uploads the task's outpost-<platform> outputs as releases.
+// Each file must still match its recorded hash, and its embedded platform must
+// equal the platform in its name; anything else is refused. It only stores the
+// releases: updating the controller or a node stays a click on the Updates tab.
+func (c *Controller) publishArtifacts(t *Task) (published []*Release, refused map[string]string) {
+	refused = map[string]string{}
+	for _, a := range t.Artifacts {
+		want := buildArtifactPlatform(a.Path)
+		if want == "" {
+			continue
+		}
+		src, err := safeJoin(t.artifactsDir(), a.Path)
+		if err != nil {
+			refused[a.Path] = "bad path"
+			continue
+		}
+		tmp, err := copyToTemp(src, c.releasesDir())
+		if err != nil {
+			refused[a.Path] = err.Error()
+			continue
+		}
+		sum, _, err := fileSHA256(tmp)
+		if err == nil && a.SHA256 != "" && sum != a.SHA256 {
+			err = errors.New("file changed since the build recorded it")
+		}
+		if err == nil {
+			var plat string
+			plat, _, err = inspectBinary(tmp)
+			if err == nil && plat != want {
+				err = fmt.Errorf("named for %s but the binary is for %s", want, plat)
+			}
+		}
+		if err == nil {
+			var rel *Release
+			if rel, err = c.installRelease(tmp, filepath.Base(a.Path)); err == nil {
+				published = append(published, rel)
+			}
+		}
+		if err != nil {
+			refused[a.Path] = err.Error()
+		}
+		os.Remove(tmp)
+	}
+	return published, refused
+}
+
+func copyToTemp(src, dir string) (string, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+	out, err := os.CreateTemp(dir, ".upload-*")
+	if err != nil {
+		return "", err
+	}
+	_, err = io.Copy(out, in)
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(out.Name())
+		return "", err
+	}
+	return out.Name(), nil
+}
+
+func (c *Controller) handlePublishArtifacts(w http.ResponseWriter, r *http.Request) {
+	t := c.getTask(r.PathValue("id"))
+	if t == nil {
+		writeJSON(w, 404, map[string]string{"error": "no such task"})
+		return
+	}
+	pub, refused := c.publishArtifacts(t)
+	if len(pub) == 0 && len(refused) == 0 {
+		writeJSON(w, 400, map[string]string{"error": "this task has no outpost-<platform> build outputs"})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"published": pub, "refused": refused})
+}
