@@ -203,6 +203,16 @@ func callOpenRouter(ctx context.Context, key, model string, req llmRequest) (*ll
 		"messages":   []map[string]any{{"role": "system", "content": system}, {"role": "user", "content": openRouterUser(req)}},
 		"usage":      map[string]bool{"include": true},
 	}
+	if len(req.Msgs) > 0 {
+		msgs := []any{map[string]any{"role": "system", "content": system}}
+		for _, m := range openAIMessages(req.Msgs) {
+			msgs = append(msgs, m)
+		}
+		body["messages"] = msgs
+	}
+	if len(req.Tools) > 0 {
+		body["tools"] = toolDefs(req.Tools)
+	}
 	if m := openRouterModels.get(model); m != nil && m.maxOut > 0 && req.MaxTokens > m.maxOut {
 		body["max_tokens"] = m.maxOut
 	}
@@ -241,7 +251,8 @@ func callOpenRouter(ctx context.Context, key, model string, req llmRequest) (*ll
 				Model   string `json:"model"`
 				Choices []struct {
 					Message struct {
-						Content string `json:"content"`
+						Content   string         `json:"content"`
+						ToolCalls []WireToolCall `json:"tool_calls"`
 					} `json:"message"`
 					FinishReason string `json:"finish_reason"`
 				} `json:"choices"`
@@ -260,7 +271,7 @@ func callOpenRouter(ctx context.Context, key, model string, req llmRequest) (*ll
 			}
 			_ = json.Unmarshal(raw, &out)
 			if resp.StatusCode == 200 && out.Error == nil && len(out.Choices) > 0 {
-				r := &llmResponse{Text: out.Choices[0].Message.Content, Model: model, ElapsedSecond: time.Since(start).Seconds()}
+				r := &llmResponse{Text: out.Choices[0].Message.Content, Calls: fromWireCalls(out.Choices[0].Message.ToolCalls), Model: model, ElapsedSecond: time.Since(start).Seconds()}
 				if u := out.Usage; u != nil {
 					r.InTokens, r.OutTokens, r.CacheRead = u.In-u.Details.Cached, u.Out, u.Details.Cached
 					if r.InTokens < 0 {
@@ -345,6 +356,7 @@ func readOpenRouterStream(body io.Reader, live *liveHandle) []byte {
 	var usage json.RawMessage
 	var finish string
 	var errBody json.RawMessage
+	var calls []WireToolCall
 	_ = sseData(body, func(data string) bool {
 		if data == "[DONE]" {
 			return false
@@ -352,7 +364,15 @@ func readOpenRouterStream(body io.Reader, live *liveHandle) []byte {
 		var ch struct {
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
@@ -371,6 +391,17 @@ func readOpenRouterStream(body io.Reader, live *liveHandle) []byte {
 				text.WriteString(c.Delta.Content)
 				live.Write(c.Delta.Content)
 			}
+			for _, tc := range c.Delta.ToolCalls { // pieces keyed by index
+				for len(calls) <= tc.Index {
+					calls = append(calls, WireToolCall{Type: "function"})
+				}
+				w := &calls[tc.Index]
+				if tc.ID != "" {
+					w.ID = tc.ID
+				}
+				w.Function.Name += tc.Function.Name
+				w.Function.Arguments += tc.Function.Arguments
+			}
 			if c.FinishReason != nil {
 				finish = *c.FinishReason
 			}
@@ -388,7 +419,11 @@ func readOpenRouterStream(body io.Reader, live *liveHandle) []byte {
 		b, _ := json.Marshal(map[string]any{"error": map[string]any{"code": 502, "message": "OpenRouter stream ended early"}})
 		return b
 	}
-	out := map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": text.String()}, "finish_reason": finish}}}
+	msg := map[string]any{"content": text.String()}
+	if len(calls) > 0 {
+		msg["tool_calls"] = calls
+	}
+	out := map[string]any{"choices": []any{map[string]any{"message": msg, "finish_reason": finish}}}
 	if usage != nil {
 		out["usage"] = usage
 	}
