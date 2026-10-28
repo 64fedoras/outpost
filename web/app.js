@@ -71,6 +71,7 @@ function route() {
   document.querySelectorAll('.side-nav a').forEach((a) => a.classList.toggle('active', a.dataset.tab === page));
   document.querySelector('.page-plain').classList.toggle('hidden', !['projects', 'nodes', 'models', 'updates', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task' }[page] || page[0].toUpperCase() + page.slice(1));
+  document.body.classList.toggle('on-task', page === 'task');
   closeSide();
   clearTimeout(taskTimer);
   liveClose();
@@ -85,7 +86,7 @@ window.addEventListener('hashchange', route);
 // Sidebar on small screens
 function openSide() { $('side').classList.add('open'); $('scrim').classList.remove('hidden'); }
 function closeSide() { $('side').classList.remove('open'); $('scrim').classList.add('hidden'); }
-$('side-open').onclick = openSide; $('side-close').onclick = closeSide; $('scrim').onclick = closeSide;
+$('side-open').onclick = openSide; $('task-menu').onclick = openSide; $('side-close').onclick = closeSide; $('scrim').onclick = closeSide;
 
 // ---------- polling ----------
 let failures = 0;
@@ -146,26 +147,25 @@ function taskTone(t) {
   return 'idle';
 }
 
-function sideTaskHTML(t) {
+function sideTaskHTML(t, projectName) {
   return `<a href="#/tasks/${t.id}" class="side-task ${page === 'task' && pageArg === t.id ? 'active' : ''}">
       <span class="tdot ${taskTone(t)}" aria-hidden="true"></span>
       <span class="side-task-text"><span class="side-task-title">${esc(t.title)}</span>
-      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>`;
+      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${projectName ? esc(projectName) + ' · ' : ''}${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>`;
 }
+// Tasks are grouped by what the person needs to do: answer, watch, or nothing.
 function renderSideTasks() {
   if (!tasks) return;
   if (!tasks.length) { setHTML('side-tasks', `<p class="side-empty">Tasks you start show up here.</p>`); return; }
-  // Tasks in a project are grouped under its name; unfiled tasks come first.
   const names = {};
   (projects || []).forEach((p) => { names[p.id] = p.name; });
-  const groups = [];
-  const unfiled = tasks.filter((t) => !t.project_id || !names[t.project_id]);
-  let html = unfiled.map(sideTaskHTML).join('');
-  (projects || []).forEach((p) => {
-    const mine = tasks.filter((t) => t.project_id === p.id);
-    if (mine.length) html += `<a class="side-group" href="#/projects">${esc(p.name)}</a>` + mine.map(sideTaskHTML).join('');
+  const groups = [['Needs you', []], ['Running', []], ['Earlier', []]];
+  tasks.forEach((t) => {
+    const tone = taskTone(t);
+    groups[tone === 'needs' ? 0 : ACTIVE.includes(t.status) ? 1 : 2][1].push(t);
   });
-  setHTML('side-tasks', html);
+  setHTML('side-tasks', groups.filter(([, list]) => list.length).map(([name, list]) =>
+    `<div class="side-group">${name}</div>` + list.map((t) => sideTaskHTML(t, names[t.project_id])).join('')).join(''));
 }
 
 function renderSideCluster() {
@@ -212,7 +212,7 @@ function renderNew() {
   if (!ntInit) {
     ntInit = true;
     $('nt-cap').value = state.default_cap_usd || 2;
-    if (!settings) api('/api/settings').then((s) => { settings = s; setHTML('nt-model', claudeModelOptions(state.claude_model, true)); }).catch(() => {});
+    if (!settings) api('/api/settings').then((s) => { settings = s; setHTML('nt-model', claudeModelOptions(state.claude_model, true)); renderOptLine(); }).catch(() => {});
     setHTML('nt-model', claudeModelOptions(state.claude_model, true));
     setHTML('nt-starters', STARTERS.map(([t, p], i) => `<button class="starter" data-act="starter" data-i="${i}"><b>${esc(t)}</b><span>${esc(p)}</span></button>`).join(''));
   }
@@ -220,6 +220,7 @@ function renderNew() {
   setHTML(psel, `<option value="">No project</option>` + projects.map((p) => `<option value="${p.id}" ${p.id === pcur ? 'selected' : ''}>Project: ${esc(p.name)}</option>`).join(''));
   $('nt-model').classList.toggle('hidden', sel.value !== 'claude');
   $('nt-cap-wrap').classList.toggle('hidden', sel.value !== 'claude' && sel.value !== 'openrouter');
+  renderOptLine();
   const w = workerCount(), ex = execCount(), on = state.nodes.filter((n) => n.online).length;
   setHTML('new-cluster', state.nodes.length
     ? `${on} of ${state.nodes.length} nodes online, ${w} with a model ready${ex ? `, ${ex} can run tests` : '. No node can run tests yet (tick exec on the Nodes page)'}.`
@@ -232,6 +233,25 @@ function renderNew() {
   if (!state.nodes.some((n) => n.exec_enabled)) steps.push(`Optional: tick <b>exec</b> on a node so tasks can run their tests.`);
   setHTML('home-setup', steps.length ? `<div class="setup"><b>Before your first task</b><ol>${steps.map((s) => `<li>${s}</li>`).join('')}</ol></div>` : '');
 }
+// One line that says what "Plan it" will use; the controls sit behind "Change options".
+function renderOptLine() {
+  const sel = $('nt-planner'), opt = sel.selectedOptions[0];
+  const claude = sel.value === 'claude', paid = claude || sel.value === 'openrouter';
+  const model = $('nt-model').selectedOptions[0];
+  const parts = [claude ? 'Claude ' + (model ? model.textContent : '') : opt ? opt.textContent.replace(/^Planner: /, '') : 'no planner'];
+  if (paid) parts.push('cap $' + ($('nt-cap').value || 0));
+  parts.push($('nt-review').checked ? 'peer review on' : 'peer review off');
+  if ($('nt-mockup').checked) parts.push('mockups first');
+  setHTML('nt-optline', esc(parts.join(' · ')));
+}
+$('nt-opt-toggle').addEventListener('click', () => {
+  const box = $('nt-opts'), show = box.classList.contains('hidden');
+  box.classList.toggle('hidden', !show);
+  $('nt-opt-toggle').setAttribute('aria-expanded', show);
+  $('nt-opt-toggle').textContent = show ? 'Hide options' : 'Change options';
+});
+['nt-model', 'nt-cap', 'nt-review', 'nt-mockup'].forEach((id) => $(id).addEventListener('change', renderOptLine));
+$('nt-cap').addEventListener('input', renderOptLine);
 $('nt-planner').addEventListener('change', () => { renderNew(); ntImg.refresh(); });
 $('nt-project').addEventListener('change', () => { try { localStorage.setItem('nt-project', $('nt-project').value); } catch (e) {} });
 $('nt-files').addEventListener('change', () => {

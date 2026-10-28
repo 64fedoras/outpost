@@ -155,14 +155,16 @@ can check detection without joining.
 
 ## Working with tasks
 
-The web UI is laid out like a chat app. The sidebar lists your tasks; an amber dot means a task is
-waiting for you, green means it is working. Cluster pages (Nodes, Models, Updates, Settings) are at
+The web UI is laid out like a chat app. The sidebar lists your tasks in three groups: **Needs you**
+(amber dot), **Running** (green) and **Earlier**; a task in a project shows the project name on its
+second line. On a phone, the task page has one top bar with the menu button in it. Cluster pages (Nodes, Models, Updates, Settings) are at
 the bottom of the sidebar.
 
 Each task is a conversation:
 
-1. **You describe the task.** Pick the planner (Claude, OpenRouter or a local model), the Claude model and a
-   spending cap, and whether nodes review each other's work.
+1. **You describe the task.** The line under the box says what *Plan it* will use (for example
+   "Claude Sonnet 5.5 · cap $2 · peer review on"). **Change options** opens the planner, Claude model,
+   spending cap, peer review and mockups-first controls.
 2. **The planner may ask questions** when the request leaves open a choice that changes the design
    (language, storage, interface). Click the answers, type your own, or skip any. It asks at most
    once per request; clear requests go straight to a plan.
@@ -211,7 +213,7 @@ rounds; each is a planner call and counts against the spending cap). Pages come 
 `preview_page`, the HTML files the round wrote, or a running app (`preview_command` plus a
 `http://127.0.0.1:…` `preview_url`, Linux and macOS nodes only). If no exec node has Chromium the thread
 says so and nothing else changes; install it on a node (for example `sudo apt install chromium`) and the
-Nodes page will list it. Tick **mockups first** in the composer to have the planner write 2 or 3 design
+Nodes page will list it. Tick **mockups first** under **Change options** on the new-task page to have the planner write 2 or 3 design
 variants (`mockups/a.html`, `b.html`, `c.html`, written in parallel by different nodes) and show them side
 by side; **Build this one** starts a follow-up round that builds the real code from that variant, or reply
 to ask for different variants. Screenshots are kept with the task, not in the zip; nodes keep nothing.
@@ -325,7 +327,7 @@ There are two ways for nodes to share one task.
 When a node finishes a subtask, a *different* node checks it against the plan: names, signatures,
 imports, file paths and obvious bugs. It answers "OK" or sends corrected files. Each subtask
 on the task page shows who reviewed it and whether it was fixed. Reviews catch mistakes before
-the test run, so fewer Claude fix rounds are needed. Turn it off per task with **Peer review**
+the test run, so fewer Claude fix rounds are needed. Turn it off per task under **Change options**
 on the new-task form.
 
 A review never holds up or fails a task. It is skipped when only one node has a model loaded,
