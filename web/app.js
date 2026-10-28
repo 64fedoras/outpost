@@ -426,7 +426,7 @@ function threadItems(t) {
   let progressPlaced = false;
   msgs.forEach((m, i) => {
     // The live progress card sits right after this round's approval.
-    const approvedHere = started && !progressPlaced && m.round === round && m.kind === 'event' && /approved the plan/.test(m.text || '');
+    const approvedHere = started && !progressPlaced && m.round === round && m.kind === 'event' && /approved the (edited )?plan/.test(m.text || '');
     items.push(msgItem(t, m, i === lastQ && t.status === 'awaiting_answers', i === lastPlan && t.status === 'awaiting_approval'));
     if (approvedHere) { items.push({ key: 'progress-' + round, cls: 'card-row', html: progressCard(t) }); progressPlaced = true; }
   });
@@ -486,7 +486,7 @@ function supersededItem(t, m) {
   else if (m.kind === 'questions') what = 'Questions from the planner';
   else if (m.kind === 'result') what = `Result: ${esc(firstWords(m.text))}`;
   else what = esc(firstWords(m.text) || m.kind);
-  return { key: m.id, cls: 'event-row superseded', html: `<span>${what}</span>${m.role === 'user' ? ' <span class="muted">· replaced by an edit</span>' : ''}` };
+  return { key: m.id, cls: 'event-row superseded', html: `<span>${what}</span>${m.role === 'user' || m.kind === 'plan' ? ' <span class="muted">· replaced by an edit</span>' : ''}` };
 }
 
 function msgs_lastMockup(t) {
@@ -528,7 +528,51 @@ function agentQuestionCard(m) {
     <div class="card-actions"><input class="opt-other" id="aq-${esc(m.id)}" placeholder="Your answer…" aria-label="Your answer"><button class="primary" data-act="task-agent-answer" data-msg="${esc(m.id)}">Send answer</button><span class="hint">Only that worker waits; the rest keeps going.</span></div></div>`;
 }
 
+// Editing the plan (server rules: tasks_rerun.go). planEdit holds the draft while the editor is open.
+let planEdit = null;   // { id, plan } while the plan card is open in the editor
+const canEditPlan = (t, m) => {
+  const ms = t.messages || [], at = ms.indexOf(m);
+  if (!m.plan || m.plan.mockup || m.superseded || ms.slice(at + 1).some((x) => x.kind === 'plan' && !x.superseded)) return false;
+  return t.status === 'awaiting_approval' || (t.approved && ['done', 'failed', 'cancelled'].includes(t.status));
+};
+function planEditor(t, m) {
+  const p = planEdit.plan, wait = t.status === 'awaiting_approval';
+  const inp = (cls, v, label, ph) => `<label class="pe-f"><span>${label}</span><input class="${cls}" value="${esc(v || '')}" placeholder="${esc(ph || '')}"></label>`;
+  const subs = (p.subtasks || []).map((s, i) => `<div class="pe-sub" data-i="${i}"><div class="pe-sub-head"><b>${i + 1}.</b>
+      <input class="pe-s-title" value="${esc(s.title)}" aria-label="Subtask title" placeholder="Title">
+      <select class="small pe-s-diff" aria-label="Difficulty">${['easy', 'normal', 'hard'].map((d) => `<option value="${d}" ${(s.difficulty || 'normal') === d ? 'selected' : ''}>${d}</option>`).join('')}</select>
+      <button class="msg-tool shown" data-act="task-pe-up" data-i="${i}" title="Move up" aria-label="Move up" ${i ? '' : 'disabled'}>↑</button>
+      <button class="msg-tool shown" data-act="task-pe-down" data-i="${i}" title="Move down" aria-label="Move down" ${i < p.subtasks.length - 1 ? '' : 'disabled'}>↓</button>
+      <button class="msg-tool shown" data-act="task-pe-del" data-i="${i}" title="Delete subtask" aria-label="Delete subtask">✕</button></div>
+      <label class="pe-f"><span>Files (comma separated)</span><input class="pe-s-files" value="${esc((s.files || []).join(', '))}" ${s.kind === 'investigate' ? 'placeholder="none: this subtask investigates"' : ''}></label>
+      <label class="pe-f"><span>Starts after (subtask ids: ${esc(s.id)} is this one)</span><input class="pe-s-deps" value="${esc((s.depends_on || []).join(', '))}" placeholder="e.g. s1, s2"></label>
+      <label class="pe-f"><span>Instructions</span><textarea class="pe-s-ins" rows="3">${esc(s.instructions)}</textarea></label></div>`).join('');
+  return `<div class="card-msg plan live" id="plan-edit"><div class="card-head">Edit plan</div>
+    ${inp('pe-title', p.title, 'Title')}<label class="pe-f"><span>Summary</span><textarea class="pe-summary" rows="2">${esc(p.summary)}</textarea></label>
+    <div class="pe-row">${inp('pe-lang', p.language, 'Language')}${inp('pe-setup', p.setup_command, 'Setup command')}${inp('pe-test', p.test_command, 'Test command')}${inp('pe-build', p.build_command, 'Build command')}</div>
+    ${inp('pe-arts', (p.artifacts || []).join(', '), 'Build outputs (comma separated)')}
+    <div class="pe-subs">${subs}</div>
+    <div class="card-actions"><button class="small" data-act="task-pe-add">+ Add subtask</button></div>
+    <div class="card-actions"><button data-act="task-pe-cancel">Cancel</button><button data-act="task-pe-save">Save</button>
+      <button class="primary" data-act="task-pe-run">${wait ? 'Save and approve' : 'Save and re-run'}</button>
+      <span class="hint">${wait ? 'The old plan stays above, dimmed.' : 'Re-running puts back the files from the last run and starts clean. The earlier run stays above.'}</span></div></div>`;
+}
+// Read the editor fields back into planEdit.plan.
+function readPlanEditor() {
+  const root = $('plan-edit'); if (!root || !planEdit) return;
+  const v = (c) => (root.querySelector('.' + c) || {}).value || '';
+  const list = (x) => x.split(',').map((a) => a.trim()).filter(Boolean);
+  const p = planEdit.plan;
+  p.title = v('pe-title'); p.summary = v('pe-summary'); p.language = v('pe-lang'); p.setup_command = v('pe-setup'); p.test_command = v('pe-test'); p.build_command = v('pe-build');
+  p.artifacts = list(v('pe-arts'));
+  p.subtasks = [...root.querySelectorAll('.pe-sub')].map((el, i) => {
+    const old = p.subtasks[i] || {}, q = (c) => el.querySelector('.' + c).value;
+    return { ...old, title: q('pe-s-title'), difficulty: q('pe-s-diff'), files: list(q('pe-s-files')), depends_on: list(q('pe-s-deps')), instructions: q('pe-s-ins') };
+  });
+}
+
 function planCard(t, m, live) {
+  if (planEdit && planEdit.id === m.id && canEditPlan(t, m)) return planEditor(t, m);
   const p = m.plan || {};
   const diffSel = (s) => live ? `<select class="small" onclick="event.preventDefault()" data-diff="${esc(s.id)}" aria-label="Difficulty of ${esc(s.title)}" title="Hard subtasks go to the strongest model; easy ones to the fastest node">${['easy', 'normal', 'hard'].map((d) => `<option value="${d}" ${(s.difficulty || 'normal') === d ? 'selected' : ''}>${d}</option>`).join('')}</select>`
     : (s.difficulty && s.difficulty !== 'normal' ? `<span class="tag">${esc(s.difficulty)}</span>` : '');
@@ -545,7 +589,16 @@ function planCard(t, m, live) {
       <div class="card-actions">${t.planner === 'claude' || t.planner === 'openrouter' ? `<label class="chip-input">cap $<input id="ta-cap" type="number" min="0.05" step="0.25" value="${t.cap_usd}" aria-label="Spending cap in US dollars"></label>` : ''}
       <button class="primary" data-act="task-approve">Approve and start</button><span class="hint">or reply below to change the plan</span></div>`;
   }
-  return `<div class="card-msg plan ${live ? 'live' : ''}"><div class="card-head">Plan · ${esc(p.title || '')}</div>
+  const editable = canEditPlan(t, m);
+  if (editable && !live) {
+    const failedSub = (t.subtasks || []).some((x) => x.status === 'failed');
+    const needRetry = failedSub || t.test_status === 'failing' || t.status === 'failed';
+    actions = `<div class="card-actions"><button class="primary" data-act="task-rerun" data-mode="all">Re-run plan</button>
+      ${needRetry ? `<button data-act="task-rerun" data-mode="failed" title="Keep finished subtasks and their files; run the failed ones and the tests again">${failedSub ? 'Retry failed subtasks' : 'Retry tests and fixes'}</button>` : ''}
+      <span class="hint">same plan, no new planning</span></div>`;
+  }
+  const pencil = editable ? `<button class="msg-tool shown" data-act="task-pe-open" data-msg="${esc(m.id)}" title="Edit plan" aria-label="Edit plan">${PENCIL}</button>` : '';
+  return `<div class="card-msg plan ${live ? 'live' : ''}"><div class="card-head">Plan · ${esc(p.title || '')}${m.edited ? ' <span class="edited-mark inline">edited</span>' : ''}${pencil}</div>
     ${m.text ? `<p>${esc(m.text)}</p>` : ''}<p class="plan-summary">${esc(p.summary || '')}</p><p class="plan-facts">${facts}</p>
     <ol class="plan-steps">${subs}</ol>${actions}</div>`;
 }
@@ -773,6 +826,45 @@ async function taskAction(act, el) {
         renderTask(taskDetail);
         const ta = $('msg-edit-text'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
         return;
+      }
+      case 'task-pe-open': {
+        const m = ((taskDetail && taskDetail.messages) || []).find((x) => x.id === el.dataset.msg);
+        if (!m) return;
+        planEdit = { id: m.id, plan: JSON.parse(JSON.stringify(m.plan)) };
+        renderTask(taskDetail);
+        return;
+      }
+      case 'task-pe-cancel': planEdit = null; renderTask(taskDetail); return;
+      case 'task-pe-add': case 'task-pe-up': case 'task-pe-down': case 'task-pe-del': {
+        readPlanEditor();
+        const subs = planEdit.plan.subtasks, i = parseInt(el.dataset.i, 10);
+        if (act === 'task-pe-add') {
+          let n = subs.length + 1; while (subs.some((x) => x.id === 's' + n)) n++;
+          subs.push({ id: 's' + n, title: '', files: [], depends_on: [], instructions: '', difficulty: 'normal' });
+        } else if (act === 'task-pe-del') {
+          const gone = subs.splice(i, 1)[0];
+          subs.forEach((x) => { x.depends_on = (x.depends_on || []).filter((d) => d !== gone.id); });
+        } else {
+          const j = act === 'task-pe-up' ? i - 1 : i + 1;
+          if (j >= 0 && j < subs.length) [subs[i], subs[j]] = [subs[j], subs[i]];
+        }
+        renderTask(taskDetail);
+        return;
+      }
+      case 'task-pe-save': case 'task-pe-run': {
+        readPlanEditor();
+        if (act === 'task-pe-run' && taskDetail.status !== 'awaiting_approval' && !confirm('Put the files back as they were before the last run and run this plan from the start?')) return;
+        await post(`/api/tasks/${id}/plan/edit`, { plan: planEdit.plan, run: act === 'task-pe-run', cap_usd: parseFloat(($('ta-cap') || {}).value) || 0 });
+        planEdit = null;
+        toast(act === 'task-pe-run' ? 'Running the edited plan' : 'Plan saved');
+        break;
+      }
+      case 'task-rerun': {
+        const whole = el.dataset.mode !== 'failed';
+        if (whole && !confirm('Put the files back as they were before the last run and run the same plan from the start?')) return;
+        await post(`/api/tasks/${id}/rerun`, { mode: whole ? 'all' : 'failed' });
+        toast(whole ? 'Re-running the plan' : 'Retrying');
+        break;
       }
       case 'task-msg-cancel': editing = null; renderTask(taskDetail); return;
       case 'task-msg-save': {

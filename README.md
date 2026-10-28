@@ -280,6 +280,17 @@ to be stopped first. The old messages, plan and result stay in the thread, dimme
 message carries an *edited* mark. Cloud spend already incurred stays counted against the cap. Edits to
 a project's already-exported git work are not reverted.
 
+**Editing and re-running a plan.** The plan card has a pencil. It opens the plan for editing: title,
+summary, commands, build outputs, and each subtask's title, files, dependencies, instructions and
+difficulty, with move up/down, delete and add. The plan is checked like a planner's plan (unique ids, no
+cycles, safe paths, no empty subtasks). Before approval, *Save and approve* starts it; the replaced plan
+stays in the thread, dimmed, and the new one is marked *edited*. On a finished, failed or stopped task,
+*Re-run plan* (or *Save and re-run* after editing) puts back the files the last run wrote and runs the
+plan again from the start as a new request, without planning again; the earlier run stays above. *Retry
+failed subtasks* keeps finished subtasks and their files and runs only the failed ones (and the tests)
+again. Nothing can be edited or re-run while the task is running. Cloud spend keeps counting against the
+cap. Design-variant (mockup) plans cannot be edited.
+
 ### Project instructions
 
 Settings has a **Project instructions** box for standing rules, like a `CLAUDE.md` ("vendor all
