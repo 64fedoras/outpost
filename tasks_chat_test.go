@@ -34,7 +34,7 @@ func TestPlannerPromptFollowUp(t *testing.T) {
 		{Role: "user", Kind: "text", Text: "Add a --name flag", Round: 2},
 	}
 	c := &Controller{}
-	p := c.plannerPrompt(task, 100000)
+	p := c.plannerPrompt(task, 100000, nil)
 	for _, want := range []string{"follow-up request", "Greeter", "Build a greeter", "<<<FILE main.py>>>", "User: Add a --name flag"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt is missing %q:\n%s", want, p)

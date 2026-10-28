@@ -1005,15 +1005,27 @@ Use at most 4 questions with 2 to 4 short options each; the user can also type t
 Otherwise answer with only a JSON object, no other text:
 {"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "note": "one or two sentences to the user: the approach and any assumption you made", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "instructions": "precise instructions"}]}`
 
+// plannerIndexHelp is added to the planner's instructions when the project is
+// too large to paste in, so it sees an index instead.
+const plannerIndexHelp = `
+
+This project is large, so you see an index (each file's path, size and top-level declarations) instead of the file contents. If you need to read some files before planning, answer once with only {"need_files": ["path/one", "path/two"]} (at most 12 paths) and they will be added. Otherwise plan from the index; a worker is given the current content of every file its subtask changes and the declarations of the files it depends on.`
+
 func (c *Controller) planTask(ctx context.Context, t *Task) {
 	t.mu.Lock()
 	mayAsk := !t.Asked
 	t.mu.Unlock()
-	user := c.plannerPrompt(t, c.plannerBudget(t))
+	budget := c.plannerBudget(t)
+	user := c.plannerPrompt(t, budget, nil)
+	indexed := t.roundHasFiles() && repoNeedsIndex(t.repoDir(), budget)
+	fetched := false
 	var plan *Plan
 	var lastErr error
 	for attempt := 0; attempt < 2 && plan == nil; attempt++ {
 		req := llmRequest{System: plannerSystem, User: user, MaxTokens: 8000, Temperature: 0.2, Label: "Planning"}
+		if indexed {
+			req.System += plannerIndexHelp
+		}
 		if !mayAsk {
 			req.User += "\n\nYou have already asked your questions for this request. Do not ask again; produce the plan, using sensible defaults for anything still open."
 		}
@@ -1026,6 +1038,16 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 			return
 		}
 		raw := []byte(extractJSON(resp.Text))
+		var need struct {
+			NeedFiles []string `json:"need_files"`
+		}
+		if indexed && !fetched && json.Unmarshal(raw, &need) == nil && len(need.NeedFiles) > 0 {
+			fetched = true
+			user = c.plannerPrompt(t, budget, need.NeedFiles)
+			t.logf("info", "The planner asked for %d file(s) from the project index.", len(need.NeedFiles))
+			attempt-- // the file exchange is not a failed attempt
+			continue
+		}
 		var ask struct {
 			Questions []Question `json:"questions"`
 			Note      string     `json:"note"`
@@ -1491,12 +1513,17 @@ func (c *Controller) subtaskPromptWith(t *Task, spec PlanSubtask, budget int, wi
 	if len(depFiles) > 0 {
 		b.WriteString("\nFiles you depend on (already written):\n")
 		remaining := budget - b.Len()
+		indexed := repoNeedsIndex(t.repoDir(), budget*2)
 		for _, f := range depFiles {
 			data, err := os.ReadFile(filepath.Join(t.repoDir(), filepath.FromSlash(f)))
 			if err != nil {
 				continue
 			}
 			s := string(data)
+			if indexed {
+				// Large project: declarations only, not whole files.
+				s = declsText(t.repoDir(), f)
+			}
 			if remaining <= 200 {
 				fmt.Fprintf(&b, "<<<FILE %s>>>\n(omitted to fit the context window)\n<<<END>>>\n", f)
 				continue
@@ -1531,7 +1558,7 @@ func repoSnapshot(repo string, budget int) string {
 // test output) come first, so they are the last to be left out of a small
 // prompt.
 func repoSnapshotFirst(repo string, budget int, hint string) string {
-	files := listRepo(repo)
+	files := promptFiles(repo)
 	if hint != "" {
 		sort.SliceStable(files, func(i, j int) bool {
 			return strings.Contains(hint, path.Base(files[i].Path)) && !strings.Contains(hint, path.Base(files[j].Path))
@@ -1545,7 +1572,7 @@ func repoSnapshotFirst(repo string, budget int, hint string) string {
 		}
 		s := string(data)
 		if b.Len()+len(s) > budget {
-			fmt.Fprintf(&b, "<<<FILE %s>>>\n(omitted: too large for this prompt)\n<<<END>>>\n", f.Path)
+			fmt.Fprintf(&b, "<<<FILE %s>>>\n(omitted: too large for this prompt; declarations follow)\n%s<<<END>>>\n", f.Path, declsText(repo, f.Path))
 			continue
 		}
 		fmt.Fprintf(&b, "<<<FILE %s>>>\n%s<<<END>>>\n", f.Path, s)
@@ -1905,3 +1932,6 @@ func (c *Controller) reviewSubtask(ctx context.Context, t *Task, spec PlanSubtas
 	t.mu.Unlock()
 	t.logf("info", "%s: %s fixed %s.", spec.ID, c.nodeLabel(reviewer), strings.Join(changed, ", "))
 }
+
+// roundHasFiles reports whether the task repo holds any files yet.
+func (t *Task) roundHasFiles() bool { return len(listRepo(t.repoDir())) > 0 }

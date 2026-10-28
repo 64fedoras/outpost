@@ -153,6 +153,15 @@ project files (files named in the test output first, so they still fit a local p
 window) and which files earlier rounds changed. It treats the tests as the specification and
 only edits a test that is clearly wrong.
 
+**Large projects.** When a follow-up's files are too big to paste into the planner's window, the
+planner gets an index instead: each file's path, size, first comment line and top-level
+functions and types (read with Go's own parser for `.go`, simple patterns for JS, Python and CSS).
+It can ask once for the files it wants by name. Workers get the full content of the files they
+change and only the declarations of files they depend on. Put a `.outpostignore` in the project
+(like `.gitignore`: `#` comments, `!` to re-include, `dir/`, `*.log`) to keep folders such as
+`vendor/` or `dist/` out of prompts; they stay in the project for builds and tests. `.git/` and
+`node_modules/` are always left out. The one-line summary is the file's first comment, not yet written by a node.
+
 **Stop** halts a task and keeps its files; a later message continues from there. **Activity** shows
 the controller's full log for the task, and **Files** lets you read any file.
 
