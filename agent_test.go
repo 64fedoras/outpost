@@ -544,3 +544,28 @@ func TestStreamedToolCalls(t *testing.T) {
 		t.Fatalf("openrouter stream: %+v", calls)
 	}
 }
+
+// A thinking model's reasoning is streamed to the live pane but is not part of the answer.
+func TestLlamaChatStreamsReasoning(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		send := func(s string) { fmt.Fprintf(w, "data: %s\n\n", s) }
+		send(`{"choices":[{"delta":{"reasoning_content":"checking "}}]}`)
+		send(`{"choices":[{"delta":{"reasoning_content":"the file"}}]}`)
+		send(`{"choices":[{"delta":{"content":"<<<OK>>>"},"finish_reason":"stop"}]}`)
+		send(`[DONE]`)
+	}))
+	defer srv.Close()
+	var port int
+	fmt.Sscanf(srv.URL, "http://127.0.0.1:%d", &port)
+	l := newLlamaMgr(nil)
+	l.cmd, l.ready, l.port, l.model = &exec.Cmd{}, true, port, "m"
+	var live string
+	out, e := l.chat(context.Background(), InferenceSpec{Messages: []ChatMessage{{Role: "user", Content: "review"}}}, func(s string) { live += s })
+	if e != nil {
+		t.Fatal(e)
+	}
+	if live != "checking the file<<<OK>>>" || out.Text != "<<<OK>>>" {
+		t.Fatalf("live %q text %q", live, out.Text)
+	}
+}

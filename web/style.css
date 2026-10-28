@@ -379,6 +379,7 @@ pre.diff { max-height: 40vh; }
 details.live summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .live-rate { margin-left: 8px; font-family: var(--mono); }
 .live-text { margin: 4px 0 0; padding: 8px 10px; max-height: 220px; overflow: auto; font-family: var(--mono); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+.live-text:empty::before { content: "waiting for output…"; color: var(--muted, #888); font-style: italic; }
 /* image attachments */
 .img-strip { display: flex; gap: 8px; flex-wrap: wrap; }
 .img-strip:not(:empty) { margin-top: 8px; }
