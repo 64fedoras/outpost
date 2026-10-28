@@ -326,7 +326,8 @@ type ModelLoad struct {
 	Threads   int      `json:"threads"`
 	GPULayers string   `json:"gpu_layers"` // "", "auto", "all" or a number
 	ExtraArgs []string `json:"extra_args"`
-	RPC       []string `json:"rpc,omitempty"` // helper nodes' RPC servers (host:port) to pool memory from
+	RPC       []string `json:"rpc,omitempty"`    // helper nodes' RPC servers (host:port) to pool memory from
+	MMProj    string   `json:"mmproj,omitempty"` // set by the node: vision projector file of the model, passed as --mmproj
 }
 
 // RPCStart asks a node to lend its memory: run llama.cpp's RPC server.
@@ -363,8 +364,9 @@ type InferenceSpec struct {
 }
 
 type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string   `json:"role"`
+	Content string   `json:"content"`
+	Images  []string `json:"images,omitempty"` // data: URIs, for vision models; held in memory only
 }
 
 type InferenceParams struct {
