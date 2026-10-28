@@ -12,10 +12,10 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: Install llvm (for Windows version info)
@@ -31,7 +31,7 @@ jobs:
           cp README.md "dist/outpost-$V/"
           (cd dist && zip -qr "outpost-$V.zip" "outpost-$V")
           (cd "dist/outpost-$V/bin" && sha256sum * > SHA256SUMS)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: outpost-${{ steps.build.outputs.version }}
           path: dist/outpost-${{ steps.build.outputs.version }}/
