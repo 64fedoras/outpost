@@ -33,6 +33,11 @@ type TaskMessage struct {
 	Round     int        `json:"round"`
 	Pending   bool       `json:"pending,omitempty"` // agent_question: waiting for the user's answer
 	Subtask   string     `json:"subtask,omitempty"` // agent messages: which subtask they belong to
+	// Editing a message (see tasks_edit.go) keeps the old branch: everything from the
+	// edited message on is marked Superseded and left in the thread, dimmed, and the
+	// edited text is appended as a new message with Edited set.
+	Edited     bool `json:"edited,omitempty"`
+	Superseded bool `json:"superseded,omitempty"`
 }
 
 type Question struct {
@@ -123,6 +128,9 @@ func (c *Controller) plannerPrompt(t *Task, budget int, want []string) string {
 	var prevPlan, roundPlan *Plan
 	var earlier []string
 	for _, m := range msgs {
+		if m.Superseded {
+			continue
+		}
 		if m.Kind == "plan" && m.Plan != nil {
 			if m.Round < round {
 				prevPlan = m.Plan
@@ -171,7 +179,7 @@ func (c *Controller) plannerPrompt(t *Task, budget int, want []string) string {
 	b.WriteString(attachmentContext(t, budget/4))
 	b.WriteString("Conversation about this request:\n")
 	for _, m := range msgs {
-		if m.Round != round {
+		if m.Round != round || m.Superseded {
 			continue
 		}
 		switch {
@@ -401,7 +409,7 @@ func (c *Controller) roundURLs(t *Task) []string {
 	defer t.mu.Unlock()
 	var text strings.Builder
 	for _, m := range t.Messages {
-		if m.Round == t.Round && m.Role == "user" && m.Kind != "steer" {
+		if m.Round == t.Round && m.Role == "user" && m.Kind != "steer" && !m.Superseded {
 			text.WriteString(m.Text + "\n")
 		}
 	}

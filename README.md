@@ -271,6 +271,15 @@ keeps the previous copy (`tasks/<id>/rounds/<n>/`). A result card's **Changes** 
 unified diff of that request against the files as they are now, and **Undo this request** (latest
 request only, once the task has stopped) puts the files back and removes files the request added.
 
+**Editing a message.** Hover one of your messages and click the pencil to edit it in place, like in
+Claude. Before the work starts (the planner is asking questions or the plan awaits approval) any of
+this request's messages can be edited: saving plans again from there. After the task has stopped, the
+message that opened a request can be edited: saving undoes that request and every later one (files put
+back from the kept copies, as in Undo) and plans the edited text as a new request. A running task has
+to be stopped first. The old messages, plan and result stay in the thread, dimmed, and the edited
+message carries an *edited* mark. Cloud spend already incurred stays counted against the cap. Edits to
+a project's already-exported git work are not reverted.
+
 ### Project instructions
 
 Settings has a **Project instructions** box for standing rules, like a `CLAUDE.md` ("vendor all
