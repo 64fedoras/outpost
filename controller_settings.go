@@ -33,6 +33,8 @@ type Settings struct {
 	BestOfN          string         `json:"best_of_n,omitempty"`       // "off", "hard" (default) or "all": extra copies of subtasks on idle nodes, a judge picks one
 	AgentOff         bool           `json:"agent_off,omitempty"`       // fixers and investigators use single-shot requests instead of tools
 	Instructions     string         `json:"instructions,omitempty"`    // standing rules copied into every new task (OUTPOST.md text)
+	PoolingEnabled   *bool          `json:"pooling_enabled,omitempty"` // memory pooling (llama.cpp RPC); nil until decided, then off unless a pool already existed
+	PoolingNotice    bool           `json:"pooling_notice,omitempty"`  // pooling was switched on by the upgrade because a pool existed; shown once
 	Notify           NotifySettings `json:"notify"`
 }
 
@@ -151,6 +153,7 @@ func (c *Controller) settingsView() map[string]any {
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
 		"auto_resume": !c.settings.AutoResumeOff, "best_of_n": normBestOf(c.settings.BestOfN),
 		"agent_mode": !c.settings.AgentOff, "web_search": c.settings.WebSearch, "web_allow_private": c.settings.WebAllowPrivate,
+		"pooling_enabled": c.poolingOnLocked(), "pooling_notice": c.settings.PoolingNotice,
 		"instructions": c.settings.Instructions, "backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
 	for k, x := range c.notifyView() {
@@ -186,6 +189,7 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		WebSearch       *bool   `json:"web_search"`
 		AgentMode       *bool   `json:"agent_mode"`
 		WebAllowPrivate *bool   `json:"web_allow_private"`
+		PoolingEnabled  *bool   `json:"pooling_enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
@@ -293,8 +297,17 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	if req.WebAllowPrivate != nil {
 		c.settings.WebAllowPrivate = *req.WebAllowPrivate
 	}
+	poolingOff := false
+	if req.PoolingEnabled != nil {
+		poolingOff = c.poolingOnLocked() && !*req.PoolingEnabled
+		c.settings.PoolingEnabled = req.PoolingEnabled
+		c.settings.PoolingNotice = false
+	}
 	err := c.saveSettingsLocked()
 	c.mu.Unlock()
+	if poolingOff {
+		c.disablePooling()
+	}
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return

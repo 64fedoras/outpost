@@ -2,8 +2,11 @@ package main
 
 // Pooling: a helper node runs llama.cpp's RPC server (ggml-rpc-server) so a
 // main node's llama-server can place part of a model in the helper's RAM/VRAM.
-// The RPC server has no authentication, so it only runs while the node is
-// lending memory, bound to the node's LAN address.
+// llama.cpp's RPC protocol has neither authentication nor encryption. Outpost
+// keeps ggml-rpc-server on 127.0.0.1 and puts a gatekeeper in front that
+// accepts only the main node's source IP (spoofable on a hostile LAN). Nothing
+// listens unless the controller has pooling enabled (off by default) and asks
+// this node to lend; the listener closes when the pool ends. Trusted LANs only.
 
 import (
 	"encoding/json"
@@ -107,7 +110,10 @@ func (r *rpcMgr) start(rs RPCStart) {
 
 	bind := rs.Host
 	if !isLocalIP(bind) {
-		bind = "0.0.0.0" // the controller sees this node through NAT or a proxy
+		// The controller sees this node through NAT or a proxy, so its address is not ours.
+		// Still allow-list only; the port is open to the whole network for as long as the pool lasts.
+		bind = "0.0.0.0"
+		log.Printf("rpc: %q is not an address of this machine; listening on all interfaces (allow-list still applies)", rs.Host)
 	}
 	port := rs.Port
 	if port == 0 {
@@ -289,7 +295,7 @@ func (n *Node) rpcCacheDir() string { return filepath.Join(n.llamaDir(), "rpc-ca
 // allowed IPs (the main node) to the RPC server on loopback. llama.cpp's RPC
 // server has no authentication of its own.
 func (r *rpcMgr) serveGate(ln net.Listener, allow []string) {
-	allowed := map[string]bool{"127.0.0.1": true, "::1": true}
+	allowed := map[string]bool{"127.0.0.1": true, "::1": true} // same-machine only; not reachable from the LAN
 	for _, a := range allow {
 		if ip := net.ParseIP(a); ip != nil {
 			allowed[ip.String()] = true

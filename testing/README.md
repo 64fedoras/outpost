@@ -42,6 +42,6 @@ WebSocket that executes the Chromium job locally. They use a headless Chromium f
 - Screenshots on the real nodes: Chromium on each platform (snap Chromium on Ubuntu, Chrome on Windows
   and macOS), the 390 px phone width in new headless mode, and `preview_command` apps.
 - Windows: tray icon, install, web-UI update (needs a real Windows machine; Defender behaviour).
-- Real GPUs and Vulkan/ROCm builds of llama.cpp, memory pooling across machines.
+- Real GPUs and Vulkan/ROCm builds of llama.cpp, memory pooling across machines (including the off-by-default Settings switch against a real ggml-rpc-server).
 - macOS (builds only).
 - Real Claude API cost figures.
