@@ -161,6 +161,7 @@ func runController(args []string) error {
 	c.loadModels()
 	c.loadRuntimes()
 	c.loadTasks()
+	go c.autoResumeInterrupted(autoResumeWait, 5*time.Second)
 	c.advertise = *advertise
 	if c.advertise == "" {
 		_, port, _ := net.SplitHostPort(*listen)

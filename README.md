@@ -156,6 +156,12 @@ only edits a test that is clearly wrong.
 **Stop** halts a task and keeps its files; a later message continues from there. **Activity** shows
 the controller's full log for the task, and **Files** lets you read any file.
 
+**After a restart,** a task that was running on a local-model planner resumes by itself once a node
+with a loaded model reconnects (it waits up to 10 minutes; otherwise press Resume). Finished
+subtasks are kept. Tasks planned with Claude or OpenRouter, and tasks stopped at the spending cap,
+always wait for your Resume click so a restart never spends money. Turn this off under
+Settings → Defaults.
+
 ## Nodes working together
 
 There are two ways for nodes to share one task.
