@@ -17,20 +17,21 @@ import (
 // keys, Hugging Face token) are encrypted with AES-256-GCM using <data>/secret.key, so they never
 // sit in plain text in the settings file or in backups of it alone.
 type Settings struct {
-	AnthropicKeyEnc  string  `json:"anthropic_key_enc,omitempty"`
-	HFTokenEnc       string  `json:"hf_token_enc,omitempty"`
-	ClaudeModel      string  `json:"claude_model"`
-	DefaultCapUSD    float64 `json:"default_cap_usd"`
-	DefaultPlanner   string  `json:"default_planner"` // "claude", "openrouter" or "node:<id>"
-	OpenRouterKeyEnc string  `json:"openrouter_key_enc,omitempty"`
-	OpenRouterModel  string  `json:"openrouter_model,omitempty"`
-	WebSearch        bool    `json:"web_search,omitempty"`        // Claude planner may use the web search tool (paid per search)
-	WebAllowPrivate  bool    `json:"web_allow_private,omitempty"` // pasted links may reach internal addresses
-	BackupEnabled    bool    `json:"backup_enabled,omitempty"`
-	BackupDir        string  `json:"backup_dir,omitempty"`
-	BackupPassEnc    string  `json:"backup_pass_enc,omitempty"`
-	AgentOff         bool    `json:"agent_off,omitempty"`    // fixers and investigators use single-shot requests instead of tools
-	Instructions     string  `json:"instructions,omitempty"` // standing rules copied into every new task (OUTPOST.md text)
+	AnthropicKeyEnc  string         `json:"anthropic_key_enc,omitempty"`
+	HFTokenEnc       string         `json:"hf_token_enc,omitempty"`
+	ClaudeModel      string         `json:"claude_model"`
+	DefaultCapUSD    float64        `json:"default_cap_usd"`
+	DefaultPlanner   string         `json:"default_planner"` // "claude", "openrouter" or "node:<id>"
+	OpenRouterKeyEnc string         `json:"openrouter_key_enc,omitempty"`
+	OpenRouterModel  string         `json:"openrouter_model,omitempty"`
+	WebSearch        bool           `json:"web_search,omitempty"`        // Claude planner may use the web search tool (paid per search)
+	WebAllowPrivate  bool           `json:"web_allow_private,omitempty"` // pasted links may reach internal addresses
+	BackupEnabled    bool           `json:"backup_enabled,omitempty"`
+	BackupDir        string         `json:"backup_dir,omitempty"`
+	BackupPassEnc    string         `json:"backup_pass_enc,omitempty"`
+	AgentOff         bool           `json:"agent_off,omitempty"`    // fixers and investigators use single-shot requests instead of tools
+	Instructions     string         `json:"instructions,omitempty"` // standing rules copied into every new task (OUTPOST.md text)
+	Notify           NotifySettings `json:"notify"`
 }
 
 func defaultSettings() Settings {
@@ -139,7 +140,7 @@ func (c *Controller) settingsView() map[string]any {
 		p := claudePrices[id]
 		models = append(models, map[string]any{"id": id, "label": p.Label, "in": p.In, "out": p.Out})
 	}
-	return map[string]any{
+	v := map[string]any{
 		"has_anthropic_key": ak != "", "anthropic_key_hint": keyHint(ak),
 		"has_hf_token": hf != "", "claude_model": c.settings.ClaudeModel,
 		"has_openrouter_key": ork != "", "openrouter_key_hint": keyHint(ork), "openrouter_model": c.settings.OpenRouterModel,
@@ -149,6 +150,10 @@ func (c *Controller) settingsView() map[string]any {
 		"agent_mode": !c.settings.AgentOff, "web_search": c.settings.WebSearch, "web_allow_private": c.settings.WebAllowPrivate,
 		"instructions": c.settings.Instructions, "backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
+	for k, x := range c.notifyView() {
+		v[k] = x
+	}
+	return v
 }
 
 func (c *Controller) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -164,10 +169,18 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		DefaultPlanner  *string  `json:"default_planner"`
 		OpenRouterKey   *string  `json:"openrouter_key"`
 		OpenRouterModel *string  `json:"openrouter_model"`
-		Instructions    *string  `json:"instructions"`
-		WebSearch       *bool    `json:"web_search"`
-		AgentMode       *bool    `json:"agent_mode"`
-		WebAllowPrivate *bool    `json:"web_allow_private"`
+		Notify          *struct {
+			Browser    *bool           `json:"browser"`
+			NtfyURL    *string         `json:"ntfy_url"`
+			NtfyToken  *string         `json:"ntfy_token"`
+			WebhookURL *string         `json:"webhook_url"`
+			PublicURL  *string         `json:"public_url"`
+			Events     map[string]bool `json:"events"`
+		} `json:"notify"`
+		Instructions    *string `json:"instructions"`
+		WebSearch       *bool   `json:"web_search"`
+		AgentMode       *bool   `json:"agent_mode"`
+		WebAllowPrivate *bool   `json:"web_allow_private"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
@@ -200,7 +213,40 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		}
 		hfEnc = &enc
 	}
+	var ntfyEnc *string
+	if req.Notify != nil && req.Notify.NtfyToken != nil {
+		enc := ""
+		if v := strings.TrimSpace(*req.Notify.NtfyToken); v != "" {
+			enc, _ = c.encrypt(v)
+		}
+		ntfyEnc = &enc
+	}
 	c.mu.Lock()
+	if nr := req.Notify; nr != nil {
+		ns := &c.settings.Notify
+		if nr.Browser != nil {
+			ns.Browser = *nr.Browser
+		}
+		for _, f := range []struct {
+			in  *string
+			out *string
+		}{{nr.NtfyURL, &ns.NtfyURL}, {nr.WebhookURL, &ns.WebhookURL}, {nr.PublicURL, &ns.PublicURL}} {
+			if f.in != nil {
+				*f.out = strings.TrimSpace(*f.in)
+			}
+		}
+		if ntfyEnc != nil {
+			ns.NtfyTokenEnc = *ntfyEnc
+		}
+		for _, e := range notifyEvents {
+			if on, ok := nr.Events[e.ID]; ok {
+				if ns.Events == nil {
+					ns.Events = map[string]bool{}
+				}
+				ns.Events[e.ID] = on
+			}
+		}
+	}
 	if akEnc != nil {
 		c.settings.AnthropicKeyEnc = *akEnc
 	}
