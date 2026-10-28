@@ -80,6 +80,7 @@ type SubtaskState struct {
 	Report     string     `json:"report,omitempty"`       // investigate subtasks: what the agent found
 	AgentCalls int        `json:"agent_calls,omitempty"`  // tool calls so far in agent mode
 	Waiting    bool       `json:"waiting,omitempty"`      // the agent asked the user something
+	BestOf     string     `json:"best_of,omitempty"`      // best-of-N: which node's copy won and why
 	Started    *time.Time `json:"started,omitempty"`
 	Ended      *time.Time `json:"ended,omitempty"`
 }
@@ -961,7 +962,13 @@ func (c *Controller) nodeCall(ctx context.Context, t *Task, nodeID string, req l
 	start := time.Now()
 	live := taskLive.begin(t.ID, req.Sub, req.Label, c.nodeLabel(nodeID), false)
 	defer live.End()
-	out, err := c.runInferenceJobLive(ctx, nodeID, spec, req.Label, inferTimeout, live)
+	var out *InferenceOutput
+	var err error
+	if c.inferStub != nil {
+		out, err = c.inferStub(ctx, nodeID, spec)
+	} else {
+		out, err = c.runInferenceJobLive(ctx, nodeID, spec, req.Label, inferTimeout, live)
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, errCancelled
@@ -1426,6 +1433,9 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 	running := 0
 	waitingLogged := false
 	readySince := map[string]time.Time{}
+	bonMode := c.bestOfMode()
+	groups := map[string]*bonGroup{} // best-of-N groups of running subtasks
+	var groupsMu sync.Mutex
 	for {
 		if ctx.Err() != nil {
 			return
@@ -1481,6 +1491,9 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 			return rank[normDifficulty(specs[ready[i]].Difficulty)] < rank[normDifficulty(specs[ready[j]].Difficulty)]
 		})
 		scores := c.scoreNodes(workers)
+		placed := 0
+		var newGroups []*bonGroup
+		var newSpecs []PlanSubtask
 		for _, id := range ready {
 			if _, ok := readySince[id]; !ok {
 				readySince[id] = time.Now()
@@ -1493,6 +1506,7 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 			if node == "" || !c.tryReserve(node) {
 				continue // a hard subtask waiting for the strongest model, or the node was just taken
 			}
+			placed++
 			delete(readySince, id)
 			waitingLogged = false
 			t.mu.Lock()
@@ -1503,9 +1517,28 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 			t.saveLocked()
 			t.mu.Unlock()
 			running++
-			go func(id, node string) {
-				err := c.runSubtask(ctx, t, specs[id], node)
-				c.releaseNode(node)
+			var grp *bonGroup
+			if bonEligible(bonMode, specs[id]) {
+				grp = &bonGroup{}
+				groupsMu.Lock()
+				groups[id] = grp
+				groupsMu.Unlock()
+				newGroups, newSpecs = append(newGroups, grp), append(newSpecs, specs[id])
+			}
+			go func(id, node string, grp *bonGroup) {
+				var once sync.Once
+				primary := node
+				release := func() { once.Do(func() { c.releaseNode(primary) }) }
+				var err error
+				if grp != nil {
+					node, err = c.runBestOf(ctx, t, specs[id], node, grp, release)
+					groupsMu.Lock()
+					delete(groups, id)
+					groupsMu.Unlock()
+				} else {
+					err = c.runSubtask(ctx, t, specs[id], node)
+				}
+				release()
 				if err == nil {
 					t.mu.Lock()
 					review := t.Review
@@ -1521,7 +1554,43 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 					t.mu.Unlock()
 				}
 				done <- doneMsg{id, err}
-			}(id, node)
+			}(id, node, grp)
+		}
+		// Best-of-N: spare nodes nobody is waiting for take extra copies of a
+		// subtask that just started; if a ready subtask finds no free node,
+		// extra copies give theirs up.
+		unplaced := len(ready) - placed
+		free := c.freeScores(scores, "")
+		if unplaced == 0 {
+			for i, grp := range newGroups {
+				picked := pickExtraNodes(free)
+				var got []string
+				for _, n := range picked {
+					if c.tryReserve(n) {
+						got = append(got, n)
+					}
+				}
+				if len(got) < 1 {
+					break
+				}
+				c.launchExtras(ctx, t, grp, newSpecs[i], got)
+				free = c.freeScores(scores, "")
+			}
+		} else if len(free) == 0 {
+			groupsMu.Lock()
+			gs := make([]*bonGroup, 0, len(groups))
+			ids := make([]string, 0, len(groups))
+			for id, g := range groups {
+				gs, ids = append(gs, g), append(ids, id)
+			}
+			groupsMu.Unlock()
+			need := unplaced
+			for i, g := range gs {
+				if need <= 0 {
+					break
+				}
+				need -= c.cancelExtras(t, g, ids[i], need)
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -1573,11 +1642,28 @@ const workerSystem = `You are a careful coding worker on a team. Write complete,
 ` + fileFormatHelp + `
 Output only your assigned files, with no explanations before or after.`
 
+// subtaskResult is what a worker produced for a subtask, before it is written.
+type subtaskResult struct {
+	files map[string]string
+	resp  *llmResponse
+}
+
 // runSubtask asks a worker node to write a subtask's files, retrying with feedback.
 func (c *Controller) runSubtask(ctx context.Context, t *Task, spec PlanSubtask, node string) error {
 	if spec.Kind == "investigate" {
 		return c.investigate(ctx, t, spec, node)
 	}
+	res, err := c.generateSubtask(ctx, t, spec, node, "", true)
+	if err != nil {
+		return err
+	}
+	return c.commitSubtask(t, spec, node, res)
+}
+
+// generateSubtask gets the files for a subtask from one node without writing
+// them. extra marks a best-of-N copy: it adds to the label and does not count
+// as an attempt on the subtask.
+func (c *Controller) generateSubtask(ctx context.Context, t *Task, spec PlanSubtask, node, extra string, primary bool) (*subtaskResult, error) {
 	ctxTokens := c.nodeCtx(node)
 	maxOut := 4096
 	if maxOut > ctxTokens/2 {
@@ -1588,21 +1674,22 @@ func (c *Controller) runSubtask(ctx context.Context, t *Task, spec PlanSubtask, 
 	var lastErr error
 	for attempt := 1; attempt <= workerAttempts; attempt++ {
 		user := c.subtaskPrompt(t, spec, budget) + feedback
-		label := fmt.Sprintf("%s · %s (attempt %d)", t.Title, spec.ID, attempt)
+		label := fmt.Sprintf("%s · %s%s (attempt %d)", t.Title, spec.ID, extra, attempt)
 		t.logf("info", "%s: %s → %s (attempt %d)", spec.ID, spec.Title, c.nodeLabel(node), attempt)
 		resp, err := c.nodeCall(ctx, t, node, llmRequest{System: workerSystem, User: user, MaxTokens: maxOut, Temperature: 0.2, Label: label, Sub: spec.ID}, false)
 		if err != nil && !errors.Is(err, errCancelled) && isNodeProblem(err) {
 			t.logf("warn", "%s is not ready (%v); %s goes back in the queue.", c.nodeLabel(node), err, spec.ID)
 			c.coolDown(node, 15*time.Second)
-			return errRequeue
+			return nil, errRequeue
 		}
-		t.mu.Lock()
-		st := t.subtask(spec.ID)
-		st.Attempts++
-		t.mu.Unlock()
+		if primary {
+			t.mu.Lock()
+			t.subtask(spec.ID).Attempts++
+			t.mu.Unlock()
+		}
 		if err != nil {
 			if errors.Is(err, errCancelled) {
-				return err
+				return nil, err
 			}
 			lastErr = err
 			continue
@@ -1624,23 +1711,33 @@ func (c *Controller) runSubtask(ctx context.Context, t *Task, spec PlanSubtask, 
 				". Output every assigned file using the <<<FILE path>>> ... <<<END>>> format."
 			continue
 		}
+		files := map[string]string{}
 		for _, f := range spec.Files {
-			if err := t.writeFile(f, got[f]); err != nil {
-				return err
-			}
+			files[f] = got[f]
 		}
-		t.touch(spec.Files...)
-		t.mu.Lock()
-		st = t.subtask(spec.ID)
-		now := time.Now()
-		st.Status, st.Ended, st.TokPerSec = "written", &now, resp.TokensPerSec
-		defer c.recordSpeed(node, resp.TokensPerSec)
-		t.saveLocked()
-		t.mu.Unlock()
-		t.logf("info", "%s written on %s (%s output tokens, %.1f tok/s).", spec.ID, c.nodeLabel(node), fmtInt(resp.OutTokens), resp.TokensPerSec)
-		return nil
+		return &subtaskResult{files: files, resp: resp}, nil
 	}
-	return lastErr
+	return nil, lastErr
+}
+
+// commitSubtask writes a generated result into the task's files.
+func (c *Controller) commitSubtask(t *Task, spec PlanSubtask, node string, res *subtaskResult) error {
+	for _, f := range spec.Files {
+		if err := t.writeFile(f, res.files[f]); err != nil {
+			return err
+		}
+	}
+	t.touch(spec.Files...)
+	resp := res.resp
+	t.mu.Lock()
+	st := t.subtask(spec.ID)
+	now := time.Now()
+	st.Status, st.Ended, st.TokPerSec = "written", &now, resp.TokensPerSec
+	t.saveLocked()
+	t.mu.Unlock()
+	c.recordSpeed(node, resp.TokensPerSec)
+	t.logf("info", "%s written on %s (%s output tokens, %.1f tok/s).", spec.ID, c.nodeLabel(node), fmtInt(resp.OutTokens), resp.TokensPerSec)
+	return nil
 }
 
 func (t *Task) subtask(id string) *SubtaskState {

@@ -189,6 +189,9 @@
           </div>
           <label for="set-planner">Default planner</label><select id="set-planner"></select>
           <label class="check"><input type="checkbox" id="set-autoresume"> Resume interrupted tasks on their own after a restart (local planner only; waits up to 10 minutes for a node)</label>
+          <label for="set-bestofn">Best of N on local nodes</label>
+          <select id="set-bestofn"><option value="hard">Hard subtasks (default)</option><option value="all">All subtasks</option><option value="off">Off</option></select>
+          <p class="hint">When a subtask starts and two or more other nodes are idle with nothing waiting for them, up to two of them also write it. Copies that fail a quick syntax check are dropped and a judge node picks the best of the rest. Spare copies give up their node as soon as other work needs it. Local nodes only, so no Claude cost.</p>
           <label class="check"><input type="checkbox" id="set-agent"> Agent mode: fixers and investigators read files, search, run commands and ask you questions, up to 30 tool calls and 20 minutes each. Off uses one request per fix.</label>
           <label class="check"><input type="checkbox" id="set-websearch"> Let the Claude planner search the web (about $0.01 per search, counted against the task cap)</label>
           <label class="check"><input type="checkbox" id="set-webprivate"> Allow pasted links to reach internal addresses (loopback, LAN). Off blocks them.</label>

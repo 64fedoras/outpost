@@ -330,6 +330,24 @@ before taking any free node. Easy ones go to the fastest free node. Normal ones 
 tier and speed. Reviews prefer a node at least as strong as the one that wrote the code.
 The benchmark and the routing have only been tested against stubs, not on a real cluster.
 
+### Best of N on spare nodes
+
+When a hard subtask starts and two or more other nodes with a model are idle, with no ready subtask
+waiting for them, up to two of them write the same subtask too. The copies are not written into the
+task at first. Each one that has a quick syntax check is run through it on an exec node
+(`python -m py_compile` for `.py`, `node --check` for `.js`, `gofmt -e` for `.go`, and a JSON
+validity check; other file types have no check) and is dropped if it fails. If more than one
+copy is left, a free node acts as judge, compares them against the subtask's instructions and picks
+one. The task log and the subtask line say which node won and why. If the judge is not available
+or gives no usable answer, the copy from the strongest node is kept. The usual peer review of the winner follows.
+
+It never takes a node from other work: extra copies start only on nodes nothing is waiting for, and
+they give up their node as soon as a ready subtask finds none free. The primary copy waits at most
+3 minutes for the others. Only local nodes take part, so it adds no Claude cost, but the judge step
+makes hard subtasks a little slower. Choose **Off**, **Hard subtasks** (default) or **All subtasks**
+under **Best of N on local nodes** in Settings. Tested against stub nodes only, not on a real cluster; the syntax check
+needs an exec-enabled node with the language installed and is skipped otherwise.
+
 ### Pooling memory (experimental)
 
 For a model too big for any single machine, open **Load model** on the node that should run it
