@@ -197,6 +197,7 @@ func runController(args []string) error {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	}))
+	mux.HandleFunc("GET /licenses", handleLicenses)
 	mux.HandleFunc("POST /api/login", c.handleLogin)
 	mux.HandleFunc("POST /api/logout", c.handleLogout)
 	mux.HandleFunc("GET /api/sessions", c.authSession(c.handleListSessions))
