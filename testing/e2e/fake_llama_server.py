@@ -32,6 +32,8 @@ class H(BaseHTTPRequestHandler):
                 text = "<<<FILE wordcount/core.py>>>\ndef count_words(text):\n    counts = {}\n    for w in text.lower().split():\n        counts[w] = counts.get(w, 0) + 1\n    return counts\n<<<END>>>\n"
             else:
                 text = "<<<OK>>>"
+        elif "Write these files:" not in user:
+            text = "A hash map stores values under keys. " * 12  # the node benchmark
         else:
             files = re.search(r"Write these files: (.*)", user).group(1).split(", ")
             text = "".join(f"<<<FILE {f}>>>\n{CONTENT.get(f, '# ?\n')}<<<END>>>\n" for f in files)
