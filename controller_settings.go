@@ -30,6 +30,7 @@ type Settings struct {
 	BackupDir        string         `json:"backup_dir,omitempty"`
 	BackupPassEnc    string         `json:"backup_pass_enc,omitempty"`
 	AutoResumeOff    bool           `json:"auto_resume_off,omitempty"` // default is on
+	BestOfN          string         `json:"best_of_n,omitempty"`       // "off", "hard" (default) or "all": extra copies of subtasks on idle nodes, a judge picks one
 	AgentOff         bool           `json:"agent_off,omitempty"`       // fixers and investigators use single-shot requests instead of tools
 	Instructions     string         `json:"instructions,omitempty"`    // standing rules copied into every new task (OUTPOST.md text)
 	Notify           NotifySettings `json:"notify"`
@@ -148,8 +149,8 @@ func (c *Controller) settingsView() map[string]any {
 		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
 		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner,
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
-		"auto_resume": !c.settings.AutoResumeOff,
-		"agent_mode":  !c.settings.AgentOff, "web_search": c.settings.WebSearch, "web_allow_private": c.settings.WebAllowPrivate,
+		"auto_resume": !c.settings.AutoResumeOff, "best_of_n": normBestOf(c.settings.BestOfN),
+		"agent_mode": !c.settings.AgentOff, "web_search": c.settings.WebSearch, "web_allow_private": c.settings.WebAllowPrivate,
 		"instructions": c.settings.Instructions, "backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
 	for k, x := range c.notifyView() {
@@ -180,6 +181,7 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 			Events     map[string]bool `json:"events"`
 		} `json:"notify"`
 		AutoResume      *bool   `json:"auto_resume"`
+		BestOfN         *string `json:"best_of_n"`
 		Instructions    *string `json:"instructions"`
 		WebSearch       *bool   `json:"web_search"`
 		AgentMode       *bool   `json:"agent_mode"`
@@ -261,6 +263,9 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.AutoResume != nil {
 		c.settings.AutoResumeOff = !*req.AutoResume
+	}
+	if req.BestOfN != nil {
+		c.settings.BestOfN = normBestOf(*req.BestOfN)
 	}
 	if req.OpenRouterModel != nil {
 		c.settings.OpenRouterModel = strings.TrimSpace(*req.OpenRouterModel)

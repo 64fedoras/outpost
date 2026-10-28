@@ -533,7 +533,7 @@ function progressCard(t) {
     else if (x.status === 'running') who = `writing on ${esc(x.node_name || '…')}${x.attempts ? ` · try ${x.attempts + 1}` : ''}`;
     else if (s.kind === 'investigate' && (x.status === 'written' || x.status === 'done')) who = `investigated on ${esc(x.node_name || 'the planner')}${x.agent_calls ? ` · ${x.agent_calls} tool calls` : ''}`;
     else if (x.status === 'reviewing' || x.status === 'written') who = `${esc(x.node_name || '')} wrote it · ${esc(x.reviewer || 'another node')} is checking`;
-    else if (x.status === 'done') who = `${x.by_planner ? 'written by the planner' : esc(x.node_name || '')}${x.reviewer ? ` · checked by ${esc(x.reviewer)}${x.review_fixed ? ', who fixed it' : ''}` : ''}`;
+    else if (x.status === 'done') who = `${x.by_planner ? 'written by the planner' : esc(x.node_name || '')}${x.reviewer ? ` · checked by ${esc(x.reviewer)}${x.review_fixed ? ', who fixed it' : ''}` : ''}${x.best_of ? ` · best of several: ${esc(x.best_of)}` : ''}`;
     else if (x.status === 'failed') who = esc(x.error || 'failed');
     else who = s.depends_on && s.depends_on.length ? `waits for ${s.depends_on.map(esc).join(', ')}` : 'waiting for a free node';
     const lives = Object.entries(liveCalls).filter(([, c]) => c.sub === s.id).map(([id, c]) => livePane(c, id)).join('');
@@ -1125,6 +1125,7 @@ async function loadSettings() {
   $('set-model').innerHTML = claudeModelOptions(settings.claude_model);
   $('set-cap').value = settings.default_cap_usd;
   $('set-autoresume').checked = !!settings.auto_resume;
+  $('set-bestofn').value = settings.best_of_n || 'hard';
   $('set-instr').value = settings.instructions || '';
   $('set-agent').checked = settings.agent_mode !== false; $('set-websearch').checked = !!settings.web_search; $('set-webprivate').checked = !!settings.web_allow_private;
   if (!state) state = await api('/api/state').catch(() => null);
@@ -1238,7 +1239,7 @@ $('set-or-model-save').onclick = () => saveSettings({ openrouter_model: $('set-o
 $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-instr-save').onclick = () => saveSettings({ instructions: $('set-instr').value }, 'Instructions saved');
-$('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, agent_mode: $('set-agent').checked, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked, auto_resume: $('set-autoresume').checked }, 'Defaults saved');
+$('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, agent_mode: $('set-agent').checked, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked, auto_resume: $('set-autoresume').checked, best_of_n: $('set-bestofn').value }, 'Defaults saved');
 $('pw-form').onsubmit = async (e) => {
   e.preventDefault();
   const err = $('pw-err'); err.classList.add('hidden');
