@@ -368,6 +368,35 @@ func (c *Controller) tasksBusyLocked() bool {
 	return false
 }
 
+// nodeUpdateWait caps how long autoInstall holds the controller update for node downloads.
+var nodeUpdateWait = 10 * time.Minute
+
+// nodeUpdatePoll is how often waitNodeUpdates looks at the node update states.
+var nodeUpdatePoll = 2 * time.Second
+
+// waitNodeUpdates blocks until none of ids is still sent, downloading or installing, or until
+// max has passed. It reports whether they all settled.
+func (c *Controller) waitNodeUpdates(ids []string, max time.Duration) bool {
+	deadline := time.Now().Add(max)
+	for {
+		c.mu.Lock()
+		busy := false
+		for _, id := range ids {
+			if u := c.updates[id]; u != nil && (u.State == "sent" || u.State == "downloading" || u.State == "installing") {
+				busy = true
+			}
+		}
+		c.mu.Unlock()
+		if !busy {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(nodeUpdatePoll)
+	}
+}
+
 // autoInstall updates idle nodes, then the controller once no node update is in flight and no
 // task is working. Anything skipped (busy node, running task) is retried by the next check.
 // It never installs a version at or below the hold set by a rollback.
@@ -404,17 +433,10 @@ func (c *Controller) autoInstall() {
 		return
 	}
 	if len(ids) > 0 {
-		// Give the node downloads a head start; the controller serves them.
-		time.Sleep(5 * time.Second)
-		c.mu.Lock()
-		for _, u := range c.updates {
-			if time.Since(u.Updated) < 10*time.Minute && (u.State == "sent" || u.State == "downloading" || u.State == "installing" || u.State == "restarting") {
-				ok = false
-			}
-		}
-		c.mu.Unlock()
-		if !ok {
-			return
+		// The controller serves the node downloads, so restarting it mid-download would cut them
+		// off. Wait until each node has its binary installed ("restarting") or has failed.
+		if !c.waitNodeUpdates(ids, nodeUpdateWait) {
+			log.Printf("auto-install: node updates still running after %s; updating the controller anyway", nodeUpdateWait)
 		}
 	}
 	log.Printf("auto-install: updating the controller to %s", rel.Version)

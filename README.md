@@ -504,7 +504,7 @@ exactly like a manual upload, so the Update buttons and rollback work unchanged.
 corrupt downloads but is not signed, so it does not protect against a tampered repository. Under
 **Settings → Updates from GitHub** you can switch the checks off, or switch on **Install them
 automatically**: idle nodes update first (busy ones are retried at the next check), then the
-controller, and only when no task is planning, running or testing. **Check and install** on the Updates
+controller (it waits up to 10 minutes for the nodes' downloads to finish first), and only when no task is planning, running or testing. **Check and install** on the Updates
 tab does the same once, on request. After a rollback, automatic install skips the version you left
 (and older ones) until a newer release appears. Nothing but the version check and the downloads goes to
 GitHub. This path has only been tested against a stub server, not the live GitHub API.
