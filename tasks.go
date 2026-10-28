@@ -744,6 +744,9 @@ func (c *Controller) plannerCall(ctx context.Context, t *Task, req llmRequest) (
 			est = openRouterEstimate(orModel, len(req.System)+len(req.User), req.MaxTokens/2)
 		} else {
 			est = estimateCost(model, len(req.System)+len(req.User), req.MaxTokens/2)
+			if req.WebSearch {
+				est += webSearchUses * webSearchUSD
+			}
 		}
 		if cost+est > cap || (est == 0 && cost >= cap) {
 			if err := c.pauseForCap(ctx, t, est); err != nil {
@@ -775,6 +778,9 @@ func (c *Controller) plannerCall(ctx context.Context, t *Task, req llmRequest) (
 		t.saveLocked()
 		t.mu.Unlock()
 		t.logf("cost", "%s: %s in / %s out tokens, $%.4f (task total $%.4f)", req.Label, fmtInt(resp.InTokens+resp.CacheRead+resp.CacheWrite), fmtInt(resp.OutTokens), resp.CostUSD, total)
+		if resp.WebSearches > 0 {
+			t.logf("cost", "%s: %d web search(es), %s of that call", req.Label, resp.WebSearches, fmtUSD(float64(resp.WebSearches)*webSearchUSD))
+		}
 		return resp, nil
 	}
 }
@@ -1021,12 +1027,19 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 	t.mu.Unlock()
 	budget := c.plannerBudget(t)
 	user := c.plannerPrompt(t, budget, nil)
+	user += c.webContext(ctx, c.roundURLs(t))
+	c.mu.Lock()
+	webSearch := c.settings.WebSearch
+	c.mu.Unlock()
+	t.mu.Lock()
+	webSearch = webSearch && t.Planner == "claude"
+	t.mu.Unlock()
 	indexed := t.roundHasFiles() && repoNeedsIndex(t.repoDir(), budget)
 	fetched := false
 	var plan *Plan
 	var lastErr error
 	for attempt := 0; attempt < 2 && plan == nil; attempt++ {
-		req := llmRequest{System: plannerSystem, User: user, MaxTokens: 8000, Temperature: 0.2, Label: "Planning"}
+		req := llmRequest{System: plannerSystem, User: user, MaxTokens: 8000, Temperature: 0.2, Label: "Planning", WebSearch: webSearch}
 		if indexed {
 			req.System += plannerIndexHelp
 		}

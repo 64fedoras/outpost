@@ -324,3 +324,16 @@ func sortedCopy(in []string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// roundURLs lists the links in the user's messages for the current round (not steering notes).
+func (c *Controller) roundURLs(t *Task) []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var text strings.Builder
+	for _, m := range t.Messages {
+		if m.Round == t.Round && m.Role == "user" && m.Kind != "steer" {
+			text.WriteString(m.Text + "\n")
+		}
+	}
+	return extractURLs(text.String())
+}
