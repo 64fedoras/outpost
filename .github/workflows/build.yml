@@ -1,0 +1,50 @@
+name: Build binaries
+
+# Builds the five platform binaries after every merge to main (and on demand).
+# It bumps nothing: the version is whatever `Version` in proto.go says.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install llvm (for Windows version info)
+        run: sudo apt-get update && sudo apt-get install -y llvm
+      - name: Vet and test
+        run: go vet ./... && go test ./...
+      - name: Build
+        id: build
+        run: |
+          V=$(sed -n 's/^const Version = "\(.*\)"/\1/p' proto.go)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          sh build.sh "$PWD/dist/outpost-$V"
+          cp README.md "dist/outpost-$V/"
+          (cd dist && zip -qr "outpost-$V.zip" "outpost-$V")
+          (cd "dist/outpost-$V/bin" && sha256sum * > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: outpost-${{ steps.build.outputs.version }}
+          path: dist/outpost-${{ steps.build.outputs.version }}/
+      - name: Publish release (once per version)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.build.outputs.version }}
+        run: |
+          if gh release view "v$V" >/dev/null 2>&1; then
+            echo "Release v$V already exists; artifact only."
+          else
+            gh release create "v$V" "dist/outpost-$V.zip" dist/outpost-$V/bin/* \
+              --target "$GITHUB_SHA" --title "Outpost $V" \
+              --notes "Binaries for the Updates tab (unsigned unless noted). Built from $GITHUB_SHA."
+          fi
