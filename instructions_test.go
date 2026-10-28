@@ -32,7 +32,7 @@ func TestInstructionsInPrompts(t *testing.T) {
 		Plan:     &Plan{Title: "P", Subtasks: []PlanSubtask{{ID: "t1", Files: []string{"a.go"}}}},
 		Messages: []TaskMessage{{Role: "user", Kind: "text", Text: "hi", Round: 1}}}
 	c := &Controller{}
-	if p := c.plannerPrompt(task, 1000); !strings.HasPrefix(p, "Project instructions") || !strings.Contains(p, "ALWAYS-USE-TABS") {
+	if p := c.plannerPrompt(task, 1000, nil); !strings.HasPrefix(p, "Project instructions") || !strings.Contains(p, "ALWAYS-USE-TABS") {
 		t.Errorf("planner prompt: %s", p)
 	}
 	spec := task.Plan.Subtasks[0]
