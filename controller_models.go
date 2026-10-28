@@ -38,7 +38,7 @@ type CatalogEntry struct {
 	MinRAMGB int      `json:"min_ram_gb"`
 }
 
-// File names and sizes checked against Hugging Face on 2026-10-24.
+// File names and sizes checked against Hugging Face on 2026-10-24 (the Qwen3.6 and Gemma 4 sizes are rounded from the web listing, not exact).
 var modelCatalog = []CatalogEntry{
 	{ID: "qwen2.5-coder-3b-q4km", Label: "Qwen2.5-Coder 3B Instruct (Q4_K_M)", Repo: "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
 		Files: []string{"qwen2.5-coder-3b-instruct-q4_k_m.gguf"}, Bytes: 2104932800, For: "Test VMs, 4 GB RAM CPU nodes",
@@ -58,6 +58,15 @@ var modelCatalog = []CatalogEntry{
 	{ID: "qwen3-coder-next-q4km", Label: "Qwen3-Coder-Next 80B-A3B (Q4_K_M)", Repo: "unsloth/Qwen3-Coder-Next-GGUF",
 		Files: []string{"Qwen3-Coder-Next-Q4_K_M.gguf"}, Bytes: 48528320544, For: "CPU server (64 GB+ RAM, CPU)",
 		Notes: "~3B active per token, so reasonable on many CPU cores. Planner-quality local model.", Ctx: 32768, MinRAMGB: 64},
+	{ID: "qwen3.6-35b-a3b-q4km", Label: "Qwen3.6 35B-A3B (Q4_K_M)", Repo: "unsloth/Qwen3.6-35B-A3B-GGUF",
+		Files: []string{"Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"}, Bytes: 22100000000, For: "CPU server (CPU) or 16 GB GPU with RAM offload",
+		Notes: "Newer than Qwen3-Coder 30B-A3B; ~3B active per token. Needs a current llama.cpp build. Compare it with Qwen3-Coder on your tasks.", Ctx: 16384, MinRAMGB: 32},
+	{ID: "qwen3.6-27b-q4km", Label: "Qwen3.6 27B (Q4_K_M)", Repo: "unsloth/Qwen3.6-27B-GGUF",
+		Files: []string{"Qwen3.6-27B-Q4_K_M.gguf"}, Bytes: 16800000000, For: "16 GB GPUs with RAM offload",
+		Notes: "Dense, so slower per token than the A3B models and a tight fit in 16 GB VRAM. Needs a current llama.cpp build.", Ctx: 8192, MinRAMGB: 24},
+	{ID: "gemma-4-26b-a4b-q4km", Label: "Gemma 4 26B-A4B (Q4_K_M)", Repo: "unsloth/gemma-4-26B-A4B-it-GGUF",
+		Files: []string{"gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"}, Bytes: 16900000000, For: "CPU server (CPU) or 16 GB GPUs with RAM offload",
+		Notes: "Google MoE, ~4B active per token, Apache 2.0. Strong general model; worth a second opinion in review. Text only here (vision needs an mmproj file). Needs a current llama.cpp build.", Ctx: 16384, MinRAMGB: 24},
 }
 
 type ModelRec struct {
