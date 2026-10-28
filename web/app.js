@@ -988,7 +988,8 @@ function opView(n) {
   const o = state.ops && state.ops[n.id];
   if (!o || !o.op) return '';
   const age = (Date.now() - new Date(o.updated)) / 1000;
-  const what = { runtime: 'llama.cpp', toolchain: 'Installing Go', 'model.push': 'Copying model from controller', 'model.fetch': 'Downloading from Hugging Face', rpc: 'Lending memory', 'model.load': 'Loading model', 'model.unload': 'Unloading', 'model.remove': 'Removing model' }[o.op] || o.op;
+  const what = { runtime: 'llama.cpp', toolchain: 'Installing Go', 'model.push': 'Copying model from controller', 'model.fetch': 'Downloading from Hugging Face', rpc: 'Lending memory', 'model.load': 'Loading model', 'model.unload': 'Unloading', 'model.remove': 'Removing model', 'model.cleanup': 'Cleaning up models' }[o.op] || o.op;
+  if (o.op === 'model.cleanup' && o.state === 'done') return age < 600 && o.detail ? `<div class="sub u17">Cleanup: ${esc(o.detail)}</div>` : '';
   if (o.state === 'failed') return age < 3600 ? `<div class="note bad u17">${esc(what)} failed: ${esc(o.error)}</div>` : '';
   if (['done', 'ready'].includes(o.state)) return '';
   const pct = o.bytes_total ? 100 * o.bytes_done / o.bytes_total : (o.state === 'loading' ? 100 : 0);
@@ -1034,7 +1035,7 @@ function nodeCard(n) {
       ${n.online ? `<div class="sub u15">Unloads when idle: ${esc(n.idle_unload_effective || '1h')}${n.idle_unload ? '' : ' (default)'} · <a href="#" data-act="idle" data-id="${n.id}">change</a></div>` : ''}
       ${benchLine(n, loaded, ready)}
       ${n.pool_names && n.pool_names.length ? `<div class="sub wrap u15">Pooled with <b>${n.pool_names.map(esc).join(', ')}</b></div>` : ''}
-      <div class="sub u15">${h.runtime ? `llama.cpp ${esc(h.runtime.build)} · ${esc(h.runtime.variant)}` : 'llama.cpp installs on first load'}${stored.length ? ' · stored: ' + stored.map((m) => `${esc(m.name)} <a href="#" data-act="rm-node-model" data-id="${n.id}" data-name="${esc(m.name)}" title="Delete from this node">×</a>`).join(', ') : ''}</div>
+      <div class="sub u15">${h.runtime ? `llama.cpp ${esc(h.runtime.build)} · ${esc(h.runtime.variant)}` : 'llama.cpp installs on first load'}${stored.length ? ' · stored: ' + stored.map((m) => `${esc(m.name)} <a href="#" data-act="rm-node-model" data-id="${n.id}" data-name="${esc(m.name)}" title="Delete from this node">×</a>`).join(', ') + (n.online ? ` · <a href="#" data-act="clean" data-id="${n.id}">clean up…</a>` : '') : ''}</div>
       ${hb && hb.llama_error && !ready ? `<div class="note bad u15">${esc(hb.llama_error)}</div>` : ''}
       ${needsVulkan ? `<div class="note warn u15">GPU found, but no Vulkan driver, so models run on CPU. On the node: <code>sudo apt install libvulkan1 mesa-vulkan-drivers</code>, then load the model again.</div>` : ''}
       ${opView(n)}
@@ -1095,6 +1096,34 @@ async function removeNode(id) {
   await api(`/api/nodes/${id}`, { method: 'DELETE' }).catch((e) => toast(e.message));
   refresh();
 }
+
+// Clean-up dialog: pick stored models to delete from a node's disk
+let cleanNodeId = null;
+function openClean(id) {
+  cleanNodeId = id;
+  const n = nodeById(id);
+  const keep = new Set([n.heartbeat && n.heartbeat.loaded_model, n.load_prefs && n.load_prefs.name].filter(Boolean));
+  $('clean-node').textContent = nodeName(n);
+  $('clean-err').classList.add('hidden');
+  $('clean-partial').checked = false;
+  $('clean-list').innerHTML = ((n.hello && n.hello.models) || []).map((m) => `<label class="toggle u21"><input type="checkbox" class="clean-cb" value="${esc(m.name)}" data-bytes="${m.bytes}" ${keep.has(m.name) ? 'disabled' : 'checked'}>
+    ${esc(m.name)} <span class="muted">· ${bytes(m.bytes)}${keep.has(m.name) ? ' · in use, kept' : ''}</span></label>`).join('') || '<span class="muted">No models stored.</span>';
+  $('clean-list').querySelectorAll('.clean-cb').forEach((cb) => cb.addEventListener('change', updateClean));
+  $('clean-partial').onchange = updateClean;
+  updateClean();
+  open('modal-clean');
+}
+function updateClean() {
+  const sel = [...document.querySelectorAll('.clean-cb:checked')];
+  const total = sel.reduce((a, cb) => a + parseInt(cb.dataset.bytes, 10), 0);
+  $('clean-go').textContent = sel.length ? `Delete ${sel.length} (${bytes(total)})` : 'Delete';
+  $('clean-go').disabled = !sel.length && !$('clean-partial').checked;
+}
+$('clean-go').onclick = async () => {
+  const names = [...document.querySelectorAll('.clean-cb:checked')].map((cb) => cb.value);
+  try { await post(`/api/nodes/${cleanNodeId}/models/cleanup`, { names, incomplete: $('clean-partial').checked }); close('modal-clean'); toast('Cleaning up'); refresh(); }
+  catch (e) { $('clean-err').textContent = e.message; $('clean-err').classList.remove('hidden'); }
+};
 
 // Load-model dialog
 function openLoad(id) {
@@ -1741,6 +1770,7 @@ document.addEventListener('click', async (e) => {
       case 'benchmark': await post(`/api/nodes/${id}/benchmark`); toast('Benchmark started'); break;
       case 'unload': await post(`/api/nodes/${id}/unload`); toast('Unloading'); break;
       case 'rm-node-model': if (confirm(`Delete ${el.dataset.name} from this node's disk?`)) { await api(`/api/nodes/${id}/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); toast('Deleting'); } break;
+      case 'clean': openClean(id); break;
       case 'rename': renameNode(id); break;
       case 'idle': setNodeIdle(id); break;
       case 'restart': {
