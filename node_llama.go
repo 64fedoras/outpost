@@ -518,7 +518,7 @@ func (n *Node) removeModel(name string) {
 	if !validName(name) {
 		return
 	}
-	if n.llama.loadedModel() == name {
+	if n.llama.loadedModel() == name || n.llama.coldModel() == name {
 		n.llama.stop()
 	}
 	if err := os.RemoveAll(filepath.Join(n.modelsDir(), name)); err != nil {
@@ -561,6 +561,13 @@ type llamaMgr struct {
 	logTail  *tailBuf
 	stopping bool
 	gen      int // bumps on every start/stop so stale watchers exit
+
+	// idle unload: after idleAfter without a request the process is stopped and
+	// cold remembers what to load again when the next request arrives.
+	idleAfter time.Duration // 0 = never
+	lastUsed  time.Time
+	cold      *ModelLoad
+	wakeMu    sync.Mutex // one reload at a time
 }
 
 func newLlamaMgr(n *Node) *llamaMgr { return &llamaMgr{n: n} }
@@ -592,7 +599,15 @@ func freePort() (int, error) {
 	return ln.Addr().(*net.TCPAddr).Port, nil
 }
 
+// stop is a deliberate stop (unload, replace, shutdown): nothing is kept to reload.
 func (l *llamaMgr) stop() {
+	l.mu.Lock()
+	l.cold = nil
+	l.mu.Unlock()
+	l.stopProc()
+}
+
+func (l *llamaMgr) stopProc() {
 	l.mu.Lock()
 	cmd, exited := l.cmd, l.exited
 	l.cmd, l.exited, l.ready, l.model = nil, nil, false, ""
@@ -640,6 +655,7 @@ func (l *llamaMgr) load(ml ModelLoad) {
 		return
 	}
 	l.stop()
+	l.touch()
 	files := make([]string, 0, len(m.Files))
 	ml.MMProj = ""
 	for _, f := range m.Files {
@@ -667,6 +683,7 @@ func (l *llamaMgr) load(ml ModelLoad) {
 		return
 	}
 	log.Printf("model %s loaded", ml.Name)
+	l.touch()
 	l.n.pushHeartbeat()
 	l.n.opStatus(op, ml.Name, "ready", 0, 0, "")
 	l.n.resendHello()
@@ -797,6 +814,9 @@ func (l *llamaMgr) waitReady(timeout time.Duration) error {
 // chat runs one OpenAI-style chat completion against llama-server, streaming
 // tokens through emit. It returns the final text and usage.
 func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(string)) (*InferenceOutput, *ErrInfo) {
+	if e := l.wake(spec.Model); e != nil {
+		return nil, e
+	}
 	l.mu.Lock()
 	if l.cmd == nil || !l.ready {
 		l.mu.Unlock()
@@ -808,11 +828,13 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 		return nil, errf("model_missing", true, "node has %s loaded, not %s", cur, spec.Model)
 	}
 	l.busy++
+	l.lastUsed = time.Now()
 	model := l.model
 	l.mu.Unlock()
 	defer func() {
 		l.mu.Lock()
 		l.busy--
+		l.lastUsed = time.Now()
 		l.mu.Unlock()
 	}()
 
@@ -958,6 +980,93 @@ func (n *Node) runInference(ctx context.Context, jd JobDispatch, res *JobResult)
 		res.Status = "succeeded"
 		res.Output, _ = json.Marshal(out)
 	}
+}
+
+// ---------- idle unload ----------
+
+func (l *llamaMgr) touch() {
+	l.mu.Lock()
+	l.lastUsed = time.Now()
+	l.mu.Unlock()
+}
+
+func (l *llamaMgr) setIdleAfter(d time.Duration) {
+	l.mu.Lock()
+	l.idleAfter = d
+	l.lastUsed = time.Now() // a changed setting starts a fresh wait
+	l.mu.Unlock()
+}
+
+// coldModel is the model unloaded for idleness ("" when none).
+func (l *llamaMgr) coldModel() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.cold != nil && l.cmd == nil {
+		return l.cold.Name
+	}
+	return ""
+}
+
+// idleCheck unloads the model if it has been idle long enough. A pooled model is
+// never unloaded: its helpers would have to be restarted by the controller.
+func (l *llamaMgr) idleCheck(now time.Time) bool {
+	l.mu.Lock()
+	if l.idleAfter <= 0 || l.cmd == nil || !l.ready || l.busy > 0 || len(l.opts.RPC) > 0 ||
+		now.Sub(l.lastUsed) < l.idleAfter {
+		l.mu.Unlock()
+		return false
+	}
+	ml := l.opts
+	l.cold = &ml // set before stopping, so a request arriving now waits and reloads
+	name := l.model
+	l.mu.Unlock()
+	log.Printf("model %s was idle for %s; unloading it (it loads again on the next request)", name, formatIdleDuration(l.idleAfter))
+	l.stopProc()
+	l.n.resendHello()
+	return true
+}
+
+func (l *llamaMgr) idleLoop(ctx context.Context) {
+	t := time.NewTicker(10 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			l.idleCheck(now)
+		}
+	}
+}
+
+// wake loads the idle-unloaded model again when a request for it arrives.
+func (l *llamaMgr) wake(model string) *ErrInfo {
+	l.mu.Lock()
+	cold := l.cold
+	l.mu.Unlock()
+	if cold == nil || (model != "" && model != cold.Name) {
+		return nil
+	}
+	l.wakeMu.Lock()
+	defer l.wakeMu.Unlock()
+	l.mu.Lock()
+	cold = l.cold
+	l.mu.Unlock()
+	if cold == nil {
+		return nil // another request already reloaded it
+	}
+	log.Printf("request for idle-unloaded model %s; loading it again", cold.Name)
+	l.load(*cold)
+	l.mu.Lock()
+	ready, msg := l.ready, l.lastErr
+	l.mu.Unlock()
+	if !ready {
+		if msg == "" {
+			msg = "the model did not load"
+		}
+		return errf("inference_unavailable", true, "reloading %s after idle unload failed: %s", cold.Name, msg)
+	}
+	return nil
 }
 
 // ---------- autoload: reload the last model after a reboot or update ----------
