@@ -18,17 +18,18 @@ shipped by 0.8.0) and the notes on what is untested.
 - Keep Outpost **self-contained in the binary** (without making it huge) so updates and rollbacks stay easy.
   Zero runtime dependencies on nodes except what Outpost installs itself (llama.cpp builds, bundled libgomp).
 - Hands-off flow: the owner approves a plan, nodes work, the finished output is downloadable from the web UI.
-- Linux machines use the login name `sysmaint`.
+- Linux machines use a single admin login (kept in the private project artifact, not in the repo).
 - The Add-node command shown in the UI must be a single paste with no scp line:
   `sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install node --join TOKEN`
 - Update README.md for every user-visible change. **Patch versions are automatic**: every push to `main` is built as the next patch after the latest `v*` tag (0.8.0 -> 0.8.1 -> 0.8.2), stamped at build time by `.github/next-version.sh` and `OUTPOST_VERSION` in `build.sh`, with nothing committed back. PRs must not bump `Version`. `const Version` in `proto.go` is only the base: change it by hand (to 0.9.0, 1.0.0, ...) for a minor or major release, and the next build uses it if it is higher than the next patch.
 
 ## The cluster it runs on
-Controller `outpost-controller01` (Proxmox VM, https://10.0.4.130:8443). Nodes: outpost-node01
-(10.0.4.132, 4 cores, 4 GB), outpost-node02 (10.0.4.133, 31 cores, 173 GB, on the Dell R740),
-`gaming` (Ubuntu desktop, Radeon 9070 XT), Robin-Desktop (Windows, Radeon 9060 XT 16 GB). Up to about
-10 machines eventually, a couple of them Macs (Apple Silicon and Intel). Nothing here can be reached
-from a cloud build box; test on these machines by hand where noted in `testing/README.md`.
+The owner's own cluster: one controller VM, a few Linux nodes (a small 4 GB test VM, a large-RAM CPU server),
+a Linux GPU desktop and a Windows GPU desktop, up to about 10 machines eventually, a couple of them Macs
+(Apple Silicon and Intel). Names, addresses, login and hardware are kept out of this public repo, in the
+private project artifact "Outpost home network layout" (https://claude.ai/artifact/2N8RKWgm4G5TZePPmbBXJ5).
+Nothing here can be reached from a cloud build box; test on these machines by hand where noted in
+`testing/README.md`. Use example values (192.0.2.x, `example.local`, `admin`) in docs, UI text and tests.
 
 ## Commands
 ```sh

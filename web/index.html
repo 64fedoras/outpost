@@ -242,7 +242,7 @@
           <label for="nf-ntfy">ntfy topic URL <span class="muted">· e.g. https://ntfy.sh/my-topic, or your own ntfy server</span></label><input id="nf-ntfy" placeholder="https://ntfy.sh/my-topic" autocomplete="off">
           <label for="nf-ntfy-token">ntfy access token <span class="muted" id="nf-ntfy-token-state"></span></label><input id="nf-ntfy-token" type="password" autocomplete="off" placeholder="only for protected topics; blank keeps the saved one">
           <label for="nf-webhook">Webhook URL <span class="muted">· JSON POST: Home Assistant, Discord, anything that accepts one</span></label><input id="nf-webhook" placeholder="https://…" autocomplete="off">
-          <label for="nf-public">Address used in links <span class="muted">· blank = the address you are using now</span></label><input id="nf-public" placeholder="https://10.0.4.130:8443" autocomplete="off">
+          <label for="nf-public">Address used in links <span class="muted">· blank = the address you are using now</span></label><input id="nf-public" placeholder="https://192.0.2.10:8443" autocomplete="off">
           <div class="modal-foot"><button id="nf-test">Send test</button><button class="primary" id="nf-save">Save</button></div>
         </div>
         <div class="section-head"><h2>Admin password</h2></div>
@@ -300,9 +300,9 @@
     <h3>Add a node</h3>
     <p class="hint">Linux: installs a service that starts at boot and runs as the user who ran <code>sudo</code>. Windows: runs in the background with a tray icon and starts at sign-in. Each code works once and expires in 1 hour. Once a node joins with it, a new code appears here, so you can add the next node straight away.</p>
     <div id="add-note" class="note hidden" style="margin:8px 0"></div>
-    <label for="ssh-target">Run over SSH from this computer (optional, e.g. sysmaint@10.0.4.132)</label>
+    <label for="ssh-target">Run over SSH from this computer (optional, e.g. admin@192.0.2.11)</label>
     <input id="ssh-target" placeholder="user@host" autocomplete="off">
-    <label>Linux (copy <code>outpost-linux-amd64</code> to the node's home folder first, e.g. <code>scp outpost-linux-amd64 sysmaint@IP:~/</code>)</label>
+    <label>Linux (copy <code>outpost-linux-amd64</code> to the node's home folder first, e.g. <code>scp outpost-linux-amd64 admin@IP:~/</code>)</label>
     <div class="codebox"><span id="cmd-linux"></span><button data-copy="cmd-linux">Copy</button></div>
     <label>Windows (PowerShell in the folder with <code>outpost-windows-amd64.exe</code>; runs in the background with a tray icon and starts at sign-in)</label>
     <div class="codebox"><span id="cmd-win"></span><button data-copy="cmd-win">Copy</button></div>
