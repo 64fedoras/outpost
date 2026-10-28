@@ -20,6 +20,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -805,8 +806,44 @@ func (c *Controller) workerNodes() []string {
 		}
 		out = append(out, id)
 	}
-	sort.Strings(out)
+	// Strongest first: the node with the biggest loaded model gets work (and
+	// reviews) before a small test model that happens to sort first by ID.
+	size := map[string]int64{}
+	for _, id := range out {
+		size[id] = c.loadedModelBytesLocked(id)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if size[out[i]] != size[out[j]] {
+			return size[out[i]] > size[out[j]]
+		}
+		return out[i] < out[j]
+	})
 	return out
+}
+
+// loadedModelBytesLocked is the size of the model a node has loaded, a rough
+// measure of how capable it is. 0 if unknown. c.mu must be held.
+func (c *Controller) loadedModelBytesLocked(id string) int64 {
+	hb := c.lastHB[id]
+	if hb == nil || hb.LoadedModel == "" {
+		return 0
+	}
+	if m := c.models[hb.LoadedModel]; m != nil {
+		if b := totalBytes(m.Files); b > 0 {
+			return b
+		}
+		if m.BytesTotal > 0 {
+			return m.BytesTotal
+		}
+	}
+	if n := c.nodes[id]; n != nil && n.Hello != nil {
+		for _, m := range n.Hello.Models {
+			if m.Name == hb.LoadedModel {
+				return m.Bytes
+			}
+		}
+	}
+	return 0
 }
 
 // errRequeue means the node, not the subtask, was the problem: the subtask goes
@@ -1435,8 +1472,21 @@ func writeRepoFile(repo, rel, content string) error {
 
 // repoSnapshot returns the project's files as text for a planner prompt.
 func repoSnapshot(repo string, budget int) string {
+	return repoSnapshotFirst(repo, budget, "")
+}
+
+// repoSnapshotFirst is repoSnapshot, but files whose names appear in hint (a
+// test output) come first, so they are the last to be left out of a small
+// prompt.
+func repoSnapshotFirst(repo string, budget int, hint string) string {
+	files := listRepo(repo)
+	if hint != "" {
+		sort.SliceStable(files, func(i, j int) bool {
+			return strings.Contains(hint, path.Base(files[i].Path)) && !strings.Contains(hint, path.Base(files[j].Path))
+		})
+	}
 	var b strings.Builder
-	for _, f := range listRepo(repo) {
+	for _, f := range files {
 		data, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(f.Path)))
 		if err != nil {
 			continue
@@ -1494,6 +1544,8 @@ func (c *Controller) plannerWritesSubtask(ctx context.Context, t *Task, spec Pla
 
 const fixSystem = `You are the lead engineer integrating code written by several small models. The project's tests fail. Find the cause and fix it. Change as few files as needed; you may also add missing files.
 
+The tests describe the intended behaviour: fix the code to match them, and change a test only when the test itself is clearly wrong. If earlier fix rounds are listed and the tests still fail, their approach did not work; look for a different cause instead of repeating it.
+
 ` + fileFormatHelp + `
 Output only the files you change or add, each one complete.`
 
@@ -1513,6 +1565,7 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		c.finishTask(t)
 		return
 	}
+	var history []string
 	for round := 0; ; round++ {
 		if ctx.Err() != nil {
 			return
@@ -1578,8 +1631,22 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		t.logf("warn", "Tests failed; fix round %d of %d.", round+1, maxFixRounds)
 		t.setStatus("fixing")
 		budget := c.plannerBudget(t)
-		user := fmt.Sprintf("Project: %s\n%s\n\nTest command: %s\n\nTest output:\n%s\n\nProject files:\n%s",
-			plan.Title, plan.Summary, cmd, output, repoSnapshot(t.repoDir(), budget-len(output)-4000)) + t.steeringText()
+		// A local planner has a small window: keep the test output to a third
+		// of it so the code under test still fits.
+		shown := output
+		if limit := budget / 3; len(shown) > limit && limit > 0 {
+			shown = "…" + shown[len(shown)-limit:]
+		}
+		var earlier strings.Builder
+		if len(history) > 0 {
+			earlier.WriteString("\n\nEarlier fix rounds (the tests still failed after each):\n")
+			for _, h := range history {
+				earlier.WriteString("- " + h + "\n")
+			}
+		}
+		user := fmt.Sprintf("Project: %s\n%s\n\nTest command: %s\n\nTest output:\n%s%s\n\nProject files:\n%s",
+			plan.Title, plan.Summary, cmd, shown, earlier.String(),
+			repoSnapshotFirst(t.repoDir(), budget-len(shown)-earlier.Len()-4000, output)) + t.steeringText()
 		resp, err := c.plannerCall(ctx, t, llmRequest{System: fixSystem, User: user, MaxTokens: 16000, Temperature: 0.2, Label: fmt.Sprintf("Fix round %d", round+1)})
 		if err != nil {
 			c.failTask(t, err)
@@ -1607,6 +1674,7 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		t.mu.Lock()
 		t.FixRounds++
 		t.mu.Unlock()
+		history = append(history, fmt.Sprintf("round %d changed %s", round+1, strings.Join(changed, ", ")))
 		t.logf("info", "Fix round %d changed: %s", round+1, strings.Join(changed, ", "))
 	}
 }
