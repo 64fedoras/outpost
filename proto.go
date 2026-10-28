@@ -361,12 +361,15 @@ type InferenceSpec struct {
 	Messages []ChatMessage   `json:"messages"`
 	Params   InferenceParams `json:"params"`
 	Stream   bool            `json:"stream"`
+	Tools    []ToolDef       `json:"tools,omitempty"` // agent mode: tools the model may call
 }
 
 type ChatMessage struct {
-	Role    string   `json:"role"`
-	Content string   `json:"content"`
-	Images  []string `json:"images,omitempty"` // data: URIs, for vision models; held in memory only
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	Images     []string       `json:"images,omitempty"`       // data: URIs, for vision models; held in memory only
+	ToolCalls  []WireToolCall `json:"tool_calls,omitempty"`   // assistant turn that called tools
+	ToolCallID string         `json:"tool_call_id,omitempty"` // tool turn answering one call
 }
 
 type InferenceParams struct {
@@ -376,10 +379,11 @@ type InferenceParams struct {
 }
 
 type InferenceOutput struct {
-	Text         string  `json:"text"`
-	FinishReason string  `json:"finish_reason"`
-	PromptTokens int     `json:"prompt_tokens"`
-	OutputTokens int     `json:"output_tokens"`
-	TokensPerSec float64 `json:"tokens_per_s"`
-	Model        string  `json:"model"`
+	Text         string         `json:"text"`
+	FinishReason string         `json:"finish_reason"`
+	PromptTokens int            `json:"prompt_tokens"`
+	OutputTokens int            `json:"output_tokens"`
+	TokensPerSec float64        `json:"tokens_per_s"`
+	Model        string         `json:"model"`
+	ToolCalls    []WireToolCall `json:"tool_calls,omitempty"`
 }
