@@ -69,3 +69,22 @@ func TestCleanupWithoutIncompleteKeepsPartialDownloads(t *testing.T) {
 		t.Fatal("incomplete download deleted without being asked")
 	}
 }
+
+func TestRemoveModelKeepsProtected(t *testing.T) {
+	n := testNode(t)
+	writeStoredModel(t, n, "old", 1000, true)
+	writeStoredModel(t, n, "loaded", 1000, true)
+	writeStoredModel(t, n, "reload", 1000, true)
+	writeStoredModel(t, n, "copying", 1000, true)
+	n.llama.cmd, n.llama.model = &exec.Cmd{}, "loaded"
+	n.saveAutoload(&ModelLoad{Name: "reload"})
+	defer n.markModelBusy("copying")()
+	for _, name := range []string{"old", "loaded", "reload", "copying"} {
+		n.removeModel(name)
+	}
+	for name, want := range map[string]bool{"old": false, "loaded": true, "reload": true, "copying": true} {
+		if got := exists(filepath.Join(n.modelsDir(), name)); got != want {
+			t.Errorf("%s exists = %v, want %v", name, got, want)
+		}
+	}
+}

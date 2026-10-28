@@ -519,10 +519,16 @@ func (n *Node) removeModel(name string) {
 	if !validName(name) {
 		return
 	}
-	if n.llama.loadedModel() == name || n.llama.coldModel() == name {
-		n.llama.stop()
+	if n.protectedModels()[name] {
+		n.opStatus("model.remove", name, "failed", 0, 0, "in use: loaded, set to reload, or being copied; unload it first")
+		return
 	}
-	if err := os.RemoveAll(filepath.Join(n.modelsDir(), name)); err != nil {
+	dir := filepath.Join(n.modelsDir(), name)
+	if st, err := os.Lstat(dir); err != nil || !st.IsDir() {
+		n.opStatus("model.remove", name, "done", 0, 0, "")
+		return // gone already, or a symlink or file: never followed
+	}
+	if err := os.RemoveAll(dir); err != nil {
 		n.opStatus("model.remove", name, "failed", 0, 0, err.Error())
 		return
 	}
