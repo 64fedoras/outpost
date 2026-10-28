@@ -42,7 +42,11 @@ class H(BaseHTTPRequestHandler):
                     "subtasks": [{"id": "f1", "title": "Add --top N to the CLI", "files": ["wordcount/cli.py", "README.md"], "depends_on": [],
                                   "instructions": "Add a --top N option that prints only the N most frequent words."}]})
             else:
-                plan = dict(PLAN); plan["note"] = "I went with a small Python package and unittest, since you asked for standard tools."
+                plan = dict(PLAN)
+                if "build artifacts" in user:  # exercises the build step with one blob-sized file
+                    plan["build_command"] = "python3 -c \"import os;os.makedirs('dist',exist_ok=True);open('dist/app.bin','wb').write(bytes(range(256))*12000);open('dist/info.txt','w').write('v1')\""
+                    plan["artifacts"] = ["dist/*"]
+                plan["note"] = "I went with a small Python package and unittest, since you asked for standard tools."
                 text = json.dumps(plan)
         elif "tests fail" in system:
             # Fix: make core.py correct.

@@ -73,6 +73,9 @@ func (n *Node) peerGrant(pg PeerGrant) {
 // resolvePeerFile maps "<model>/<file>" to a file listed in that model's
 // manifest, so nothing else on the disk can be requested.
 func (n *Node) resolvePeerFile(id string) (string, bool) {
+	if strings.HasPrefix(id, "art/") {
+		return n.resolveArtifact(id)
+	}
 	name, file, ok := strings.Cut(id, "/")
 	if !ok || !validName(name) || !validName(file) {
 		return "", false
