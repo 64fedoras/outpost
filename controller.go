@@ -46,6 +46,7 @@ type NodeRec struct {
 	Hello       *Hello     `json:"hello,omitempty"`
 	LoadPrefs   *ModelLoad `json:"load_prefs,omitempty"` // last model loaded from the UI
 	Pool        []string   `json:"pool,omitempty"`       // helper nodes lending memory to this node's model
+	Bench       *NodeBench `json:"bench,omitempty"`      // measured speed of the loaded model
 }
 
 type nodeConn struct {
@@ -236,6 +237,7 @@ func runController(args []string) error {
 	mux.HandleFunc("DELETE /api/models/{name}", c.auth(c.handleDeleteModel))
 	mux.HandleFunc("POST /api/models/{name}/retry", c.auth(c.handleRetryModel))
 	mux.HandleFunc("POST /api/models/{name}/store", c.auth(c.handleStoreModel))
+	mux.HandleFunc("POST /api/models/{name}/tier", c.auth(c.handleSetModelTier))
 	mux.HandleFunc("POST /api/models/{name}/unstore", c.auth(c.handleUnstoreModel))
 	mux.HandleFunc("GET /api/hf/files", c.auth(c.handleHFFiles))
 	mux.HandleFunc("POST /api/runtime/check", c.auth(c.handleCheckRuntime))
@@ -248,6 +250,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/tasks/{id}", c.auth(c.handleGetTask))
 	mux.HandleFunc("DELETE /api/tasks/{id}", c.auth(c.handleDeleteTask))
 	mux.HandleFunc("POST /api/tasks/{id}/approve", c.auth(c.handleApproveTask))
+	mux.HandleFunc("POST /api/tasks/{id}/difficulty", c.auth(c.handleSetDifficulty))
 	mux.HandleFunc("POST /api/tasks/{id}/replan", c.auth(c.handleReplanTask))
 	mux.HandleFunc("POST /api/tasks/{id}/messages", c.auth(c.handleTaskMessage))
 	mux.HandleFunc("POST /api/tasks/{id}/answers", c.auth(c.handleTaskAnswers))
@@ -279,6 +282,7 @@ func runController(args []string) error {
 	go c.offlineSweeper()
 	go c.poolKeeper()
 	go c.backupLoop()
+	go c.benchLoop()
 
 	log.Printf("outpost controller %s listening on %s", Version, *listen)
 	log.Printf("web UI:           %s", c.advertise)
