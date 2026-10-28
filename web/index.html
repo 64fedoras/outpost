@@ -321,19 +321,26 @@
 </div>
 
 <div id="modal-files" class="overlay hidden">
-  <div class="modal">
+  <div class="modal wide">
     <h3>Project files</h3>
     <p class="hint" id="files-hint"></p>
-    <div class="filelist" id="tv-files"></div>
+    <div class="fb">
+      <div class="fb-tree" id="tv-files"></div>
+      <div class="fb-view">
+        <div class="fb-bar"><span class="mono" id="fb-title"></span><a id="fb-dl" class="hidden"><button class="small">Download file</button></a></div>
+        <pre class="out code" id="fb-body">Pick a file.</pre>
+      </div>
+    </div>
     <div class="modal-foot"><a id="files-dl"><button class="primary">Download .zip</button></a><button data-close>Close</button></div>
   </div>
 </div>
 
-<div id="modal-file" class="overlay hidden">
+<div id="modal-changes" class="overlay hidden">
   <div class="modal wide">
-    <h3 id="file-title" class="mono" style="font-size:14px"></h3>
-    <pre class="out" id="file-body" style="max-height:65vh"></pre>
-    <div class="modal-foot"><button data-close>Close</button></div>
+    <h3 id="ch-title">Changes</h3>
+    <p class="hint" id="ch-hint"></p>
+    <div id="ch-body" class="diffs"></div>
+    <div class="modal-foot"><button class="danger hidden" id="ch-undo" data-act="undo-round">Undo this request</button><button data-close>Close</button></div>
   </div>
 </div>
 

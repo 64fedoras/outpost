@@ -238,6 +238,8 @@ async function pollTask() {
   try { taskDetail = await api('/api/tasks/' + id); }
   catch (e) { setHTML('tv-title', esc(e.message)); return; }
   if (id !== pageArg) return;
+  await loadRounds();
+  if (id !== pageArg) return;
   renderTask(taskDetail);
   taskTimer = setTimeout(pollTask, WORKING.includes(taskDetail.status) ? 1500 : 4000);
 }
@@ -396,6 +398,7 @@ function resultCard(t, m) {
   return `<div class="card-msg result ${tone}"><div class="card-head">${tone === 'good' ? 'Finished' : 'Finished with failing tests'}</div><p>${esc(m.text)}</p>
     ${files ? `<div class="changed"><span class="hint">${m.round > 1 ? 'Changed in this request' : 'Files'}</span>${files}</div>` : ''}
     ${latest && t.test_output && t.test_status !== 'passed' ? `<details class="testout"><summary>Last test output</summary><pre class="out">${esc(t.test_output)}</pre></details>` : ''}
+    ${(taskRounds || []).some((r) => r.round === m.round) ? `<div class="card-actions"><button class="small" data-act="show-changes" data-round="${m.round}">Changes</button></div>` : ''}
     ${latest ? `<div class="card-actions"><a href="/api/tasks/${t.id}/download"><button class="primary">Download .zip</button></a><span class="hint">Want changes? Send a follow-up below; it builds on these files.</span></div>` : ''}</div>`;
 }
 
@@ -466,10 +469,91 @@ function renderActivity(t) {
   ev.scrollTop = ev.scrollHeight;
 }
 function renderFiles(t) {
-  const files = t.files || [];
+  const files = (t.files || []).slice().sort((x, y) => x.path.localeCompare(y.path));
   setHTML('files-hint', `${files.length} file${files.length === 1 ? '' : 's'} in the project so far. Click one to read it.`);
-  setHTML('tv-files', files.map((f) => `<a href="#" data-act="view-file" data-path="${esc(f.path)}">${esc(f.path)} <span class="muted">(${bytes(f.bytes)})</span></a>`).join(''));
+  const seen = new Set();
+  setHTML('tv-files', files.map((f) => {
+    const parts = f.path.split('/'), out = [];
+    parts.slice(0, -1).forEach((d, i) => { const k = parts.slice(0, i + 1).join('/'); if (!seen.has(k)) { seen.add(k); out.push(`<div class="fb-dir" style="padding-left:${i * 14}px">${esc(d)}/</div>`); } });
+    out.push(`<a href="#" data-act="view-file" data-path="${esc(f.path)}" style="padding-left:${(parts.length - 1) * 14}px">${esc(parts[parts.length - 1])} <span class="muted">(${bytes(f.bytes)})</span></a>`);
+    return out.join('');
+  }).join(''));
   $('files-dl').href = `/api/tasks/${t.id}/download`;
+}
+
+let taskRounds = [];
+async function loadRounds() {
+  if (!pageArg) return;
+  try { taskRounds = (await api(`/api/tasks/${pageArg}/rounds`)).rounds || []; } catch (e) { taskRounds = []; }
+}
+
+// A small keyword highlighter; it only colours, never changes the text.
+function highlight(code, path) {
+  const e = esc(code);
+  if (!/\.(go|js|ts|py|rs|c|h|cpp|java|sh|json|html|css|rb|php|cs|kt|swift)$/i.test(path)) return e;
+  return e.replace(/(&quot;(?:[^&\n]|&(?!quot;))*?&quot;|&#39;[^\n]*?&#39;|\/\/[^\n]*|#[^\n]*)|\b(func|function|def|class|return|if|else|elif|for|while|import|from|package|const|let|var|struct|type|fn|pub|use|true|false|null|nil|None|True|False|self|this|new|try|catch|except|throw|async|await)\b|\b(\d+(?:\.\d+)?)\b/g,
+    (m, str, kw, num) => str ? `<span class="hl-s">${m}</span>` : kw ? `<span class="hl-k">${m}</span>` : `<span class="hl-n">${m}</span>`);
+}
+function numbered(code, path) {
+  const lines = highlight(code, path).split('\n');
+  return lines.map((l, i) => `<span class="ln">${i + 1}</span>${l}`).join('\n');
+}
+
+// Line diff: trims the shared start and end, then a longest-common-subsequence table.
+function diffLines(a, b) {
+  const x = a === '' ? [] : a.split('\n'), y = b === '' ? [] : b.split('\n');
+  let s = 0;
+  while (s < x.length && s < y.length && x[s] === y[s]) s++;
+  let ex = x.length, ey = y.length;
+  while (ex > s && ey > s && x[ex - 1] === y[ey - 1]) { ex--; ey--; }
+  const mid = [], n = ex - s, m = ey - s;
+  if (n * m > 4e6) {
+    for (let i = s; i < ex; i++) mid.push(['-', x[i]]);
+    for (let j = s; j < ey; j++) mid.push(['+', y[j]]);
+  } else {
+    const L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+      L[i][j] = x[s + i] === y[s + j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (x[s + i] === y[s + j]) { mid.push([' ', x[s + i]]); i++; j++; }
+      else if (L[i + 1][j] >= L[i][j + 1]) mid.push(['-', x[s + i++]]);
+      else mid.push(['+', y[s + j++]]);
+    }
+    while (i < n) mid.push(['-', x[s + i++]]);
+    while (j < m) mid.push(['+', y[s + j++]]);
+  }
+  const all = [];
+  for (let i = 0; i < s; i++) all.push([' ', x[i]]);
+  all.push(...mid);
+  for (let i = ex; i < x.length; i++) all.push([' ', x[i]]);
+  return all;
+}
+// Unified view: changed lines with 3 lines of context.
+function unified(a, b) {
+  const d = diffLines(a, b), keep = d.map(() => false);
+  d.forEach((r, i) => { if (r[0] !== ' ') for (let k = Math.max(0, i - 3); k <= Math.min(d.length - 1, i + 3); k++) keep[k] = true; });
+  let out = '', gap = false;
+  d.forEach((r, i) => {
+    if (!keep[i]) { gap = true; return; }
+    if (gap && out) out += '<span class="d-gap">…</span>\n';
+    gap = false;
+    out += `<span class="d-${r[0] === '+' ? 'add' : r[0] === '-' ? 'del' : 'ctx'}">${r[0]} ${esc(r[1])}</span>\n`;
+  });
+  return out || '<span class="d-ctx">(no differences)</span>';
+}
+
+let changesRound = 0;
+async function showChanges(round) {
+  changesRound = round;
+  setHTML('ch-body', '<span class="muted">Loading…</span>'); $('ch-undo').classList.add('hidden');
+  $('ch-title').textContent = `Changes in request ${round}`; open('modal-changes');
+  try {
+    const r = await api(`/api/tasks/${pageArg}/changes?round=${round}`);
+    setHTML('ch-hint', `${r.files.length} file${r.files.length === 1 ? '' : 's'} changed. Shown against the files as they are now.`);
+    setHTML('ch-body', r.files.map((f) => `<details open><summary class="mono">${esc(f.path)} <span class="muted">${f.status === 'added' ? 'new file' : 'changed'}${f.gone ? ', since deleted' : ''}</span></summary><pre class="out code diff">${unified(f.before, f.after)}</pre></details>`).join(''));
+    $('ch-undo').classList.toggle('hidden', !r.undoable);
+  } catch (e) { setHTML('ch-body', `<span class="error-msg">${esc(e.message)}</span>`); }
 }
 
 async function taskAction(act, el) {
@@ -488,6 +572,8 @@ async function taskAction(act, el) {
       case 'task-resume': await post(`/api/tasks/${id}/resume`); toast('Resumed'); break;
       case 'task-delete': if (!confirm('Delete this task, its conversation and its files?')) return; await api(`/api/tasks/${id}`, { method: 'DELETE' }); location.hash = '#/new'; refresh(); return;
       case 'task-activity': if (taskDetail) { renderActivity(taskDetail); open('modal-activity'); } return;
+      case 'show-changes': showChanges(parseInt(el.dataset.round, 10)); return;
+      case 'undo-round': if (!confirm('Put the files back as they were before this request?')) return; await post(`/api/tasks/${id}/undo?round=${changesRound}`); close('modal-changes'); toast('Round undone'); break;
       case 'task-files': if (taskDetail) { renderFiles(taskDetail); open('modal-files'); } return;
     }
   } catch (e) { toast(e.message, 4000); }
@@ -496,11 +582,15 @@ async function taskAction(act, el) {
 }
 
 async function viewFile(path) {
-  $('file-title').textContent = path; $('file-body').textContent = 'Loading…'; open('modal-file');
+  if (taskDetail) renderFiles(taskDetail);
+  open('modal-files');
+  $('fb-title').textContent = path; $('fb-body').textContent = 'Loading…';
+  $('fb-dl').classList.remove('hidden');
+  $('fb-dl').href = `/api/tasks/${pageArg}/file?path=${encodeURIComponent(path)}&download=1`;
   try {
     const r = await fetch(`/api/tasks/${pageArg}/file?path=${encodeURIComponent(path)}`, { credentials: 'same-origin' });
-    $('file-body').textContent = await r.text();
-  } catch (e) { $('file-body').textContent = e.message; }
+    setHTML('fb-body', numbered(await r.text(), path));
+  } catch (e) { $('fb-body').textContent = e.message; }
 }
 
 // ---------- nodes ----------
