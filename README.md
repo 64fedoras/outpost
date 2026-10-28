@@ -64,7 +64,12 @@ and logs go to `C:\ProgramData\outpost\node\node.log`.
 when run by a service (session 0). If a GPU node shows no GPU after switching, reinstall with
 `--no-service`.
 
-**macOS:** run `./outpost-darwin-arm64 node --join <token>` in a terminal (no service or tray yet).
+**macOS:** run `chmod +x ./outpost-darwin-arm64 && ./outpost-darwin-arm64 install node --join <token>`
+(without sudo). This writes a per-user LaunchAgent (`~/Library/LaunchAgents/io.outpost.node.plist`) so the
+node starts when you log in and restarts if it stops, with the binary in `~/.outpost/outpost` and logs in
+`~/.outpost/node/node.log`. It is per-user, not a system daemon, so llama.cpp can use the GPU through Metal.
+`outpost uninstall node` removes it. There is no menu bar icon yet (it needs cgo and a Mac build).
+*Untested on a real Mac.* Running `outpost node --join <token>` in a terminal still works.
 
 ### Tray icon (desktop machines)
 
