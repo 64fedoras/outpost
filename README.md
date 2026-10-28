@@ -63,7 +63,7 @@ The one exception is GPU drivers: GPU nodes use llama.cpp's Vulkan build, which 
 Vulkan driver (`sudo apt install libvulkan1 mesa-vulkan-drivers`). The node card tells you if it is
 missing.
 
-**Cleaning up old models:** a node's card lists the models stored on its disk. **clean up…** opens a
+**Cleaning up old models:** a node's card lists the models stored on its disk, each with a **×** to delete just that one (after a confirmation; models in use have no ×, and the node refuses them anyway). **clean up…** opens a
 list with sizes, everything ticked except the model that is loaded; the button shows how much space
 the deletion frees. The node itself always keeps the model that is loaded, the one it reloads after a
 restart (autoload), and any model being copied or downloaded right now, whatever the request says.

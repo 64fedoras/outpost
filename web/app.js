@@ -1025,6 +1025,7 @@ function nodeCard(n) {
   const paused = n.online && hb && hb.paused;
   const loaded = hb && hb.loaded_model, ready = hb && hb.inference_ready;
   const stored = (h.models || []);
+  const inUse = new Set([loaded, n.load_prefs && n.load_prefs.name].filter(Boolean));
   const needsVulkan = h.os === 'linux' && (h.gpus || []).some((g) => g.vendor !== 'apple') && !h.vulkan_available;
   const modelBox = n.lending_to ? `<div class="model-box">
       <div class="row"><span class="dot ${hb && hb.rpc_endpoint ? 'on' : 'busy'}"></span><span class="grow">Lending memory to <b>${esc(n.lending_to)}</b>${hb && hb.rpc_endpoint ? '' : ' · starting'}</span></div>
@@ -1037,7 +1038,7 @@ function nodeCard(n) {
       ${n.online ? `<div class="sub u15">Unloads when idle: ${esc(n.idle_unload_effective || '1h')}${n.idle_unload ? '' : ' (default)'} · <a href="#" data-act="idle" data-id="${n.id}">change</a></div>` : ''}
       ${benchLine(n, loaded, ready)}
       ${n.pool_names && n.pool_names.length ? `<div class="sub wrap u15">Pooled with <b>${n.pool_names.map(esc).join(', ')}</b></div>` : ''}
-      <div class="sub u15">${h.runtime ? `llama.cpp ${esc(h.runtime.build)} · ${esc(h.runtime.variant)}` : 'llama.cpp installs on first load'}${stored.length ? ' · stored: ' + stored.map((m) => `${esc(m.name)} <a href="#" data-act="rm-node-model" data-id="${n.id}" data-name="${esc(m.name)}" title="Delete from this node">×</a>`).join(', ') + (n.online ? ` · <a href="#" data-act="clean" data-id="${n.id}">clean up…</a>` : '') : ''}</div>
+      <div class="sub u15">${h.runtime ? `llama.cpp ${esc(h.runtime.build)} · ${esc(h.runtime.variant)}` : 'llama.cpp installs on first load'}${stored.length ? ' · stored: ' + stored.map((m) => `${esc(m.name)}${inUse.has(m.name) ? '' : ` <a href="#" data-act="rm-node-model" data-id="${n.id}" data-name="${esc(m.name)}" title="Delete from this node">×</a>`}`).join(', ') + (n.online ? ` · <a href="#" data-act="clean" data-id="${n.id}">clean up…</a>` : '') : ''}</div>
       ${hb && hb.llama_error && !ready ? `<div class="note bad u15">${esc(hb.llama_error)}</div>` : ''}
       ${needsVulkan ? `<div class="note warn u15">GPU found, but no Vulkan driver, so models run on CPU. On the node: <code>sudo apt install libvulkan1 mesa-vulkan-drivers</code>, then load the model again.</div>` : ''}
       ${opView(n)}
