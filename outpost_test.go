@@ -45,7 +45,6 @@ func TestValidatePlan(t *testing.T) {
 		t.Error("./ prefix not normalized")
 	}
 	bad := []*Plan{
-		{Subtasks: []PlanSubtask{{ID: "t1", Files: []string{"a.py"}}, {ID: "t2", Files: []string{"a.py"}}}},                                                 // shared file
 		{Subtasks: []PlanSubtask{{ID: "t1", Files: []string{"../x"}}}},                                                                                      // escapes
 		{Subtasks: []PlanSubtask{{ID: "t1", Files: []string{"a"}, DependsOn: []string{"t2"}}, {ID: "t2", Files: []string{"b"}, DependsOn: []string{"t1"}}}}, // cycle
 		{Subtasks: []PlanSubtask{{ID: "t1", Files: []string{"a"}, DependsOn: []string{"nope"}}}},                                                            // unknown dep
@@ -55,6 +54,37 @@ func TestValidatePlan(t *testing.T) {
 		if validatePlan(p) == nil {
 			t.Errorf("bad plan %d accepted", i)
 		}
+	}
+}
+
+// A planner that gives one file to two subtasks gets them merged, not rejected.
+func TestValidatePlanMergesSharedFile(t *testing.T) {
+	p := &Plan{Subtasks: []PlanSubtask{
+		{ID: "t1", Title: "Markup", Files: []string{"index.html"}, Instructions: "page"},
+		{ID: "t2", Title: "Script", Files: []string{"./index.html", "notes.md"}, Instructions: "dice logic"},
+		{ID: "t3", Files: []string{"README.md"}, DependsOn: []string{"t2"}},
+	}}
+	mergeSharedFiles(p)
+	if err := validatePlan(p); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Subtasks) != 2 {
+		t.Fatalf("want 2 subtasks, got %d", len(p.Subtasks))
+	}
+	a := p.Subtasks[0]
+	if a.ID != "t1" || len(a.Files) != 2 || !strings.Contains(a.Instructions, "dice logic") {
+		t.Errorf("merged subtask: %+v", a)
+	}
+	if d := p.Subtasks[1].DependsOn; len(d) != 1 || d[0] != "t1" {
+		t.Errorf("dependency not redirected: %v", d)
+	}
+	raw := &Plan{Subtasks: []PlanSubtask{{ID: "t1", Files: []string{"a.py"}}, {ID: "t2", Files: []string{"a.py"}}}}
+	if validatePlan(raw) == nil {
+		t.Error("validatePlan itself must still reject a shared file (user-edited plans)")
+	}
+	dup := &Plan{Subtasks: []PlanSubtask{{ID: "t1", Files: []string{"a", "a"}}}}
+	if err := validatePlan(dup); err != nil {
+		t.Errorf("same file twice in one subtask: %v", err)
 	}
 }
 

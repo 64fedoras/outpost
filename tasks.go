@@ -1177,7 +1177,7 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 	fetched := false
 	var plan *Plan
 	var lastErr error
-	for attempt := 0; attempt < 2 && plan == nil; attempt++ {
+	for attempt := 0; attempt < 3 && plan == nil; attempt++ {
 		req := llmRequest{System: plannerSystem + c.toolsPrompt(), User: user, MaxTokens: 8000, Temperature: 0.2, Label: "Planning", WebSearch: webSearch, Images: t.roundImages()}
 		if indexed {
 			req.System += plannerIndexHelp
@@ -1238,6 +1238,7 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 			lastErr = fmt.Errorf("not valid JSON (%v)", err)
 			continue
 		}
+		mergeSharedFiles(p)
 		if err := validatePlan(p); err != nil {
 			lastErr = err
 			continue
@@ -1311,6 +1312,75 @@ func cleanQuestions(in []Question) []Question {
 	return out
 }
 
+// mergeSharedFiles folds subtasks that claim the same file into the first one
+// that claims it, so two workers never write one file at once. Small models do
+// this often (for example an index.html split into "markup" and "script").
+// The merged subtask keeps every file and instruction, and anything that
+// depended on a removed subtask now depends on the survivor.
+func mergeSharedFiles(p *Plan) {
+	norm := func(f string) string { return strings.TrimPrefix(strings.TrimSpace(f), "./") }
+	for {
+		owner := map[string]int{}
+		from, into := -1, -1
+		for i, s := range p.Subtasks {
+			for _, f := range s.Files {
+				f = norm(f)
+				if o, ok := owner[f]; ok && o != i {
+					from, into = i, o
+					break
+				}
+				owner[f] = i
+			}
+			if from >= 0 {
+				break
+			}
+		}
+		if from < 0 {
+			return
+		}
+		dst, src := &p.Subtasks[into], p.Subtasks[from]
+		have := map[string]bool{}
+		for _, f := range dst.Files {
+			have[norm(f)] = true
+		}
+		for _, f := range src.Files {
+			if !have[norm(f)] {
+				dst.Files = append(dst.Files, f)
+				have[norm(f)] = true
+			}
+		}
+		if dst.Title != "" && src.Title != "" {
+			dst.Title += " + " + src.Title
+		}
+		if si := strings.TrimSpace(src.Instructions); si != "" {
+			dst.Instructions = strings.TrimSpace(dst.Instructions + "\n\n" + si)
+		}
+		if src.Kind == "" {
+			dst.Kind = ""
+		}
+		if dst.Difficulty != src.Difficulty && src.Difficulty == "hard" {
+			dst.Difficulty = "hard"
+		}
+		dst.DependsOn = append(dst.DependsOn, src.DependsOn...)
+		p.Subtasks = append(p.Subtasks[:from], p.Subtasks[from+1:]...)
+		for i := range p.Subtasks {
+			s := &p.Subtasks[i]
+			seen := map[string]bool{}
+			var deps []string
+			for _, d := range s.DependsOn {
+				if d == src.ID {
+					d = p.Subtasks[into].ID
+				}
+				if d != s.ID && !seen[d] {
+					seen[d] = true
+					deps = append(deps, d)
+				}
+			}
+			s.DependsOn = deps
+		}
+	}
+}
+
 func validatePlan(p *Plan) error {
 	if len(p.Subtasks) == 0 {
 		return errors.New("the plan has no subtasks")
@@ -1343,6 +1413,9 @@ func validatePlan(p *Plan) error {
 				return fmt.Errorf("subtask %s has a bad file path %q", s.ID, f)
 			}
 			if o, ok := owner[f]; ok {
+				if o == s.ID {
+					continue // listed twice by the same subtask
+				}
 				return fmt.Errorf("file %s is assigned to both %s and %s", f, o, s.ID)
 			}
 			owner[f] = s.ID
