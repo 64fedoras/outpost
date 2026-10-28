@@ -215,6 +215,18 @@
           <label for="set-hf">Access token <span id="set-hf-state"></span></label>
           <div class="btns" style="flex-wrap:nowrap"><input id="set-hf" type="password" placeholder="hf_…" autocomplete="off"><button id="set-hf-save">Save</button><button id="set-hf-clear" class="danger">Remove</button></div>
         </div>
+        <div class="section-head"><h2>Notifications</h2></div>
+        <div class="card">
+          <p class="hint">Get told when a task needs you or finishes. Every notification links to the task.</p>
+          <label>Events</label>
+          <div id="nf-events"></div>
+          <label class="check" style="margin-top:10px"><input type="checkbox" id="nf-browser"> Browser notifications while an Outpost tab is open <span class="muted" id="nf-browser-state"></span></label>
+          <label for="nf-ntfy">ntfy topic URL <span class="muted">· e.g. https://ntfy.sh/my-topic, or your own ntfy server</span></label><input id="nf-ntfy" placeholder="https://ntfy.sh/my-topic" autocomplete="off">
+          <label for="nf-ntfy-token">ntfy access token <span class="muted" id="nf-ntfy-token-state"></span></label><input id="nf-ntfy-token" type="password" autocomplete="off" placeholder="only for protected topics; blank keeps the saved one">
+          <label for="nf-webhook">Webhook URL <span class="muted">· JSON POST: Home Assistant, Discord, anything that accepts one</span></label><input id="nf-webhook" placeholder="https://…" autocomplete="off">
+          <label for="nf-public">Address used in links <span class="muted">· blank = the address you are using now</span></label><input id="nf-public" placeholder="https://192.0.2.10:8443" autocomplete="off">
+          <div class="modal-foot"><button id="nf-test">Send test</button><button class="primary" id="nf-save">Save</button></div>
+        </div>
         <div class="section-head"><h2>Admin password</h2></div>
         <div class="card">
           <form id="pw-form">
