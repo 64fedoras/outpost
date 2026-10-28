@@ -295,6 +295,12 @@ private key is stored encrypted with `secret.key`. With a `github.com` URL and a
 access, *open PR* also opens a pull request from that branch to the repository's default branch.
 Nothing is pulled after the first clone, so edits made on the remote afterwards are not seen.
 
+**After a restart,** a task that was running on a local-model planner resumes by itself once a node
+with a loaded model reconnects (it waits up to 10 minutes; otherwise press Resume). Finished
+subtasks are kept. Tasks planned with Claude or OpenRouter, and tasks stopped at the spending cap,
+always wait for your Resume click so a restart never spends money. Turn this off under
+Settings → Defaults.
+
 ## Nodes working together
 
 There are two ways for nodes to share one task.
