@@ -51,12 +51,12 @@ func TestTrayIcons(t *testing.T) {
 
 func TestTrayAutostartFiles(t *testing.T) {
 	home := t.TempDir()
-	u := &user.User{Username: "sysmaint", HomeDir: home}
-	if err := installTrayAutostart(u, os.Getuid(), os.Getgid(), "/home/sysmaint/.outpost/node"); err != nil {
+	u := &user.User{Username: "testuser", HomeDir: home}
+	if err := installTrayAutostart(u, os.Getuid(), os.Getgid(), "/home/testuser/.outpost/node"); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(home, ".config/autostart/outpost-tray.desktop"))
-	if err != nil || !bytes.Contains(b, []byte("Exec=/usr/local/bin/outpost tray --data /home/sysmaint/.outpost/node")) {
+	if err != nil || !bytes.Contains(b, []byte("Exec=/usr/local/bin/outpost tray --data /home/testuser/.outpost/node")) {
 		t.Fatalf("autostart entry: %v\n%s", err, b)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".local/share/icons/hicolor/64x64/apps/outpost.png")); err != nil {
