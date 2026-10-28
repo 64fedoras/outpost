@@ -219,6 +219,13 @@
           <label class="check"><input type="checkbox" id="set-webprivate"> Allow pasted links to reach internal addresses (loopback, LAN). Off blocks them.</label>
           <div class="modal-foot"><button class="primary" id="set-save">Save defaults</button></div>
         </div>
+        <div class="section-head"><h2>Memory pooling</h2></div>
+        <div class="card">
+          <p class="hint"><b>Off by default. Trusted home or lab networks only.</b> Pooling lets nodes lend RAM and VRAM to a model on another node through llama.cpp's RPC mode. That traffic (model data and activations) crosses the LAN <b>unencrypted</b>, and the lending node has <b>no authentication</b> beyond allowing only the main node's IP address, which a hostile device on the same network can spoof. A lending node opens its pool port only while a pool is running and closes it when the pool ends. Turning pooling off dissolves every pool and unloads the pooled models.</p>
+          <div id="set-pooling-notice" class="note warn hidden">A pool was already set up on this controller, so pooling was left switched on when you upgraded. Switch it off here if you no longer need it.</div>
+          <label class="check"><input type="checkbox" id="set-pooling"> Allow memory pooling (adds <em>Pool memory from other nodes</em> to Load model)</label>
+          <div class="modal-foot"><button class="primary" id="set-pooling-save">Save</button></div>
+        </div>
         <div class="section-head"><h2>Project instructions</h2></div>
         <div class="card">
           <p class="hint">Standing rules (like <code>CLAUDE.md</code>) put at the top of every planner, worker, reviewer and fix prompt of tasks you create from now on. A file named <code>OUTPOST.md</code> at the root of a task's files is added too. Keep it short; it is cut at 8,000 characters.</p>
@@ -331,8 +338,8 @@
       <div><label for="load-ctx">Context size (tokens)</label><input id="load-ctx" type="number" min="512" step="1024"></div>
       <div><label for="load-ngl">GPU layers</label><select id="load-ngl"><option value="">Automatic (fit to VRAM)</option><option value="all">All on GPU</option><option value="0">CPU only</option></select></div>
     </div>
-    <details class="u6" id="load-pool-wrap"><summary class="hint">Pool memory from other nodes (for models too big for this one)</summary>
-      <p class="hint u8">Helpers lend their RAM and VRAM over your network with llama.cpp's RPC mode; this node runs the model. Helpers stop their own model while lending, and only this node's address can connect to them. Expect slower generation over a home network: best for models that would not fit otherwise.</p>
+    <details id="load-pool-wrap" class="hidden u6"><summary class="hint">Pool memory from other nodes (for models too big for this one)</summary>
+      <p class="hint u8">Helpers lend their RAM and VRAM over your network with llama.cpp's RPC mode; this node runs the model. Helpers stop their own model while lending, and only this node's address can connect to them. Expect slower generation over a home network: best for models that would not fit otherwise. Trusted networks only: pooling traffic is neither encrypted nor authenticated beyond that IP check.</p>
       <div id="load-pool"></div>
     </details>
     <details class="u6"><summary class="hint">Advanced</summary>

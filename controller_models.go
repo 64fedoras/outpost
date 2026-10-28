@@ -629,6 +629,10 @@ func (c *Controller) handleLoadModel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 409, map[string]string{"error": "this node is already setting up a model"})
 		return
 	}
+	if len(req.Pool) > 0 && !c.poolingOn() {
+		writeJSON(w, 409, map[string]string{"error": "memory pooling is off; enable it under Settings first (trusted networks only)"})
+		return
+	}
 	if err := c.checkPool(id, req.Pool); err != nil {
 		writeJSON(w, 409, map[string]string{"error": err.Error()})
 		return
@@ -690,6 +694,9 @@ func (c *Controller) loadPipeline(ctx context.Context, id string, ml ModelLoad) 
 	}
 	// 1b. helpers lend their memory
 	if len(pool) > 0 {
+		if !c.poolingOn() {
+			return errors.New("memory pooling is off; enable it under Settings first")
+		}
 		endpoints, err := c.startHelpers(ctx, id, pool, build)
 		if err != nil {
 			return err
@@ -1156,6 +1163,10 @@ func (c *Controller) poolKeeper() {
 		}
 		var todo []job
 		c.mu.Lock()
+		if !c.poolingOnLocked() {
+			c.mu.Unlock()
+			continue
+		}
 		for id, n := range c.nodes {
 			if len(n.Pool) == 0 || n.LoadPrefs == nil || c.pipelines[id] != nil || c.conns[id] == nil {
 				continue
