@@ -123,6 +123,7 @@ func runNode(args []string) error {
 	log.Printf("outpost node %s starting; node id %s; work root %s (startup sweep freed %d bytes)", Version, n.cfg.NodeID, n.workRoot, freed)
 	go n.workspaceJanitor()
 	go n.autoload()
+	go n.llama.idleLoop(context.Background())
 	go n.autostartRPC()
 	n.startPeerServer()
 
@@ -432,6 +433,7 @@ func (n *Node) applySettings(s NodeSettings) {
 	if s.HeartbeatS > 0 {
 		n.hbSeconds = s.HeartbeatS
 	}
+	n.llama.setIdleAfter(time.Duration(s.IdleUnloadS) * time.Second)
 }
 
 func (n *Node) runningIDs() []string {
@@ -496,7 +498,9 @@ func autoMaxJobs(hw Hardware) int {
 // changes (loading, ready, stopped) without waiting for the next interval.
 func (n *Node) pushHeartbeat() { _ = n.sendHeartbeat() }
 
-func (n *Node) sendHeartbeat() error {
+func (n *Node) sendHeartbeat() error { return n.send("node.heartbeat", n.buildHeartbeat()) }
+
+func (n *Node) buildHeartbeat() Heartbeat {
 	n.mu.Lock()
 	wsCount := len(n.wsLastUsed)
 	n.mu.Unlock()
@@ -504,9 +508,13 @@ func (n *Node) sendHeartbeat() error {
 	hb.RunningJobs = n.runningIDs()
 	hb.Workspaces = wsCount
 	hb.LoadedModel, hb.InferenceRdy, hb.InferenceBusy, hb.LlamaError = n.llama.status()
+	if cold := n.llama.coldModel(); cold != "" {
+		// Unloaded for idleness: still this node's model, available, but cold.
+		hb.LoadedModel, hb.InferenceRdy, hb.IdleUnloaded = cold, true, true
+	}
 	hb.RPCEndpoint = n.rpc.current()
 	hb.Paused = n.isPaused()
-	return n.send("node.heartbeat", hb)
+	return hb
 }
 
 func (n *Node) heartbeatLoop(ctx context.Context) {

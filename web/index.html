@@ -235,6 +235,13 @@
           <label class="check"><input type="checkbox" id="set-ghauto"> Install them automatically: idle nodes update first, then the controller once no task is working. Off means you click Update in the Updates tab. After a rollback, the version you left is skipped.</label>
           <div class="modal-foot"><button class="primary" id="set-ghupd-save">Save</button></div>
         </div>
+        <div class="section-head"><h2>Idle unload</h2></div>
+        <div class="card">
+          <p class="hint">A node stops its model after it has served nothing for this long, to give back its RAM or VRAM. The next request loads it again, which takes as long as a normal load. Pooled models are never unloaded. Type a time such as <code>30s</code>, <code>5m</code>, <code>1hr</code> or <code>2d</code>, or <code>0</code> for never. Empty means 1 hour. Each node can override this on its card.</p>
+          <input id="set-idle" type="text" placeholder="1hr" autocomplete="off" spellcheck="false">
+          <div class="hint" id="set-idle-now"></div>
+          <div class="modal-foot"><button class="primary" id="set-idle-save">Save</button></div>
+        </div>
         <div class="section-head"><h2>Memory pooling</h2></div>
         <div class="card">
           <p class="hint"><b>Off by default. Trusted home or lab networks only.</b> Pooling lets nodes lend RAM and VRAM to a model on another node through llama.cpp's RPC mode. That traffic (model data and activations) crosses the LAN <b>unencrypted</b>, and the lending node has <b>no authentication</b> beyond allowing only the main node's IP address, which a hostile device on the same network can spoof. A lending node opens its pool port only while a pool is running and closes it when the pool ends. Turning pooling off dissolves every pool and unloads the pooled models.</p>

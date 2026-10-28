@@ -40,6 +40,7 @@ type Settings struct {
 	GitHubRepo        string         `json:"github_repo,omitempty"`         // owner/repo trusted for updates; empty = ghDefaultRepo
 	GitHubTokenEnc    string         `json:"github_token_enc,omitempty"`    // optional read-only token for a private repo; controller only
 	GitHubHoldVersion string         `json:"github_hold_version,omitempty"` // set by a rollback: auto-install skips this version and older
+	IdleUnload        string         `json:"idle_unload,omitempty"`         // default idle unload wait for nodes, as typed ("1hr", "30m", "0" = never); empty = 1 hour
 	Notify            NotifySettings `json:"notify"`
 }
 
@@ -161,6 +162,7 @@ func (c *Controller) settingsView() map[string]any {
 		"pooling_enabled": c.poolingOnLocked(), "pooling_notice": c.settings.PoolingNotice,
 		"github_repo": c.ghRepoLocked(), "github_repo_default": ghDefaultRepo, "github_token_set": c.settings.GitHubTokenEnc != "",
 		"github_updates": !c.settings.GitHubUpdatesOff, "github_auto_install": c.settings.GitHubAutoInstall,
+		"idle_unload": c.settings.IdleUnload, "idle_unload_effective": formatIdleDuration(idleUnloadFor(c.settings.IdleUnload, "")),
 		"instructions": c.settings.Instructions, "backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
 	for k, x := range c.notifyView() {
@@ -201,10 +203,17 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		GitHubAuto      *bool   `json:"github_auto_install"`
 		GitHubRepo      *string `json:"github_repo"`
 		GitHubToken     *string `json:"github_token"` // "" removes
+		IdleUnload      *string `json:"idle_unload"`  // "" = default (1 hour)
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
 		return
+	}
+	if req.IdleUnload != nil && strings.TrimSpace(*req.IdleUnload) != "" {
+		if _, err := parseIdleDuration(*req.IdleUnload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	var akEnc, hfEnc, orEnc *string
 	for _, s := range []struct {
@@ -350,6 +359,11 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	if req.GitHubAuto != nil {
 		c.settings.GitHubAutoInstall = *req.GitHubAuto
 	}
+	idleChanged := false
+	if req.IdleUnload != nil {
+		c.settings.IdleUnload = strings.TrimSpace(*req.IdleUnload)
+		idleChanged = true
+	}
 	poolingOff := false
 	if req.PoolingEnabled != nil {
 		poolingOff = c.poolingOnLocked() && !*req.PoolingEnabled
@@ -360,6 +374,9 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	c.mu.Unlock()
 	if poolingOff {
 		c.disablePooling()
+	}
+	if idleChanged && err == nil {
+		c.pushNodeSettings()
 	}
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})

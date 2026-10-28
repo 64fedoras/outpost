@@ -1028,9 +1028,10 @@ function nodeCard(n) {
       <div class="sub wrap u15">Its RAM${(h.gpus || []).length ? ' and VRAM' : ''} hold part of ${esc(n.lending_to)}'s model. Unload that model to get this node back.</div>
       ${opView(n)}
     </div>` : `<div class="model-box">
-      <div class="row"><span class="dot ${ready ? 'on' : loaded ? 'busy' : ''}"></span><span class="grow">${loaded ? `<b>${esc(loaded)}</b> · ${ready ? (hb.inference_busy ? 'working' : 'ready') : 'starting'}` : '<span class="muted">No model loaded</span>'}</span>
+      <div class="row"><span class="dot ${ready ? 'on' : loaded ? 'busy' : ''}"></span><span class="grow">${loaded ? `<b>${esc(loaded)}</b> · ${hb.idle_unloaded ? '<span title="Stopped after sitting idle to free memory. It loads again on the next request.">idle, unloaded</span>' : ready ? (hb.inference_busy ? 'working' : 'ready') : 'starting'}` : '<span class="muted">No model loaded</span>'}</span>
         ${n.online ? `<button class="small" data-act="load" data-id="${n.id}">${loaded ? 'Change' : 'Load model'}…</button>${loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : ''}</div>
       ${recRow(n, loaded)}
+      ${n.online ? `<div class="sub u15">Unloads when idle: ${esc(n.idle_unload_effective || '1h')}${n.idle_unload ? '' : ' (default)'} · <a href="#" data-act="idle" data-id="${n.id}">change</a></div>` : ''}
       ${benchLine(n, loaded, ready)}
       ${n.pool_names && n.pool_names.length ? `<div class="sub wrap u15">Pooled with <b>${n.pool_names.map(esc).join(', ')}</b></div>` : ''}
       <div class="sub u15">${h.runtime ? `llama.cpp ${esc(h.runtime.build)} · ${esc(h.runtime.variant)}` : 'llama.cpp installs on first load'}${stored.length ? ' · stored: ' + stored.map((m) => `${esc(m.name)} <a href="#" data-act="rm-node-model" data-id="${n.id}" data-name="${esc(m.name)}" title="Delete from this node">×</a>`).join(', ') : ''}</div>
@@ -1079,6 +1080,13 @@ async function renameNode(id) {
   const name = prompt('Node name', nodeName(n));
   if (name === null) return;
   await post(`/api/nodes/${id}/settings`, { name }).catch((e) => toast(e.message));
+  refresh();
+}
+async function setNodeIdle(id) {
+  const n = nodeById(id);
+  const v = prompt('Unload this node\'s model after it has been idle for (30s, 5m, 1hr, 2d; 0 = never; leave empty for the default in Settings)', n.idle_unload || '');
+  if (v === null) return;
+  try { await post(`/api/nodes/${id}/settings`, { idle_unload: v }); toast(v.trim() ? 'Saved' : 'Using the default'); } catch (e) { toast(e.message); }
   refresh();
 }
 async function removeNode(id) {
@@ -1426,6 +1434,8 @@ async function loadSettings() {
   $('set-ghtoken').value = ''; $('set-ghtest-out').textContent = '';
   $('set-ghtoken-state').innerHTML = settings.github_token_set ? '<span class="st-done">· token set</span>' : '<span class="muted">· not set</span>';
   $('set-ghupd').checked = settings.github_updates !== false; $('set-ghauto').checked = !!settings.github_auto_install;
+  $('set-idle').value = settings.idle_unload || '';
+  $('set-idle-now').textContent = settings.idle_unload_effective ? 'Nodes unload after: ' + settings.idle_unload_effective + (settings.idle_unload ? '' : ' (default)') : '';
   $('set-pooling').checked = !!settings.pooling_enabled;
   $('set-pooling-notice').classList.toggle('hidden', !settings.pooling_notice);
   $('set-agent').checked = settings.agent_mode !== false; $('set-websearch').checked = !!settings.web_search; $('set-webprivate').checked = !!settings.web_allow_private;
@@ -1557,6 +1567,7 @@ $('set-ghtest').onclick = async () => {
     out.className = 'st-done'; out.textContent = r.message;
   } catch (e) { out.className = 'error-msg'; out.textContent = e.message; }
 };
+$('set-idle-save').onclick = () => saveSettings({ idle_unload: $('set-idle').value.trim() }, 'Idle unload saved');
 $('set-pooling-save').onclick = () => saveSettings({ pooling_enabled: $('set-pooling').checked }, $('set-pooling').checked ? 'Pooling enabled' : 'Pooling off; pools dissolved');
 $('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, agent_mode: $('set-agent').checked, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked, auto_resume: $('set-autoresume').checked, best_of_n: $('set-bestofn').value }, 'Defaults saved');
 $('pw-form').onsubmit = async (e) => {
@@ -1731,6 +1742,7 @@ document.addEventListener('click', async (e) => {
       case 'unload': await post(`/api/nodes/${id}/unload`); toast('Unloading'); break;
       case 'rm-node-model': if (confirm(`Delete ${el.dataset.name} from this node's disk?`)) { await api(`/api/nodes/${id}/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); toast('Deleting'); } break;
       case 'rename': renameNode(id); break;
+      case 'idle': setNodeIdle(id); break;
       case 'restart': {
         const n = nodeById(id);
         const jobs = n.running_jobs ? ` ${n.running_jobs} running job(s) will be cancelled.` : '';

@@ -139,6 +139,7 @@ type NodeRollback struct {
 type NodeSettings struct {
 	HeartbeatS  int  `json:"heartbeat_s"`
 	ExecEnabled bool `json:"exec_enabled"`
+	IdleUnloadS int  `json:"idle_unload_s"` // unload the model after this many idle seconds; 0 = never
 }
 
 type Welcome struct {
@@ -162,8 +163,9 @@ type Heartbeat struct {
 	InferenceBusy int      `json:"inference_busy"`
 	ModelsBytes   int64    `json:"models_bytes"`
 	LlamaError    string   `json:"llama_error,omitempty"`
-	RPCEndpoint   string   `json:"rpc_endpoint,omitempty"` // set while lending memory
-	Paused        bool     `json:"paused,omitempty"`       // no new work (set from the node's tray icon)
+	RPCEndpoint   string   `json:"rpc_endpoint,omitempty"`  // set while lending memory
+	Paused        bool     `json:"paused,omitempty"`        // no new work (set from the node's tray icon)
+	IdleUnloaded  bool     `json:"idle_unloaded,omitempty"` // LoadedModel was stopped for idleness; the next request loads it again
 }
 
 // ---- jobs ----
