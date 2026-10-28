@@ -31,6 +31,7 @@ All rows were approved by the owner on 2026-10-28 and built. **Nothing in 0.8.0 
 | 21 | Project instructions (OUTPOST.md) | 0.8 | S | Built in 0.8.0 |
 | 22 | Web lookups | 0.8 | S | Built in 0.8.0 |
 | 23 | Publish a build to the Updates tab | 0.8 | S | Built in 0.8.0 |
+| 24 | Tunnel pooling traffic over authenticated TLS | later | L | Proposed (design note only), not approved |
 
 Sizes: S is about a session of work, M two or three, L more than three. Each release ends with the build, test and zip routine described in `CLAUDE.md`.
 
@@ -278,6 +279,31 @@ When a task's artifacts include `outpost-<platform>` binaries, the result card o
 
 ---
 
+## Security follow-ups
+
+### 24. Tunnel pooling (RPC) traffic over authenticated TLS
+
+**Today:** pooling is opt-in (Settings, off by default) and documented as trusted-LAN only. A helper runs llama.cpp's `ggml-rpc-server` on loopback behind a gatekeeper on port 50052 that checks the source IP. There is no authentication and no encryption on that port. This was the response to the security audit finding (Mark, 2026-10-28: document as trusted-LAN-only and off by default; long term, tunnel it).
+
+**Proposal (not approved, not built):** remove the raw RPC port. Carry the RPC byte stream inside a connection that is already authenticated and encrypted, so a helper listens on loopback only and nothing else on the network can reach it.
+
+Two options:
+
+1. **Relay through the controller.** The main node's llama-server connects to a loopback port on the main node (a local forwarder); the forwarder opens a stream over the node's existing TLS WebSocket to the controller, which pipes it to the helper's WebSocket, where the helper's forwarder connects to `ggml-rpc-server` on loopback. Nothing new to configure, uses the pinned certificate and node tokens already there. Every byte takes two hops through the controller.
+2. **Direct node-to-node tunnel.** Reuse the model-transfer approach from row 13 (`transfer/`: own self-signed certificate pinned by the peer, one-time token issued by the controller) for a long-lived TLS stream between main and helper, with the forwarders as above. Better latency and no load on the controller, but it needs the transfer port open between nodes (the installer already opens it) and a streaming mode on that server.
+
+**Open questions**
+
+- **Latency:** every generated token makes many small RPC round trips. Does an extra TLS hop (and for option 1 a second hop through the controller) make a pooled model unusably slow compared with the plain LAN socket? Measure on the real cluster first.
+- **Throughput:** loading weights pushes gigabytes through the stream; a WebSocket with message framing and a busy controller VM may cap at well below gigabit. Does the main node still send the weights, or should the helper fetch its share over the peer transfer path?
+- **Which node relays:** the controller (simple, single point, maybe slow) or the nodes themselves (fast, needs the peer port reachable)? Nodes behind NAT or on different networks only work with the controller relay.
+- **Remaining exposure:** a compromised helper or main node still gets full RPC power over the other; the tunnel fixes the network attacker, not a rogue member.
+- **llama.cpp changes:** whether upstream adds RPC authentication or TLS makes the forwarders unnecessary.
+
+When this ships, the gatekeeper and its port go away and the "trusted LAN only" wording can be relaxed.
+
+---
+
 ## Testing, risks and open questions
 
 Every feature gets Go unit tests and an end-to-end run with the mock Claude and fake llama-server (`testing/`), plus Playwright screenshots for UI work. The Windows and macOS parts are where testing falls short.
@@ -289,6 +315,7 @@ Every feature gets Go unit tests and an end-to-end run with the mock Claude and 
 | Live output, notifications | Fake llama-server that streams; local ntfy and webhook receivers | Phone pushes from the real ntfy topic |
 | Git export | Local bare repo as the remote | Push to the real remote |
 | macOS | Build only | A Mac to run it on |
+| Memory pooling, opt-in setting | Go tests (default off, setting gates load, pools dissolved on disable, gatekeeper closes); e2e rig | Real multi-node pools with a real ggml-rpc-server; the upgrade path on a real controller that already had a pool |
 | Peer model transfers | Three local nodes, including a peer serving a tampered file, one presenting the wrong certificate, and a connection dropped mid-chunk | Real transfer speeds between the machines |
 | Outpost in Outpost | A task on a copy of the Outpost repo that builds all five binaries and screenshots the UI, with mock models | A real round with Claude and the big node, to judge quality |
 

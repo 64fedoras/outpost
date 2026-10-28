@@ -381,7 +381,12 @@ makes hard subtasks a little slower. Choose **Off**, **Hard subtasks** (default)
 under **Best of N on local nodes** in Settings. Tested against stub nodes only, not on a real cluster; the syntax check
 needs an exec-enabled node with the language installed and is skipped otherwise.
 
-### Pooling memory (experimental)
+### Pooling memory (experimental, off by default, trusted LANs only)
+
+Pooling is **off by default**. Read the security model below before switching it on; it is meant for a
+home or lab network where you trust every device. To enable it, open **Settings > Memory pooling**,
+tick **Allow memory pooling** and save. Only then does **Pool memory from other nodes** appear in
+**Load model**.
 
 For a model too big for any single machine, open **Load model** on the node that should run it
 and pick helpers under **Pool memory from other nodes**. The size check counts the whole pool's
@@ -389,12 +394,28 @@ RAM and VRAM. Helpers lend memory through llama.cpp's RPC mode:
 
 - Helpers stop their own model while lending. Their card says **Lending memory to X**.
 - Every machine in the pool runs the same llama.cpp build; Outpost installs it.
-- Security: llama.cpp's RPC server has no authentication, so Outpost binds it to `127.0.0.1` and
-  puts a gatekeeper in front (port 50052) that accepts connections only from the main node's
-  address. Refused connections are logged.
+- A helper listens on its pool port (50052 or the next free one) **only while a pool is running**, and
+  closes it when the pool ends. With pooling off, no node starts the RPC server or opens that port, and
+  the installer does not open it in any firewall (only the model-transfer port is opened).
 - Pools come back on their own: if a helper or the main node restarts or reboots, the controller
   loads the pooled model again once everyone is online (usually within 15 seconds).
-- **Unload** on the main node ends the pool and frees the helpers.
+- **Unload** on the main node ends the pool and frees the helpers. Switching pooling off in Settings
+  dissolves every pool, unloads the pooled models and tells all nodes to stop lending.
+- **Upgrading:** if a pool was already configured when you upgraded, pooling is left on so it keeps
+  working, and Settings shows a notice. Every other install starts with pooling off.
+
+**Security model for pooling.** llama.cpp's RPC protocol has no authentication and no encryption.
+Outpost keeps the RPC server on `127.0.0.1` and puts a small gatekeeper in front of it that accepts
+connections only from the main node's IP address and logs every refused connection. That is all the
+protection there is:
+
+- The allow-list is a source-IP check. On a hostile network, a device can spoof or take over that address.
+- Everything that crosses the pool (model weights and activations) travels in clear text on your LAN.
+- Anyone who gets past the check can make the helper allocate memory and run tensor operations.
+
+So use pooling only on a network you trust, never across the internet or an untrusted Wi-Fi, and keep
+the pool port closed to everything else with your firewall. A tunnel over the nodes' authenticated TLS
+connection is planned (roadmap row 24) but not built.
 
 Expect slower generation than a single machine. Every token crosses your network, so wired
 gigabit or faster is best. Use it for models that would not fit otherwise, not for speed.
