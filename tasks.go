@@ -118,6 +118,8 @@ type Task struct {
 	dir    string
 	cancel context.CancelFunc
 	resume chan struct{}
+
+	autoResume bool // interrupted by a restart and eligible to resume on its own (local planner only)
 }
 
 func (c *Controller) tasksDir() string { return filepath.Join(c.dataDir, "tasks") }
@@ -180,7 +182,12 @@ func (c *Controller) loadTasks() {
 					s.Status = "done" // files are on disk; the review is skipped
 				}
 			}
-			t.Events = append(t.Events, TaskEvent{Time: time.Now(), Level: "warn", Text: "The controller restarted while this task was active. Click Resume to continue where it stopped."})
+			msg := "The controller restarted while this task was active. Click Resume to continue where it stopped."
+			if autoResumeEligible(t) {
+				t.autoResume = true
+				msg = "The controller restarted while this task was active. It resumes on its own once a node with a loaded model is back."
+			}
+			t.Events = append(t.Events, TaskEvent{Time: time.Now(), Level: "warn", Text: msg})
 			t.saveLocked()
 		}
 		t.migrateMessages()
@@ -663,36 +670,43 @@ func (c *Controller) handleResumeTask(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case "interrupted", "failed":
-		t.mu.Lock()
-		t.Error = ""
-		if from == "" || status == "failed" {
-			if t.Plan == nil {
-				from = "planning"
-			} else if t.Approved == nil {
-				from = "awaiting_approval"
-			} else {
-				from = "running"
-			}
-		}
-		t.PausedFrom = ""
-		t.mu.Unlock()
-		switch from {
-		case "planning":
-			t.setStatus("planning")
-			c.startTask(t, c.planTask)
-		case "awaiting_approval":
-			t.setStatus("awaiting_approval")
-		default:
-			t.setStatus("running")
-			c.startTask(t, c.executeTask)
-		}
-		t.logf("info", "Resumed.")
-		t.addMsg(TaskMessage{Role: "event", Kind: "event", Text: "Resumed."})
+		c.restartTask(t, status, from, "Resumed.")
 	default:
 		writeJSON(w, 409, map[string]string{"error": "this task is not paused or interrupted"})
 		return
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// restartTask moves an interrupted or failed task back to where it stopped and
+// starts it again; note is what the thread shows.
+func (c *Controller) restartTask(t *Task, status, from, note string) {
+	t.mu.Lock()
+	t.Error = ""
+	if from == "" || status == "failed" {
+		if t.Plan == nil {
+			from = "planning"
+		} else if t.Approved == nil {
+			from = "awaiting_approval"
+		} else {
+			from = "running"
+		}
+	}
+	t.PausedFrom = ""
+	t.autoResume = false
+	t.mu.Unlock()
+	switch from {
+	case "planning":
+		t.setStatus("planning")
+		c.startTask(t, c.planTask)
+	case "awaiting_approval":
+		t.setStatus("awaiting_approval")
+	default:
+		t.setStatus("running")
+		c.startTask(t, c.executeTask)
+	}
+	t.logf("info", "%s", note)
+	t.addMsg(TaskMessage{Role: "event", Kind: "event", Text: note})
 }
 
 func (c *Controller) startTask(t *Task, fn func(ctx context.Context, t *Task)) {
