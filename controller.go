@@ -243,6 +243,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/models/{name}/unstore", c.auth(c.handleUnstoreModel))
 	mux.HandleFunc("GET /api/hf/files", c.auth(c.handleHFFiles))
 	mux.HandleFunc("POST /api/runtime/check", c.auth(c.handleCheckRuntime))
+	mux.HandleFunc("GET /api/nodes/{id}/load-options", c.auth(c.handleLoadOptions))
 	mux.HandleFunc("POST /api/nodes/{id}/load", c.auth(c.handleLoadModel))
 	mux.HandleFunc("POST /api/nodes/{id}/unload", c.auth(c.handleUnloadModel))
 	mux.HandleFunc("DELETE /api/nodes/{id}/models/{name}", c.auth(c.handleRemoveNodeModel))

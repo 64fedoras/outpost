@@ -324,6 +324,16 @@
   </div>
 </div>
 
+<div id="modal-pick" class="overlay hidden">
+  <div class="modal">
+    <h3>Load <span id="pick-model"></span> on…</h3>
+    <p class="hint">Loading replaces any model the node has loaded. Need to pool memory or change context size? Use Load model… on the node's card.</p>
+    <div id="pick-list"></div>
+    <div class="error-msg hidden" id="pick-err"></div>
+    <div class="modal-foot"><button data-close>Close</button></div>
+  </div>
+</div>
+
 <div id="modal-run" class="overlay hidden">
   <div class="modal">
     <h3>Run a command on <span id="run-node"></span></h3>

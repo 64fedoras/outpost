@@ -799,11 +799,20 @@ func (c *Controller) handleListModels(w http.ResponseWriter, r *http.Request) {
 	for _, e := range modelCatalog {
 		catFits[e.ID] = c.nodeFitsLocked(e.Bytes, e.Ctx)
 	}
+	recommended := map[string]LoadOption{}
+	for id := range c.nodes {
+		if c.conns[id] == nil {
+			continue
+		}
+		if opts, _ := c.loadOptionsFor(id, 1); len(opts) > 0 && opts[0].Rank == 1 {
+			recommended[id] = opts[0]
+		}
+	}
 	c.mu.Unlock()
 	sort.Slice(models, func(i, j int) bool { return models[i].Added.Before(models[j].Added) })
 	sort.Slice(rts, func(i, j int) bool { return rts[i].Variant < rts[j].Variant })
 	writeJSON(w, 200, map[string]any{"catalog": modelCatalog, "models": models, "runtimes": rts,
-		"fits": fits, "catalog_fits": catFits, "suggested": suggestCoding(modelCatalog, catFits, 4),
+		"fits": fits, "catalog_fits": catFits, "suggested": suggestCoding(modelCatalog, catFits, 4), "recommended": recommended,
 		"disk_free": diskFree(c.modelsStoreDir())})
 }
 

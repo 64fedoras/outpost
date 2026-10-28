@@ -808,6 +808,19 @@ function opView(n) {
   return `<div class="prog" style="margin-top:8px"><span>${esc(what)}${o.target ? ' · ' + esc(o.target) : ''}: ${esc(o.state)}${o.bytes_total ? ` ${bytes(o.bytes_done)} of ${bytes(o.bytes_total)}` : '…'}</span>${bar(pct, 'good')}</div>`;
 }
 
+// "Recommended for this node" row: the best coding model that fits, one click to load.
+function opActive(n) {
+  const o = state.ops && state.ops[n.id];
+  return !!(o && o.op && !['done', 'ready', 'failed'].includes(o.state) && (Date.now() - new Date(o.updated)) < 600000);
+}
+function recRow(n, loaded) {
+  const rec = n.online && models && models.recommended && models.recommended[n.id];
+  if (!rec || (loaded && rec.name === loaded) || n.lending_to || opActive(n)) return '';
+  const where = rec.in_library ? '' : ' · adds to library';
+  return `<div class="rec-row"><span class="pill st-ready">Recommended</span> <b>${esc(rec.label)}</b>
+    <button class="small primary" data-act="load-rec" data-id="${n.id}" data-name="${esc(rec.name)}" data-lib="${rec.in_library ? 1 : 0}">${loaded ? 'Switch to this' : 'Load'}</button>
+    <div class="sub wrap" style="margin:4px 0 0">${esc(rec.reason)} · ${bytes(rec.bytes)}${where}</div></div>`;
+}
 function nodeCard(n) {
   const h = n.hello || {}, hb = n.online ? n.heartbeat : null, cpu = h.cpu || {};
   const os = h.os ? `${h.os}/${h.arch}` : 'unknown';
@@ -830,6 +843,7 @@ function nodeCard(n) {
     </div>` : `<div class="model-box">
       <div class="row"><span class="dot ${ready ? 'on' : loaded ? 'busy' : ''}"></span><span class="grow">${loaded ? `<b>${esc(loaded)}</b> · ${ready ? (hb.inference_busy ? 'working' : 'ready') : 'starting'}` : '<span class="muted">No model loaded</span>'}</span>
         ${n.online ? `<button class="small" data-act="load" data-id="${n.id}">${loaded ? 'Change' : 'Load model'}…</button>${loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : ''}</div>
+      ${recRow(n, loaded)}
       ${loaded && n.bench && n.bench.model === loaded ? `<div class="sub" style="margin:6px 0 0" title="Benchmark when the model loaded, then a rolling average of real subtasks">Speed ${n.bench.tok_per_s.toFixed(1)} tok/s${n.bench.prompt_tps ? ' · reads ' + Math.round(n.bench.prompt_tps) + ' tok/s' : ''}${n.bench.samples ? ' · ' + n.bench.samples + ' subtask' + (n.bench.samples === 1 ? '' : 's') : ' · benchmark'}</div>` : ''}
       ${n.pool_names && n.pool_names.length ? `<div class="sub wrap" style="margin:6px 0 0">Pooled with <b>${n.pool_names.map(esc).join(', ')}</b></div>` : ''}
       <div class="sub" style="margin:6px 0 0">${h.runtime ? `llama.cpp ${esc(h.runtime.build)} · ${esc(h.runtime.variant)}` : 'llama.cpp installs on first load'}${stored.length ? ' · stored: ' + stored.map((m) => `${esc(m.name)} <a href="#" data-act="rm-node-model" data-id="${n.id}" data-name="${esc(m.name)}" title="Delete from this node">×</a>`).join(', ') : ''}</div>
@@ -956,6 +970,49 @@ $('load-go').onclick = async () => {
 };
 
 // ---------- models ----------
+function recFor(name) {
+  const nodes = Object.entries((models && models.recommended) || {}).filter(([, r]) => r.name === name).map(([id]) => nodeById(id)).filter(Boolean);
+  return nodes.length ? ` <span class="pill st-ready" title="Best coding model that fits: ${esc(nodes.map(nodeName).join(', '))}">Recommended · ${esc(nodes.map(nodeName).join(', '))}</span>` : '';
+}
+async function waitModelReady(name) {
+  for (let i = 0; i < 90; i++) {
+    const m = (await api('/api/models')).models.find((x) => x.name === name);
+    if (m && m.status === 'ready') return;
+    if (m && m.status === 'failed') throw new Error(`${name} could not be added: ${m.error}`);
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(`Timed out adding ${name} to the library`);
+}
+// Load a model on a node; adds it to the library first (nodes download it) when it is only in the catalog.
+async function loadOnNode(nodeId, name, addFirst) {
+  try {
+    if (addFirst) { toast('Adding to the library…'); await post('/api/models', { catalog_id: name, storage: 'direct' }).catch((e) => { if (!/already in the library/.test(e.message)) throw e; }); await waitModelReady(name); }
+    await post(`/api/nodes/${nodeId}/load`, { name });
+    toast('Setting up the model; progress shows on the node card');
+  } catch (e) { toast(e.message, 6000); throw e; }
+  refresh();
+}
+function openPick(name, isCatalog) {
+  const entry = isCatalog ? models.catalog.find((c) => c.id === name) : models.models.find((m) => m.name === name);
+  $('pick-model').textContent = entry ? (entry.label || entry.name) : name;
+  $('pick-err').classList.add('hidden');
+  const fits = ((isCatalog ? models.catalog_fits : models.fits) || {})[name] || [];
+  const rank = { vram: 0, split: 1, ram: 2, no: 3 };
+  setHTML('pick-list', fits.length ? [...fits].sort((a, b) => rank[a.fit] - rank[b.fit] || a.name.localeCompare(b.name)).map((f) => {
+    const n = state.nodes.find((x) => x.id === f.node_id), cur = n && n.heartbeat && n.heartbeat.loaded_model;
+    const rec = (models.recommended || {})[f.node_id];
+    const why = !f.online ? 'offline' : !f.can_load ? 'busy' : f.fit === 'no' ? 'too big for this node' : '';
+    return `<div class="pick-row"><div class="grow"><b>${esc(f.name)}</b> <span class="pill ${FIT_CLS[f.fit]}">${FIT_TEXT[f.fit]}</span>${rec && rec.name === name ? ' <span class="pill st-ready">Recommended</span>' : ''}
+      <div class="sub wrap" style="margin:2px 0 0">needs about ${bytes(f.need_bytes)}${cur && cur !== name ? ` · replaces ${esc(cur)}` : ''}${why ? ' · ' + why : ''}</div></div>
+      <button class="small primary" data-pick-node="${f.node_id}" ${why ? 'disabled' : ''}>Load</button></div>`;
+  }).join('') : '<div class="empty">No nodes yet.</div>');
+  $('pick-list').onclick = async (e) => {
+    const b = e.target.closest('[data-pick-node]'); if (!b) return;
+    try { await loadOnNode(b.dataset.pickNode, name, isCatalog); close('modal-pick'); }
+    catch (err) { $('pick-err').textContent = err.message; $('pick-err').classList.remove('hidden'); }
+  };
+  open('modal-pick');
+}
 const isDirect = (m) => m.storage === 'direct';
 function storageLabel(m) {
   return isDirect(m) ? '<span title="Each node downloads it from Hugging Face when you load it">Nodes download</span>'
@@ -985,8 +1042,9 @@ function renderModels() {
       if (!isDirect(m) && m.status !== 'failed') acts.push(`<button class="small" data-act="model-unstore" data-name="${nm}" title="Free ${bytes(m.bytes_total)} on the controller; nodes download it from Hugging Face instead">Free controller space</button>`);
       const vf = ((models.fits || {})[m.name] || []).filter((f) => f.fit === 'vram' && f.can_load);
       if (m.status === 'ready' && vf.length) acts.unshift(`<button class="small primary" data-act="model-load-fit" data-name="${nm}" title="Loads it on: ${esc(vf.map((f) => f.name).join(', '))}. Replaces any model those nodes have loaded.">Load on ${vf.length} node${vf.length > 1 ? 's' : ''} it fits</button>`);
+      if (m.status === 'ready') acts.unshift(`<button class="small" data-act="pick-model" data-name="${nm}">Load on…</button>`);
       acts.push(`<button class="small danger" data-act="model-delete" data-name="${nm}">${m.status === 'downloading' ? 'Cancel' : 'Remove'}</button>`);
-      return `<tr><td><b>${esc(m.label || m.name)}</b>${m.vision ? ' <span class="pill st-ready" title="Reads images: loaded with its vision projector">Vision</span>' : ''}<div class="sub" style="margin:2px 0 0">${esc(m.repo)}</div>${m.status === 'ready' ? fitBadges((models.fits || {})[m.name]) : ''}</td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td><select class="small" data-tier="${nm}" aria-label="Model strength" title="Used to route hard subtasks to the strongest model">${[['', 'auto (' + (m.tier_guess || 'medium') + ')'], ['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']].map(([v, l]) => `<option value="${v}" ${(m.tier || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td><td>${storageLabel(m)}</td><td>${status}</td>
+      return `<tr><td><b>${esc(m.label || m.name)}</b>${m.vision ? ' <span class="pill st-ready" title="Reads images: loaded with its vision projector">Vision</span>' : ''}${recFor(m.name)}<div class="sub" style="margin:2px 0 0">${esc(m.repo)}</div>${m.status === 'ready' ? fitBadges((models.fits || {})[m.name]) : ''}</td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td><select class="small" data-tier="${nm}" aria-label="Model strength" title="Used to route hard subtasks to the strongest model">${[['', 'auto (' + (m.tier_guess || 'medium') + ')'], ['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']].map(([v, l]) => `<option value="${v}" ${(m.tier || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td><td>${storageLabel(m)}</td><td>${status}</td>
         <td>${h.length ? h.map(esc).join(', ') : '<span class="muted">none</span>'}</td><td class="r"><div class="btns" style="justify-content:flex-end">${acts.join('')}</div></td></tr>`;
     }).join('')}</tbody></table></div>`);
   const have = {}; list.forEach((m) => { have[m.name] = m; });
@@ -994,9 +1052,10 @@ function renderModels() {
     const m = have[c.id];
     const btn = m ? (m.status === 'downloading' ? `<button disabled>Downloading ${m.bytes_total ? Math.floor(100 * m.bytes_done / m.bytes_total) : 0}%</button>`
         : m.status === 'failed' ? `<button data-act="model-retry" data-name="${c.id}">Retry</button>` : `<button disabled>In library · ${isDirect(m) ? 'nodes download' : 'on controller'}</button>`)
-      : `<button class="primary" data-act="catalog-add" data-id="${c.id}" data-storage="direct" title="Each node downloads it from Hugging Face when you load it; uses no controller space">Add · nodes download</button>
+      : `<button class="primary" data-act="pick-model" data-name="${c.id}" data-catalog="1" title="Adds it to the library (nodes download it) and loads it on the node you pick">Add and load on…</button>
+         <button data-act="catalog-add" data-id="${c.id}" data-storage="direct" title="Each node downloads it from Hugging Face when you load it; uses no controller space">Add · nodes download</button>
          <button data-act="catalog-add" data-id="${c.id}" data-storage="controller" title="Download once to the controller (${bytes(c.bytes)}), then copy to nodes over your network">Store on controller</button>`;
-    return `<div class="card"><span class="for">${esc(c.for)}</span><h3>${esc(c.label)}${c.mmproj ? ' <span class="pill st-ready" title="Reads images">Vision</span>' : ''}</h3><p>${esc(c.notes)}</p><div class="btns">${btn}</div><span class="muted" style="font-size:12px;margin-top:6px">${bytes(c.bytes)} · needs ~${c.min_ram_gb} GB RAM+VRAM</span>${fitBadges((models.catalog_fits || {})[c.id])}</div>`;
+    return `<div class="card"><span class="for">${esc(c.for)}</span><h3>${esc(c.label)}${recFor(c.id)}${c.mmproj ? ' <span class="pill st-ready" title="Reads images">Vision</span>' : ''}</h3><p>${esc(c.notes)}</p><div class="btns">${btn}</div><span class="muted" style="font-size:12px;margin-top:6px">${bytes(c.bytes)} · needs ~${c.min_ram_gb} GB RAM+VRAM</span>${fitBadges((models.catalog_fits || {})[c.id])}</div>`;
   };
   setHTML('catalog', models.catalog.map(catCard).join(''));
   const byId = {}; models.catalog.forEach((c) => { byId[c.id] = c; });
@@ -1404,6 +1463,8 @@ document.addEventListener('click', async (e) => {
     switch (act) {
       case 'open-job': openJob(id); break;
       case 'load': openLoad(id); break;
+      case 'load-rec': await loadOnNode(id, el.dataset.name, el.dataset.lib !== '1'); break;
+      case 'pick-model': openPick(el.dataset.name, el.dataset.catalog === '1'); break;
       case 'unload': await post(`/api/nodes/${id}/unload`); toast('Unloading'); break;
       case 'rm-node-model': if (confirm(`Delete ${el.dataset.name} from this node's disk?`)) { await api(`/api/nodes/${id}/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); toast('Deleting'); } break;
       case 'rename': renameNode(id); break;
