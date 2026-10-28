@@ -968,7 +968,9 @@ function benchLine(n, loaded, ready) {
   if (!loaded || !n.online) return '';
   const b = n.bench && n.bench.model === loaded ? n.bench : null;
   const f = n.bench_fail && n.bench_fail.model === loaded ? n.bench_fail : null;
-  const rerun = ready && !n.benching ? ` · <a href="#" data-act="benchmark" data-id="${n.id}" title="Measure this node's speed again">${b || f ? 'Re-run' : 'Run'} benchmark</a>` : '';
+  const label = b || f ? 'Re-run' : 'Run';
+  const rerun = n.benching ? '' : ready ? ` · <a href="#" data-act="benchmark" data-id="${n.id}" title="Measure this node's speed again">${label} benchmark</a>`
+    : ` · <span class="muted" title="The benchmark can run once the model has finished loading">${label} benchmark (model loading…)</span>`;
   let txt;
   if (n.benching) txt = 'Benchmarking…';
   else if (b) txt = `Speed ${b.tok_per_s.toFixed(1)} tok/s${b.prompt_tps ? ' · reads ' + Math.round(b.prompt_tps) + ' tok/s' : ''}${b.samples ? ' · ' + b.samples + ' subtask' + (b.samples === 1 ? '' : 's') : b.light ? ' · short benchmark' : ' · benchmark'}`;
