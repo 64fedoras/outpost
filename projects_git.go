@@ -147,7 +147,7 @@ func roundRequest(t *Task) string {
 	defer t.mu.Unlock()
 	req := t.Prompt
 	for _, m := range t.Messages {
-		if m.Round == t.Round && m.Role == "user" && m.Kind == "text" {
+		if m.Round == t.Round && m.Role == "user" && m.Kind == "text" && !m.Superseded {
 			req = m.Text
 			break
 		}

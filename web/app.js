@@ -366,6 +366,7 @@ document.addEventListener('toggle', (e) => {
 }, true);
 
 function threadReset() {
+  editing = null;
   const th = $('thread'); th.innerHTML = ''; th._items = {};
   $('tm-text').value = '';
   ['tv-title', 'tv-status', 'tv-spend'].forEach((id) => { $(id).innerHTML = ''; $(id)._h = null; });
@@ -419,7 +420,7 @@ function threadItems(t) {
   const items = [];
   const msgs = t.messages || [];
   const round = t.round || 1;
-  const lastIdx = (kind) => { for (let i = msgs.length - 1; i >= 0; i--) if (msgs[i].kind === kind) return i; return -1; };
+  const lastIdx = (kind) => { for (let i = msgs.length - 1; i >= 0; i--) if (msgs[i].kind === kind && !msgs[i].superseded) return i; return -1; };
   const lastQ = lastIdx('questions'), lastPlan = lastIdx('plan');
   const started = t.approved && ['running', 'testing', 'building', 'fixing', 'paused_cap', 'done', 'failed', 'cancelled', 'interrupted'].includes(t.status) && t.subtasks && t.subtasks.length;
   let progressPlaced = false;
@@ -438,12 +439,32 @@ function threadItems(t) {
   return items;
 }
 
+// Editing a sent message (see tasks_edit.go for the rules the controller enforces).
+let editing = null;   // { id, text } while a message is open in the editor
+const PENCIL = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.5 2.5l2 2L5 13l-3 1 1-3z"/></svg>';
+function canEditMsg(t, m) {
+  if (m.role !== 'user' || m.superseded || (m.kind !== 'text' && m.kind !== 'answers')) return false;
+  const live = (t.messages || []).filter((x) => x.round === m.round && x.role === 'user' && !x.superseded && (x.kind === 'text' || x.kind === 'answers'));
+  if (t.status === 'awaiting_answers' || t.status === 'awaiting_approval') return m.round === (t.round || 1) && !t.approved;
+  if (['done', 'failed', 'cancelled', 'interrupted'].includes(t.status)) return !!live[0] && live[0].id === m.id;
+  return false;
+}
+
 function msgItem(t, m, liveQuestions, livePlan) {
   const key = m.id;
+  if (m.superseded) return supersededItem(t, m);
   if (m.role === 'user') {
     const tag = m.kind === 'agent_answer' ? '<span class="bubble-tag">answer to the agent</span>' : m.kind === 'steer' ? '<span class="bubble-tag">note while working</span>' : m.kind === 'answers' ? '<span class="bubble-tag">answers</span>' : '';
     const pics = (m.images || []).length ? `<div class="bubble-imgs">${m.images.map((n) => `<a href="/api/tasks/${t.id}/image?name=${encodeURIComponent(n)}" target="_blank" rel="noopener"><img src="/api/tasks/${t.id}/image?name=${encodeURIComponent(n)}" alt="attached image" loading="lazy"></a>`).join('')}</div>` : '';
-    return { key, cls: 'from-user', html: `<div class="bubble">${tag}${esc(m.text)}${pics}</div>` };
+    if (editing && editing.id === m.id && canEditMsg(t, m)) {
+      const rerun = ['done', 'failed', 'cancelled', 'interrupted'].includes(t.status);
+      return { key, cls: 'from-user', html: `<div class="bubble-edit"><textarea id="msg-edit-text" rows="4">${esc(editing.text)}</textarea>
+        <div class="bubble-edit-actions"><span class="hint">${rerun ? 'Saving puts back the files from this request on and plans again. The old answer stays in the thread, dimmed.' : 'Saving plans again from here. Later messages are kept, dimmed.'}</span>
+        <button data-act="task-msg-cancel">Cancel</button><button class="primary" data-act="task-msg-save" data-msg="${esc(m.id)}">Save and plan</button></div></div>` };
+    }
+    const edited = m.edited ? '<span class="edited-mark">edited</span>' : '';
+    const btn = canEditMsg(t, m) ? `<button class="msg-tool" data-act="task-msg-edit" data-msg="${esc(m.id)}" title="Edit message" aria-label="Edit message">${PENCIL}</button>` : '';
+    return { key, cls: 'from-user', html: `<div class="bubble-row">${btn}<div class="bubble">${tag}${esc(m.text)}${pics}${edited}</div></div>` };
   }
   if (m.role === 'event' || m.kind === 'event') return { key, cls: 'event-row', html: `<span>${esc(m.text)}</span>` };
   switch (m.kind) {
@@ -455,6 +476,17 @@ function msgItem(t, m, liveQuestions, livePlan) {
     case 'error': return { key, cls: 'card-row', html: `<div class="card-msg bad"><div class="card-head">Something went wrong</div><p>${esc(m.text)}</p>${t.status === 'failed' && m.round === (t.round || 1) ? '<div class="card-actions"><button class="primary" data-act="task-resume">Try again</button><span class="hint">or send a message to change course</span></div>' : ''}</div>` };
     default: return { key, cls: 'from-planner', html: `<div class="said">${esc(m.text)}</div>` };
   }
+}
+
+// The old branch after an edit: kept in the thread, dimmed and short.
+function supersededItem(t, m) {
+  let what;
+  if (m.role === 'user') what = `You: ${esc(firstWords(m.text))}`;
+  else if (m.kind === 'plan') what = `Plan: ${esc((m.plan && m.plan.title) || '')}`;
+  else if (m.kind === 'questions') what = 'Questions from the planner';
+  else if (m.kind === 'result') what = `Result: ${esc(firstWords(m.text))}`;
+  else what = esc(firstWords(m.text) || m.kind);
+  return { key: m.id, cls: 'event-row superseded', html: `<span>${what}</span>${m.role === 'user' ? ' <span class="muted">· replaced by an edit</span>' : ''}` };
 }
 
 function msgs_lastMockup(t) {
@@ -734,6 +766,22 @@ async function taskAction(act, el) {
     switch (act) {
       case 'task-approve': await post(`/api/tasks/${id}/approve`, { cap_usd: parseFloat(($('ta-cap') || {}).value) || 0 }); break;
       case 'task-pick': await post(`/api/tasks/${id}/pick`, { page: el.dataset.page }); toast('Building from that variant'); break;
+      case 'task-msg-edit': {
+        const m = ((taskDetail && taskDetail.messages) || []).find((x) => x.id === el.dataset.msg);
+        if (!m) return;
+        editing = { id: m.id, text: m.text };
+        renderTask(taskDetail);
+        const ta = $('msg-edit-text'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+        return;
+      }
+      case 'task-msg-cancel': editing = null; renderTask(taskDetail); return;
+      case 'task-msg-save': {
+        const text = (($('msg-edit-text') || {}).value || '').trim();
+        if (!text) { toast('Write a message first'); return; }
+        await post(`/api/tasks/${id}/messages/${encodeURIComponent(el.dataset.msg)}/edit`, { text });
+        editing = null;
+        break;
+      }
       case 'task-answer': {
         const answers = collectAnswers();
         await post(`/api/tasks/${id}/answers`, { answers });

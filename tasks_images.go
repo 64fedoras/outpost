@@ -98,7 +98,7 @@ func (t *Task) roundImages() []llmImage {
 	t.mu.Lock()
 	var names []string
 	for _, m := range t.Messages {
-		if m.Round == t.Round && m.Role == "user" {
+		if m.Round == t.Round && m.Role == "user" && !m.Superseded {
 			names = append(names, m.Images...)
 		}
 	}
