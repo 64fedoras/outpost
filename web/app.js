@@ -585,7 +585,7 @@ function statusCard(t) {
         <div class="card-actions"><label class="chip-input">new cap $<input id="ta-newcap" type="number" min="0.05" step="0.25" value="${(Math.ceil((t.cap_usd * 2) * 4) / 4).toFixed(2)}"></label><button class="primary" data-act="task-raise">Raise cap and continue</button></div>
         ${locals ? `<div class="card-actions"><select id="ta-local" class="chip-select">${locals}</select><button data-act="task-local">Finish with this local planner</button></div>` : ''}</div>` };
     case 'interrupted':
-      return { key: 'tail-int', cls: 'card-row', html: `<div class="card-msg warn"><div class="card-head">Interrupted</div><p>The controller restarted while this task was active. Resume picks up where it stopped; finished subtasks are kept.</p>
+      return { key: 'tail-int', cls: 'card-row', html: `<div class="card-msg warn"><div class="card-head">Interrupted</div><p>The controller restarted while this task was active. Tasks on a local planner resume on their own when a node is ready (unless turned off in Settings); otherwise Resume picks up where it stopped; finished subtasks are kept.</p>
         <div class="card-actions"><button class="primary" data-act="task-resume">Resume</button></div></div>` };
   }
   return null;
@@ -1121,6 +1121,7 @@ async function loadSettings() {
   $('set-hf-state').innerHTML = settings.has_hf_token ? '<span class="st-done">· saved</span>' : '<span class="muted">· not set</span>';
   $('set-model').innerHTML = claudeModelOptions(settings.claude_model);
   $('set-cap').value = settings.default_cap_usd;
+  $('set-autoresume').checked = !!settings.auto_resume;
   $('set-instr').value = settings.instructions || '';
   $('set-agent').checked = settings.agent_mode !== false; $('set-websearch').checked = !!settings.web_search; $('set-webprivate').checked = !!settings.web_allow_private;
   if (!state) state = await api('/api/state').catch(() => null);
@@ -1234,7 +1235,7 @@ $('set-or-model-save').onclick = () => saveSettings({ openrouter_model: $('set-o
 $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-instr-save').onclick = () => saveSettings({ instructions: $('set-instr').value }, 'Instructions saved');
-$('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, agent_mode: $('set-agent').checked, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked }, 'Defaults saved');
+$('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, agent_mode: $('set-agent').checked, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked, auto_resume: $('set-autoresume').checked }, 'Defaults saved');
 $('pw-form').onsubmit = async (e) => {
   e.preventDefault();
   const err = $('pw-err'); err.classList.add('hidden');
