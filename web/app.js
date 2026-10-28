@@ -346,7 +346,9 @@ function questionsCard(m, live) {
 
 function planCard(t, m, live) {
   const p = m.plan || {};
-  const subs = (p.subtasks || []).map((s) => `<li><details><summary><span class="st-title">${esc(s.title)}</span><span class="st-files">${s.files.map(esc).join(', ')}</span></summary>
+  const diffSel = (s) => live ? `<select class="small" onclick="event.preventDefault()" data-diff="${esc(s.id)}" aria-label="Difficulty of ${esc(s.title)}" title="Hard subtasks go to the strongest model; easy ones to the fastest node">${['easy', 'normal', 'hard'].map((d) => `<option value="${d}" ${(s.difficulty || 'normal') === d ? 'selected' : ''}>${d}</option>`).join('')}</select>`
+    : (s.difficulty && s.difficulty !== 'normal' ? `<span class="tag">${esc(s.difficulty)}</span>` : '');
+  const subs = (p.subtasks || []).map((s) => `<li><details><summary><span class="st-title">${esc(s.title)}</span>${diffSel(s)}<span class="st-files">${s.files.map(esc).join(', ')}</span></summary>
       <p class="st-ins">${esc(s.instructions)}</p>${s.depends_on && s.depends_on.length ? `<p class="st-dep">Starts after ${s.depends_on.map(esc).join(', ')}</p>` : ''}</details></li>`).join('');
   const facts = [p.language ? esc(p.language) : '', p.test_command ? `tests: <code>${esc(p.test_command)}</code>` : 'no automated tests', `${(p.subtasks || []).length} subtasks`].filter(Boolean).join(' · ');
   let actions = '';
@@ -634,6 +636,7 @@ function nodeCard(n) {
     </div>` : `<div class="model-box">
       <div class="row"><span class="dot ${ready ? 'on' : loaded ? 'busy' : ''}"></span><span class="grow">${loaded ? `<b>${esc(loaded)}</b> · ${ready ? (hb.inference_busy ? 'working' : 'ready') : 'starting'}` : '<span class="muted">No model loaded</span>'}</span>
         ${n.online ? `<button class="small" data-act="load" data-id="${n.id}">${loaded ? 'Change' : 'Load model'}…</button>${loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : ''}</div>
+      ${loaded && n.bench && n.bench.model === loaded ? `<div class="sub" style="margin:6px 0 0" title="Benchmark when the model loaded, then a rolling average of real subtasks">Speed ${n.bench.tok_per_s.toFixed(1)} tok/s${n.bench.prompt_tps ? ' · reads ' + Math.round(n.bench.prompt_tps) + ' tok/s' : ''}${n.bench.samples ? ' · ' + n.bench.samples + ' subtask' + (n.bench.samples === 1 ? '' : 's') : ' · benchmark'}</div>` : ''}
       ${n.pool_names && n.pool_names.length ? `<div class="sub wrap" style="margin:6px 0 0">Pooled with <b>${n.pool_names.map(esc).join(', ')}</b></div>` : ''}
       <div class="sub" style="margin:6px 0 0">${h.runtime ? `llama.cpp ${esc(h.runtime.build)} · ${esc(h.runtime.variant)}` : 'llama.cpp installs on first load'}${stored.length ? ' · stored: ' + stored.map((m) => `${esc(m.name)} <a href="#" data-act="rm-node-model" data-id="${n.id}" data-name="${esc(m.name)}" title="Delete from this node">×</a>`).join(', ') : ''}</div>
       ${hb && hb.llama_error && !ready ? `<div class="note bad" style="margin:6px 0 0">${esc(hb.llama_error)}</div>` : ''}
@@ -764,7 +767,7 @@ function renderModels() {
   const holders = (name) => state.nodes.filter((n) => n.hello && (n.hello.models || []).some((m) => m.name === name)).map(nodeName);
   const list = models.models;
   setHTML('models-list', !list.length ? `<div class="empty">No models yet. Pick one below.</div>` :
-    `<div class="table-wrap"><table><thead><tr><th>Model</th><th>Size</th><th>Stored</th><th>Status</th><th>On nodes</th><th></th></tr></thead><tbody>${list.map((m) => {
+    `<div class="table-wrap"><table><thead><tr><th>Model</th><th>Size</th><th>Tier</th><th>Stored</th><th>Status</th><th>On nodes</th><th></th></tr></thead><tbody>${list.map((m) => {
       const pct = m.bytes_total ? 100 * m.bytes_done / m.bytes_total : 0;
       const status = m.status === 'downloading' ? `<div class="prog"><span>downloading to controller ${bytes(m.bytes_done)} of ${bytes(m.bytes_total)}</span>${bar(pct, 'good')}</div>`
         : m.status === 'resolving' ? pill('loading', 'checking Hugging Face')
@@ -777,7 +780,7 @@ function renderModels() {
       const vf = ((models.fits || {})[m.name] || []).filter((f) => f.fit === 'vram' && f.can_load);
       if (m.status === 'ready' && vf.length) acts.unshift(`<button class="small primary" data-act="model-load-fit" data-name="${nm}" title="Loads it on: ${esc(vf.map((f) => f.name).join(', '))}. Replaces any model those nodes have loaded.">Load on ${vf.length} node${vf.length > 1 ? 's' : ''} it fits</button>`);
       acts.push(`<button class="small danger" data-act="model-delete" data-name="${nm}">${m.status === 'downloading' ? 'Cancel' : 'Remove'}</button>`);
-      return `<tr><td><b>${esc(m.label || m.name)}</b><div class="sub" style="margin:2px 0 0">${esc(m.repo)}</div>${m.status === 'ready' ? fitBadges((models.fits || {})[m.name]) : ''}</td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td>${storageLabel(m)}</td><td>${status}</td>
+      return `<tr><td><b>${esc(m.label || m.name)}</b><div class="sub" style="margin:2px 0 0">${esc(m.repo)}</div>${m.status === 'ready' ? fitBadges((models.fits || {})[m.name]) : ''}</td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td><select class="small" data-tier="${nm}" aria-label="Model strength" title="Used to route hard subtasks to the strongest model">${[['', 'auto (' + (m.tier_guess || 'medium') + ')'], ['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']].map(([v, l]) => `<option value="${v}" ${(m.tier || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td><td>${storageLabel(m)}</td><td>${status}</td>
         <td>${h.length ? h.map(esc).join(', ') : '<span class="muted">none</span>'}</td><td class="r"><div class="btns" style="justify-content:flex-end">${acts.join('')}</div></td></tr>`;
     }).join('')}</tbody></table></div>`);
   const have = {}; list.forEach((m) => { have[m.name] = m; });
@@ -1128,7 +1131,17 @@ document.querySelectorAll('[data-copy]').forEach((b) => { b.onclick = async () =
   catch (e) { const r = document.createRange(); r.selectNodeContents($(b.dataset.copy)); getSelection().removeAllRanges(); getSelection().addRange(r); toast('Selected — press Ctrl+C'); }
 }; });
 
-document.addEventListener('change', (e) => {
+document.addEventListener('change', async (e) => {
+  const diff = e.target.closest('[data-diff]');
+  if (diff) {
+    try { await post(`/api/tasks/${pageArg}/difficulty`, { subtask: diff.dataset.diff, difficulty: diff.value }); } catch (err) { toast(err.message); }
+    return;
+  }
+  const tier = e.target.closest('[data-tier]');
+  if (tier) {
+    try { await post(`/api/models/${encodeURIComponent(tier.dataset.tier)}/tier`, { tier: tier.value }); toast('Tier saved'); } catch (err) { toast(err.message); }
+    return;
+  }
   const cb = e.target.closest('[data-exec]');
   if (cb) setExec(cb.dataset.exec, cb.checked);
 });

@@ -53,6 +53,7 @@ type PlanSubtask struct {
 	Files        []string `json:"files"`
 	DependsOn    []string `json:"depends_on"`
 	Instructions string   `json:"instructions"`
+	Difficulty   string   `json:"difficulty,omitempty"` // easy | normal | hard
 }
 
 type SubtaskState struct {
@@ -998,6 +999,7 @@ Each worker sees only: the project summary, the list of all subtasks, its own in
 - Include a README.md that explains how to run the project and its tests.
 - Prefer the language's standard library. Avoid anything that needs network access at test time.
 - If the project can be tested automatically, include small tests and give a test_command that runs them from the project root on Linux (for example "python3 -m unittest discover -s tests"). Use setup_command only if something must be installed or built first. Leave test_command empty if testing is not practical.
+- Tag every subtask with a difficulty: "easy" (boilerplate, config, README, simple data files), "normal", or "hard" (tricky logic, algorithms, or code that many other files depend on). Hard subtasks go to the strongest model, so use the tag sparingly.
 - Use at most 12 subtasks.
 
 Follow-up requests on an existing project include its current files. Plan only the files to add or change; a subtask that changes an existing file lists it, and its worker gets the file's current content and outputs the complete new version. Keep the summary describing the whole project, and keep test_command running the whole test suite.
@@ -1007,7 +1009,7 @@ Questions: if the request leaves open a choice that would change the design (lan
 Use at most 4 questions with 2 to 4 short options each; the user can also type their own answer.
 
 Otherwise answer with only a JSON object, no other text:
-{"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "note": "one or two sentences to the user: the approach and any assumption you made", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "instructions": "precise instructions"}]}`
+{"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "note": "one or two sentences to the user: the approach and any assumption you made", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "difficulty": "normal", "instructions": "precise instructions"}]}`
 
 // plannerIndexHelp is added to the planner's instructions when the project is
 // too large to paste in, so it sees an index instead.
@@ -1160,6 +1162,7 @@ func validatePlan(p *Plan) error {
 			return fmt.Errorf("subtask ids must be unique and non-empty (%q)", s.ID)
 		}
 		ids[s.ID] = true
+		s.Difficulty = normDifficulty(s.Difficulty)
 		if len(s.Files) == 0 {
 			return fmt.Errorf("subtask %s lists no files", s.ID)
 		}
@@ -1246,6 +1249,7 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 	done := make(chan doneMsg, len(plan.Subtasks))
 	running := 0
 	waitingLogged := false
+	readySince := map[string]time.Time{}
 	for {
 		if ctx.Err() != nil {
 			return
@@ -1295,17 +1299,25 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 			t.logf("warn", "Waiting for a node with a loaded model. Load one on the Nodes tab.")
 			waitingLogged = true
 		}
+		// Hard subtasks choose first, so they get the strongest free node.
+		rank := map[string]int{"hard": 0, "normal": 1, "easy": 2}
+		sort.SliceStable(ready, func(i, j int) bool {
+			return rank[normDifficulty(specs[ready[i]].Difficulty)] < rank[normDifficulty(specs[ready[j]].Difficulty)]
+		})
+		scores := c.scoreNodes(workers)
 		for _, id := range ready {
-			var node string
-			for _, w := range workers {
-				if c.tryReserve(w) {
-					node = w
-					break
-				}
+			if _, ok := readySince[id]; !ok {
+				readySince[id] = time.Now()
 			}
-			if node == "" {
+			free := c.freeScores(scores, "")
+			if len(free) == 0 {
 				break
 			}
+			node := chooseNode(normDifficulty(specs[id].Difficulty), free, scores, time.Since(readySince[id]))
+			if node == "" || !c.tryReserve(node) {
+				continue // a hard subtask waiting for the strongest model, or the node was just taken
+			}
+			delete(readySince, id)
 			waitingLogged = false
 			t.mu.Lock()
 			st := state[id]
@@ -1439,6 +1451,7 @@ func (c *Controller) runSubtask(ctx context.Context, t *Task, spec PlanSubtask, 
 		st = t.subtask(spec.ID)
 		now := time.Now()
 		st.Status, st.Ended, st.TokPerSec = "written", &now, resp.TokensPerSec
+		defer c.recordSpeed(node, resp.TokensPerSec)
 		t.saveLocked()
 		t.mu.Unlock()
 		t.logf("info", "%s written on %s (%s output tokens, %.1f tok/s).", spec.ID, c.nodeLabel(node), fmtInt(resp.OutTokens), resp.TokensPerSec)
@@ -1833,17 +1846,22 @@ func (c *Controller) reviewSubtask(ctx context.Context, t *Task, spec PlanSubtas
 	deadline := time.Now().Add(2 * time.Minute)
 	for reviewer == "" {
 		others := 0
-		for _, w := range c.workerNodes() {
-			if w == writer {
-				continue
-			}
-			others++
-			if c.tryReserve(w) {
-				reviewer = w
-				break
+		workers := c.workerNodes()
+		for _, w := range workers {
+			if w != writer {
+				others++
 			}
 		}
-		if reviewer != "" {
+		scores := c.scoreNodes(workers)
+		var ws nodeScore
+		for _, s := range scores {
+			if s.ID == writer {
+				ws = s
+			}
+		}
+		// A reviewer at least as strong as the writer when one is free.
+		if w := pickReviewer(ws, c.freeScores(scores, writer)); w != "" && c.tryReserve(w) {
+			reviewer = w
 			break
 		}
 		if others == 0 {
