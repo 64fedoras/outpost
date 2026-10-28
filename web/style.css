@@ -322,3 +322,19 @@ fieldset.q[disabled] .opt span { opacity: .6; cursor: default; }
 .rowline > span { min-width: 0; overflow-wrap: anywhere; }
 label.check { display: flex; align-items: center; gap: 8px; }
 label.check input { width: auto; }
+
+/* file browser and round changes */
+.fb { display: grid; grid-template-columns: minmax(160px, 260px) 1fr; gap: 12px; margin-top: 8px; }
+.fb-tree { max-height: 62vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px; font-family: var(--mono); font-size: 12.5px; display: flex; flex-direction: column; }
+.fb-tree a { padding: 2px 6px; border-radius: 4px; word-break: break-all; }
+.fb-tree a:hover { background: var(--tint); }
+.fb-dir { color: var(--muted); padding: 2px 6px; }
+.fb-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; }
+pre.code { white-space: pre; word-break: normal; max-height: 62vh; tab-size: 4; }
+pre.code .ln { display: inline-block; min-width: 3.2em; padding-right: 1em; text-align: right; color: #7d7e84; user-select: none; }
+.hl-k { color: #c792ea; } .hl-s { color: #a5d6a7; } .hl-n { color: #f5b971; }
+pre.diff { max-height: 40vh; }
+.d-add { background: rgba(46, 160, 67, .25); display: block; } .d-del { background: rgba(220, 70, 60, .25); display: block; }
+.d-ctx { display: block; } .d-gap { color: #7d7e84; display: block; }
+.diffs details { margin: 6px 0; } .diffs summary { cursor: pointer; }
+@media (max-width: 700px) { .fb { grid-template-columns: 1fr; } }

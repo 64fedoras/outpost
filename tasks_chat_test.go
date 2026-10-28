@@ -55,3 +55,43 @@ func TestSteeringText(t *testing.T) {
 		t.Fatalf("got %q", s)
 	}
 }
+
+func TestRoundSnapshotAndUndo(t *testing.T) {
+	dir := t.TempDir()
+	task := &Task{dir: dir, Round: 1, Status: "done"}
+	repo := task.repoDir()
+	os.MkdirAll(repo, 0o755)
+	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("one\n"), 0o644)
+
+	// Round 1 changes a.txt twice (only the first copy is kept) and adds sub/b.txt.
+	for _, w := range [][2]string{{"a.txt", "two\n"}, {"a.txt", "three\n"}, {"sub/b.txt", "new\n"}} {
+		if err := task.writeFile(w[0], w[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := readManifest(task.roundDir(1))
+	if m.Files["a.txt"] != "modified" || m.Files["sub/b.txt"] != "added" || len(m.Files) != 2 {
+		t.Fatalf("manifest wrong: %+v", m)
+	}
+	kept, _ := os.ReadFile(filepath.Join(task.roundDir(1), "orig", "a.txt"))
+	if string(kept) != "one\n" {
+		t.Fatalf("kept copy should be the original, got %q", kept)
+	}
+	if err := task.writeFile("../escape.txt", "x"); err == nil {
+		t.Fatal("path escape should be refused")
+	}
+
+	n, err := task.undoRound(1)
+	if err != nil || n != 2 {
+		t.Fatalf("undo: n=%d err=%v", n, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "a.txt")); string(b) != "one\n" {
+		t.Fatalf("a.txt not restored: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "sub")); !os.IsNotExist(err) {
+		t.Fatal("added file and its empty folder should be gone")
+	}
+	if len(task.roundNumbers()) != 0 {
+		t.Fatal("round copy should be removed after undo")
+	}
+}
