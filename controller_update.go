@@ -22,6 +22,7 @@ type Release struct {
 	Bytes    int64     `json:"bytes"`
 	Uploaded time.Time `json:"uploaded"`
 	FileName string    `json:"file_name"`
+	Source   string    `json:"source,omitempty"` // "github v0.7.2" when fetched from a GitHub release
 }
 
 func (c *Controller) releasesDir() string { return filepath.Join(c.dataDir, "releases") }
@@ -75,25 +76,33 @@ func (c *Controller) handleUploadRelease(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
-	dst := c.releasePath(platform)
-	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
-	if err := os.Rename(tmp.Name(), dst); err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
-	_ = os.Chmod(dst, 0o755)
 	rel := &Release{Platform: platform, Version: version, SHA256: sum, Bytes: size, Uploaded: time.Now(),
 		FileName: filepath.Base(r.Header.Get("X-Filename"))}
+	if err := c.storeRelease(tmp.Name(), rel); err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	log.Printf("release uploaded: %s %s (%d bytes)", platform, version, size)
+	writeJSON(w, 200, rel)
+}
+
+// storeRelease moves a checked binary (a temp file in releasesDir) into place
+// as the release for rel.Platform. Uploads and GitHub downloads both end here.
+func (c *Controller) storeRelease(tmp string, rel *Release) error {
+	dst := c.releasePath(rel.Platform)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		return err
+	}
+	_ = os.Chmod(dst, 0o755)
 	b, _ := json.MarshalIndent(rel, "", "  ")
 	_ = os.WriteFile(filepath.Join(filepath.Dir(dst), "release.json"), b, 0o600)
 	c.mu.Lock()
-	c.releases[platform] = rel
+	c.releases[rel.Platform] = rel
 	c.mu.Unlock()
-	log.Printf("release uploaded: %s %s (%d bytes)", platform, version, size)
-	writeJSON(w, 200, rel)
+	return nil
 }
 
 func (c *Controller) handleDeleteRelease(w http.ResponseWriter, r *http.Request) {

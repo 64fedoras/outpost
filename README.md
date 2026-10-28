@@ -1,4 +1,4 @@
-# Outpost v0.7.1
+# Outpost v0.7.2
 
 Self-hosted AI cluster. One binary runs as the **controller** (web UI, planning, job dispatch) or as a
 **node** (runs local models with llama.cpp, runs commands, keeps nothing after a job).
@@ -202,7 +202,12 @@ routine code writing runs on your nodes. Every Claude call is metered live on th
 
 ## Updating
 
-1. **Updates tab:** drop in the new binaries, one per platform you use (`outpost-linux-amd64`, …).
+1. **Updates tab:** either click **Download** next to a release under **GitHub releases**, or drop in
+   the new binaries yourself, one per platform you use (`outpost-linux-amd64`, …). GitHub downloads
+   are checked against the release's `SHA256SUMS` and then stored exactly like an upload. The
+   repository (default `64fedoras/outpost`) and, for a private repository, a GitHub access token
+   (read access to contents; stored encrypted) are set under **Settings → Outpost updates**.
+   Nothing is downloaded or installed without a click.
 2. Click **Update** on the controller row (updates the web UI too; you stay signed in), then
    **Update N nodes**. Each row shows the machine's status, its version and a live progress bar.
 

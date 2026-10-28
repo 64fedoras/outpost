@@ -113,6 +113,7 @@ type Controller struct {
 	jobs       map[string]*JobRec
 	jobOrder   []string
 	releases   map[string]*Release
+	gh         outpostGH // GitHub release list and download progress
 	updates    map[string]*UpdateStatus
 
 	settings  Settings
@@ -208,6 +209,8 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/jobs/{id}/cancel", c.auth(c.handleCancelJob))
 	mux.HandleFunc("POST /api/releases", c.auth(c.handleUploadRelease))
 	mux.HandleFunc("DELETE /api/releases/{platform}", c.auth(c.handleDeleteRelease))
+	mux.HandleFunc("GET /api/github-releases", c.auth(c.handleGitHubReleases))
+	mux.HandleFunc("POST /api/github-releases/{tag}/stage", c.auth(c.handleStageGitHubRelease))
 	mux.HandleFunc("POST /api/nodes/{id}/update", c.auth(c.handleUpdateNode))
 	mux.HandleFunc("POST /api/update-all", c.auth(c.handleUpdateAll))
 	mux.HandleFunc("POST /api/controller/update", c.auth(c.handleUpdateController))
@@ -424,7 +427,7 @@ func (c *Controller) handleState(w http.ResponseWriter, r *http.Request) {
 		"version": Version, "platform": thisPlatform(), "controller_update_to": ctlUpdate,
 		"controller_rollback_to": previousVersion(c.agentDir()),
 		"fingerprint":            c.fingerprint, "advertise": c.advertise,
-		"nodes": nodes, "jobs": jobs, "releases": releases, "ops": c.nodeOps,
+		"nodes": nodes, "jobs": jobs, "releases": releases, "ops": c.nodeOps, "gh_stage": c.gh.stage,
 		"has_claude_key": c.settings.AnthropicKeyEnc != "", "default_planner": c.settings.DefaultPlanner,
 		"default_cap_usd": c.settings.DefaultCapUSD, "claude_model": c.settings.ClaudeModel,
 	})

@@ -14,7 +14,7 @@ import (
 )
 
 // Settings live in <data>/settings.json. Secrets (Claude API key, Hugging Face
-// token) are encrypted with AES-256-GCM using <data>/secret.key, so they never
+// and GitHub tokens) are encrypted with AES-256-GCM using <data>/secret.key, so they never
 // sit in plain text in the settings file or in backups of it alone.
 type Settings struct {
 	AnthropicKeyEnc string  `json:"anthropic_key_enc,omitempty"`
@@ -25,6 +25,8 @@ type Settings struct {
 	BackupEnabled   bool    `json:"backup_enabled,omitempty"`
 	BackupDir       string  `json:"backup_dir,omitempty"`
 	BackupPassEnc   string  `json:"backup_pass_enc,omitempty"`
+	GitHubRepo      string  `json:"github_repo,omitempty"`      // Outpost releases come from here; "" means defaultOutpostRepo
+	GitHubTokenEnc  string  `json:"github_token_enc,omitempty"` // for a private repo
 }
 
 func defaultSettings() Settings {
@@ -138,6 +140,7 @@ func (c *Controller) settingsView() map[string]any {
 		"has_hf_token": hf != "", "claude_model": c.settings.ClaudeModel,
 		"default_cap_usd": c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner,
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
+		"github_repo": repoOrDefault(c.settings.GitHubRepo), "has_github_token": c.settings.GitHubTokenEnc != "",
 		"backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
 }
@@ -153,6 +156,8 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		ClaudeModel    *string  `json:"claude_model"`
 		DefaultCapUSD  *float64 `json:"default_cap_usd"`
 		DefaultPlanner *string  `json:"default_planner"`
+		GitHubRepo     *string  `json:"github_repo"`
+		GitHubToken    *string  `json:"github_token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
@@ -179,7 +184,38 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		}
 		hfEnc = &enc
 	}
+	var ghEnc, ghRepo *string
+	if req.GitHubToken != nil {
+		v := strings.TrimSpace(*req.GitHubToken)
+		enc := ""
+		if v != "" {
+			enc, _ = c.encrypt(v)
+		}
+		ghEnc = &enc
+	}
+	if req.GitHubRepo != nil {
+		v, err := normalizeRepo(*req.GitHubRepo)
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		if v == defaultOutpostRepo {
+			v = ""
+		}
+		ghRepo = &v
+	}
+	if ghEnc != nil || ghRepo != nil {
+		c.gh.mu.Lock()
+		c.gh.releases = nil // list again with the new repo or token
+		c.gh.mu.Unlock()
+	}
 	c.mu.Lock()
+	if ghEnc != nil {
+		c.settings.GitHubTokenEnc = *ghEnc
+	}
+	if ghRepo != nil {
+		c.settings.GitHubRepo = *ghRepo
+	}
 	if akEnc != nil {
 		c.settings.AnthropicKeyEnc = *akEnc
 	}
@@ -204,4 +240,11 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, 200, c.settingsView())
+}
+
+func repoOrDefault(r string) string {
+	if r == "" {
+		return defaultOutpostRepo
+	}
+	return r
 }

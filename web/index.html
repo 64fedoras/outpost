@@ -132,6 +132,9 @@
     <section data-page="updates" class="hidden">
       <div class="section-head"><h2>Controller and nodes</h2><span class="spacer"></span><button id="btn-upd-all">Update all</button></div>
       <div class="table-wrap" id="upd-table"></div>
+      <div class="section-head"><h2>GitHub releases</h2><span class="spacer"></span><button id="gh-refresh" class="small">Check GitHub</button></div>
+      <p class="hint" id="gh-hint">Download a release's binaries here, then use the Update buttons above. Nothing installs by itself.</p>
+      <div id="gh-releases"></div>
       <div class="section-head"><h2>Uploaded releases</h2></div>
       <label class="drop" id="drop">
         <input type="file" id="drop-input" multiple class="hidden">
@@ -162,6 +165,14 @@
           <p class="hint">Only needed for gated models (accept the model's license on huggingface.co first).</p>
           <label for="set-hf">Access token <span id="set-hf-state"></span></label>
           <div class="btns" style="flex-wrap:nowrap"><input id="set-hf" type="password" placeholder="hf_…" autocomplete="off"><button id="set-hf-save">Save</button><button id="set-hf-clear" class="danger">Remove</button></div>
+        </div>
+        <div class="section-head"><h2>Outpost updates</h2></div>
+        <div class="card">
+          <p class="hint">The Updates tab lists releases from this GitHub repository. The token is only needed if the repository is private (read access to its contents is enough).</p>
+          <label for="set-ghrepo">Repository</label>
+          <div class="btns" style="flex-wrap:nowrap"><input id="set-ghrepo" placeholder="owner/name" autocomplete="off"><button id="set-ghrepo-save">Save</button></div>
+          <label for="set-gh">Access token <span id="set-gh-state"></span></label>
+          <div class="btns" style="flex-wrap:nowrap"><input id="set-gh" type="password" placeholder="github_pat_…" autocomplete="off"><button id="set-gh-save">Save</button><button id="set-gh-clear" class="danger">Remove</button></div>
         </div>
         <div class="section-head"><h2>Admin password</h2></div>
         <div class="card">

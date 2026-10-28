@@ -109,7 +109,7 @@ async function refresh() {
   if (page === 'new') renderNew();
   if (page === 'nodes') { renderNodes(); renderJobs(); }
   if (page === 'models') renderModels();
-  if (page === 'updates') renderUpdates();
+  if (page === 'updates') { renderUpdates(); if (!ghLoaded) loadGitHub(false); }
 }
 
 const ACTIVE = ['planning', 'awaiting_answers', 'awaiting_approval', 'running', 'testing', 'fixing', 'paused_cap'];
@@ -745,10 +745,38 @@ function renderUpdates() {
   b.disabled = !outdated; b.className = outdated ? 'primary' : '';
   b.textContent = outdated ? `Update ${outdated} node${outdated === 1 ? '' : 's'}` : 'All nodes up to date';
   const rel = state.releases || [];
+  renderGitHub();
   setHTML('releases', rel.length ? `<div class="table-wrap"><table><thead><tr><th>Platform</th><th>Version</th><th>Size</th><th>SHA-256</th><th>Uploaded</th><th></th></tr></thead><tbody>${
-    rel.map((r) => `<tr><td>${esc(r.platform)}</td><td>v${esc(r.version)}</td><td>${bytes(r.bytes)}</td><td class="mono" title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 12))}…</td><td>${ago(r.uploaded)}</td>
+    rel.map((r) => `<tr><td>${esc(r.platform)}</td><td>v${esc(r.version)}${r.source ? ` <span class="muted">· ${esc(r.source)}</span>` : ''}</td><td>${bytes(r.bytes)}</td><td class="mono" title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 12))}…</td><td>${ago(r.uploaded)}</td>
       <td class="r"><button class="small danger" data-act="del-release" data-platform="${esc(r.platform)}">Delete</button></td></tr>`).join('')}</tbody></table></div>` : '');
 }
+// GitHub releases: list, then one click stages the binaries on the controller.
+let ghLoaded = false, ghData = null, ghErr = '';
+async function loadGitHub(force) {
+  ghLoaded = true;
+  try { ghData = await api('/api/github-releases' + (force ? '?refresh=1' : '')); ghErr = ''; }
+  catch (e) { ghData = null; ghErr = e.message; }
+  renderGitHub();
+}
+function renderGitHub() {
+  const st = state.gh_stage, busy = st && st.state === 'downloading';
+  let h = '';
+  if (ghErr) h += `<p class="error-msg">${esc(ghErr)}</p>`;
+  if (st && (busy || (Date.now() - new Date(st.updated)) < 600000)) {
+    if (busy) h += `<div class="prog"><span>${esc(st.tag)}: downloading ${esc(st.file || '')} ${bytes(st.bytes_done)} of ${bytes(st.bytes_total)}</span>${bar(st.bytes_total ? 100 * st.bytes_done / st.bytes_total : 5, 'good')}</div>`;
+    else if (st.state === 'failed') h += `<p class="error-msg">${esc(st.tag)}: ${esc(st.error)}</p>`;
+    else h += `<p><span class="st-done">✓ ${esc(st.tag)} downloaded${st.staged && st.staged.length ? ' (' + esc(st.staged.join(', ')) + ')' : ' (already up to date)'}.</span> Use the Update buttons above.</p>`;
+  }
+  if (ghData) {
+    $('gh-hint').textContent = `From github.com/${ghData.repo}. Download a release's binaries here, then use the Update buttons above. Nothing installs by itself.`;
+    h += ghData.releases.length ? `<div class="table-wrap"><table><thead><tr><th>Release</th><th>Published</th><th>Platforms</th><th></th></tr></thead><tbody>${
+      ghData.releases.map((r) => `<tr><td><a href="${esc(r.url)}" target="_blank" rel="noopener"><b>v${esc(r.version)}</b></a>${r.newer ? ' ' + pill('done', 'newer') : r.current ? ' <span class="muted">running</span>' : ''}${r.prerelease ? ' <span class="muted">pre-release</span>' : ''}</td>
+        <td>${ago(r.published)}</td><td>${r.platforms.length} · ${bytes(r.bytes)}${r.has_sums ? '' : ' <span class="error-msg" style="margin:0">no SHA256SUMS</span>'}</td>
+        <td class="r">${r.staged ? '<span class="muted">downloaded</span>' : r.platforms.length && r.has_sums ? `<button class="small ${r.newer ? 'primary' : ''}" data-act="gh-stage" data-tag="${esc(r.tag)}" ${busy ? 'disabled' : ''}>Download</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No releases found.</p>';
+  }
+  setHTML('gh-releases', h);
+}
+$('gh-refresh').onclick = () => loadGitHub(true);
 $('btn-upd-all').onclick = async () => {
   try { const r = await post('/api/update-all'); toast(`Started ${r.started} update(s)`); refresh(); } catch (e) { toast(e.message); }
 };
@@ -808,6 +836,8 @@ async function loadSettings() {
   try { settings = await api('/api/settings'); } catch (e) { return; }
   $('set-key-state').innerHTML = settings.has_anthropic_key ? `<span class="st-done">· saved (${esc(settings.anthropic_key_hint)})</span>` : '<span class="muted">· not set</span>';
   $('set-hf-state').innerHTML = settings.has_hf_token ? '<span class="st-done">· saved</span>' : '<span class="muted">· not set</span>';
+  $('set-gh-state').innerHTML = settings.has_github_token ? '<span class="st-done">· saved</span>' : '<span class="muted">· not set</span>';
+  $('set-ghrepo').value = settings.github_repo || '';
   $('set-model').innerHTML = claudeModelOptions(settings.claude_model);
   $('set-cap').value = settings.default_cap_usd;
   if (!state) state = await api('/api/state').catch(() => null);
@@ -867,6 +897,9 @@ async function saveSettings(body, msg) {
 $('set-key-save').onclick = () => { const v = $('set-key').value.trim(); if (!v) return; $('set-key').value = ''; saveSettings({ anthropic_key: v }, 'API key saved'); };
 $('set-key-clear').onclick = () => { if (confirm('Remove the Claude API key?')) saveSettings({ anthropic_key: '' }, 'API key removed'); };
 $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
+$('set-ghrepo-save').onclick = () => saveSettings({ github_repo: $('set-ghrepo').value.trim() }, 'Repository saved').then(() => { ghLoaded = false; });
+$('set-gh-save').onclick = () => { const v = $('set-gh').value.trim(); if (!v) return; $('set-gh').value = ''; saveSettings({ github_token: v }, 'Token saved').then(() => { ghLoaded = false; }); };
+$('set-gh-clear').onclick = () => saveSettings({ github_token: '' }, 'Token removed').then(() => { ghLoaded = false; });
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value }, 'Defaults saved');
 $('pw-form').onsubmit = async (e) => {
@@ -1040,6 +1073,7 @@ document.addEventListener('click', async (e) => {
       case 'model-unstore': if (confirm(`Delete ${el.dataset.name}'s files from the controller? It stays in the library; nodes that need it download it from Hugging Face. Copies already on nodes stay.`)) { await post(`/api/models/${encodeURIComponent(el.dataset.name)}/unstore`); toast('Freed controller space'); } break;
       case 'model-retry': await post(`/api/models/${encodeURIComponent(el.dataset.name)}/retry`); toast('Resuming download'); break;
       case 'model-delete': if (confirm(`Remove ${el.dataset.name} from the library (and its files from the controller, if stored there)? Copies already on nodes stay; delete those on the node card.`)) await api(`/api/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); break;
+      case 'gh-stage': await post(`/api/github-releases/${encodeURIComponent(el.dataset.tag)}/stage`); toast('Downloading…'); break;
       case 'node-update': await post(`/api/nodes/${id}/update`); toast('Update sent'); break;
       case 'ctl-update': await updateController(); return;
       case 'ctl-rollback': await rollbackController(); return;
