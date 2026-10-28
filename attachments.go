@@ -43,13 +43,14 @@ type Attachment struct {
 }
 
 type createReq struct {
-	Prompt      string  `json:"prompt"`
-	Planner     string  `json:"planner"`
-	ClaudeModel string  `json:"claude_model"`
-	ORModel     string  `json:"openrouter_model"`
-	CapUSD      float64 `json:"cap_usd"`
-	Review      *bool   `json:"review"`
-	Project     string  `json:"project"`
+	Prompt      string        `json:"prompt"`
+	Planner     string        `json:"planner"`
+	ClaudeModel string        `json:"claude_model"`
+	ORModel     string        `json:"openrouter_model"`
+	CapUSD      float64       `json:"cap_usd"`
+	Review      *bool         `json:"review"`
+	Project     string        `json:"project"`
+	Images      []imageUpload `json:"images"` // screenshots for the planner (tasks_images.go)
 }
 
 type attachedFile struct {
@@ -62,12 +63,12 @@ type attachedFile struct {
 func readCreateRequest(w http.ResponseWriter, r *http.Request) (createReq, []attachedFile, error) {
 	var req createReq
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxImageBodyBytes)).Decode(&req); err != nil {
 			return req, nil, errors.New("describe the task")
 		}
 		return req, nil, nil
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxAttachBytes+(1<<20))
+	r.Body = http.MaxBytesReader(w, r.Body, maxAttachBytes+maxImageBodyBytes)
 	mr, err := r.MultipartReader()
 	if err != nil {
 		return req, nil, err
@@ -84,7 +85,7 @@ func readCreateRequest(w http.ResponseWriter, r *http.Request) (createReq, []att
 		}
 		switch part.FormName() {
 		case "payload":
-			if err := json.NewDecoder(io.LimitReader(part, 1<<20)).Decode(&req); err != nil {
+			if err := json.NewDecoder(io.LimitReader(part, maxImageBodyBytes)).Decode(&req); err != nil {
 				return req, nil, errors.New("describe the task")
 			}
 		case "files":

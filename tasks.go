@@ -324,8 +324,10 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 409, map[string]string{"error": err.Error()})
 		return
 	}
+	var imgNames []string
+	var t *Task
 	review := req.Review == nil || *req.Review
-	t := &Task{ProjectID: req.Project, ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, ORModel: req.ORModel, Review: review,
+	t = &Task{ProjectID: req.Project, ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, ORModel: req.ORModel, Review: review,
 		Instructions: set.Instructions, CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1}
 	t.dir = filepath.Join(c.tasksDir(), t.ID)
 	if proj != nil {
@@ -341,9 +343,23 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
+	if len(req.Images) > 0 {
+		imgs, err := decodeImages(req.Images)
+		if err == nil {
+			err = c.checkPlannerVision(req.Planner, req.ORModel)
+		}
+		if err == nil {
+			imgNames, err = t.saveImages(imgs)
+		}
+		if err != nil {
+			os.RemoveAll(t.dir)
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	t.Events = append(t.Events, TaskEvent{Time: time.Now(), Level: "info", Text: "Task created; planning with " + c.plannerLabel(t.Planner, t.ClaudeModel, t.ORModel) + "."})
 	t.mu.Lock()
-	t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: t.Prompt})
+	t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: t.Prompt, Images: imgNames})
 	t.mu.Unlock()
 	c.mu.Lock()
 	c.tasks[t.ID] = t
@@ -777,9 +793,9 @@ func (c *Controller) plannerCall(ctx context.Context, t *Task, req llmRequest) (
 		var est float64
 		if planner == "openrouter" {
 			_ = openRouterModels.refresh(ctx, c.openRouterKey(), false) // for prices; cached for an hour
-			est = openRouterEstimate(orModel, len(req.System)+len(req.User), req.MaxTokens/2)
+			est = openRouterEstimate(orModel, len(req.System)+len(req.User)+imageTokenChars*len(req.Images), req.MaxTokens/2)
 		} else {
-			est = estimateCost(model, len(req.System)+len(req.User), req.MaxTokens/2)
+			est = estimateCost(model, len(req.System)+len(req.User)+imageTokenChars*len(req.Images), req.MaxTokens/2)
 			if req.WebSearch {
 				est += webSearchUses * webSearchUSD
 			}
@@ -875,7 +891,16 @@ func (c *Controller) nodeCall(ctx context.Context, t *Task, nodeID string, req l
 		defer c.releaseNode(nodeID)
 	}
 	temp := req.Temperature
-	spec := InferenceSpec{Messages: []ChatMessage{{Role: "system", Content: req.System}, {Role: "user", Content: req.User}},
+	user := ChatMessage{Role: "user", Content: req.User}
+	if len(req.Images) > 0 {
+		if !c.nodeVision(nodeID) {
+			return nil, errNoVisionLocal
+		}
+		for _, img := range req.Images {
+			user.Images = append(user.Images, img.dataURI())
+		}
+	}
+	spec := InferenceSpec{Messages: []ChatMessage{{Role: "system", Content: req.System}, user},
 		Params: InferenceParams{Temperature: &temp, MaxTokens: req.MaxTokens}}
 	start := time.Now()
 	live := taskLive.begin(t.ID, req.Sub, req.Label, c.nodeLabel(nodeID), false)
@@ -1084,7 +1109,7 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 	var plan *Plan
 	var lastErr error
 	for attempt := 0; attempt < 2 && plan == nil; attempt++ {
-		req := llmRequest{System: plannerSystem + c.toolsPrompt(), User: user, MaxTokens: 8000, Temperature: 0.2, Label: "Planning", WebSearch: webSearch}
+		req := llmRequest{System: plannerSystem + c.toolsPrompt(), User: user, MaxTokens: 8000, Temperature: 0.2, Label: "Planning", WebSearch: webSearch, Images: t.roundImages()}
 		if indexed {
 			req.System += plannerIndexHelp
 		}

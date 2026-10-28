@@ -641,8 +641,17 @@ func (l *llamaMgr) load(ml ModelLoad) {
 	}
 	l.stop()
 	files := make([]string, 0, len(m.Files))
+	ml.MMProj = ""
 	for _, f := range m.Files {
+		if strings.Contains(strings.ToLower(f.Path), "mmproj") {
+			ml.MMProj = filepath.Join(l.n.modelsDir(), ml.Name, f.Path) // vision projector, passed as --mmproj
+			continue
+		}
 		files = append(files, f.Path)
+	}
+	if len(files) == 0 {
+		fail("model %s has no model file", ml.Name)
+		return
 	}
 	sort.Strings(files) // split models: llama.cpp is given the first part
 	modelPath := filepath.Join(l.n.modelsDir(), ml.Name, files[0])
@@ -669,6 +678,9 @@ func (l *llamaMgr) start(rt *runtimeRecord, ml ModelLoad, modelPath string, rest
 		return err
 	}
 	args := []string{"-m", modelPath, "--host", "127.0.0.1", "--port", strconv.Itoa(port), "--no-webui", "-a", ml.Name}
+	if ml.MMProj != "" {
+		args = append(args, "--mmproj", ml.MMProj)
+	}
 	if ml.Ctx > 0 {
 		args = append(args, "-c", strconv.Itoa(ml.Ctx))
 	}
@@ -792,7 +804,7 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 		l.mu.Unlock()
 	}()
 
-	body := map[string]any{"messages": spec.Messages, "stream": true, "stream_options": map[string]bool{"include_usage": true}}
+	body := map[string]any{"messages": chatPayload(spec.Messages), "stream": true, "stream_options": map[string]bool{"include_usage": true}}
 	if spec.Params.Temperature != nil {
 		body["temperature"] = *spec.Params.Temperature
 	}
@@ -1096,4 +1108,23 @@ func (n *Node) fetchModel(mf ModelFetch) {
 	log.Printf("model %s downloaded from Hugging Face (%s)", mf.Name, humanBytes(total))
 	n.resendHello() // before "done": the controller checks the model list next
 	n.opStatus(op, mf.Name, "done", total, total, "")
+}
+
+// chatPayload turns messages into llama-server's OpenAI-style form. A message
+// with images becomes a list of content parts (text, then one image_url data
+// URI per image); plain messages are sent unchanged.
+func chatPayload(msgs []ChatMessage) []any {
+	out := make([]any, 0, len(msgs))
+	for _, m := range msgs {
+		if len(m.Images) == 0 {
+			out = append(out, map[string]any{"role": m.Role, "content": m.Content})
+			continue
+		}
+		parts := []map[string]any{{"type": "text", "text": m.Content}}
+		for _, img := range m.Images {
+			parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]string{"url": img}})
+		}
+		out = append(out, map[string]any{"role": m.Role, "content": parts})
+	}
+	return out
 }
