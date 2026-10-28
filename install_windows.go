@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -73,6 +74,9 @@ func installNodeWindows(args []string) error {
 		fmt.Println("Installed", exe)
 	}
 
+	if isElevated() {
+		openPeerPortWindows(exe)
+	}
 	if asService {
 		if !*noDefender {
 			addDefenderExclusion(filepath.Dir(*data))
@@ -142,4 +146,18 @@ func quitUserNode(data string) {
 	if _, err := t.call("POST", "/quit"); err == nil {
 		time.Sleep(3 * time.Second)
 	}
+}
+
+// openPeerPortWindows lets other nodes reach this node's model-sharing port (8444),
+// for private networks only. Best effort: without it copies fall back to the controller.
+func openPeerPortWindows(exe string) {
+	const rule = "Outpost model sharing"
+	_ = exec.Command("netsh", "advfirewall", "firewall", "delete", "rule", "name="+rule).Run()
+	err := exec.Command("netsh", "advfirewall", "firewall", "add", "rule", "name="+rule, "dir=in", "action=allow",
+		"protocol=TCP", "localport="+strconv.Itoa(peerPort), "program="+exe, "profile=private,domain").Run()
+	if err != nil {
+		fmt.Printf("Could not open TCP port %d in Windows Firewall (%v); other nodes will copy models from the controller instead.\n", peerPort, err)
+		return
+	}
+	fmt.Printf("Opened TCP port %d in Windows Firewall (private and domain networks) so other nodes can copy models from this one.\n", peerPort)
 }

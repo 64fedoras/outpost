@@ -658,7 +658,12 @@ func (c *Controller) loadPipeline(ctx context.Context, id string, ml ModelLoad) 
 		}
 		ml.RPC = endpoints
 	}
-	// 2. model files
+	// 2. model files: from another node first, checked against the controller's hash
+	if !c.nodeHasModel(id, ml.Name) {
+		if err := c.copyFromPeers(ctx, id, m); err != nil && ctx.Err() == nil {
+			log.Printf("node %s: copy of %s from other nodes failed (%v); using the usual route", id, ml.Name, err)
+		}
+	}
 	if !c.nodeHasModel(id, ml.Name) && m.Storage == "direct" {
 		files := make([]ModelFetchFile, len(m.Files))
 		for i, f := range m.Files {
