@@ -41,6 +41,7 @@ Run in the foreground:
   outpost tray [--data DIR]              (status icon: pause work, join another controller, quit)
   outpost repin --fingerprint SHA256 [--data DIR]
                                         (node: trust the controller's new TLS certificate)
+  outpost licenses                      (show the AGPL-3.0 licence, source link and third-party notices)
   outpost hwinfo                        (show the CPU, RAM and GPUs this machine reports)
 `, Version)
 }
@@ -72,6 +73,8 @@ func main() {
 		err = runService(os.Args[2:])
 	case "repin":
 		err = runRepin(os.Args[2:])
+	case "licenses":
+		runLicenses()
 	case "hwinfo":
 		runHWInfo()
 	case "version", "--version", "-v":
