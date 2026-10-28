@@ -1,0 +1,54 @@
+name: Clean up merged branches
+
+# Deletes the head branch of a merged pull request when it lives in this repo
+# and starts with claude/. The repo setting "Automatically delete head branches"
+# does the same job when it is on; this keeps working without it.
+# Run it by hand with a list of branches to delete leftovers: each branch is only
+# deleted if it has a merged PR and no open PR.
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      branches:
+        description: Space-separated claude/ branch names to delete
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  on-merge:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'claude/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete head branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$BRANCH"
+
+  leftovers:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete merged branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCHES: ${{ inputs.branches }}
+        run: |
+          for b in $BRANCHES; do
+            case "$b" in claude/*) ;; *) echo "skip $b: not a claude/ branch"; continue ;; esac
+            open=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&head=${GITHUB_REPOSITORY%/*}:$b" --jq length)
+            merged=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=closed&head=${GITHUB_REPOSITORY%/*}:$b" --jq '[.[] | select(.merged_at != null)] | length')
+            if [ "$open" != 0 ] || [ "$merged" = 0 ]; then
+              echo "skip $b: open=$open merged=$merged"; continue
+            fi
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$b" && echo "deleted $b"
+          done
