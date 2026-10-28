@@ -14,7 +14,7 @@ shipped by 0.8.0) and the notes on what is untested.
 `docs/ARCHITECTURE.md` explains the data folders, node connection, task lifecycle and update flow.
 
 ## Owner preferences (standing)
-- **Version numbering:** patch numbers are automatic (see below); minor and major bumps are deliberate. Two-digit components (0.8.10, 0.10.0) are fine at the owner's say-so (2026-10-28), so versions are always compared numerically, never as strings. The 0.8.0 pin was a one-time request for that single combined release.
+- **Version numbering:** patch numbers are automatic (see below); only a **major** bump must be deliberate (owner's words, 2026-10-28: he only cares that major version numbers are deliberate). Minor bumps are by hand in `proto.go` but need no special sign-off. Two-digit components (0.8.10, 0.10.0) are fine at the owner's say-so (2026-10-28), so versions are always compared numerically, never as strings. The 0.8.0 pin was a one-time request for that single combined release.
 - Keep Outpost **self-contained in the binary** (without making it huge) so updates and rollbacks stay easy.
   Zero runtime dependencies on nodes except what Outpost installs itself (llama.cpp builds, bundled libgomp).
 - Hands-off flow: the owner approves a plan, nodes work, the finished output is downloadable from the web UI.
