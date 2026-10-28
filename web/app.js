@@ -239,7 +239,7 @@ $('nt-files').addEventListener('change', () => {
 });
 async function startTask() {
   $('nt-err').classList.add('hidden');
-  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, project: $('nt-project').value, images: ntImg.payload() };
+  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, mockup: $('nt-mockup').checked, project: $('nt-project').value, images: ntImg.payload() };
   if (!body.prompt.trim()) { $('nt-prompt').focus(); return; }
   $('nt-go').disabled = true;
   try {
@@ -450,9 +450,25 @@ function msgItem(t, m, liveQuestions, livePlan) {
     case 'agent_question': return { key, cls: 'card-row', html: agentQuestionCard(m) };
     case 'plan': return { key, cls: 'card-row', html: planCard(t, m, livePlan) };
     case 'result': return { key, cls: 'card-row', html: resultCard(t, m) };
+    case 'shots': case 'mockup': return { key, cls: 'card-row', html: shotsCard(t, m, msgs_lastMockup(t) === m.id) };
     case 'error': return { key, cls: 'card-row', html: `<div class="card-msg bad"><div class="card-head">Something went wrong</div><p>${esc(m.text)}</p>${t.status === 'failed' && m.round === (t.round || 1) ? '<div class="card-actions"><button class="primary" data-act="task-resume">Try again</button><span class="hint">or send a message to change course</span></div>' : ''}</div>` };
     default: return { key, cls: 'from-planner', html: `<div class="said">${esc(m.text)}</div>` };
   }
+}
+
+function msgs_lastMockup(t) {
+  const ms = (t.messages || []).filter((m) => m.kind === 'mockup');
+  return ms.length ? ms[ms.length - 1].id : '';
+}
+
+// Screenshots of what a round built; for a mockup, one column per variant with a Pick button.
+function shotsCard(t, m, pickable) {
+  const mock = m.kind === 'mockup';
+  const img = (n, cls) => `<a href="/api/tasks/${t.id}/shot?name=${encodeURIComponent(n)}" target="_blank" rel="noopener"><img class="${cls}" src="/api/tasks/${t.id}/shot?name=${encodeURIComponent(n)}" alt="screenshot" loading="lazy"></a>`;
+  const cols = (m.shots || []).map((s) => `<figure class="shot"><figcaption><b>${esc(mock ? 'Variant ' + s.label.toUpperCase() : s.page)}</b>${mock ? ` <span class="muted mono">${esc(s.page)}</span>` : ''}</figcaption>
+    <div class="shot-pair">${img(s.desktop, 'shot-desktop')}${img(s.phone, 'shot-phone')}</div>
+    ${mock && pickable && t.mockup && t.status === 'done' ? `<button class="primary" data-act="task-pick" data-page="${esc(s.page)}">Build this one</button>` : ''}</figure>`).join('');
+  return `<div class="card-msg shots"><div class="card-head">${mock ? 'Mockup variants' : 'Screenshots'}</div><p>${esc(m.text)}</p><div class="shot-grid">${cols}</div></div>`;
 }
 
 function questionsCard(m, live) {
@@ -714,6 +730,7 @@ async function taskAction(act, el) {
   try {
     switch (act) {
       case 'task-approve': await post(`/api/tasks/${id}/approve`, { cap_usd: parseFloat(($('ta-cap') || {}).value) || 0 }); break;
+      case 'task-pick': await post(`/api/tasks/${id}/pick`, { page: el.dataset.page }); toast('Building from that variant'); break;
       case 'task-answer': {
         const answers = collectAnswers();
         await post(`/api/tasks/${id}/answers`, { answers });

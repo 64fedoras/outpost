@@ -50,6 +50,7 @@ type createReq struct {
 	CapUSD      float64       `json:"cap_usd"`
 	Review      *bool         `json:"review"`
 	Project     string        `json:"project"`
+	Mockup      bool          `json:"mockup"` // plan design variants to pick from first (visual.go)
 	Images      []imageUpload `json:"images"` // screenshots for the planner (tasks_images.go)
 }
 
