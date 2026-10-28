@@ -63,7 +63,11 @@ class H(BaseHTTPRequestHandler):
                 plan = dict(PLAN_INV); plan["note"] = "One subtask investigates before the others start."
                 text = json.dumps(plan)
             else:
-                plan = dict(PLAN); plan["note"] = "I went with a small Python package and unittest, since you asked for standard tools."
+                plan = dict(PLAN)
+                if "build artifacts" in user:  # exercises the build step with one blob-sized file
+                    plan["build_command"] = "python3 -c \"import os;os.makedirs('dist',exist_ok=True);open('dist/app.bin','wb').write(bytes(range(256))*12000);open('dist/info.txt','w').write('v1')\""
+                    plan["artifacts"] = ["dist/*"]
+                plan["note"] = "I went with a small Python package and unittest, since you asked for standard tools."
                 text = json.dumps(plan)
         elif "tests fail" in system:
             # Fix: make core.py correct.
