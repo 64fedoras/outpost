@@ -16,6 +16,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | Script | What it does |
 | --- | --- |
 | `flow.py dark\|light` | Full chat flow: question cards, plan approval, steering note, result, follow-up round. About 3 to 4 minutes, because the fake model sleeps 4 s per call. Screenshots go to `run/chat/`. |
+| `edit.py` | Editing messages: before approval, then after a finished round (files undone, new round). Set `OUTPOST_CHROMIUM` to a Chromium binary if Playwright's own is missing. |
 | `mobile.py` | The same pages at phone width. |
 | `shots.py` | Screenshots of every tab (needs a task id edited into the script). |
 
