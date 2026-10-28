@@ -60,6 +60,7 @@ type Node struct {
 	rpc         *rpcMgr
 	paused      bool // no new work (tray icon); kept in <data>/paused
 	online      bool // connected and welcomed by the controller
+	tools       toolCache
 }
 
 func (n *Node) agentDir() string { return filepath.Join(n.dataDir, "agent") }
@@ -291,6 +292,7 @@ func (n *Node) sessionInner(welcomed *bool) error {
 	log.Printf("connected to %s (exec %s)", n.cfg.Controller, onOff(wel.Settings.ExecEnabled))
 
 	go n.heartbeatLoop(ctx)
+	go n.toolsLoop(ctx)
 
 	for {
 		_, msg, err := conn.Read(ctx)
@@ -331,6 +333,11 @@ func (n *Node) sessionInner(welcomed *bool) error {
 			var ri RuntimeInstall
 			if json.Unmarshal(env.Body, &ri) == nil {
 				go n.installRuntime(ri)
+			}
+		case "toolchain.install":
+			var ti ToolInstall
+			if json.Unmarshal(env.Body, &ti) == nil {
+				go n.installToolchain(ti)
 			}
 		case "model.push":
 			var mp ModelPush
@@ -456,6 +463,7 @@ func (n *Node) hello() Hello {
 		VulkanAvailable: vulkanAvailable(),
 		RollbackTo:      previousVersion(n.agentDir()),
 		Paused:          n.isPaused(),
+		Tools:           n.toolInventory(false), Shell: nodeShell(),
 	}
 	if rt := n.currentRuntime(); rt != nil {
 		h.Runtime = &rt.RuntimeInfo
@@ -703,7 +711,7 @@ func (n *Node) runJob(jd JobDispatch) {
 
 	cmd := exec.CommandContext(ctx, spec.Argv[0], spec.Argv[1:]...)
 	cmd.Dir = dir
-	cmd.Env = os.Environ()
+	cmd.Env = n.execEnv()
 	for k, v := range spec.Env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}

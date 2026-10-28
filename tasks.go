@@ -1039,7 +1039,7 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 	var plan *Plan
 	var lastErr error
 	for attempt := 0; attempt < 2 && plan == nil; attempt++ {
-		req := llmRequest{System: plannerSystem, User: user, MaxTokens: 8000, Temperature: 0.2, Label: "Planning", WebSearch: webSearch}
+		req := llmRequest{System: plannerSystem + c.toolsPrompt(), User: user, MaxTokens: 8000, Temperature: 0.2, Label: "Planning", WebSearch: webSearch}
 		if indexed {
 			req.System += plannerIndexHelp
 		}
@@ -1683,6 +1683,18 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 			c.finishTask(t)
 			return
 		}
+		if need := toolsInCommand(cmd); len(need) > 0 {
+			capable := c.execNodesWith(execs, need)
+			if len(capable) == 0 {
+				t.mu.Lock()
+				t.TestStatus = "skipped"
+				t.mu.Unlock()
+				t.logf("warn", "No exec node has %s, so the tests were not run. Install it on a node (Go can be installed from the Nodes tab).", c.missingToolsNote(execs, need))
+				c.finishTask(t)
+				return
+			}
+			execs = capable
+		}
 		node := execs[round%len(execs)]
 		t.setStatus("testing")
 		t.logf("info", "Running tests on %s: %s", c.nodeLabel(node), cmd)
@@ -1690,7 +1702,7 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		if len(skipped) > 0 {
 			t.logf("warn", "Not sent to the test node (over 1 MiB): %s", strings.Join(skipped, ", "))
 		}
-		out, status, err := c.runExecJob(ctx, node, []string{"sh", "-c", cmd}, inputs, t.Title+" · tests", testTimeout)
+		out, status, err := c.runExecJob(ctx, node, c.execArgv(node, plan.SetupCommand, plan.TestCommand), inputs, t.Title+" · tests", testTimeout)
 		if errors.Is(err, errCancelled) || ctx.Err() != nil {
 			return
 		}
