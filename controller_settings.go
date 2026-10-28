@@ -37,6 +37,8 @@ type Settings struct {
 	PoolingNotice     bool           `json:"pooling_notice,omitempty"`      // pooling was switched on by the upgrade because a pool existed; shown once
 	GitHubUpdatesOff  bool           `json:"github_updates_off,omitempty"`  // default is on: check this repo's releases and download newer binaries
 	GitHubAutoInstall bool           `json:"github_auto_install,omitempty"` // also update idle nodes and the controller by itself
+	GitHubRepo        string         `json:"github_repo,omitempty"`         // owner/repo trusted for updates; empty = ghDefaultRepo
+	GitHubTokenEnc    string         `json:"github_token_enc,omitempty"`    // optional read-only token for a private repo; controller only
 	GitHubHoldVersion string         `json:"github_hold_version,omitempty"` // set by a rollback: auto-install skips this version and older
 	Notify            NotifySettings `json:"notify"`
 }
@@ -157,6 +159,7 @@ func (c *Controller) settingsView() map[string]any {
 		"auto_resume": !c.settings.AutoResumeOff, "best_of_n": normBestOf(c.settings.BestOfN),
 		"agent_mode": !c.settings.AgentOff, "web_search": c.settings.WebSearch, "web_allow_private": c.settings.WebAllowPrivate,
 		"pooling_enabled": c.poolingOnLocked(), "pooling_notice": c.settings.PoolingNotice,
+		"github_repo": c.ghRepoLocked(), "github_repo_default": ghDefaultRepo, "github_token_set": c.settings.GitHubTokenEnc != "",
 		"github_updates": !c.settings.GitHubUpdatesOff, "github_auto_install": c.settings.GitHubAutoInstall,
 		"instructions": c.settings.Instructions, "backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
@@ -196,6 +199,8 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		PoolingEnabled  *bool   `json:"pooling_enabled"`
 		GitHubUpdates   *bool   `json:"github_updates"`
 		GitHubAuto      *bool   `json:"github_auto_install"`
+		GitHubRepo      *string `json:"github_repo"`
+		GitHubToken     *string `json:"github_token"` // "" removes
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
@@ -227,6 +232,27 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 			enc, _ = c.encrypt(v)
 		}
 		hfEnc = &enc
+	}
+	ghRepoNew := ""
+	if req.GitHubRepo != nil {
+		r, err := parseGitHubRepo(*req.GitHubRepo)
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		ghRepoNew = r
+	}
+	var ghTokEnc *string
+	if req.GitHubToken != nil {
+		enc := ""
+		if v := strings.TrimSpace(*req.GitHubToken); v != "" {
+			var err error
+			if enc, err = c.encrypt(v); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		ghTokEnc = &enc
 	}
 	var ntfyEnc *string
 	if req.Notify != nil && req.Notify.NtfyToken != nil {
@@ -303,6 +329,21 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	if req.WebAllowPrivate != nil {
 		c.settings.WebAllowPrivate = *req.WebAllowPrivate
 	}
+	if req.GitHubRepo != nil {
+		old, _ := parseGitHubRepo(c.settings.GitHubRepo)
+		if ghRepoNew == ghDefaultRepo {
+			c.settings.GitHubRepo = ""
+		} else {
+			c.settings.GitHubRepo = ghRepoNew
+		}
+		if ghRepoNew != old { // another repository: its versions and rollback hold are unrelated
+			c.settings.GitHubHoldVersion = ""
+			c.ghState = ghUpdateState{}
+		}
+	}
+	if ghTokEnc != nil {
+		c.settings.GitHubTokenEnc = *ghTokEnc
+	}
 	if req.GitHubUpdates != nil {
 		c.settings.GitHubUpdatesOff = !*req.GitHubUpdates
 	}
@@ -325,4 +366,11 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, 200, c.settingsView())
+}
+
+func (c *Controller) ghRepoLocked() string {
+	if r, err := parseGitHubRepo(c.settings.GitHubRepo); err == nil {
+		return r
+	}
+	return ghDefaultRepo
 }

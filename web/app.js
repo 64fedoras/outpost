@@ -1421,6 +1421,10 @@ async function loadSettings() {
   $('set-autoresume').checked = !!settings.auto_resume;
   $('set-bestofn').value = settings.best_of_n || 'hard';
   $('set-instr').value = settings.instructions || '';
+  $('set-ghrepo').value = settings.github_repo ? 'https://github.com/' + settings.github_repo : '';
+  $('set-ghrepo').placeholder = 'https://github.com/' + (settings.github_repo_default || '64fedoras/outpost');
+  $('set-ghtoken').value = ''; $('set-ghtest-out').textContent = '';
+  $('set-ghtoken-state').innerHTML = settings.github_token_set ? '<span class="st-done">· token set</span>' : '<span class="muted">· not set</span>';
   $('set-ghupd').checked = settings.github_updates !== false; $('set-ghauto').checked = !!settings.github_auto_install;
   $('set-pooling').checked = !!settings.pooling_enabled;
   $('set-pooling-notice').classList.toggle('hidden', !settings.pooling_notice);
@@ -1536,7 +1540,23 @@ $('set-or-model-save').onclick = () => saveSettings({ openrouter_model: $('set-o
 $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-instr-save').onclick = () => saveSettings({ instructions: $('set-instr').value }, 'Instructions saved');
-$('set-ghupd-save').onclick = () => saveSettings({ github_updates: $('set-ghupd').checked, github_auto_install: $('set-ghauto').checked }, 'GitHub update settings saved');
+$('set-ghupd-save').onclick = () => {
+  const body = { github_updates: $('set-ghupd').checked, github_auto_install: $('set-ghauto').checked, github_repo: $('set-ghrepo').value.trim() };
+  const cur = settings.github_repo || settings.github_repo_default || '';
+  if (body.github_repo && !body.github_repo.toLowerCase().endsWith('/' + cur.toLowerCase()) && !confirm('Trust ' + body.github_repo + ' to supply updates for this controller and all nodes?')) return;
+  const tok = $('set-ghtoken').value.trim();
+  if (tok) body.github_token = tok;
+  $('set-ghtoken').value = '';
+  saveSettings(body, 'GitHub update settings saved');
+};
+$('set-ghtoken-clear').onclick = () => saveSettings({ github_token: '' }, 'GitHub token removed');
+$('set-ghtest').onclick = async () => {
+  const out = $('set-ghtest-out'); out.className = 'hint'; out.textContent = 'Testing…';
+  try {
+    const r = await post('/api/github-updates/test', { repo: $('set-ghrepo').value.trim(), token: $('set-ghtoken').value.trim() });
+    out.className = 'st-done'; out.textContent = r.message;
+  } catch (e) { out.className = 'error-msg'; out.textContent = e.message; }
+};
 $('set-pooling-save').onclick = () => saveSettings({ pooling_enabled: $('set-pooling').checked }, $('set-pooling').checked ? 'Pooling enabled' : 'Pooling off; pools dissolved');
 $('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, agent_mode: $('set-agent').checked, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked, auto_resume: $('set-autoresume').checked, best_of_n: $('set-bestofn').value }, 'Defaults saved');
 $('pw-form').onsubmit = async (e) => {

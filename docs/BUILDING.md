@@ -95,3 +95,11 @@ as in the Install section.
 Signing is optional and off by default: `build.sh` signs the Windows exe only if `OUTPOST_SIGN_PFX`
 (needs `osslsigncode`) or `OUTPOST_SIGN_CMD` is set, and `build.ps1` only if `OUTPOST_SIGN_CMD` is set
 (`{exe}` stands for the file). Without them the exe is left unsigned.
+
+## Updating from a fork or a private repository
+
+If you build Outpost yourself from a fork, point the controller at it under **Settings → Updates from
+GitHub → Repository to trust for updates**. Your fork's workflow must publish a release with the five
+binaries and a `SHA256SUMS` file, as this repository's does. For a private fork, create a fine-grained
+personal access token limited to that repository with read-only *Contents* access and paste it into the
+same section; the README ("Updating") has the steps.
