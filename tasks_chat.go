@@ -216,7 +216,7 @@ func (c *Controller) handleTaskMessage(w http.ResponseWriter, r *http.Request) {
 	var imgNames []string
 	if len(req.Images) > 0 {
 		switch status {
-		case "running", "testing", "fixing", "paused_cap":
+		case "running", "testing", "building", "fixing", "paused_cap":
 			writeJSON(w, 409, map[string]string{"error": "images can be added while the plan is being made, or in a follow-up request once this one is done"})
 			return
 		}
