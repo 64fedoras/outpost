@@ -231,7 +231,7 @@ function renderNew() {
   if (!state.nodes.some((n) => n.exec_enabled)) steps.push(`Optional: tick <b>exec</b> on a node so tasks can run their tests.`);
   setHTML('home-setup', steps.length ? `<div class="setup"><b>Before your first task</b><ol>${steps.map((s) => `<li>${s}</li>`).join('')}</ol></div>` : '');
 }
-$('nt-planner').addEventListener('change', () => renderNew());
+$('nt-planner').addEventListener('change', () => { renderNew(); ntImg.refresh(); });
 $('nt-project').addEventListener('change', () => { try { localStorage.setItem('nt-project', $('nt-project').value); } catch (e) {} });
 $('nt-files').addEventListener('change', () => {
   ntFiles = Array.from($('nt-files').files);
@@ -239,7 +239,7 @@ $('nt-files').addEventListener('change', () => {
 });
 async function startTask() {
   $('nt-err').classList.add('hidden');
-  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, project: $('nt-project').value };
+  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, project: $('nt-project').value, images: ntImg.payload() };
   if (!body.prompt.trim()) { $('nt-prompt').focus(); return; }
   $('nt-go').disabled = true;
   try {
@@ -253,7 +253,7 @@ async function startTask() {
       if (!resp.ok) throw new Error(r.error || resp.statusText);
     } else r = await post('/api/tasks', body);
     ntFiles = []; $('nt-files').value = ''; $('nt-attach-n').textContent = 'Attach';
-    $('nt-prompt').value = '';
+    $('nt-prompt').value = ''; ntImg.clear();
     location.hash = '#/tasks/' + r.id;
     refresh();
   } catch (e) { $('nt-err').textContent = e.message; $('nt-err').classList.remove('hidden'); }
@@ -441,7 +441,8 @@ function msgItem(t, m, liveQuestions, livePlan) {
   const key = m.id;
   if (m.role === 'user') {
     const tag = m.kind === 'steer' ? '<span class="bubble-tag">note while working</span>' : m.kind === 'answers' ? '<span class="bubble-tag">answers</span>' : '';
-    return { key, cls: 'from-user', html: `<div class="bubble">${tag}${esc(m.text)}</div>` };
+    const pics = (m.images || []).length ? `<div class="bubble-imgs">${m.images.map((n) => `<a href="/api/tasks/${t.id}/image?name=${encodeURIComponent(n)}" target="_blank" rel="noopener"><img src="/api/tasks/${t.id}/image?name=${encodeURIComponent(n)}" alt="attached image" loading="lazy"></a>`).join('')}</div>` : '';
+    return { key, cls: 'from-user', html: `<div class="bubble">${tag}${esc(m.text)}${pics}</div>` };
   }
   if (m.role === 'event' || m.kind === 'event') return { key, cls: 'event-row', html: `<span>${esc(m.text)}</span>` };
   switch (m.kind) {
@@ -565,7 +566,7 @@ async function sendTaskMessage() {
   const box = $('tm-text'), text = box.value.trim();
   if (!text || !pageArg) return;
   $('tm-send').disabled = true;
-  try { await post(`/api/tasks/${pageArg}/messages`, { text }); box.value = ''; autoGrow(box); $('thread')._scrolled = false; }
+  try { await post(`/api/tasks/${pageArg}/messages`, { text, images: tmImg.payload() }); box.value = ''; tmImg.clear(); autoGrow(box); $('thread')._scrolled = false; }
   catch (e) { toast(e.message, 4000); }
   $('tm-send').disabled = false;
   pollTask(); refresh();
@@ -913,7 +914,7 @@ function renderModels() {
       const vf = ((models.fits || {})[m.name] || []).filter((f) => f.fit === 'vram' && f.can_load);
       if (m.status === 'ready' && vf.length) acts.unshift(`<button class="small primary" data-act="model-load-fit" data-name="${nm}" title="Loads it on: ${esc(vf.map((f) => f.name).join(', '))}. Replaces any model those nodes have loaded.">Load on ${vf.length} node${vf.length > 1 ? 's' : ''} it fits</button>`);
       acts.push(`<button class="small danger" data-act="model-delete" data-name="${nm}">${m.status === 'downloading' ? 'Cancel' : 'Remove'}</button>`);
-      return `<tr><td><b>${esc(m.label || m.name)}</b><div class="sub" style="margin:2px 0 0">${esc(m.repo)}</div>${m.status === 'ready' ? fitBadges((models.fits || {})[m.name]) : ''}</td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td>${storageLabel(m)}</td><td>${status}</td>
+      return `<tr><td><b>${esc(m.label || m.name)}</b>${m.vision ? ' <span class="pill st-ready" title="Reads images: loaded with its vision projector">Vision</span>' : ''}<div class="sub" style="margin:2px 0 0">${esc(m.repo)}</div>${m.status === 'ready' ? fitBadges((models.fits || {})[m.name]) : ''}</td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td>${storageLabel(m)}</td><td>${status}</td>
         <td>${h.length ? h.map(esc).join(', ') : '<span class="muted">none</span>'}</td><td class="r"><div class="btns" style="justify-content:flex-end">${acts.join('')}</div></td></tr>`;
     }).join('')}</tbody></table></div>`);
   const have = {}; list.forEach((m) => { have[m.name] = m; });
@@ -923,7 +924,7 @@ function renderModels() {
         : m.status === 'failed' ? `<button data-act="model-retry" data-name="${c.id}">Retry</button>` : `<button disabled>In library · ${isDirect(m) ? 'nodes download' : 'on controller'}</button>`)
       : `<button class="primary" data-act="catalog-add" data-id="${c.id}" data-storage="direct" title="Each node downloads it from Hugging Face when you load it; uses no controller space">Add · nodes download</button>
          <button data-act="catalog-add" data-id="${c.id}" data-storage="controller" title="Download once to the controller (${bytes(c.bytes)}), then copy to nodes over your network">Store on controller</button>`;
-    return `<div class="card"><span class="for">${esc(c.for)}</span><h3>${esc(c.label)}</h3><p>${esc(c.notes)}</p><div class="btns">${btn}</div><span class="muted" style="font-size:12px;margin-top:6px">${bytes(c.bytes)} · needs ~${c.min_ram_gb} GB RAM+VRAM</span>${fitBadges((models.catalog_fits || {})[c.id])}</div>`;
+    return `<div class="card"><span class="for">${esc(c.for)}</span><h3>${esc(c.label)}${c.mmproj ? ' <span class="pill st-ready" title="Reads images">Vision</span>' : ''}</h3><p>${esc(c.notes)}</p><div class="btns">${btn}</div><span class="muted" style="font-size:12px;margin-top:6px">${bytes(c.bytes)} · needs ~${c.min_ram_gb} GB RAM+VRAM</span>${fitBadges((models.catalog_fits || {})[c.id])}</div>`;
   };
   setHTML('catalog', models.catalog.map(catCard).join(''));
   const byId = {}; models.catalog.forEach((c) => { byId[c.id] = c; });
@@ -939,7 +940,7 @@ $('hf-list').onclick = async () => {
     const r = await api('/api/hf/files?repo=' + encodeURIComponent($('hf-repo').value.trim()));
     hfRepo = r.repo; hfGroups = r.groups;
     setHTML('hf-files', !r.groups.length ? '<span class="muted">No .gguf files in that repo.</span>' :
-      `<div class="table-wrap"><table><tbody>${r.groups.map((g, i) => `<tr><td class="mono">${esc(g.name)}${g.files.length > 1 ? ` <span class="muted">(${g.files.length} parts)</span>` : ''}${fitBadges(g.fits)}</td><td>${bytes(g.bytes)}</td><td class="r"><div class="btns" style="justify-content:flex-end"><button class="small primary" data-act="hf-add" data-i="${i}" data-storage="direct">Add · nodes download</button><button class="small" data-act="hf-add" data-i="${i}" data-storage="controller">Store on controller</button></div></td></tr>`).join('')}</tbody></table></div>`);
+      `<div class="table-wrap"><table><tbody>${r.mmproj && r.mmproj.length ? `<tr><td colspan="3"><label class="muted">Vision projector (optional, makes the model read images) <select id="hf-mmproj"><option value="">none</option>${r.mmproj.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join('')}</select></label></td></tr>` : ''}${r.groups.map((g, i) => `<tr><td class="mono">${esc(g.name)}${g.files.length > 1 ? ` <span class="muted">(${g.files.length} parts)</span>` : ''}${fitBadges(g.fits)}</td><td>${bytes(g.bytes)}</td><td class="r"><div class="btns" style="justify-content:flex-end"><button class="small primary" data-act="hf-add" data-i="${i}" data-storage="direct">Add · nodes download</button><button class="small" data-act="hf-add" data-i="${i}" data-storage="controller">Store on controller</button></div></td></tr>`).join('')}</tbody></table></div>`);
   } catch (e) { setHTML('hf-files', `<span class="error-msg">${esc(e.message)}</span>`); }
 };
 $('hf-repo').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('hf-list').click(); });
@@ -1298,7 +1299,7 @@ document.addEventListener('click', async (e) => {
         const bad = res.filter((r) => r.status === 'rejected').length;
         toast(bad ? `Started on ${fits.length - bad} node(s); ${bad} failed to start` : `Loading on ${fits.map((f) => f.name).join(', ')}; progress shows on the node cards`); break;
       }
-      case 'hf-add': { const g = hfGroups[+el.dataset.i]; await post('/api/models', { repo: hfRepo, files: g.files, storage: el.dataset.storage }); toast(el.dataset.storage === 'direct' ? 'Added. Nodes download it when you load it.' : 'Downloading to the controller'); break; }
+      case 'hf-add': { const g = hfGroups[+el.dataset.i]; await post('/api/models', { repo: hfRepo, files: g.files, mmproj: ($('hf-mmproj') || {}).value || '', storage: el.dataset.storage }); toast(el.dataset.storage === 'direct' ? 'Added. Nodes download it when you load it.' : 'Downloading to the controller'); break; }
       case 'model-store': await post(`/api/models/${encodeURIComponent(el.dataset.name)}/store`); toast('Downloading to the controller'); break;
       case 'model-unstore': if (confirm(`Delete ${el.dataset.name}'s files from the controller? It stays in the library; nodes that need it download it from Hugging Face. Copies already on nodes stay.`)) { await post(`/api/models/${encodeURIComponent(el.dataset.name)}/unstore`); toast('Freed controller space'); } break;
       case 'model-retry': await post(`/api/models/${encodeURIComponent(el.dataset.name)}/retry`); toast('Resuming download'); break;
@@ -1323,3 +1324,66 @@ document.addEventListener('click', async (e) => {
 });
 
 api('/api/state').then(showApp).catch(() => {});
+
+// ---------- image attachments (row 19) ----------
+// Images become data URIs in memory and go with the message; the controller
+// keeps them with the task. Big photos are scaled down first (Claude takes 5 MB per image).
+const IMG_MAX = 5, IMG_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+function readImage(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error(file.name + ': could not read'));
+    fr.onload = () => {
+      if (file.size <= 4 * 1024 * 1024 || file.type === 'image/gif') return resolve({ name: file.name || 'image', data: fr.result });
+      const img = new Image();
+      img.onerror = () => resolve({ name: file.name, data: fr.result });
+      img.onload = () => {
+        const k = Math.min(1, 2048 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve({ name: (file.name || 'image').replace(/\.\w+$/, '') + '.jpg', data: c.toDataURL('image/jpeg', 0.85) });
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+// visionProblem says why a planner cannot read images, or '' if it can (or we cannot tell here; the controller checks again).
+function visionProblem(planner) {
+  if (!planner || !planner.startsWith('node:')) return '';
+  const n = state && state.nodes.find((x) => 'node:' + x.id === planner), hb = n && n.heartbeat;
+  const name = hb && hb.loaded_model;
+  if (!name) return 'The local planner has no model loaded, so it cannot read images.';
+  const m = models && models.models.find((x) => x.name === name);
+  if (m && m.vision) return '';
+  if (!models) return '';
+  return `${name} cannot read images. Load a Vision model (Qwen3.6 or Gemma 4 from the Models page) on that node, or plan with Claude or OpenRouter.`;
+}
+function imageAttach(pre, getPlanner, warnEl) {
+  let items = [];
+  const strip = $(pre + '-imgs'), file = $(pre + '-file');
+  function refresh() {
+    setHTML(strip, items.map((it, i) => `<span class="img-chip"><img src="${it.data}" alt=""><button type="button" data-i="${i}" aria-label="Remove image">×</button></span>`).join(''));
+    const w = items.length ? visionProblem(getPlanner()) : '';
+    warnEl.textContent = w; warnEl.classList.toggle('hidden', !w);
+  }
+  async function add(files) {
+    for (const f of files) {
+      if (!IMG_TYPES.includes(f.type)) { toast(`${f.name || 'That file'} is not a PNG, JPEG, WebP or GIF image`, 4000); continue; }
+      if (items.length >= IMG_MAX) { toast(`At most ${IMG_MAX} images per message`, 4000); break; }
+      try { items.push(await readImage(f)); } catch (e) { toast(e.message, 4000); }
+    }
+    refresh();
+  }
+  $(pre + '-attach').onclick = () => file.click();
+  file.onchange = () => { add([...file.files]); file.value = ''; };
+  strip.onclick = (e) => { const b = e.target.closest('button[data-i]'); if (b) { items.splice(+b.dataset.i, 1); refresh(); } };
+  const box = pre === 'nt' ? $('nt-prompt') : $('tm-text');
+  box.addEventListener('paste', (e) => { const fs = [...(e.clipboardData ? e.clipboardData.files : [])].filter((f) => f.type.startsWith('image/')); if (fs.length) { e.preventDefault(); add(fs); } });
+  const comp = box.closest('.composer');
+  comp.addEventListener('dragover', (e) => { if ([...(e.dataTransfer.types || [])].includes('Files')) e.preventDefault(); });
+  comp.addEventListener('drop', (e) => { const fs = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/')); if (fs.length) { e.preventDefault(); add(fs); } });
+  return { payload: () => items.map((i) => ({ name: i.name, data: i.data })), clear: () => { items = []; refresh(); }, refresh };
+}
+const ntImg = imageAttach('nt', () => $('nt-planner').value, $('nt-img-warn'));
+const tmImg = imageAttach('tm', () => taskDetail && taskDetail.planner, $('tm-img-warn'));

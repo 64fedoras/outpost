@@ -39,6 +39,7 @@ type llmRequest struct {
 	WebSearch   bool        // Claude only: allow the web search tool (priced per search)
 	Sub         string      // subtask id, for the live view
 	Live        *liveHandle // streamed text goes here (cloud planners)
+	Images      []llmImage  // attached to the user turn (planner only)
 }
 
 type llmResponse struct {
@@ -93,7 +94,7 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 		"model":      model,
 		"max_tokens": req.MaxTokens,
 		"system":     []map[string]any{{"type": "text", "text": req.System, "cache_control": map[string]string{"type": "ephemeral"}}},
-		"messages":   []map[string]any{{"role": "user", "content": req.User}},
+		"messages":   []map[string]any{{"role": "user", "content": claudeUser(req)}},
 	}
 	if req.WebSearch {
 		body["tools"] = []map[string]any{{"type": "web_search_20250305", "name": "web_search", "max_uses": webSearchUses}}
@@ -343,4 +344,16 @@ func readClaudeStream(body io.Reader, live *liveHandle) (*llmResponse, error) {
 	}
 	r.Text = text.String()
 	return r, nil
+}
+
+// claudeUser is the user turn: plain text, or image blocks followed by the text.
+func claudeUser(req llmRequest) any {
+	if len(req.Images) == 0 {
+		return req.User
+	}
+	blocks := make([]map[string]any, 0, len(req.Images)+1)
+	for _, img := range req.Images {
+		blocks = append(blocks, map[string]any{"type": "image", "source": map[string]string{"type": "base64", "media_type": img.Media, "data": img.B64}})
+	}
+	return append(blocks, map[string]any{"type": "text", "text": req.User})
 }

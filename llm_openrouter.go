@@ -28,8 +28,9 @@ type orModel struct {
 	ID       string  `json:"id"`
 	Name     string  `json:"name"`
 	Ctx      int     `json:"context_length"`
-	In       float64 `json:"in"`  // per million tokens, for the UI
-	Out      float64 `json:"out"` // per million tokens, for the UI
+	In       float64 `json:"in"`     // per million tokens, for the UI
+	Out      float64 `json:"out"`    // per million tokens, for the UI
+	Vision   bool    `json:"vision"` // accepts image input
 	inTok    float64
 	outTok   float64
 	cacheTok float64
@@ -98,6 +99,9 @@ func (cat *orCatalog) refresh(ctx context.Context, key string, force bool) error
 			Top struct {
 				MaxOut int `json:"max_completion_tokens"`
 			} `json:"top_provider"`
+			Arch struct {
+				In []string `json:"input_modalities"`
+			} `json:"architecture"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
@@ -116,6 +120,11 @@ func (cat *orCatalog) refresh(ctx context.Context, key string, force bool) error
 			m.Name = d.ID
 		}
 		m.In, m.Out = m.inTok*1e6, m.outTok*1e6
+		for _, mod := range d.Arch.In {
+			if mod == "image" {
+				m.Vision = true
+			}
+		}
 		models[d.ID] = m
 		order = append(order, d.ID)
 	}
@@ -191,7 +200,7 @@ func callOpenRouter(ctx context.Context, key, model string, req llmRequest) (*ll
 	body := map[string]any{
 		"model":      model,
 		"max_tokens": req.MaxTokens,
-		"messages":   []map[string]any{{"role": "system", "content": system}, {"role": "user", "content": req.User}},
+		"messages":   []map[string]any{{"role": "system", "content": system}, {"role": "user", "content": openRouterUser(req)}},
 		"usage":      map[string]bool{"include": true},
 	}
 	if m := openRouterModels.get(model); m != nil && m.maxOut > 0 && req.MaxTokens > m.maxOut {
@@ -385,4 +394,17 @@ func readOpenRouterStream(body io.Reader, live *liveHandle) []byte {
 	}
 	b, _ := json.Marshal(out)
 	return b
+}
+
+// openRouterUser is the user turn: plain text, or text plus image_url parts
+// (data URIs) when images are attached.
+func openRouterUser(req llmRequest) any {
+	if len(req.Images) == 0 {
+		return req.User
+	}
+	parts := []map[string]any{{"type": "text", "text": req.User}}
+	for _, img := range req.Images {
+		parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]string{"url": img.dataURI()}})
+	}
+	return parts
 }
