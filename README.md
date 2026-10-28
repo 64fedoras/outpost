@@ -1,4 +1,4 @@
-# Outpost v0.7.1
+# Outpost v0.7.3
 
 Self-hosted AI cluster. One binary runs as the **controller** (web UI, planning, job dispatch) or as a
 **node** (runs local models with llama.cpp, runs commands, keeps nothing after a job).
@@ -117,7 +117,8 @@ can check detection without joining.
    interrupted and are checked against Hugging Face's SHA-256. Progress shows on the card. The node
    reloads the same model by itself after a reboot or update.
 3. Tick **exec** on at least one node so tasks can run their tests.
-4. **Settings:** add a Claude API key if you want Claude as the planner (recommended).
+4. **Settings:** add a Claude API key if you want Claude as the planner (recommended), or an
+   OpenRouter key to plan with any model OpenRouter offers.
 5. **New task:** describe what to build and click **Plan it**. See below.
 
 ## Working with tasks
@@ -128,7 +129,7 @@ the bottom of the sidebar.
 
 Each task is a conversation:
 
-1. **You describe the task.** Pick the planner (Claude or a local model), the Claude model and a
+1. **You describe the task.** Pick the planner (Claude, OpenRouter or a local model), the Claude model and a
    spending cap, and whether nodes review each other's work.
 2. **The planner may ask questions** when the request leaves open a choice that changes the design
    (language, storage, interface). Click the answers, type your own, or skip any. It asks at most
@@ -199,6 +200,18 @@ routine code writing runs on your nodes. Every Claude call is metered live on th
 - **Backstop:** use a separate API key for Outpost and set a monthly spend limit on it in the
   Claude Console.
 - The key is stored encrypted on the controller and never sent to nodes.
+
+### OpenRouter
+
+OpenRouter works as a second cloud planner and does the same jobs as Claude (planning, writing
+subtasks the nodes could not finish, fixing failing tests).
+
+1. **Settings → OpenRouter:** save your API key (`sk-or-…`), then choose a model. The box suggests
+   models from OpenRouter's live list, with prices per million tokens. Use a separate key and set a
+   credit limit on it at openrouter.ai.
+2. Pick **Planner: OpenRouter** on a new task (or make it the default planner in Settings).
+3. Spend uses the cost OpenRouter reports for each call, so the live meter and the per-task cap
+   work exactly as for Claude. If a call reports no cost, Outpost prices it from the model list.
 
 ## Updating
 
