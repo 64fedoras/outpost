@@ -44,12 +44,13 @@ PY
 python3 "$HERE/mock_claude.py" 18700 >"$RUN/claude.log" 2>&1 &
 cd "$RUN"
 ./outpost controller --listen 127.0.0.1:18460 --advertise "$U" --data "$RUN/ctl" >ctl.log 2>&1 &
-for i in $(seq 1 30); do grep -q "ADMIN PASSWORD" ctl.log 2>/dev/null && break; sleep 0.5; done
-sed -n 's/.*ADMIN PASSWORD: *\([^ ]*\).*/\1/p' ctl.log > pw.txt
-PW=$(cat pw.txt)
+for i in $(seq 1 30); do grep -q "no admin password yet" ctl.log 2>/dev/null && break; sleep 0.5; done
+# first-run setup: the controller starts without a password; choose one through the setup endpoint
+PW=e2e-test-password
+echo "$PW" > pw.txt
 
 C="curl -sk -b $RUN/jar -c $RUN/jar -H content-type:application/json"
-$C -X POST $U/api/login -d "{\"password\":\"$PW\"}" >/dev/null
+$C -X POST $U/api/setup -d "{\"password\":\"$PW\"}" >/dev/null
 $C -X POST $U/api/settings -d '{"anthropic_key":"sk-test-key","default_planner":"claude","default_cap_usd":2}' >/dev/null
 TOK=$($C -X POST $U/api/tokens -d '{}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
 

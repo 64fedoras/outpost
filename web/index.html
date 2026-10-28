@@ -10,12 +10,26 @@
 
 <div id="login" class="card hidden">
   <h1>Outpost</h1>
-  <p class="sub wrap">Sign in with the admin password. It was printed when the controller was installed; <code>sudo outpost reset-password</code> on the controller sets a new one.</p>
+  <p class="sub wrap">Sign in with the admin password. Forgot it? Run <code>sudo outpost reset-password</code> on the controller.</p>
   <form id="login-form">
     <label for="pw">Password</label>
     <input id="pw" type="password" autocomplete="current-password" autofocus>
     <div class="error-msg hidden" id="login-err"></div>
     <div class="modal-foot"><button class="primary" type="submit">Sign in</button></div>
+  </form>
+  <p class="legal">Free software under the <a href="/licenses">AGPL-3.0</a> · <a href="https://github.com/64fedoras/outpost" target="_blank" rel="noopener">Source code</a></p>
+</div>
+
+<div id="setup" class="card hidden">
+  <h1>Set up Outpost</h1>
+  <p class="sub wrap">Choose an admin password. You only do this once.</p>
+  <div class="note" style="margin:8px 0"><b>Whoever opens this page first sets the password</b> and controls this cluster. Do it now, from a machine you trust; once it is set, this screen never appears again.</div>
+  <div class="note hidden" id="setup-blocked" style="margin:8px 0">This address is not allowed to do first-run setup. Open the web UI from the local network, or start the controller with <code>--setup-allow-from</code>.</div>
+  <form id="setup-form">
+    <label for="su-new">New password (8+ characters)</label><input id="su-new" type="password" autocomplete="new-password">
+    <label for="su-new2">Repeat password</label><input id="su-new2" type="password" autocomplete="new-password">
+    <div class="error-msg hidden" id="setup-err"></div>
+    <div class="modal-foot"><button class="primary" type="submit">Set password and sign in</button></div>
   </form>
   <p class="legal">Free software under the <a href="/licenses">AGPL-3.0</a> · <a href="https://github.com/64fedoras/outpost" target="_blank" rel="noopener">Source code</a></p>
 </div>

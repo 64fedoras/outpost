@@ -257,3 +257,97 @@ func TestSetTLSCertificate(t *testing.T) {
 		t.Fatalf("bad key: %d", w.Code)
 	}
 }
+
+func setupPost(c *Controller, ip, pw string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest("POST", "/api/setup", strings.NewReader(`{"password":"`+pw+`"}`))
+	r.RemoteAddr = ip + ":1234"
+	w := httptest.NewRecorder()
+	c.handleSetup(w, r)
+	return w
+}
+
+func freshController(t *testing.T) *Controller {
+	t.Helper()
+	c := &Controller{dataDir: t.TempDir(), sessions: map[string]time.Time{}, sessMeta: map[string]sessionMeta{},
+		loginFails: map[string][]time.Time{}}
+	if err := c.loadAdmin(false); err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestFirstRunSetup(t *testing.T) {
+	c := freshController(t)
+	if !c.needsSetup() || c.checkPassword("") || c.checkPassword("anything") {
+		t.Fatal("a fresh controller must have no password and accept none")
+	}
+	if w := setupPost(c, "10.0.0.5", "short"); w.Code != 400 {
+		t.Fatalf("short password: %d", w.Code)
+	}
+	w := setupPost(c, "10.0.0.5", "a long enough one")
+	if w.Code != 200 || !strings.Contains(w.Header().Get("Set-Cookie"), "outpost_session=") {
+		t.Fatalf("setup: %d %v", w.Code, w.Header())
+	}
+	if c.needsSetup() || !c.checkPassword("a long enough one") {
+		t.Fatal("password not stored")
+	}
+	// Never again once a password exists.
+	if w := setupPost(c, "10.0.0.5", "another password"); w.Code != 409 || !c.checkPassword("a long enough one") {
+		t.Fatalf("second setup: %d", w.Code)
+	}
+	// Survives a restart.
+	c2 := &Controller{dataDir: c.dataDir}
+	c2.loadAdmin(false)
+	if c2.needsSetup() || !c2.checkPassword("a long enough one") {
+		t.Fatal("password lost on reload")
+	}
+}
+
+func TestSetupAddressRestriction(t *testing.T) {
+	c := freshController(t)
+	for ip, want := range map[string]bool{"10.1.2.3": true, "192.168.0.9": true, "127.0.0.1": true, "::1": true, "fd00::1": true, "8.8.8.8": false, "2001:4860::1": false} {
+		if c.setupAllowed(ip) != want {
+			t.Errorf("default allow %s = %v, want %v", ip, !want, want)
+		}
+	}
+	if w := setupPost(c, "8.8.8.8", "a long enough one"); w.Code != 403 || !c.needsSetup() {
+		t.Fatalf("public address: %d", w.Code)
+	}
+	var err error
+	if c.setupAllow, err = parseSetupAllow("203.0.113.0/24, 10.9.9.9"); err != nil {
+		t.Fatal(err)
+	}
+	if !c.setupAllowed("203.0.113.7") || !c.setupAllowed("10.9.9.9") || c.setupAllowed("10.0.0.1") {
+		t.Fatal("explicit list not honoured")
+	}
+	c.setupAllow, _ = parseSetupAllow("any")
+	if !c.setupAllowed("8.8.8.8") {
+		t.Fatal("any should allow everything")
+	}
+	if _, err := parseSetupAllow("nonsense"); err == nil {
+		t.Fatal("bad CIDR accepted")
+	}
+}
+
+func TestSetupRateLimitAndReset(t *testing.T) {
+	c := freshController(t)
+	c.setupAllow, _ = parseSetupAllow("10.0.0.0/8")
+	for i := 0; i < lockoutFails; i++ {
+		setupPost(c, "8.8.4.4", "a long enough one")
+	}
+	if w := setupPost(c, "8.8.4.4", "a long enough one"); w.Code != 429 {
+		t.Fatalf("expected lockout, got %d", w.Code)
+	}
+	// Reset removes the password and nothing generated is left behind.
+	if w := setupPost(c, "10.0.0.5", "a long enough one"); w.Code != 200 {
+		t.Fatal("setup failed")
+	}
+	if err := c.loadAdmin(true); err != nil {
+		t.Fatal(err)
+	}
+	c2 := &Controller{dataDir: c.dataDir}
+	c2.loadAdmin(false)
+	if !c2.needsSetup() {
+		t.Fatal("reset should return to first-run state")
+	}
+}
