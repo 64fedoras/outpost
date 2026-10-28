@@ -890,6 +890,7 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 			Choices []struct {
 				Delta struct {
 					Content   *string `json:"content"`
+					Reasoning *string `json:"reasoning_content"` // thinking models: shown live, never part of the answer
 					ToolCalls []struct {
 						Index    int    `json:"index"`
 						ID       string `json:"id"`
@@ -910,6 +911,9 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 			continue
 		}
 		for _, c := range chunk.Choices {
+			if c.Delta.Reasoning != nil && *c.Delta.Reasoning != "" {
+				emit(*c.Delta.Reasoning)
+			}
 			if c.Delta.Content != nil && *c.Delta.Content != "" {
 				if firstTok.IsZero() {
 					firstTok = time.Now()
