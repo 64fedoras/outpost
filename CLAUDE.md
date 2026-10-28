@@ -2,7 +2,7 @@
 
 Self-hosted distributed local-AI cluster, written in Go as **one binary** with two modes:
 `controller` (web UI, planning, job dispatch, model and release storage) and `node` (runs
-llama.cpp, runs commands, keeps no job data). Current version: **0.6.1** (`const Version` in `proto.go`).
+llama.cpp, runs commands, keeps no job data). Current version: **0.7.0** (`const Version` in `proto.go`).
 
 The owner uses it to fan programming tasks out across their home machines, as a supplement to Claude Code.
 You describe a task in the web UI; a planner (Claude API, or a local model on a node) splits it into
@@ -63,6 +63,7 @@ although it is imported directly; harmless.
 | Area | Files |
 | --- | --- |
 | Entry, flags, TLS | `main.go` (usage, data dirs, self-signed cert, fingerprint pinning `pinnedTLS`), `proto.go` (wire types, `Version`) |
+| Hardening | `controller_auth.go` (lockout, sessions, API tokens), `controller_tls.go` (certificate swap), `backup.go` (encrypted backup, restore, nightly copies), `service_windows.go` (Windows service) |
 | Controller | `controller.go` (routes in `Run`, auth/sessions, node WebSocket hub, join tokens), `controller_settings.go`, `controller_jobs.go`, `controller_models.go` (HF download, storage modes, model push to nodes), `controller_runtime.go` (llama.cpp builds), `controller_update.go` (releases, node and controller updates, rollback), `admin.go` (PBKDF2 password) |
 | Tasks | `tasks.go` (task model, planner, dispatch loop `executeTask`, review, test and fix, cost cap, pooling pipelines), `tasks_chat.go` (conversation: messages, questions, steering, follow-up rounds), `llm.go` (Claude API client) |
 | Node | `node.go` (connect, jobs, exec, file transfer, pause, node lock), `node_llama.go` (llama-server supervision, runtime install, chat), `node_rpc.go` (ggml-rpc-server for memory pooling), `node_update.go`, `node_control.go` (127.0.0.1 control server for the tray), `hw*.go` (CPU/RAM/GPU detection, Windows via DXGI/PDH/registry, no cgo) |
@@ -91,7 +92,8 @@ although it is imported directly; harmless.
 - Playwright selectors: starter cards also contain words like "Python"; scope with `.opt >> text=...`.
 
 ## Status
-- v0.6.1 is built and was verified on Linux (update, restart, lock). **Windows 0.6.0 to 0.6.1 self-update
+- v0.7.0 adds rows 1 to 4 of the roadmap (see `docs/ROADMAP.md`); the Windows service, Defender exclusion and signing are **untested on real Windows**.
+- v0.6.1 was built and was verified on Linux (update, restart, lock). **Windows 0.6.0 to 0.6.1 self-update
   is untested on real Windows**; the owner was about to try it and may report `node.log`
   (`C:\ProgramData\outpost\node\node.log`). Defender can still block web-UI updates of an unsigned exe;
   the documented workaround is `Add-MpPreference -ExclusionPath 'C:\ProgramData\outpost'`.

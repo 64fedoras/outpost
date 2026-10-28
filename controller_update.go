@@ -234,12 +234,24 @@ func (c *Controller) loadSessions() {
 			}
 		}
 	}
+	if mb, err := os.ReadFile(c.sessionsPath() + ".meta"); err == nil {
+		var meta map[string]sessionMeta
+		if json.Unmarshal(mb, &meta) == nil {
+			for k, v := range meta {
+				if _, ok := c.sessions[k]; ok {
+					c.sessMeta[k] = v
+				}
+			}
+		}
+	}
 }
 
 // saveSessionsLocked must be called with c.mu held.
 func (c *Controller) saveSessionsLocked() {
 	b, _ := json.Marshal(c.sessions)
 	_ = os.WriteFile(c.sessionsPath(), b, 0o600)
+	mb, _ := json.Marshal(c.sessMeta)
+	_ = os.WriteFile(c.sessionsPath()+".meta", mb, 0o600)
 }
 
 func (c *Controller) handleRollbackNode(w http.ResponseWriter, r *http.Request) {

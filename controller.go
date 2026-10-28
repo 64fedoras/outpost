@@ -96,19 +96,24 @@ type Controller struct {
 	dataDir     string
 	advertise   string
 	fingerprint string
+	cert        tls.Certificate
+	repinAcks   map[string]string
 	admin       adminRecord
 
-	nodes    map[string]*NodeRec
-	conns    map[string]*nodeConn
-	lastHB   map[string]*Heartbeat
-	lastSeen map[string]time.Time
-	tokens   map[string]time.Time
-	usedTok  map[string]usedToken // token id -> who used it (so the Add node dialog can move on)
-	sessions map[string]time.Time
-	jobs     map[string]*JobRec
-	jobOrder []string
-	releases map[string]*Release
-	updates  map[string]*UpdateStatus
+	nodes      map[string]*NodeRec
+	conns      map[string]*nodeConn
+	lastHB     map[string]*Heartbeat
+	lastSeen   map[string]time.Time
+	tokens     map[string]time.Time
+	usedTok    map[string]usedToken // token id -> who used it (so the Add node dialog can move on)
+	sessions   map[string]time.Time
+	sessMeta   map[string]sessionMeta
+	apiTokens  []apiToken
+	loginFails map[string][]time.Time
+	jobs       map[string]*JobRec
+	jobOrder   []string
+	releases   map[string]*Release
+	updates    map[string]*UpdateStatus
 
 	settings  Settings
 	waiters   map[string]chan *JobResult
@@ -140,10 +145,10 @@ func runController(args []string) error {
 		return fmt.Errorf("tls: %w", err)
 	}
 	c := &Controller{
-		dataDir: *data, fingerprint: fp,
+		dataDir: *data, fingerprint: fp, cert: cert,
 		nodes: map[string]*NodeRec{}, conns: map[string]*nodeConn{},
 		lastHB: map[string]*Heartbeat{}, lastSeen: map[string]time.Time{},
-		tokens: map[string]time.Time{}, usedTok: map[string]usedToken{}, sessions: map[string]time.Time{},
+		tokens: map[string]time.Time{}, usedTok: map[string]usedToken{}, sessions: map[string]time.Time{}, sessMeta: map[string]sessionMeta{}, loginFails: map[string][]time.Time{},
 		jobs: map[string]*JobRec{}, updates: map[string]*UpdateStatus{},
 		waiters: map[string]chan *JobResult{}, nodeOps: map[string]*nodeOpView{},
 		pipelines: map[string]*pipeline{}, reserved: map[string]bool{}, cooldown: map[string]time.Time{}, restarts: map[string]time.Time{}, poolStale: map[string]time.Time{},
@@ -151,6 +156,7 @@ func runController(args []string) error {
 	launchNewest(c.agentDir(), os.Args[1:]) // switch to an installed update, if newer
 	c.loadReleases()
 	c.loadSessions()
+	c.loadAPITokens()
 	c.loadSettings()
 	c.loadModels()
 	c.loadRuntimes()
@@ -182,6 +188,16 @@ func runController(args []string) error {
 	}))
 	mux.HandleFunc("POST /api/login", c.handleLogin)
 	mux.HandleFunc("POST /api/logout", c.handleLogout)
+	mux.HandleFunc("GET /api/sessions", c.authSession(c.handleListSessions))
+	mux.HandleFunc("DELETE /api/sessions/{id}", c.authSession(c.handleRevokeSession))
+	mux.HandleFunc("POST /api/sessions/logout-all", c.authSession(c.handleLogoutAll))
+	mux.HandleFunc("GET /api/tls", c.authSession(c.handleTLSInfo))
+	mux.HandleFunc("POST /api/tls", c.authSession(c.handleSetTLS))
+	mux.HandleFunc("POST /api/backup", c.authSession(c.handleBackup))
+	mux.HandleFunc("POST /api/backup/schedule", c.authSession(c.handleBackupSchedule))
+	mux.HandleFunc("GET /api/apitokens", c.authSession(c.handleListAPITokens))
+	mux.HandleFunc("POST /api/apitokens", c.authSession(c.handleNewAPIToken))
+	mux.HandleFunc("DELETE /api/apitokens/{id}", c.authSession(c.handleRevokeAPIToken))
 	mux.HandleFunc("GET /api/state", c.auth(c.handleState))
 	mux.HandleFunc("POST /api/tokens", c.auth(c.handleNewToken))
 	mux.HandleFunc("GET /api/tokens/{id}", c.auth(c.handleTokenStatus))
@@ -233,11 +249,12 @@ func runController(args []string) error {
 	srv := &http.Server{
 		Addr:              *listen,
 		Handler:           logRequests(mux),
-		TLSConfig:         &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12},
+		TLSConfig:         &tls.Config{GetCertificate: c.getCertificate, MinVersion: tls.VersionTLS12},
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go c.offlineSweeper()
 	go c.poolKeeper()
+	go c.backupLoop()
 
 	log.Printf("outpost controller %s listening on %s", Version, *listen)
 	log.Printf("web UI:           %s", c.advertise)
@@ -300,53 +317,6 @@ func (c *Controller) saveNodesLocked() {
 func hashSecret(salt, secret string) string {
 	h := sha256.Sum256([]byte(salt + ":" + secret))
 	return hex.EncodeToString(h[:])
-}
-
-// ---- web auth ----
-
-func (c *Controller) auth(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ck, err := r.Cookie("outpost_session")
-		c.mu.Lock()
-		exp, ok := time.Time{}, false
-		if err == nil {
-			exp, ok = c.sessions[ck.Value]
-		}
-		c.mu.Unlock()
-		if !ok || time.Now().After(exp) {
-			writeJSON(w, 401, map[string]string{"error": "login required"})
-			return
-		}
-		h(w, r)
-	}
-}
-
-func (c *Controller) handleLogin(w http.ResponseWriter, r *http.Request) {
-	var req struct{ Password string }
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	if !c.checkPassword(req.Password) {
-		time.Sleep(500 * time.Millisecond)
-		writeJSON(w, 401, map[string]string{"error": "wrong password"})
-		return
-	}
-	tok := randHex(32)
-	c.mu.Lock()
-	c.sessions[tok] = time.Now().Add(7 * 24 * time.Hour)
-	c.saveSessionsLocked()
-	c.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: "outpost_session", Value: tok, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, MaxAge: 7 * 24 * 3600})
-	writeJSON(w, 200, map[string]bool{"ok": true})
-}
-
-func (c *Controller) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if ck, err := r.Cookie("outpost_session"); err == nil {
-		c.mu.Lock()
-		delete(c.sessions, ck.Value)
-		c.saveSessionsLocked()
-		c.mu.Unlock()
-	}
-	http.SetCookie(w, &http.Cookie{Name: "outpost_session", Value: "", Path: "/", MaxAge: -1})
-	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -477,7 +447,7 @@ func (c *Controller) handleNewToken(w http.ResponseWriter, r *http.Request) {
 	}
 	c.tokens[secret] = exp
 	c.mu.Unlock()
-	b, _ := json.Marshal(JoinToken{URL: c.advertise, Fingerprint: c.fingerprint, Secret: secret})
+	b, _ := json.Marshal(JoinToken{URL: c.advertise, Fingerprint: c.fingerprintNow(), Secret: secret})
 	tok := base64.RawURLEncoding.EncodeToString(b)
 	writeJSON(w, 200, map[string]any{
 		"id":      tokenID(secret),
@@ -815,6 +785,7 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 	settings := NodeSettings{HeartbeatS: heartbeatSeconds, ExecEnabled: n.ExecEnabled}
 	c.mu.Unlock()
 	log.Printf("node %s (%s, %s/%s) connected from %s", n.ID, hello.Hostname, hello.OS, hello.Arch, r.RemoteAddr)
+	c.clearRepin(n.ID)
 
 	if err := nc.send("node.welcome", Welcome{Accepted: true, Protocol: ProtocolVersion, Settings: settings}); err != nil {
 		return
@@ -855,6 +826,13 @@ func (c *Controller) handleNodeMessage(nodeID string, env *Envelope) {
 	defer c.mu.Unlock()
 	c.lastSeen[nodeID] = time.Now()
 	switch env.Type {
+	case "node.repin_ack":
+		var a struct {
+			Fingerprint string `json:"fingerprint"`
+		}
+		if json.Unmarshal(env.Body, &a) == nil && c.repinAcks != nil {
+			c.repinAcks[nodeID] = a.Fingerprint
+		}
 	case "node.heartbeat":
 		var hb Heartbeat
 		if json.Unmarshal(env.Body, &hb) == nil {

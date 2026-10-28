@@ -812,7 +812,55 @@ async function loadSettings() {
   $('set-cap').value = settings.default_cap_usd;
   if (!state) state = await api('/api/state').catch(() => null);
   if (state) $('set-planner').innerHTML = plannerOptions(settings.default_planner);
+  loadSecurity();
 }
+async function loadSecurity() {
+  try {
+    const [ss, tk, tl] = await Promise.all([api('/api/sessions'), api('/api/apitokens'), api('/api/tls')]);
+    const lk = settings ? settings.locked_ips || [] : [];
+    $('sec-lock').textContent = settings ? `${settings.login_failures} failed sign-in${settings.login_failures === 1 ? '' : 's'} in the last 15 minutes.` + (lk.length ? ` Locked out: ${lk.join(', ')}.` : '') + ' After 10 failures an address is blocked for 15 minutes.' : '';
+    setHTML('sessions-list', ss.map((s) => `<div class="rowline"><span>${esc(s.ip || 'unknown')} · ${esc((s.ua || '').slice(0, 60))} <span class="muted">· signed in ${ago(s.created)}</span>${s.current ? ' ' + pill('done', 'this browser') : ''}</span>${s.current ? '' : `<button class="danger" data-sess="${esc(s.id)}">Sign out</button>`}</div>`).join('') || '<p class="muted">None</p>');
+    setHTML('tokens-list', tk.map((t) => `<div class="rowline"><span>${esc(t.name)} <span class="muted">· created ${ago(t.created)}${t.last_used && !t.last_used.startsWith('0001') ? ' · last used ' + ago(t.last_used) : ' · never used'}</span></span><button class="danger" data-tok="${esc(t.id)}">Revoke</button></div>`).join('') || '<p class="muted">No tokens yet.</p>');
+    let info = `Fingerprint <code>${esc(tl.fingerprint)}</code>`;
+    if (tl.subject) info += `<br>${tl.self_signed ? 'Self-signed' : 'Issued by ' + esc(tl.issuer)} for ${esc(tl.subject)}; expires ${new Date(tl.expires).toLocaleDateString()}.`;
+    if ((tl.needs_repin || []).length) info += `<br><b>Offline during the change, run <code>outpost repin --fingerprint ${esc(tl.fingerprint)}</code> on: ${tl.needs_repin.map(esc).join(', ')}</b>`;
+    setHTML('tls-info', info);
+    if (settings) {
+      $('bk-on').checked = !!settings.backup_enabled; $('bk-dir').value = settings.backup_dir || '';
+      $('bk-pass-state').textContent = settings.has_backup_pass ? '· saved' : '· not set';
+    }
+  } catch (e) {}
+}
+$('sessions-list').onclick = async (e) => { const id = e.target.dataset.sess; if (id) { await api('/api/sessions/' + id, { method: 'DELETE' }).catch((x) => toast(x.message)); loadSecurity(); } };
+$('tokens-list').onclick = async (e) => { const id = e.target.dataset.tok; if (id && confirm('Revoke this token? Scripts using it stop working.')) { await api('/api/apitokens/' + id, { method: 'DELETE' }).catch((x) => toast(x.message)); loadSecurity(); } };
+$('sess-all').onclick = async () => { if (confirm('Sign out every browser, including this one?')) { await post('/api/sessions/logout-all'); location.reload(); } };
+$('tok-create').onclick = async () => {
+  const name = $('tok-name').value.trim(); if (!name) return;
+  try {
+    const t = await post('/api/apitokens', { name }); $('tok-name').value = '';
+    const n = $('tok-new'); n.classList.remove('hidden'); n.innerHTML = `Copy this now, it is shown only once:<div class="codebox"><span id="tok-val">${esc(t.token)}</span><button id="tok-copy">Copy</button></div>`;
+    $('tok-copy').onclick = async () => { try { await navigator.clipboard.writeText(t.token); toast('Copied'); } catch (e) { toast('Select the token and press Ctrl+C'); } };
+    loadSecurity();
+  } catch (e) { toast(e.message); }
+};
+$('tls-save').onclick = async () => {
+  if (!confirm('Replace the HTTPS certificate? Connected nodes are re-pinned automatically; the page will reload.')) return;
+  try { const r = await post('/api/tls', { cert: $('tls-cert').value, key: $('tls-key').value }); $('tls-cert').value = ''; $('tls-key').value = ''; toast((r.needs_repin || []).length ? 'Certificate changed; some nodes need a re-pin' : 'Certificate changed'); loadSecurity(); } catch (e) { toast(e.message); }
+};
+$('bk-download').onclick = async () => {
+  const passphrase = $('bk-pass').value;
+  if (passphrase.length < 8) return toast('The passphrase needs 8 or more characters');
+  $('bk-download').disabled = true; toast('Building the backup…', 8000);
+  try {
+    const r = await fetch('/api/backup', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passphrase, include_large: $('bk-large').checked }) });
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(await r.blob());
+    a.download = (r.headers.get('Content-Disposition') || '').split('filename=')[1]?.replace(/"/g, '') || 'outpost-backup.opb'; a.click(); $('bk-pass').value = ''; toast('Backup downloaded');
+  } catch (e) { toast(e.message); } finally { $('bk-download').disabled = false; }
+};
+$('bk-sched-save').onclick = async () => {
+  try { settings = await post('/api/backup/schedule', { enabled: $('bk-on').checked, dir: $('bk-dir').value, passphrase: $('bk-sched-pass').value }); $('bk-sched-pass').value = ''; toast('Schedule saved'); loadSecurity(); } catch (e) { toast(e.message); }
+};
 async function saveSettings(body, msg) {
   try { settings = await post('/api/settings', body); toast(msg); loadSettings(); refresh(); } catch (e) { toast(e.message); }
 }

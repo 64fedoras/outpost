@@ -44,6 +44,7 @@ type Node struct {
 	dataDir  string
 	workRoot string
 	cfg      NodeConfig
+	fpMu     sync.RWMutex // guards cfg.Fingerprint (changes on a certificate swap)
 
 	mu          sync.Mutex
 	execEnabled bool
@@ -197,6 +198,27 @@ func doJoin(token, name string) (NodeConfig, error) {
 	return NodeConfig{Controller: jt.URL, Fingerprint: jt.Fingerprint, NodeID: jr.NodeID, NodeKey: jr.NodeKey}, nil
 }
 
+// pin is the controller certificate fingerprint to trust. It is re-read from
+// node.json each time, so `outpost repin` takes effect without a restart.
+func (n *Node) pin() string {
+	n.fpMu.Lock()
+	defer n.fpMu.Unlock()
+	if b, err := os.ReadFile(filepath.Join(n.dataDir, "node.json")); err == nil {
+		var c NodeConfig
+		if json.Unmarshal(b, &c) == nil && c.Fingerprint != "" {
+			n.cfg.Fingerprint = c.Fingerprint
+		}
+	}
+	return n.cfg.Fingerprint
+}
+
+func (n *Node) setPin(fp string) error {
+	n.fpMu.Lock()
+	defer n.fpMu.Unlock()
+	n.cfg.Fingerprint = fp
+	return writeNodeConfig(filepath.Join(n.dataDir, "node.json"), n.cfg)
+}
+
 func (n *Node) send(typ string, body any) error {
 	b, err := newEnvelope(typ, body)
 	if err != nil {
@@ -220,7 +242,7 @@ func (n *Node) session() (bool, error) {
 
 func (n *Node) sessionInner(welcomed *bool) error {
 	wsURL := strings.Replace(strings.TrimRight(n.cfg.Controller, "/"), "https://", "wss://", 1) + "/v1/node/ws"
-	hc := &http.Client{Transport: &http.Transport{TLSClientConfig: pinnedTLS(n.cfg.Fingerprint)}}
+	hc := &http.Client{Transport: &http.Transport{TLSClientConfig: pinnedTLS(n.pin())}}
 	dctx, dcancel := context.WithTimeout(context.Background(), 20*time.Second)
 	conn, resp, err := websocket.Dial(dctx, wsURL, &websocket.DialOptions{
 		HTTPClient: hc,
@@ -364,6 +386,18 @@ func (n *Node) sessionInner(welcomed *bool) error {
 			var u NodeUpdate
 			if json.Unmarshal(env.Body, &u) == nil {
 				go n.applyUpdate(u)
+			}
+		case "node.repin":
+			var rp struct {
+				Fingerprint string `json:"fingerprint"`
+			}
+			if json.Unmarshal(env.Body, &rp) == nil && len(rp.Fingerprint) == 64 {
+				if err := n.setPin(strings.ToLower(rp.Fingerprint)); err != nil {
+					log.Printf("repin: saving the new fingerprint: %v", err)
+				} else {
+					log.Printf("controller certificate changed; now pinning %s", rp.Fingerprint)
+					_ = n.send("node.repin_ack", rp)
+				}
 			}
 		case "node.remove":
 			return errRemoved

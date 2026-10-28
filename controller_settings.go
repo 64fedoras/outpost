@@ -22,6 +22,9 @@ type Settings struct {
 	ClaudeModel     string  `json:"claude_model"`
 	DefaultCapUSD   float64 `json:"default_cap_usd"`
 	DefaultPlanner  string  `json:"default_planner"` // "claude" or "node:<id>"
+	BackupEnabled   bool    `json:"backup_enabled,omitempty"`
+	BackupDir       string  `json:"backup_dir,omitempty"`
+	BackupPassEnc   string  `json:"backup_pass_enc,omitempty"`
 }
 
 func defaultSettings() Settings {
@@ -122,6 +125,7 @@ func keyHint(k string) string {
 
 func (c *Controller) settingsView() map[string]any {
 	ak, hf := c.anthropicKey(), c.hfToken()
+	fails, locked := c.lockoutStatus()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	models := []map[string]any{}
@@ -133,7 +137,8 @@ func (c *Controller) settingsView() map[string]any {
 		"has_anthropic_key": ak != "", "anthropic_key_hint": keyHint(ak),
 		"has_hf_token": hf != "", "claude_model": c.settings.ClaudeModel,
 		"default_cap_usd": c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner,
-		"claude_models": models,
+		"claude_models": models, "login_failures": fails, "locked_ips": locked,
+		"backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
 }
 
