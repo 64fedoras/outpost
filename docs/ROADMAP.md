@@ -14,22 +14,22 @@ Before building anything, check the Decision column with the owner. Mark each ro
 | 5 | Node benchmarks and smart routing | 0.8 | M | |
 | 6 | Best-of-N on hard subtasks | 0.8 | M | |
 | 7 | Auto-resume after a restart | 0.8 | S | |
-| 8 | File browser with per-round diffs | 0.9 | M | |
-| 9 | Live output while subtasks write | 0.9 | M | |
-| 10 | Notifications (browser, ntfy, webhook) | 0.9 | S | |
-| 11 | Projects, attachments and git export | 0.9 | L | |
-| 12 | Model picker sized to each node | 1.0 | M | |
-| 13 | Node-to-node model transfers, hash-checked | 1.0 | L | |
-| 14 | macOS service and tray | 1.0 | M | |
-| 15 | Toolchains on nodes | 1.1 | M | |
-| 16 | Build outputs and zips | 1.1 | M | |
-| 17 | Working on a large codebase (index, .outpostignore) | 1.1 | L | |
-| 18 | Agent mode for fixing and investigating | 1.1 | L | |
-| 19 | Images and screenshots | 1.1 | M | |
-| 20 | UI mockups and visual checks | 1.1 | M | |
-| 21 | Project instructions (OUTPOST.md) | 1.1 | S | |
-| 22 | Web lookups | 1.1 | S | |
-| 23 | Publish a build to the Updates tab | 1.1 | S | |
+| 8 | File browser with per-round diffs | 0.8 | M | |
+| 9 | Live output while subtasks write | 0.8 | M | |
+| 10 | Notifications (browser, ntfy, webhook) | 0.8 | S | |
+| 11 | Projects, attachments and git export | 0.8 | L | |
+| 12 | Model picker sized to each node | 0.8 | M | |
+| 13 | Node-to-node model transfers, hash-checked | 0.8 | L | |
+| 14 | macOS service and tray | 0.8 | M | |
+| 15 | Toolchains on nodes | 0.8 | M | |
+| 16 | Build outputs and zips | 0.8 | M | |
+| 17 | Working on a large codebase (index, .outpostignore) | 0.8 | L | |
+| 18 | Agent mode for fixing and investigating | 0.8 | L | |
+| 19 | Images and screenshots | 0.8 | M | |
+| 20 | UI mockups and visual checks | 0.8 | M | |
+| 21 | Project instructions (OUTPOST.md) | 0.8 | S | |
+| 22 | Web lookups | 0.8 | S | |
+| 23 | Publish a build to the Updates tab | 0.8 | S | |
 
 Sizes: S is about a session of work, M two or three, L more than three. Each release ends with the build, test and zip routine described in `CLAUDE.md`.
 
