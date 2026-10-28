@@ -334,6 +334,11 @@ The planner tags every subtask `easy`, `normal` or `hard`, and the plan card let
 before you approve. Hard subtasks go to the strongest free model and wait up to 2 minutes for it
 before taking any free node. Easy ones go to the fastest free node. Normal ones take the best mix of
 tier and speed. Reviews prefer a node at least as strong as the one that wrote the code.
+The benchmark runs once for each node and model, when the model is ready; it is not repeated on
+restarts or updates. Use **Re-run benchmark** on the node card to measure again. Small CPU-only nodes
+(8 threads or fewer) get a shorter test, and so does a node whose benchmark failed; a failed or timed-out
+run shows its reason on the card and is retried every 10 minutes. Real subtasks blend into the speed
+figure either way (70% old, 30% new).
 The benchmark and the routing have only been tested against stubs, not on a real cluster.
 
 ### Best of N on spare nodes

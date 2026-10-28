@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
 	"sort"
@@ -97,6 +98,7 @@ type NodeBench struct {
 	TokPerSec float64   `json:"tok_per_s"`            // rolling average, seeded by the benchmark and updated by real subtasks
 	Samples   int       `json:"samples"`              // real subtasks in the average
 	At        time.Time `json:"at"`
+	Light     bool      `json:"light,omitempty"` // measured with the small benchmark
 }
 
 // nodeScore is what routing knows about a worker.
@@ -280,17 +282,32 @@ func (c *Controller) recordSpeed(id string, tps float64) {
 
 // ---------- benchmark ----------
 
-const benchRetry = 10 * time.Minute
+const (
+	benchRetry   = 10 * time.Minute // between automatic attempts for one node and model
+	benchTimeout = 10 * time.Minute
+)
+
+// BenchFail records why the last benchmark of a model did not finish.
+type BenchFail struct {
+	Model string    `json:"model"`
+	Error string    `json:"error"`
+	At    time.Time `json:"at"`
+}
 
 // benchLoop benchmarks nodes whose model has not been measured yet.
 func (c *Controller) benchLoop() {
+	c.mu.Lock()
+	for _, n := range c.nodes {
+		n.Benching = false // a flag saved by an earlier run of the controller
+	}
+	c.mu.Unlock()
 	tried := map[string]time.Time{} // node|model -> last attempt
 	for range time.Tick(20 * time.Second) {
 		var todo []string
 		c.mu.Lock()
 		for id := range c.conns {
 			hb := c.lastHB[id]
-			if hb == nil || hb.Paused || !hb.InferenceRdy || hb.InferenceBusy != 0 || hb.LoadedModel == "" || c.pipelines[id] != nil || c.reserved[id] {
+			if hb == nil || hb.LoadedModel == "" {
 				continue
 			}
 			if n := c.nodes[id]; n != nil && n.Bench != nil && n.Bench.Model == hb.LoadedModel {
@@ -299,44 +316,113 @@ func (c *Controller) benchLoop() {
 			if time.Since(tried[id+"|"+hb.LoadedModel]) < benchRetry {
 				continue
 			}
+			if c.benchBlockedLocked(id) != "" {
+				continue
+			}
 			tried[id+"|"+hb.LoadedModel] = time.Now()
 			todo = append(todo, id)
 		}
 		c.mu.Unlock()
 		for _, id := range todo {
-			if c.tryReserve(id) {
-				go func(id string) {
-					defer c.releaseNode(id)
-					c.benchmarkNode(context.Background(), id)
-				}(id)
-			}
+			_ = c.startBenchmark(id)
 		}
 	}
 }
 
-var benchPrompt = strings.Repeat("The quick brown fox jumps over the lazy dog while the cluster hums quietly. ", 75) +
-	"\n\nIn about 200 words, describe how a hash map works."
+// benchBlockedLocked says why a node cannot be benchmarked now ("" if it can).
+func (c *Controller) benchBlockedLocked(id string) string {
+	hb := c.lastHB[id]
+	switch {
+	case c.conns[id] == nil || hb == nil:
+		return "the node is offline"
+	case hb.Paused:
+		return "the node is paused"
+	case hb.LoadedModel == "" || !hb.InferenceRdy:
+		return "no model is ready on the node"
+	case hb.InferenceBusy != 0 || c.reserved[id] || c.pipelines[id] != nil:
+		return "the node is busy"
+	}
+	if n := c.nodes[id]; n != nil && n.Benching {
+		return "a benchmark is already running"
+	}
+	return ""
+}
+
+// startBenchmark runs a benchmark on the node in the background.
+func (c *Controller) startBenchmark(id string) error {
+	c.mu.Lock()
+	if why := c.benchBlockedLocked(id); why != "" {
+		c.mu.Unlock()
+		return errors.New(why)
+	}
+	n := c.nodes[id]
+	if n == nil {
+		c.mu.Unlock()
+		return errors.New("no such node")
+	}
+	c.reserved[id] = true
+	n.Benching = true
+	c.mu.Unlock()
+	go func() {
+		defer c.releaseNode(id)
+		c.benchmarkNode(context.Background(), id)
+	}()
+	return nil
+}
+
+// lightBench says whether to use the small benchmark: after a failure on this
+// model, and on CPU-only nodes with few threads, where the full one can take minutes.
+func lightBench(n *NodeRec, model string) bool {
+	if n.BenchFail != nil && n.BenchFail.Model == model {
+		return true
+	}
+	return n.Hello != nil && len(n.Hello.GPUs) == 0 && n.Hello.CPU.Threads > 0 && n.Hello.CPU.Threads <= 8
+}
+
+func benchPromptFor(light bool) (string, int) {
+	if light {
+		return strings.Repeat("The quick brown fox jumps over the lazy dog while the cluster hums quietly. ", 18) +
+			"\n\nIn about 50 words, describe how a hash map works.", 64
+	}
+	return strings.Repeat("The quick brown fox jumps over the lazy dog while the cluster hums quietly. ", 75) +
+		"\n\nIn about 200 words, describe how a hash map works.", 256
+}
 
 func (c *Controller) benchmarkNode(ctx context.Context, id string) {
 	c.mu.Lock()
-	hb := c.lastHB[id]
-	model := ""
-	if hb != nil {
-		model = hb.LoadedModel
+	hb, n := c.lastHB[id], c.nodes[id]
+	model, light := "", false
+	if hb != nil && n != nil {
+		model, light = hb.LoadedModel, lightBench(n, hb.LoadedModel)
 	}
 	c.mu.Unlock()
 	if model == "" {
 		return
 	}
+	fail := func(msg string) {
+		c.mu.Lock()
+		if n := c.nodes[id]; n != nil {
+			n.Benching = false
+			n.BenchFail = &BenchFail{Model: model, Error: msg, At: time.Now()}
+			c.saveNodesLocked()
+		}
+		c.mu.Unlock()
+	}
+	prompt, maxTok := benchPromptFor(light)
 	temp := 0.0
-	spec := InferenceSpec{Messages: []ChatMessage{{Role: "user", Content: benchPrompt}},
-		Params: InferenceParams{Temperature: &temp, MaxTokens: 256}}
+	spec := InferenceSpec{Messages: []ChatMessage{{Role: "user", Content: prompt}},
+		Params: InferenceParams{Temperature: &temp, MaxTokens: maxTok}}
 	start := time.Now()
-	out, err := c.runInferenceJob(ctx, id, spec, "Benchmark", 5*time.Minute)
-	if err != nil || out.TokensPerSec <= 0 {
+	out, err := c.runInferenceJob(ctx, id, spec, "Benchmark", benchTimeout)
+	if err != nil {
+		fail(err.Error())
 		return
 	}
-	b := &NodeBench{Model: model, GenTPS: out.TokensPerSec, TokPerSec: out.TokensPerSec, At: time.Now()}
+	if out.TokensPerSec <= 0 {
+		fail("the model answered too little to measure a speed")
+		return
+	}
+	b := &NodeBench{Model: model, GenTPS: out.TokensPerSec, TokPerSec: out.TokensPerSec, At: time.Now(), Light: light}
 	// Whatever time was not spent generating went to reading the prompt.
 	if gen := float64(out.OutputTokens) / out.TokensPerSec; out.PromptTokens > 0 {
 		if p := time.Since(start).Seconds() - gen; p > 0.05 {
@@ -345,10 +431,19 @@ func (c *Controller) benchmarkNode(ctx context.Context, id string) {
 	}
 	c.mu.Lock()
 	if n := c.nodes[id]; n != nil {
-		n.Bench = b
+		n.Bench, n.BenchFail, n.Benching = b, nil, false
 		c.saveNodesLocked()
 	}
 	c.mu.Unlock()
+}
+
+// handleBenchmarkNode re-runs a node's benchmark now.
+func (c *Controller) handleBenchmarkNode(w http.ResponseWriter, r *http.Request) {
+	if err := c.startBenchmark(r.PathValue("id")); err != nil {
+		writeJSON(w, 409, map[string]string{"error": "Cannot benchmark now: " + err.Error() + "."})
+		return
+	}
+	writeJSON(w, 202, map[string]bool{"ok": true})
 }
 
 // ---------- API ----------

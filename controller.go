@@ -47,6 +47,8 @@ type NodeRec struct {
 	LoadPrefs   *ModelLoad `json:"load_prefs,omitempty"` // last model loaded from the UI
 	Pool        []string   `json:"pool,omitempty"`       // helper nodes lending memory to this node's model
 	Bench       *NodeBench `json:"bench,omitempty"`      // measured speed of the loaded model
+	BenchFail   *BenchFail `json:"bench_fail,omitempty"` // why the last benchmark did not finish
+	Benching    bool       `json:"benching,omitempty"`   // a benchmark is running
 }
 
 type nodeConn struct {
@@ -245,6 +247,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/runtime/check", c.auth(c.handleCheckRuntime))
 	mux.HandleFunc("GET /api/nodes/{id}/load-options", c.auth(c.handleLoadOptions))
 	mux.HandleFunc("POST /api/nodes/{id}/load", c.auth(c.handleLoadModel))
+	mux.HandleFunc("POST /api/nodes/{id}/benchmark", c.auth(c.handleBenchmarkNode))
 	mux.HandleFunc("POST /api/nodes/{id}/unload", c.auth(c.handleUnloadModel))
 	mux.HandleFunc("DELETE /api/nodes/{id}/models/{name}", c.auth(c.handleRemoveNodeModel))
 	c.projectRoutes(mux)
