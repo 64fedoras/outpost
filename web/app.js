@@ -391,7 +391,7 @@ function setLiveText(pre, c) {
 }
 function livePane(c, id) {
   const open = liveExpanded.has(c.sub || id);
-  return `<details class="live" data-sub="${esc(c.sub || id)}" ${open ? 'open' : ''}><summary>live output <span class="live-rate">${esc(liveRate(c))}</span></summary><pre class="live-text" data-live="${esc(id)}">${esc(c.text)}</pre></details>`;
+  return `<details class="live" data-sub="${esc(c.sub || id)}" ${open ? 'open' : ''}><summary>live output${c.node ? ` · ${esc(c.node)}${/ review /.test(c.label || '') ? ' checking' : ''}` : ''} <span class="live-rate">${esc(liveRate(c))}</span></summary><pre class="live-text" data-live="${esc(id)}">${esc(c.text)}</pre></details>`;
 }
 document.addEventListener('toggle', (e) => {
   const d = e.target;
