@@ -905,6 +905,7 @@ func (c *Controller) pauseForCap(ctx context.Context, t *Task, est float64) erro
 	cost, cap := t.CostUSD, t.CapUSD
 	t.saveLocked()
 	t.mu.Unlock()
+	c.notifyTask(t, "cap", fmt.Sprintf("Paused at %s of the %s cap. Raise the cap or switch planner to continue.", fmtUSD(cost), fmtUSD(cap)))
 	t.logf("warn", "Paused: the next cloud model call (about %s) would pass the %s cap (spent %s). Raise the cap or switch to a local planner to continue.", fmtUSD(est), fmtUSD(cap), fmtUSD(cost))
 	select {
 	case <-ctx.Done():
@@ -1207,6 +1208,7 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 			t.Status = "awaiting_answers"
 			t.addMsgLocked(TaskMessage{Role: "assistant", Kind: "questions", Questions: qs, Text: strings.TrimSpace(ask.Note)})
 			t.mu.Unlock()
+			c.notifyTask(t, "question", fmt.Sprintf("The planner has %d question(s) for you.", len(qs)))
 			t.logf("info", "The planner has %d question(s) before planning.", len(qs))
 			return
 		}
@@ -1260,6 +1262,7 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 	cp := *plan
 	t.addMsgLocked(TaskMessage{Role: "assistant", Kind: "plan", Plan: &cp, Text: strings.TrimSpace(plan.Note)})
 	t.mu.Unlock()
+	c.notifyTask(t, "plan", fmt.Sprintf("Plan ready with %d subtasks. Review it and approve to start.", len(plan.Subtasks)))
 	t.logf("info", "Plan ready: %d subtasks. Review it and approve to start.", len(plan.Subtasks))
 }
 
@@ -1383,6 +1386,7 @@ func (c *Controller) failTask(t *Task, err error) {
 	t.addMsgLocked(TaskMessage{Role: "assistant", Kind: "error", Text: err.Error()})
 	t.mu.Unlock()
 	t.setStatus("failed")
+	c.notifyTask(t, "failed", err.Error())
 	t.logf("error", "%v", err)
 }
 
@@ -2011,6 +2015,7 @@ func (c *Controller) finishTask(t *Task) {
 	cost := t.CostUSD
 	t.addMsgLocked(TaskMessage{Role: "assistant", Kind: "result", Text: resultText(t), Files: sortedCopy(t.Touched)})
 	t.mu.Unlock()
+	c.notifyTask(t, "done", "Finished. Download the result from the task page.")
 	t.logf("info", "Finished. Cloud model cost: %s. Download the result from this page.", fmtUSD(cost))
 }
 
