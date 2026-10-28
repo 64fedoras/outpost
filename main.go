@@ -30,6 +30,7 @@ Set up as a service that starts at boot (Linux, systemd; run with sudo):
   outpost install node                  (machine already joined; reuse its config)
   outpost uninstall controller|node     (removes the service, keeps data)
   outpost reset-password                (new admin password; restarts the service)
+  outpost install controller --restore backup.opb    (rebuild a controller from a backup)
 
 Run in the foreground:
   outpost controller [--listen :8443] [--data DIR] [--advertise https://IP:8443]
@@ -38,6 +39,8 @@ Run in the foreground:
 
   outpost version
   outpost tray [--data DIR]              (status icon: pause work, join another controller, quit)
+  outpost repin --fingerprint SHA256 [--data DIR]
+                                        (node: trust the controller's new TLS certificate)
   outpost hwinfo                        (show the CPU, RAM and GPUs this machine reports)
 `, Version)
 }
@@ -65,6 +68,10 @@ func main() {
 		err = runResetPassword(os.Args[2:])
 	case "tray":
 		err = runTray(os.Args[2:])
+	case "service":
+		err = runService(os.Args[2:])
+	case "repin":
+		err = runRepin(os.Args[2:])
 	case "hwinfo":
 		runHWInfo()
 	case "version", "--version", "-v":
@@ -158,7 +165,7 @@ func pinnedTLS(fingerprint string) *tls.Config {
 				return errors.New("no server certificate")
 			}
 			if certFingerprint(raw[0]) != want {
-				return fmt.Errorf("controller certificate fingerprint mismatch (got %s)", certFingerprint(raw[0]))
+				return fmt.Errorf("controller certificate fingerprint mismatch (got %s); if you replaced the controller's certificate, run: outpost repin --fingerprint %s", certFingerprint(raw[0]), certFingerprint(raw[0]))
 			}
 			return nil
 		},
