@@ -42,6 +42,9 @@ func runInstall(args []string) error {
 	if runtime.GOOS == "windows" && args[0] == "node" {
 		return installNodeWindows(args[1:])
 	}
+	if runtime.GOOS == "darwin" && args[0] == "node" {
+		return installNodeDarwin(args[1:])
+	}
 	if err := checkInstallable(); err != nil {
 		return err
 	}
@@ -57,6 +60,9 @@ func runUninstall(args []string) error {
 	}
 	if runtime.GOOS == "windows" && args[0] == "node" {
 		return uninstallNodeWindows()
+	}
+	if runtime.GOOS == "darwin" && args[0] == "node" {
+		return uninstallNodeDarwin()
 	}
 	if err := checkInstallable(); err != nil {
 		return err
