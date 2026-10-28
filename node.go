@@ -61,6 +61,7 @@ type Node struct {
 	tools       toolCache
 	peer        peerState
 	artifacts   map[string]string // "<job>/<path>" -> file on disk, served to the controller
+	busyModels  map[string]int    // models being written right now; cleanup skips them
 }
 
 func (n *Node) agentDir() string { return filepath.Join(n.dataDir, "agent") }
@@ -388,6 +389,11 @@ func (n *Node) sessionInner(welcomed *bool) error {
 			var mr ModelRemove
 			if json.Unmarshal(env.Body, &mr) == nil {
 				go n.removeModel(mr.Name)
+			}
+		case "model.cleanup":
+			var mc ModelCleanup
+			if json.Unmarshal(env.Body, &mc) == nil {
+				go n.cleanupModels(mc)
 			}
 		case "node.restart":
 			go n.restartSelf()

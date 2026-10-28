@@ -376,6 +376,17 @@
   </div>
 </div>
 
+<div id="modal-clean" class="overlay hidden">
+  <div class="modal">
+    <h3>Clean up models on <span id="clean-node"></span></h3>
+    <p class="hint">Deletes the ticked models from this node's disk. The model that is loaded or set to load again after a restart is always kept. Copies on the controller and on other nodes are not touched; a node that needs a model again downloads it.</p>
+    <div id="clean-list"></div>
+    <label class="toggle u21"><input type="checkbox" id="clean-partial"> Also delete interrupted downloads</label>
+    <div class="error-msg hidden" id="clean-err"></div>
+    <div class="modal-foot"><button data-close>Cancel</button><button class="danger" id="clean-go">Delete</button></div>
+  </div>
+</div>
+
 <div id="modal-pick" class="overlay hidden">
   <div class="modal">
     <h3>Load <span id="pick-model"></span> on…</h3>

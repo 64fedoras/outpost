@@ -463,6 +463,7 @@ func (n *Node) pushModel(mp ModelPush) {
 		fail("bad model name")
 		return
 	}
+	defer n.markModelBusy(mp.Name)()
 	if _, err := n.modelManifest(mp.Name); err == nil {
 		n.opStatus(op, mp.Name, "done", total, total, "")
 		return
@@ -1202,6 +1203,7 @@ func (n *Node) fetchModel(mf ModelFetch) {
 		fail("bad model name")
 		return
 	}
+	defer n.markModelBusy(mf.Name)()
 	if _, err := n.modelManifest(mf.Name); err == nil {
 		n.opStatus(op, mf.Name, "done", total, total, "")
 		return
