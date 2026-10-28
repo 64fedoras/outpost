@@ -264,6 +264,8 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/tasks/{id}/agent-answer", c.auth(c.handleAgentAnswer))
 	mux.HandleFunc("POST /api/tasks/{id}/cancel", c.auth(c.handleCancelTask))
 	mux.HandleFunc("POST /api/tasks/{id}/resume", c.auth(c.handleResumeTask))
+	mux.HandleFunc("POST /api/tasks/{id}/rerun", c.auth(c.handleRerunPlan))
+	mux.HandleFunc("POST /api/tasks/{id}/plan/edit", c.auth(c.handleEditPlan))
 	mux.HandleFunc("GET /api/tasks/{id}/events", c.auth(c.handleTaskEvents))
 	mux.HandleFunc("GET /api/tasks/{id}/file", c.auth(c.handleTaskFile))
 	mux.HandleFunc("GET /api/tasks/{id}/artifact", c.auth(c.handleTaskArtifact))
