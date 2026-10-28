@@ -48,16 +48,28 @@ const nodeById = (id) => state && state.nodes.find((n) => n.id === id);
 // ---------- auth + routing ----------
 function showLogin() {
   clearInterval(stateTimer); stateTimer = null;
-  $('app').classList.add('hidden'); $('login').classList.remove('hidden'); $('pw').focus();
+  $('app').classList.add('hidden');
+  // Before any password exists the same page offers first-run setup instead of sign-in.
+  fetch('/api/setup', { credentials: 'same-origin' }).then((r) => r.json()).catch(() => ({ needed: false })).then((st) => {
+    $('setup').classList.toggle('hidden', !st.needed); $('login').classList.toggle('hidden', !!st.needed);
+    $('setup-blocked').classList.toggle('hidden', st.allowed !== false);
+    $(st.needed ? 'su-new' : 'pw').focus();
+  });
 }
 function showApp() {
-  $('login').classList.add('hidden'); $('app').classList.remove('hidden'); route();
+  $('login').classList.add('hidden'); $('setup').classList.add('hidden'); $('app').classList.remove('hidden'); route();
   refresh(); if (!stateTimer) stateTimer = setInterval(refresh, 2000);
 }
 $('login-form').onsubmit = async (e) => {
   e.preventDefault(); $('login-err').classList.add('hidden');
   try { await post('/api/login', { password: $('pw').value }); $('pw').value = ''; showApp(); }
   catch (err) { $('login-err').textContent = err.message; $('login-err').classList.remove('hidden'); }
+};
+$('setup-form').onsubmit = async (e) => {
+  e.preventDefault(); const err = $('setup-err'); err.classList.add('hidden');
+  if ($('su-new').value !== $('su-new2').value) { err.textContent = 'The passwords do not match.'; err.classList.remove('hidden'); return; }
+  try { await post('/api/setup', { password: $('su-new').value }); $('su-new').value = $('su-new2').value = ''; showApp(); }
+  catch (x) { err.textContent = x.message; err.classList.remove('hidden'); }
 };
 $('btn-logout').onclick = async () => { await post('/api/logout').catch(() => {}); showLogin(); };
 
