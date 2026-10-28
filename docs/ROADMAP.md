@@ -1,9 +1,10 @@
-# Outpost roadmap, 0.7 to 1.1
+# Outpost roadmap (all rows built, 0.7.0 and 0.8.0)
 
-Status: **0.7 built (rows 1 to 4, see notes below); 0.8 onward planned.** The code is at v0.7.0. Plan written 2026-10-26 and edited 2026-10-27.
+Status: **Rows 1 to 4 shipped in 0.7.0; rows 5 to 23 shipped together in 0.8.0.** The code is at v0.8.0. Plan written 2026-10-26 and edited 2026-10-27; status updated 2026-10-28.
+The release labels below (0.8, 0.9, 1.0, 1.1) are the original grouping. At the owner's request they were folded into one release, **0.8.0**, so nothing here ships as 0.9, 1.0 or 1.1. The next release after 0.8.0 is 0.9.
 Release numbers go up by one digit only (0.9 is followed by 1.0, then 1.1).
 
-Before building anything, check the Decision column with the owner. Mark each row Approve, Change, Later or Drop.
+All rows were approved by the owner on 2026-10-28 and built. **Nothing in 0.8.0 has been tested on the real cluster, real Windows or a real Mac**; see the 0.8.0 build notes below.
 
 | # | Feature | Release | Size | Decision |
 | --- | --- | --- | --- | --- |
@@ -11,25 +12,25 @@ Before building anything, check the Decision column with the owner. Mark each ro
 | 2 | Login hardening and API tokens | 0.7 | S | Built in 0.7.0 |
 | 3 | Your own TLS certificate | 0.7 | S | Built in 0.7.0 |
 | 4 | Backup and restore | 0.7 | M | Built in 0.7.0 |
-| 5 | Node benchmarks and smart routing | 0.8 | M | |
-| 6 | Best-of-N on hard subtasks | 0.8 | M | |
-| 7 | Auto-resume after a restart | 0.8 | S | |
-| 8 | File browser with per-round diffs | 0.8 | M | |
-| 9 | Live output while subtasks write | 0.8 | M | |
-| 10 | Notifications (browser, ntfy, webhook) | 0.8 | S | |
-| 11 | Projects, attachments and git export | 0.8 | L | |
-| 12 | Model picker sized to each node | 0.8 | M | |
-| 13 | Node-to-node model transfers, hash-checked | 0.8 | L | |
-| 14 | macOS service and tray | 0.8 | M | |
-| 15 | Toolchains on nodes | 0.8 | M | |
-| 16 | Build outputs and zips | 0.8 | M | |
-| 17 | Working on a large codebase (index, .outpostignore) | 0.8 | L | |
-| 18 | Agent mode for fixing and investigating | 0.8 | L | |
-| 19 | Images and screenshots | 0.8 | M | |
-| 20 | UI mockups and visual checks | 0.8 | M | |
-| 21 | Project instructions (OUTPOST.md) | 0.8 | S | |
-| 22 | Web lookups | 0.8 | S | |
-| 23 | Publish a build to the Updates tab | 0.8 | S | |
+| 5 | Node benchmarks and smart routing | 0.8 | M | Built in 0.8.0 |
+| 6 | Best-of-N on hard subtasks | 0.8 | M | Built in 0.8.0 |
+| 7 | Auto-resume after a restart | 0.8 | S | Built in 0.8.0 |
+| 8 | File browser with per-round diffs | 0.8 | M | Built in 0.8.0 |
+| 9 | Live output while subtasks write | 0.8 | M | Built in 0.8.0 |
+| 10 | Notifications (browser, ntfy, webhook) | 0.8 | S | Built in 0.8.0 |
+| 11 | Projects, attachments and git export | 0.8 | L | Built in 0.8.0 |
+| 12 | Model picker sized to each node | 0.8 | M | Built in 0.8.0 |
+| 13 | Node-to-node model transfers, hash-checked | 0.8 | L | Built in 0.8.0 |
+| 14 | macOS service and tray | 0.8 | M | Built in 0.8.0 |
+| 15 | Toolchains on nodes | 0.8 | M | Built in 0.8.0 |
+| 16 | Build outputs and zips | 0.8 | M | Built in 0.8.0 |
+| 17 | Working on a large codebase (index, .outpostignore) | 0.8 | L | Built in 0.8.0 |
+| 18 | Agent mode for fixing and investigating | 0.8 | L | Built in 0.8.0 |
+| 19 | Images and screenshots | 0.8 | M | Built in 0.8.0 |
+| 20 | UI mockups and visual checks | 0.8 | M | Built in 0.8.0 |
+| 21 | Project instructions (OUTPOST.md) | 0.8 | S | Built in 0.8.0 |
+| 22 | Web lookups | 0.8 | S | Built in 0.8.0 |
+| 23 | Publish a build to the Updates tab | 0.8 | S | Built in 0.8.0 |
 
 Sizes: S is about a session of work, M two or three, L more than three. Each release ends with the build, test and zip routine described in `CLAUDE.md`.
 
@@ -83,6 +84,22 @@ The controller generates a self-signed certificate, which browsers warn about. S
 - **Row 2:** shipped as written (lockout count on Settings, sessions list, Sign out everywhere, hashed bearer tokens).
 - **Row 3:** shipped. Offline nodes are re-pinned with `outpost repin --fingerprint …` on the node, not with a button in the Nodes tab (a node that cannot connect cannot be re-pinned from the controller). Nodes on 0.6.1 ignore the push, so update them first.
 - **Row 4:** shipped, including nightly copies. Restore is `install controller --restore FILE`.
+
+### 0.8.0 build notes (rows 5 to 23: what shipped, what did not)
+
+All of this is **untested on the real cluster, on real Windows and on a real Mac**. It was tested with Go unit tests and the e2e rig (stub Claude and OpenRouter servers, fake llama-server, fake Chromium). Where a row is not listed, it shipped as written.
+
+- **Row 5:** shipped. Benchmark speeds and routing only seen against stubs.
+- **Row 6:** shipped. The setting defaults to **Hard subtasks**, as planned. Extra copies only run on nodes nothing is waiting for.
+- **Row 13:** shipped hash-checked node-to-node transfers (port 8444, up to 3 peers, 64 MiB chunks). **Left out:** the Release storage button, freeing the controller's copy after an upload, and the background hash re-check before first load. Controller storage is kept as an optional seed (this answers the open question).
+- **Row 14:** shipped the per-user **LaunchAgent only**. The menu bar tray is not built: it needs cgo and a macOS runner.
+- **Row 15:** shipped the tool inventory, routing by tool, the Go installer and PowerShell on Windows exec nodes. **Chromium is detected, not installed.**
+- **Row 16:** shipped. **Failed builds do not trigger fix rounds**, and files over 1 MiB need the controller to reach the node on port 8444.
+- **Row 17:** shipped. The file summary in the index is the **first comment line**, not written by a node.
+- **Row 18:** shipped. Agent fix rounds cost more per round than the old single request (the conversation is re-sent every step).
+- **Row 19:** shipped. The **mmproj file names and sizes in the catalog are assumptions** and need checking on first download.
+- **Row 22:** shipped. The **Claude web search tool name and its price are unverified** against the live API.
+- **Rows 7 to 12, 20, 21, 23:** shipped as written. Row 21 is a single Settings box (plus an `OUTPOST.md` in the task's files) until per-project instructions are added.
 
 ## 0.8: Smarter cluster
 
@@ -169,7 +186,7 @@ Models move between nodes over the LAN instead of from the controller. The contr
 
 Nodes also re-check a model's hash in the background before first load after an update, which catches disk corruption. The peer port goes into the installer's firewall rules on Linux and Windows.
 
-Open question: remove controller storage completely, or keep it as an optional seed for an offline setup?
+Decided: controller storage stays as an optional seed (see the 0.8.0 build notes for what was left out).
 
 ### 14. macOS service and tray
 
@@ -289,5 +306,5 @@ Every feature gets Go unit tests and an end-to-end run with the mock Claude and 
 - [ ] Is there a Mac for the macOS build and test, or should macOS stay a service without the menu bar icon?
 - [ ] Which git host would export push to: GitHub, a self-hosted Gitea or Forgejo, or something else?
 - [ ] Is ntfy, Home Assistant or Discord already in use, so notifications target what is used?
-- [ ] Model transfers: remove controller storage completely, or keep it as an optional seed?
+- [x] Model transfers: controller storage kept as an optional seed.
 - [ ] For working on Outpost: which node gets Go and Chromium, node02 or the gaming desktop?

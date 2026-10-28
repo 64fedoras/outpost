@@ -1,4 +1,4 @@
-# Outpost v0.7.3
+# Outpost v0.8.0
 
 Self-hosted AI cluster. One binary runs as the **controller** (web UI, planning, job dispatch) or as a
 **node** (runs local models with llama.cpp, runs commands, keeps nothing after a job).
@@ -490,7 +490,19 @@ you fill it in (set it if you reach the controller by a name or IP different fro
   short stub. Delete it from the downloaded zip.
 - The low-level job history (Home → Recent jobs) is kept in memory and clears on restart; tasks
   and their files are kept on disk.
-- Service install is Linux-only.
+- Service install: systemd on Linux, the Outpost Node service on Windows (admin shell) and a per-user
+  LaunchAgent on macOS. There is no macOS menu bar icon (it needs cgo and a Mac to build on).
+- Files over 1 MiB travel between the controller and exec nodes through the node's file-sharing port
+  (8444), which the controller must be able to reach. A failed build does not start fix rounds.
+- Agent fix rounds cost more per round than the old single request, because the conversation is sent
+  again on every step.
+- Vision projector (`mmproj`) file names and sizes in the model catalog are assumptions; check them
+  the first time you download a Vision model. The Claude web search tool name and its price are
+  unverified against the live API.
+- Version 0.8.0 is **untested on the real cluster** (nodes, GPUs, real transfer speeds), on real Windows
+  (service, PowerShell test runs, Go install, Defender) and on a real Mac. It was tested against stub
+  Claude and OpenRouter servers and fake llama-server and Chromium. The live OpenRouter API was never
+  called.
 
 ## Third-party code inside the binary
 
