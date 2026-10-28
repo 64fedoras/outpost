@@ -216,6 +216,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/nodes/{id}/restart", c.auth(c.handleRestartNode))
 	mux.HandleFunc("GET /v1/releases/{platform}", c.handleServeRelease)
 	mux.HandleFunc("GET /v1/runtime/{variant}", c.handleServeRuntime)
+	c.toolchainRoutes(mux)
 	mux.HandleFunc("GET /v1/models/{name}/files/{index}", c.handleServeModelFile)
 	mux.HandleFunc("GET /api/settings", c.auth(c.handleGetSettings))
 	mux.HandleFunc("POST /api/settings", c.auth(c.handleSaveSettings))
@@ -591,10 +592,7 @@ func (c *Controller) handleNewJob(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 409, map[string]string{"error": "node is busy (at its job limit)"})
 		return
 	}
-	argv := []string{"sh", "-c", req.Command}
-	if n.Hello != nil && n.Hello.OS == "windows" {
-		argv = []string{"cmd", "/C", req.Command}
-	}
+	argv := shellArgv(n.Hello, req.Command)
 	timeout := req.TimeoutS
 	if timeout <= 0 || timeout > 24*3600 {
 		timeout = 600
