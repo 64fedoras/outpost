@@ -285,7 +285,7 @@ func runController(args []string) error {
 
 	srv := &http.Server{
 		Addr:              *listen,
-		Handler:           logRequests(mux),
+		Handler:           logRequests(secureHeaders(mux)),
 		TLSConfig:         &tls.Config{GetCertificate: c.getCertificate, MinVersion: tls.VersionTLS12},
 		ReadHeaderTimeout: 10 * time.Second,
 	}
