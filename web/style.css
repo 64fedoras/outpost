@@ -144,6 +144,15 @@ pre.out .err { color: var(--stderr); }
 .catalog .card p { margin: 2px 0 8px; font-size: 12.5px; color: var(--muted); flex: 1; }
 .settings { max-width: 640px; }
 .settings .card { margin-bottom: 14px; }
+.settings.set-layout { max-width: 860px; display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 24px; align-items: start; }
+.set-nav { position: sticky; top: 18px; display: flex; flex-direction: column; gap: 2px; }
+.set-nav a { padding: 7px 10px; border-radius: 6px; color: var(--muted); text-decoration: none; font-size: 13.5px; }
+.set-nav a:hover { background: var(--tint); }
+.set-nav a.active { background: var(--tint); color: var(--accent); font-weight: 600; }
+.set-main { min-width: 0; max-width: 640px; }
+.set-sec { margin-bottom: 36px; scroll-margin-top: 18px; }
+.set-sec:last-child { min-height: 60vh; }
+.set-sec-title { font-size: 18px; margin: 0 0 4px; }
 
 #login { max-width: 360px; margin: 14vh auto; }
 #login h1 { font-size: 20px; margin: 0 0 4px; }
@@ -347,6 +356,10 @@ fieldset.q[disabled] .opt span { opacity: .6; cursor: default; }
   .opt-field { max-width: 100%; }
   .spend-bar { display: none; }
   .page-plain { padding: 14px 16px 40px; }
+  .settings.set-layout { display: block; }
+  .set-nav { top: 46px; margin-bottom: 14px; z-index: 5; flex-direction: row; overflow-x: auto; background: var(--bg); border-bottom: 1px solid var(--line); padding: 6px 0; }
+  .set-nav a { white-space: nowrap; }
+  .set-sec { scroll-margin-top: 96px; }
   .p-list li { grid-template-columns: 18px minmax(0, 1fr); }
   .p-who { grid-column: 2; text-align: left; }
   .bubble { max-width: 92%; }
@@ -572,3 +585,4 @@ details.live summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .pl18{padding-left:252px}
 .pl19{padding-left:266px}
 .pl20{padding-left:280px}
+.set-main code { overflow-wrap: anywhere; }
