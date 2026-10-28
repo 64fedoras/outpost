@@ -250,6 +250,7 @@ func installNode(args []string) error {
 		return err
 	}
 	fmt.Printf("The outpost-node service is running as %s and starts at boot.\n", u.Username)
+	openPeerPort()
 	if hasDesktop() {
 		if err := installTrayAutostart(u, uid, gid, dir); err != nil {
 			fmt.Println("Tray icon not set up:", err)
@@ -348,4 +349,30 @@ X-GNOME-Autostart-enabled=true
 		}
 	}
 	return nil
+}
+
+// openPeerPort lets other nodes reach this node's model-sharing port (8444).
+// It only touches a firewall that is already active (ufw or firewalld); with
+// none, there is nothing to open. Best effort: a failure only means copies
+// from this node fall back to the controller.
+func openPeerPort() {
+	port := strconv.Itoa(peerPort)
+	if _, err := exec.LookPath("ufw"); err == nil {
+		if out, _ := exec.Command("ufw", "status").Output(); strings.Contains(string(out), "Status: active") {
+			if err := exec.Command("ufw", "allow", port+"/tcp", "comment", "Outpost model sharing").Run(); err == nil {
+				fmt.Println("Opened TCP port", port, "in ufw so other nodes can copy models from this one.")
+			} else {
+				fmt.Println("Could not open port", port, "in ufw:", err)
+			}
+		}
+	}
+	if _, err := exec.LookPath("firewall-cmd"); err == nil {
+		if out, _ := exec.Command("firewall-cmd", "--state").Output(); strings.TrimSpace(string(out)) == "running" {
+			if exec.Command("firewall-cmd", "--permanent", "--add-port="+port+"/tcp").Run() == nil && exec.Command("firewall-cmd", "--reload").Run() == nil {
+				fmt.Println("Opened TCP port", port, "in firewalld so other nodes can copy models from this one.")
+			} else {
+				fmt.Println("Could not open port", port, "in firewalld; run: firewall-cmd --permanent --add-port="+port+"/tcp && firewall-cmd --reload")
+			}
+		}
+	}
 }
