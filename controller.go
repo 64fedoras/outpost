@@ -16,6 +16,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -104,6 +105,8 @@ type Controller struct {
 	cert        tls.Certificate
 	repinAcks   map[string]string
 	admin       adminRecord
+	setupAllow  []netip.Prefix // nil = private/LAN addresses only
+	setupMu     sync.Mutex     // makes "no password yet" + "set it" one step
 
 	nodes      map[string]*NodeRec
 	conns      map[string]*nodeConn
@@ -143,7 +146,8 @@ func runController(args []string) error {
 	listen := fsf.String("listen", ":8443", "address to listen on")
 	data := fsf.String("data", defaultDataDir("controller"), "data directory")
 	advertise := fsf.String("advertise", "", "URL nodes use to reach this controller (default: https://<first LAN IP><listen port>)")
-	resetPw := fsf.Bool("reset-password", false, "generate a new admin password and print it")
+	resetPw := fsf.Bool("reset-password", false, "remove the admin password; the next visitor to the web UI chooses a new one")
+	setupFrom := fsf.String("setup-allow-from", "", "who may choose the first admin password: comma-separated CIDRs, or \"any\" (default: private/LAN addresses only)")
 	_ = fsf.Parse(args)
 
 	if err := os.MkdirAll(*data, 0o700); err != nil {
@@ -185,8 +189,12 @@ func runController(args []string) error {
 		return err
 	}
 	c.migratePooling()
-	pw, err := c.loadOrCreateAdmin(*resetPw)
+	allow, err := parseSetupAllow(*setupFrom)
 	if err != nil {
+		return err
+	}
+	c.setupAllow = allow
+	if err := c.loadAdmin(*resetPw); err != nil {
 		return err
 	}
 
@@ -200,6 +208,8 @@ func runController(args []string) error {
 	}))
 	mux.HandleFunc("GET /licenses", handleLicenses)
 	mux.HandleFunc("POST /api/login", c.handleLogin)
+	mux.HandleFunc("GET /api/setup", c.handleSetupStatus)
+	mux.HandleFunc("POST /api/setup", c.handleSetup)
 	mux.HandleFunc("POST /api/logout", c.handleLogout)
 	mux.HandleFunc("GET /api/sessions", c.authSession(c.handleListSessions))
 	mux.HandleFunc("DELETE /api/sessions/{id}", c.authSession(c.handleRevokeSession))
@@ -299,8 +309,8 @@ func runController(args []string) error {
 	log.Printf("web UI:           %s", c.advertise)
 	log.Printf("cert fingerprint: %s", fp)
 	log.Printf("data dir:         %s", *data)
-	if pw != "" {
-		log.Printf("ADMIN PASSWORD:   %s   (shown once; rerun with --reset-password to change)", pw)
+	if c.needsSetup() {
+		log.Printf("no admin password yet: open the web UI to choose one (first-run setup allowed from: %s)", describeSetupAllow(c.setupAllow))
 	}
 	return srv.ListenAndServeTLS("", "")
 }

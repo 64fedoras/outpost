@@ -91,8 +91,8 @@ func TestLegacyPasswordUpgrade(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "admin.json"), []byte(legacy), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if pw, err := c.loadOrCreateAdmin(false); err != nil || pw != "" {
-		t.Fatalf("existing password replaced: %q %v", pw, err)
+	if err := c.loadAdmin(false); err != nil || c.needsSetup() {
+		t.Fatalf("existing password lost: %v", err)
 	}
 	if c.checkPassword("wrong") {
 		t.Fatal("wrong password accepted")
@@ -105,7 +105,7 @@ func TestLegacyPasswordUpgrade(t *testing.T) {
 		t.Fatal("hash not upgraded")
 	}
 	c2 := &Controller{dataDir: dir}
-	c2.loadOrCreateAdmin(false)
+	c2.loadAdmin(false)
 	if !c2.checkPassword("old-password") {
 		t.Fatal("upgraded hash does not verify after reload")
 	}
