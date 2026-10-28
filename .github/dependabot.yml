@@ -1,0 +1,25 @@
+# Weekly, low-volume update PRs. Nothing here auto-merges: review each PR and
+# let the CI check job pass first.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Dependencies are vendored in vendor/. Dependabot runs `go mod vendor` for
+  # repos that commit vendor/, so its PRs update go.mod, go.sum and vendor/ together.
+  # If vendor/ and go.mod ever disagree, `go vet` and `go test` in CI fail with
+  # "inconsistent vendoring", so a half-updated PR cannot pass the check.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      go-modules:
+        patterns: ["*"]
