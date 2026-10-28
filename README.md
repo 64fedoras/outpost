@@ -415,6 +415,22 @@ prompt). Nodes reconnect on their own because the node keys and certificate come
 *Nightly backup* writes a copy to a folder on the controller (for example an NFS mount) about every
 24 hours and keeps the last 7. Its passphrase is stored encrypted with `secret.key`.
 
+## Notifications
+
+**Settings → Notifications** sends a message when the planner asks a question, a plan is ready to approve,
+a task finishes or fails, the spending cap pauses a task, or a node has been offline for 5 minutes. Each
+event can be switched off. Every message links to the task (or the Nodes page).
+
+- **Browser:** desktop notifications while an Outpost tab is open (the browser asks permission when you save).
+- **ntfy:** paste the topic URL (`https://ntfy.sh/my-topic` or your own server). Add an access token only for
+  protected topics. Tapping the push opens the task.
+- **Webhook:** a JSON `POST` with `event`, `title`, `message`, `task_id`, `url` and `time`, plus `content`
+  and `text` (the same sentence) so Discord and Slack style endpoints accept it. Home Assistant can read it with a webhook trigger.
+
+Links use the address you were browsing when you saved or tested, or the *Address used in links* box if
+you fill it in (set it if you reach the controller by a name or IP different from the one nodes use).
+*Send test* checks the channels. Notifications are not stored: the controller keeps only the last 50 in memory for browsers.
+
 ## Where things live
 
 | | Controller (`/var/lib/outpost/controller`) | Node (`~/.outpost/node`) |
