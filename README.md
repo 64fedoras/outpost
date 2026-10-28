@@ -117,6 +117,12 @@ can check detection without joining.
    - **Store on controller:** downloaded once to the controller and copied to nodes over your
      network. Uses controller space; nodes need no internet.
    You can switch later: **Free controller space** or **Store on controller** on the library row.
+   Every model (suggested, library and Hugging Face file lists) shows a badge per node: **fits in VRAM**,
+   **split VRAM + RAM (slower)**, **runs on CPU** (node without a GPU) or **does not fit**. It is an
+   estimate: the weights plus a rough KV cache at the suggested context size, not read from the file.
+   **Suggested coding models** ranks the built-in coding models by what fits your nodes. On a ready model,
+   **Load on N nodes it fits** loads it on every online node where it fits fully in VRAM (this replaces
+   whatever those nodes had loaded).
 2. **Nodes** (sidebar): click **Load model** on a node. Outpost installs llama.cpp on the node (Vulkan for
    GPUs, CPU otherwise), gets the model onto the node, and starts it. Downloads resume if
    interrupted and are checked against Hugging Face's SHA-256. Progress shows on the card. The node

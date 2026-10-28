@@ -662,6 +662,12 @@ function storageLabel(m) {
   return isDirect(m) ? '<span title="Each node downloads it from Hugging Face when you load it">Nodes download</span>'
     : '<span title="Downloaded once to the controller and copied to nodes over your network">On controller</span>';
 }
+const FIT_TEXT = { vram: 'fits in VRAM', split: 'split VRAM + RAM (slower)', ram: 'runs on CPU', no: 'does not fit' };
+const FIT_CLS = { vram: 'st-done', split: 'st-loading', ram: 'st-loading', no: 'st-failed' };
+function fitBadges(fits) {
+  if (!fits || !fits.length) return '';
+  return `<div class="fit-badges" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${fits.map((f) => `<span class="pill ${FIT_CLS[f.fit]}" title="${esc(f.name)}: ${FIT_TEXT[f.fit]}; needs about ${bytes(f.need_bytes)}${f.online ? '' : ' (node offline)'}">${esc(f.name)} · ${FIT_TEXT[f.fit]}</span>`).join('')}</div>`;
+}
 function renderModels() {
   if (!models) return;
   setHTML('models-disk', `${bytes(models.disk_free)} free on the controller`);
@@ -678,19 +684,24 @@ function renderModels() {
       if (m.status === 'failed') acts.push(`<button class="small" data-act="model-retry" data-name="${nm}">Retry</button>`);
       if (isDirect(m) && m.status === 'ready') acts.push(`<button class="small" data-act="model-store" data-name="${nm}" title="Download it to the controller too, so nodes copy it over your network instead of from the internet">Store on controller</button>`);
       if (!isDirect(m) && m.status !== 'failed') acts.push(`<button class="small" data-act="model-unstore" data-name="${nm}" title="Free ${bytes(m.bytes_total)} on the controller; nodes download it from Hugging Face instead">Free controller space</button>`);
+      const vf = ((models.fits || {})[m.name] || []).filter((f) => f.fit === 'vram' && f.can_load);
+      if (m.status === 'ready' && vf.length) acts.unshift(`<button class="small primary" data-act="model-load-fit" data-name="${nm}" title="Loads it on: ${esc(vf.map((f) => f.name).join(', '))}. Replaces any model those nodes have loaded.">Load on ${vf.length} node${vf.length > 1 ? 's' : ''} it fits</button>`);
       acts.push(`<button class="small danger" data-act="model-delete" data-name="${nm}">${m.status === 'downloading' ? 'Cancel' : 'Remove'}</button>`);
-      return `<tr><td><b>${esc(m.label || m.name)}</b><div class="sub" style="margin:2px 0 0">${esc(m.repo)}</div></td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td>${storageLabel(m)}</td><td>${status}</td>
+      return `<tr><td><b>${esc(m.label || m.name)}</b><div class="sub" style="margin:2px 0 0">${esc(m.repo)}</div>${m.status === 'ready' ? fitBadges((models.fits || {})[m.name]) : ''}</td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td>${storageLabel(m)}</td><td>${status}</td>
         <td>${h.length ? h.map(esc).join(', ') : '<span class="muted">none</span>'}</td><td class="r"><div class="btns" style="justify-content:flex-end">${acts.join('')}</div></td></tr>`;
     }).join('')}</tbody></table></div>`);
   const have = {}; list.forEach((m) => { have[m.name] = m; });
-  setHTML('catalog', models.catalog.map((c) => {
+  const catCard = (c) => {
     const m = have[c.id];
     const btn = m ? (m.status === 'downloading' ? `<button disabled>Downloading ${m.bytes_total ? Math.floor(100 * m.bytes_done / m.bytes_total) : 0}%</button>`
         : m.status === 'failed' ? `<button data-act="model-retry" data-name="${c.id}">Retry</button>` : `<button disabled>In library · ${isDirect(m) ? 'nodes download' : 'on controller'}</button>`)
       : `<button class="primary" data-act="catalog-add" data-id="${c.id}" data-storage="direct" title="Each node downloads it from Hugging Face when you load it; uses no controller space">Add · nodes download</button>
          <button data-act="catalog-add" data-id="${c.id}" data-storage="controller" title="Download once to the controller (${bytes(c.bytes)}), then copy to nodes over your network">Store on controller</button>`;
-    return `<div class="card"><span class="for">${esc(c.for)}</span><h3>${esc(c.label)}</h3><p>${esc(c.notes)}</p><div class="btns">${btn}</div><span class="muted" style="font-size:12px;margin-top:6px">${bytes(c.bytes)} · needs ~${c.min_ram_gb} GB RAM+VRAM</span></div>`;
-  }).join(''));
+    return `<div class="card"><span class="for">${esc(c.for)}</span><h3>${esc(c.label)}</h3><p>${esc(c.notes)}</p><div class="btns">${btn}</div><span class="muted" style="font-size:12px;margin-top:6px">${bytes(c.bytes)} · needs ~${c.min_ram_gb} GB RAM+VRAM</span>${fitBadges((models.catalog_fits || {})[c.id])}</div>`;
+  };
+  setHTML('catalog', models.catalog.map(catCard).join(''));
+  const byId = {}; models.catalog.forEach((c) => { byId[c.id] = c; });
+  setHTML('suggested', (models.suggested || []).length ? models.suggested.map((sg) => byId[sg.id] && catCard(byId[sg.id])).join('') : '<div class="empty">No nodes are connected yet, so nothing can be sized.</div>');
   const rts = models.runtimes || [];
   setHTML('runtimes', !rts.length ? `<div class="empty">None downloaded yet.</div>` :
     `<div class="table-wrap"><table><thead><tr><th>Build</th><th>For</th><th>Size</th><th>Downloaded</th></tr></thead><tbody>${rts.map((r) => `<tr><td>${esc(r.build)}</td><td>${esc(r.variant)}</td><td>${bytes(r.bytes)}</td><td>${ago(r.downloaded)}</td></tr>`).join('')}</tbody></table></div>`);
@@ -702,7 +713,7 @@ $('hf-list').onclick = async () => {
     const r = await api('/api/hf/files?repo=' + encodeURIComponent($('hf-repo').value.trim()));
     hfRepo = r.repo; hfGroups = r.groups;
     setHTML('hf-files', !r.groups.length ? '<span class="muted">No .gguf files in that repo.</span>' :
-      `<div class="table-wrap"><table><tbody>${r.groups.map((g, i) => `<tr><td class="mono">${esc(g.name)}${g.files.length > 1 ? ` <span class="muted">(${g.files.length} parts)</span>` : ''}</td><td>${bytes(g.bytes)}</td><td class="r"><div class="btns" style="justify-content:flex-end"><button class="small primary" data-act="hf-add" data-i="${i}" data-storage="direct">Add · nodes download</button><button class="small" data-act="hf-add" data-i="${i}" data-storage="controller">Store on controller</button></div></td></tr>`).join('')}</tbody></table></div>`);
+      `<div class="table-wrap"><table><tbody>${r.groups.map((g, i) => `<tr><td class="mono">${esc(g.name)}${g.files.length > 1 ? ` <span class="muted">(${g.files.length} parts)</span>` : ''}${fitBadges(g.fits)}</td><td>${bytes(g.bytes)}</td><td class="r"><div class="btns" style="justify-content:flex-end"><button class="small primary" data-act="hf-add" data-i="${i}" data-storage="direct">Add · nodes download</button><button class="small" data-act="hf-add" data-i="${i}" data-storage="controller">Store on controller</button></div></td></tr>`).join('')}</tbody></table></div>`);
   } catch (e) { setHTML('hf-files', `<span class="error-msg">${esc(e.message)}</span>`); }
 };
 $('hf-repo').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('hf-list').click(); });
@@ -1054,6 +1065,12 @@ document.addEventListener('click', async (e) => {
       case 'remove': removeNode(id); break;
       case 'run': openRun(id); break;
       case 'catalog-add': await post('/api/models', { catalog_id: id, storage: el.dataset.storage }); toast(el.dataset.storage === 'direct' ? 'Added. Nodes download it when you load it.' : 'Downloading to the controller'); break;
+      case 'model-load-fit': {
+        const fits = ((models.fits || {})[el.dataset.name] || []).filter((f) => f.fit === 'vram' && f.can_load);
+        const res = await Promise.allSettled(fits.map((f) => post(`/api/nodes/${f.node_id}/load`, { name: el.dataset.name })));
+        const bad = res.filter((r) => r.status === 'rejected').length;
+        toast(bad ? `Started on ${fits.length - bad} node(s); ${bad} failed to start` : `Loading on ${fits.map((f) => f.name).join(', ')}; progress shows on the node cards`); break;
+      }
       case 'hf-add': { const g = hfGroups[+el.dataset.i]; await post('/api/models', { repo: hfRepo, files: g.files, storage: el.dataset.storage }); toast(el.dataset.storage === 'direct' ? 'Added. Nodes download it when you load it.' : 'Downloading to the controller'); break; }
       case 'model-store': await post(`/api/models/${encodeURIComponent(el.dataset.name)}/store`); toast('Downloading to the controller'); break;
       case 'model-unstore': if (confirm(`Delete ${el.dataset.name}'s files from the controller? It stays in the library; nodes that need it download it from Hugging Face. Copies already on nodes stay.`)) { await post(`/api/models/${encodeURIComponent(el.dataset.name)}/unstore`); toast('Freed controller space'); } break;

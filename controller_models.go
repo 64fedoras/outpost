@@ -36,32 +36,33 @@ type CatalogEntry struct {
 	Notes    string   `json:"notes"`
 	Ctx      int      `json:"ctx"` // suggested context size
 	MinRAMGB int      `json:"min_ram_gb"`
+	Coding   bool     `json:"coding"` // a good local coding model; ranked in Suggested
 }
 
 // File names and sizes checked against Hugging Face on 2026-10-24 (the Qwen3.6 and Gemma 4 sizes are rounded from the web listing, not exact).
 var modelCatalog = []CatalogEntry{
-	{ID: "qwen2.5-coder-3b-q4km", Label: "Qwen2.5-Coder 3B Instruct (Q4_K_M)", Repo: "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
+	{ID: "qwen2.5-coder-3b-q4km", Coding: true, Label: "Qwen2.5-Coder 3B Instruct (Q4_K_M)", Repo: "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
 		Files: []string{"qwen2.5-coder-3b-instruct-q4_k_m.gguf"}, Bytes: 2104932800, For: "Test VMs, 4 GB RAM CPU nodes",
 		Notes: "Small and quick on CPU. Good for testing the pipeline; weak at multi-file code.", Ctx: 8192, MinRAMGB: 4},
-	{ID: "qwen2.5-coder-7b-q4km", Label: "Qwen2.5-Coder 7B Instruct (Q4_K_M)", Repo: "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF",
+	{ID: "qwen2.5-coder-7b-q4km", Coding: true, Label: "Qwen2.5-Coder 7B Instruct (Q4_K_M)", Repo: "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF",
 		Files: []string{"Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf"}, Bytes: 4683074336, For: "CPU nodes with 8 GB+ RAM",
 		Notes: "Solid for narrow tasks like one function and its tests.", Ctx: 8192, MinRAMGB: 8},
-	{ID: "qwen2.5-coder-14b-q4km", Label: "Qwen2.5-Coder 14B Instruct (Q4_K_M)", Repo: "bartowski/Qwen2.5-Coder-14B-Instruct-GGUF",
+	{ID: "qwen2.5-coder-14b-q4km", Coding: true, Label: "Qwen2.5-Coder 14B Instruct (Q4_K_M)", Repo: "bartowski/Qwen2.5-Coder-14B-Instruct-GGUF",
 		Files: []string{"Qwen2.5-Coder-14B-Instruct-Q4_K_M.gguf"}, Bytes: 8988111072, For: "16 GB GPU (16 GB)",
 		Notes: "Fits fully in 16 GB VRAM with room for context.", Ctx: 16384, MinRAMGB: 12},
-	{ID: "qwen3-coder-30b-a3b-q4km", Label: "Qwen3-Coder 30B-A3B Instruct (Q4_K_M)", Repo: "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+	{ID: "qwen3-coder-30b-a3b-q4km", Coding: true, Label: "Qwen3-Coder 30B-A3B Instruct (Q4_K_M)", Repo: "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
 		Files: []string{"Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"}, Bytes: 18556689568, For: "16 GB GPU (16 GB) — default worker",
 		Notes: "Mixture of experts, ~3B active per token, so it is fast. llama.cpp keeps what does not fit in VRAM in system RAM.", Ctx: 16384, MinRAMGB: 24},
-	{ID: "devstral-small-2-24b-q4km", Label: "Devstral Small 2 24B (Q4_K_M)", Repo: "unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF",
+	{ID: "devstral-small-2-24b-q4km", Coding: true, Label: "Devstral Small 2 24B (Q4_K_M)", Repo: "unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF",
 		Files: []string{"Devstral-Small-2-24B-Instruct-2512-Q4_K_M.gguf"}, Bytes: 14334446752, For: "16 GB GPU — alternative",
 		Notes: "Built for agentic coding; fits a 16 GB card. Compare it with Qwen3-Coder on your tasks.", Ctx: 16384, MinRAMGB: 16},
-	{ID: "qwen3-coder-next-q4km", Label: "Qwen3-Coder-Next 80B-A3B (Q4_K_M)", Repo: "unsloth/Qwen3-Coder-Next-GGUF",
+	{ID: "qwen3-coder-next-q4km", Coding: true, Label: "Qwen3-Coder-Next 80B-A3B (Q4_K_M)", Repo: "unsloth/Qwen3-Coder-Next-GGUF",
 		Files: []string{"Qwen3-Coder-Next-Q4_K_M.gguf"}, Bytes: 48528320544, For: "CPU server (64 GB+ RAM, CPU)",
 		Notes: "~3B active per token, so reasonable on many CPU cores. Planner-quality local model.", Ctx: 32768, MinRAMGB: 64},
-	{ID: "qwen3.6-35b-a3b-q4km", Label: "Qwen3.6 35B-A3B (Q4_K_M)", Repo: "unsloth/Qwen3.6-35B-A3B-GGUF",
+	{ID: "qwen3.6-35b-a3b-q4km", Coding: true, Label: "Qwen3.6 35B-A3B (Q4_K_M)", Repo: "unsloth/Qwen3.6-35B-A3B-GGUF",
 		Files: []string{"Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"}, Bytes: 22100000000, For: "CPU server (CPU) or 16 GB GPU with RAM offload",
 		Notes: "Newer than Qwen3-Coder 30B-A3B; ~3B active per token. Needs a current llama.cpp build. Compare it with Qwen3-Coder on your tasks.", Ctx: 16384, MinRAMGB: 32},
-	{ID: "qwen3.6-27b-q4km", Label: "Qwen3.6 27B (Q4_K_M)", Repo: "unsloth/Qwen3.6-27B-GGUF",
+	{ID: "qwen3.6-27b-q4km", Coding: true, Label: "Qwen3.6 27B (Q4_K_M)", Repo: "unsloth/Qwen3.6-27B-GGUF",
 		Files: []string{"Qwen3.6-27B-Q4_K_M.gguf"}, Bytes: 16800000000, For: "16 GB GPUs with RAM offload",
 		Notes: "Dense, so slower per token than the A3B models and a tight fit in 16 GB VRAM. Needs a current llama.cpp build.", Ctx: 8192, MinRAMGB: 24},
 	{ID: "gemma-4-26b-a4b-q4km", Label: "Gemma 4 26B-A4B (Q4_K_M)", Repo: "unsloth/gemma-4-26B-A4B-it-GGUF",
@@ -466,9 +467,10 @@ func (c *Controller) handleHFFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type group struct {
-		Name  string   `json:"name"`
-		Files []string `json:"files"`
-		Bytes int64    `json:"bytes"`
+		Name  string    `json:"name"`
+		Files []string  `json:"files"`
+		Bytes int64     `json:"bytes"`
+		Fits  []NodeFit `json:"fits"`
 	}
 	groups := map[string]*group{}
 	for _, t := range tree {
@@ -485,8 +487,15 @@ func (c *Controller) handleHFFiles(w http.ResponseWriter, r *http.Request) {
 		g.Bytes += t.Size
 	}
 	out := []*group{}
+	ctx := 8192
+	if v, err := strconv.Atoi(r.URL.Query().Get("ctx")); err == nil && v > 0 {
+		ctx = v
+	}
 	for _, g := range groups {
 		sort.Strings(g.Files)
+		c.mu.Lock()
+		g.Fits = c.nodeFitsLocked(g.Bytes, ctx)
+		c.mu.Unlock()
 		out = append(out, g)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Bytes < out[j].Bytes })
@@ -736,10 +745,21 @@ func (c *Controller) handleListModels(w http.ResponseWriter, r *http.Request) {
 	for _, rt := range c.runtimes {
 		rts = append(rts, rt)
 	}
+	fits := map[string][]NodeFit{}
+	catFits := map[string][]NodeFit{}
+	for _, m := range models {
+		if m.Status == "ready" {
+			fits[m.Name] = c.nodeFitsLocked(m.BytesTotal, m.Ctx)
+		}
+	}
+	for _, e := range modelCatalog {
+		catFits[e.ID] = c.nodeFitsLocked(e.Bytes, e.Ctx)
+	}
 	c.mu.Unlock()
 	sort.Slice(models, func(i, j int) bool { return models[i].Added.Before(models[j].Added) })
 	sort.Slice(rts, func(i, j int) bool { return rts[i].Variant < rts[j].Variant })
 	writeJSON(w, 200, map[string]any{"catalog": modelCatalog, "models": models, "runtimes": rts,
+		"fits": fits, "catalog_fits": catFits, "suggested": suggestCoding(modelCatalog, catFits, 4),
 		"disk_free": diskFree(c.modelsStoreDir())})
 }
 
