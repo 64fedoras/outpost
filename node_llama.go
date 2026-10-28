@@ -452,10 +452,12 @@ func (n *Node) pushModel(mp ModelPush) {
 	for _, f := range mp.Files {
 		total += f.Bytes
 	}
+	var badPeers []string
 	fail := func(format string, a ...any) {
 		msg := fmt.Sprintf(format, a...)
 		log.Printf("model %s: %s", mp.Name, msg)
-		n.opStatus(op, mp.Name, "failed", 0, total, msg)
+		st := OpStatus{Op: op, Target: mp.Name, State: "failed", BytesTotal: total, Error: msg, BadPeers: badPeers}
+		_ = n.send("node.op_status", st)
 	}
 	if !validName(mp.Name) || len(mp.Files) == 0 {
 		fail("bad model name")
@@ -487,9 +489,15 @@ func (n *Node) pushModel(mp ModelPush) {
 			continue
 		}
 		base := before
-		err := n.fetchFile(fmt.Sprintf("/v1/models/%s/files/%d", mp.Name, i), dst, f.SHA256, f.Bytes, func(d int64) {
-			n.opStatus(op, mp.Name, "downloading", base+d, total, "")
-		})
+		report := func(d int64) { n.opStatus(op, mp.Name, "downloading", base+d, total, "") }
+		var err error
+		if len(mp.Peers) > 0 {
+			var bad []string
+			bad, err = n.fetchFromPeers(mp, f, dst, report)
+			badPeers = append(badPeers, bad...)
+		} else {
+			err = n.fetchFile(fmt.Sprintf("/v1/models/%s/files/%d", mp.Name, i), dst, f.SHA256, f.Bytes, report)
+		}
 		if err != nil {
 			fail("download %s: %v", f.Path, err)
 			return

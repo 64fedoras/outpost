@@ -122,6 +122,7 @@ type Controller struct {
 	rtCache   *runtimeCache
 	nodeOps   map[string]*nodeOpView
 	pipelines map[string]*pipeline // model setups in progress; cancel stops one
+	peerBad   map[string]time.Time // nodes skipped as model sources until then (served data failing its hash)
 	tasks     map[string]*Task
 	reserved  map[string]bool
 	cooldown  map[string]time.Time
