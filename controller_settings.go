@@ -24,9 +24,13 @@ type Settings struct {
 	DefaultPlanner   string         `json:"default_planner"` // "claude", "openrouter" or "node:<id>"
 	OpenRouterKeyEnc string         `json:"openrouter_key_enc,omitempty"`
 	OpenRouterModel  string         `json:"openrouter_model,omitempty"`
+	WebSearch        bool           `json:"web_search,omitempty"`        // Claude planner may use the web search tool (paid per search)
+	WebAllowPrivate  bool           `json:"web_allow_private,omitempty"` // pasted links may reach internal addresses
 	BackupEnabled    bool           `json:"backup_enabled,omitempty"`
 	BackupDir        string         `json:"backup_dir,omitempty"`
 	BackupPassEnc    string         `json:"backup_pass_enc,omitempty"`
+	AgentOff         bool           `json:"agent_off,omitempty"`    // fixers and investigators use single-shot requests instead of tools
+	Instructions     string         `json:"instructions,omitempty"` // standing rules copied into every new task (OUTPOST.md text)
 	Notify           NotifySettings `json:"notify"`
 }
 
@@ -143,7 +147,8 @@ func (c *Controller) settingsView() map[string]any {
 		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
 		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner,
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
-		"backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
+		"agent_mode": !c.settings.AgentOff, "web_search": c.settings.WebSearch, "web_allow_private": c.settings.WebAllowPrivate,
+		"instructions": c.settings.Instructions, "backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
 	for k, x := range c.notifyView() {
 		v[k] = x
@@ -172,6 +177,10 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 			PublicURL  *string         `json:"public_url"`
 			Events     map[string]bool `json:"events"`
 		} `json:"notify"`
+		Instructions    *string `json:"instructions"`
+		WebSearch       *bool   `json:"web_search"`
+		AgentMode       *bool   `json:"agent_mode"`
+		WebAllowPrivate *bool   `json:"web_allow_private"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
@@ -260,6 +269,18 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.DefaultPlanner != nil {
 		c.settings.DefaultPlanner = *req.DefaultPlanner
+	}
+	if req.Instructions != nil {
+		c.settings.Instructions = clipInstructions(*req.Instructions)
+	}
+	if req.WebSearch != nil {
+		c.settings.WebSearch = *req.WebSearch
+	}
+	if req.AgentMode != nil {
+		c.settings.AgentOff = !*req.AgentMode
+	}
+	if req.WebAllowPrivate != nil {
+		c.settings.WebAllowPrivate = *req.WebAllowPrivate
 	}
 	err := c.saveSettingsLocked()
 	c.mu.Unlock()

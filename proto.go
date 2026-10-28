@@ -104,6 +104,31 @@ type Hello struct {
 	LoadedModel       string       `json:"loaded_model"`
 	RollbackTo        string       `json:"rollback_to,omitempty"` // previous installed Outpost version
 	Paused            bool         `json:"paused,omitempty"`
+	Tools             []ToolInfo   `json:"tools,omitempty"` // developer tools found, rescanned hourly
+	Shell             string       `json:"shell,omitempty"` // sh | powershell | cmd: what exec jobs run in
+	Peer              *PeerInfo    `json:"peer,omitempty"`  // where this node serves model files to other nodes
+}
+
+// PeerInfo is a node's model-sharing endpoint: the port and the fingerprint
+// of its own self-signed certificate. The controller hands both to nodes that
+// want to download from it, so they can pin the certificate.
+type PeerInfo struct {
+	Port        int    `json:"port"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+// PeerSource is one node a model can be copied from.
+type PeerSource struct {
+	Name        string `json:"name"`
+	Addr        string `json:"addr"` // host:port
+	Fingerprint string `json:"fingerprint"`
+}
+
+// PeerGrant lets the holder of Token download from this node until TTLSeconds
+// pass. TTLSeconds <= 0 revokes the token.
+type PeerGrant struct {
+	Token      string `json:"token"`
+	TTLSeconds int    `json:"ttl_s"`
 }
 
 // NodeRollback asks a node to restart into an older installed version.
@@ -181,6 +206,7 @@ type JobOutput struct {
 	Seq    int    `json:"seq"`
 	Stream string `json:"stream"`
 	Data   string `json:"data"`
+	Tokens int    `json:"tokens,omitempty"` // model tokens in Data (inference jobs)
 }
 
 type JobResult struct {
@@ -273,6 +299,11 @@ type ModelFile struct {
 type ModelPush struct {
 	Name  string      `json:"name"`
 	Files []ModelFile `json:"files"`
+	// Peers, when set, replace the controller as the source: the node copies
+	// the files from them and checks each against File.SHA256. If that fails the
+	// controller falls back to its normal route.
+	Peers     []PeerSource `json:"peers,omitempty"`
+	PeerToken string       `json:"peer_token,omitempty"`
 }
 
 // ModelLoad starts llama-server with a model. Zero values mean llama.cpp defaults.
@@ -295,7 +326,8 @@ type ModelLoad struct {
 	Threads   int      `json:"threads"`
 	GPULayers string   `json:"gpu_layers"` // "", "auto", "all" or a number
 	ExtraArgs []string `json:"extra_args"`
-	RPC       []string `json:"rpc,omitempty"` // helper nodes' RPC servers (host:port) to pool memory from
+	RPC       []string `json:"rpc,omitempty"`    // helper nodes' RPC servers (host:port) to pool memory from
+	MMProj    string   `json:"mmproj,omitempty"` // set by the node: vision projector file of the model, passed as --mmproj
 }
 
 // RPCStart asks a node to lend its memory: run llama.cpp's RPC server.
@@ -312,14 +344,15 @@ type ModelRemove struct {
 
 // OpStatus reports progress of a long node operation (runtime, model push, load).
 type OpStatus struct {
-	Op         string  `json:"op"`     // runtime | model.push | model.load | model.unload | model.remove
-	Target     string  `json:"target"` // model name or runtime variant
-	State      string  `json:"state"`  // downloading | verifying | installing | loading | ready | done | failed
-	Progress   float64 `json:"progress"`
-	BytesDone  int64   `json:"bytes_done"`
-	BytesTotal int64   `json:"bytes_total"`
-	Error      string  `json:"error,omitempty"`
-	Detail     string  `json:"detail,omitempty"` // e.g. the RPC endpoint once ready
+	Op         string   `json:"op"`     // runtime | model.push | model.load | model.unload | model.remove
+	Target     string   `json:"target"` // model name or runtime variant
+	State      string   `json:"state"`  // downloading | verifying | installing | loading | ready | done | failed
+	Progress   float64  `json:"progress"`
+	BytesDone  int64    `json:"bytes_done"`
+	BytesTotal int64    `json:"bytes_total"`
+	Error      string   `json:"error,omitempty"`
+	Detail     string   `json:"detail,omitempty"`    // e.g. the RPC endpoint once ready
+	BadPeers   []string `json:"bad_peers,omitempty"` // nodes that served data failing its hash check
 }
 
 // InferenceSpec is the spec of a job with kind "inference".
@@ -328,11 +361,15 @@ type InferenceSpec struct {
 	Messages []ChatMessage   `json:"messages"`
 	Params   InferenceParams `json:"params"`
 	Stream   bool            `json:"stream"`
+	Tools    []ToolDef       `json:"tools,omitempty"` // agent mode: tools the model may call
 }
 
 type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	Images     []string       `json:"images,omitempty"`       // data: URIs, for vision models; held in memory only
+	ToolCalls  []WireToolCall `json:"tool_calls,omitempty"`   // assistant turn that called tools
+	ToolCallID string         `json:"tool_call_id,omitempty"` // tool turn answering one call
 }
 
 type InferenceParams struct {
@@ -342,10 +379,11 @@ type InferenceParams struct {
 }
 
 type InferenceOutput struct {
-	Text         string  `json:"text"`
-	FinishReason string  `json:"finish_reason"`
-	PromptTokens int     `json:"prompt_tokens"`
-	OutputTokens int     `json:"output_tokens"`
-	TokensPerSec float64 `json:"tokens_per_s"`
-	Model        string  `json:"model"`
+	Text         string         `json:"text"`
+	FinishReason string         `json:"finish_reason"`
+	PromptTokens int            `json:"prompt_tokens"`
+	OutputTokens int            `json:"output_tokens"`
+	TokensPerSec float64        `json:"tokens_per_s"`
+	Model        string         `json:"model"`
+	ToolCalls    []WireToolCall `json:"tool_calls,omitempty"`
 }

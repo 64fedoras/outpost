@@ -43,8 +43,15 @@ type Plan struct {
 	Language     string        `json:"language"`
 	SetupCommand string        `json:"setup_command"`
 	TestCommand  string        `json:"test_command"`
+	BuildCommand string        `json:"build_command,omitempty"` // runs after the tests pass
+	Artifacts    []string      `json:"artifacts,omitempty"`     // glob patterns (relative to the project root) of files the build produces
 	Subtasks     []PlanSubtask `json:"subtasks"`
 	Note         string        `json:"note,omitempty"` // a sentence or two to the user, shown with the plan
+	// Visual checks (visual.go): what to screenshot after the work.
+	PreviewPage    string `json:"preview_page,omitempty"`    // HTML file to render
+	PreviewCommand string `json:"preview_command,omitempty"` // starts the app (Linux and macOS nodes)
+	PreviewURL     string `json:"preview_url,omitempty"`     // where it listens, on the node
+	Mockup         bool   `json:"mockup,omitempty"`          // variants to pick from, no real code yet
 }
 
 type PlanSubtask struct {
@@ -53,6 +60,7 @@ type PlanSubtask struct {
 	Files        []string `json:"files"`
 	DependsOn    []string `json:"depends_on"`
 	Instructions string   `json:"instructions"`
+	Kind         string   `json:"kind,omitempty"` // "" (write the files) or "investigate" (agent mode: read, search, run, report)
 }
 
 type SubtaskState struct {
@@ -68,6 +76,9 @@ type SubtaskState struct {
 	Reviewer   string     `json:"reviewer,omitempty"`     // node that reviewed it
 	ReviewFix  bool       `json:"review_fixed,omitempty"` // the reviewer changed the files
 	ReviewNote string     `json:"review_note,omitempty"`  // why the review was skipped or rejected
+	Report     string     `json:"report,omitempty"`       // investigate subtasks: what the agent found
+	AgentCalls int        `json:"agent_calls,omitempty"`  // tool calls so far in agent mode
+	Waiting    bool       `json:"waiting,omitempty"`      // the agent asked the user something
 	Started    *time.Time `json:"started,omitempty"`
 	Ended      *time.Time `json:"ended,omitempty"`
 }
@@ -102,6 +113,9 @@ type Task struct {
 	Events       []TaskEvent     `json:"events"`
 	TestStatus   string          `json:"test_status"` // "" | passed | failing | skipped
 	TestOutput   string          `json:"test_output,omitempty"`
+	BuildStatus  string          `json:"build_status,omitempty"` // "" | passed | failed | skipped
+	BuildOutput  string          `json:"build_output,omitempty"`
+	Artifacts    []Artifact      `json:"artifacts,omitempty"`
 	FixRounds    int             `json:"fix_rounds"`
 	Error        string          `json:"error,omitempty"`
 	ResultBytes  int64           `json:"result_bytes"`
@@ -109,23 +123,36 @@ type Task struct {
 	Approved     *time.Time      `json:"approved,omitempty"`
 	Ended        *time.Time      `json:"ended,omitempty"`
 	Messages     []TaskMessage   `json:"messages"`
-	Round        int             `json:"round"`              // 1 for the first request, +1 per follow-up
-	Steering     []string        `json:"steering,omitempty"` // notes the user sent while this round ran
-	Asked        bool            `json:"asked,omitempty"`    // the planner already asked questions this round
-	Touched      []string        `json:"touched,omitempty"`  // files written this round
+	Round        int             `json:"round"`                  // 1 for the first request, +1 per follow-up
+	Steering     []string        `json:"steering,omitempty"`     // notes the user sent while this round ran
+	Asked        bool            `json:"asked,omitempty"`        // the planner already asked questions this round
+	Touched      []string        `json:"touched,omitempty"`      // files written this round
+	Instructions string          `json:"instructions,omitempty"` // standing rules copied from settings when the task was created
+	ProjectID    string          `json:"project_id,omitempty"`   // "" = unfiled; see projects.go
+	Seeded       bool            `json:"seeded,omitempty"`       // the repo started with files (project or attached zip)
+	Attachments  []Attachment    `json:"attachments,omitempty"`
+	Mockup       bool            `json:"mockup,omitempty"` // plan 2 or 3 design variants first (visual.go)
 
 	mu     sync.Mutex
 	dir    string
+	repo   string // working files; the project's repo for a project task, else <dir>/repo
 	cancel context.CancelFunc
 	resume chan struct{}
+	asks   map[string]chan string // agent questions waiting for an answer, by message id
 }
 
 func (c *Controller) tasksDir() string { return filepath.Join(c.dataDir, "tasks") }
 
-func (t *Task) repoDir() string { return filepath.Join(t.dir, "repo") }
+func (t *Task) repoDir() string {
+	if t.repo != "" {
+		return t.repo
+	}
+	return filepath.Join(t.dir, "repo")
+}
 
 // saveLocked writes task.json; t.mu must be held.
 func (t *Task) saveLocked() {
+	defer taskLive.changed(t.ID)
 	b, _ := json.MarshalIndent(t, "", "  ")
 	tmp := filepath.Join(t.dir, "task.json.tmp")
 	if os.WriteFile(tmp, b, 0o644) == nil {
@@ -168,8 +195,13 @@ func (c *Controller) loadTasks() {
 			continue
 		}
 		t.dir = dir
+		if p := c.projects[t.ProjectID]; p != nil {
+			t.repo = p.repoDir()
+		} else {
+			t.ProjectID = "" // its project is gone; the task keeps its conversation only
+		}
 		switch t.Status {
-		case "planning", "running", "testing", "fixing", "paused_cap":
+		case "queued", "planning", "running", "testing", "building", "fixing", "paused_cap":
 			t.PausedFrom = t.Status
 			t.Status = "interrupted"
 			for _, s := range t.Subtasks {
@@ -182,6 +214,12 @@ func (c *Controller) loadTasks() {
 			}
 			t.Events = append(t.Events, TaskEvent{Time: time.Now(), Level: "warn", Text: "The controller restarted while this task was active. Click Resume to continue where it stopped."})
 			t.saveLocked()
+		}
+		for i := range t.Messages {
+			t.Messages[i].Pending = false // no agent is waiting after a restart
+		}
+		for _, s := range t.Subtasks {
+			s.Waiting = false
 		}
 		t.migrateMessages()
 		c.tasks[t.ID] = t
@@ -205,15 +243,18 @@ type taskSummary struct {
 	ResultBytes int64      `json:"result_bytes"`
 	NeedsYou    bool       `json:"needs_you"` // waiting for answers, approval, a higher cap or a resume
 	Round       int        `json:"round"`
+	ProjectID   string     `json:"project_id,omitempty"`
 	Updated     time.Time  `json:"updated"`
 }
 
 func (t *Task) summaryLocked() taskSummary {
 	s := taskSummary{ID: t.ID, Title: t.Title, Status: t.Status, Planner: t.Planner, CostUSD: t.CostUSD, CapUSD: t.CapUSD,
-		Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created}
+		ProjectID: t.ProjectID, Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created}
 	switch t.Status {
 	case "awaiting_answers", "awaiting_approval", "paused_cap", "interrupted":
 		s.NeedsYou = true
+	default:
+		s.NeedsYou = t.hasPendingAsk()
 	}
 	if n := len(t.Messages); n > 0 {
 		s.Updated = t.Messages[n-1].Time
@@ -268,21 +309,26 @@ func (c *Controller) handleListTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Prompt      string  `json:"prompt"`
-		Planner     string  `json:"planner"`
-		ClaudeModel string  `json:"claude_model"`
-		ORModel     string  `json:"openrouter_model"`
-		CapUSD      float64 `json:"cap_usd"`
-		Review      *bool   `json:"review"`
+	req, files, err := readCreateRequest(w, r)
+	if err != nil || strings.TrimSpace(req.Prompt) == "" {
+		msg := "describe the task"
+		if err != nil {
+			msg = err.Error()
+		}
+		writeJSON(w, 400, map[string]string{"error": msg})
+		return
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Prompt) == "" {
-		writeJSON(w, 400, map[string]string{"error": "describe the task"})
+	proj := c.getProject(req.Project)
+	if req.Project != "" && proj == nil {
+		writeJSON(w, 404, map[string]string{"error": "no such project"})
 		return
 	}
 	c.mu.Lock()
 	set := c.settings
 	c.mu.Unlock()
+	if proj != nil {
+		req = proj.applyDefaults(req)
+	}
 	if req.Planner == "" {
 		req.Planner = set.DefaultPlanner
 	}
@@ -302,17 +348,42 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 409, map[string]string{"error": err.Error()})
 		return
 	}
+	var imgNames []string
+	var t *Task
 	review := req.Review == nil || *req.Review
-	t := &Task{ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, ORModel: req.ORModel, Review: review,
-		CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1}
+	t = &Task{ProjectID: req.Project, ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, ORModel: req.ORModel, Review: review,
+		Instructions: set.Instructions, Mockup: req.Mockup, CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1}
 	t.dir = filepath.Join(c.tasksDir(), t.ID)
+	if proj != nil {
+		t.repo = proj.repoDir()
+		t.Seeded = len(listRepo(t.repo)) > 0
+	}
 	if err := os.MkdirAll(t.repoDir(), 0o755); err != nil {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
+	if err := c.applyAttachments(t, files); err != nil {
+		os.RemoveAll(t.dir)
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	if len(req.Images) > 0 {
+		imgs, err := decodeImages(req.Images)
+		if err == nil {
+			err = c.checkPlannerVision(req.Planner, req.ORModel)
+		}
+		if err == nil {
+			imgNames, err = t.saveImages(imgs)
+		}
+		if err != nil {
+			os.RemoveAll(t.dir)
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	t.Events = append(t.Events, TaskEvent{Time: time.Now(), Level: "info", Text: "Task created; planning with " + c.plannerLabel(t.Planner, t.ClaudeModel, t.ORModel) + "."})
 	t.mu.Lock()
-	t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: t.Prompt})
+	t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: t.Prompt, Images: imgNames})
 	t.mu.Unlock()
 	c.mu.Lock()
 	c.tasks[t.ID] = t
@@ -384,6 +455,9 @@ type repoFile struct {
 func listRepo(dir string) []repoFile {
 	out := []repoFile{}
 	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
 		if err == nil && !d.IsDir() {
 			rel, _ := filepath.Rel(dir, p)
 			info, _ := d.Info()
@@ -435,6 +509,9 @@ func (c *Controller) handleTaskFile(w http.ResponseWriter, r *http.Request) {
 		b = b[:maxRepoFileSize]
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if r.URL.Query().Get("download") != "" {
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+strings.ReplaceAll(filepath.Base(p), "\"", "")+"\"")
+	}
 	w.Write(b)
 }
 
@@ -442,6 +519,18 @@ func (c *Controller) handleDownloadTask(w http.ResponseWriter, r *http.Request) 
 	t := c.getTask(r.PathValue("id"))
 	if t == nil {
 		writeJSON(w, 404, map[string]string{"error": "no such task"})
+		return
+	}
+	if r.URL.Query().Get("artifacts") != "" { // source plus build outputs, streamed
+		items := dirItems(t.repoDir(), "")
+		items = append(items, dirItems(t.artifactsDir(), "artifacts/")...)
+		name := slug(t.Title)
+		if name == "" {
+			name = t.ID
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-with-artifacts.zip"`, name))
+		_ = writeZip(w, items)
 		return
 	}
 	zp := filepath.Join(t.dir, "result.zip")
@@ -486,6 +575,9 @@ func zipDir(src, dst string) error {
 	}
 	zw := zip.NewWriter(f)
 	err = filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -542,7 +634,7 @@ func (c *Controller) handleApproveTask(w http.ResponseWriter, r *http.Request) {
 	t.addMsgLocked(TaskMessage{Role: "event", Kind: "event", Text: ev})
 	t.mu.Unlock()
 	t.logf("info", "Plan approved with a %s cap.", fmtUSD(t.CapUSD))
-	c.startTask(t, c.executeTask)
+	c.startTask(t, c.execTask)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -684,7 +776,7 @@ func (c *Controller) handleResumeTask(w http.ResponseWriter, r *http.Request) {
 			t.setStatus("awaiting_approval")
 		default:
 			t.setStatus("running")
-			c.startTask(t, c.executeTask)
+			c.startTask(t, c.execTask)
 		}
 		t.logf("info", "Resumed.")
 		t.addMsg(TaskMessage{Role: "event", Kind: "event", Text: "Resumed."})
@@ -737,9 +829,12 @@ func (c *Controller) plannerCall(ctx context.Context, t *Task, req llmRequest) (
 		var est float64
 		if planner == "openrouter" {
 			_ = openRouterModels.refresh(ctx, c.openRouterKey(), false) // for prices; cached for an hour
-			est = openRouterEstimate(orModel, len(req.System)+len(req.User), req.MaxTokens/2)
+			est = openRouterEstimate(orModel, req.size(), req.MaxTokens/2)
 		} else {
-			est = estimateCost(model, len(req.System)+len(req.User), req.MaxTokens/2)
+			est = estimateCost(model, req.size(), req.MaxTokens/2)
+			if req.WebSearch {
+				est += webSearchUses * webSearchUSD
+			}
 		}
 		if cost+est > cap || (est == 0 && cost >= cap) {
 			if err := c.pauseForCap(ctx, t, est); err != nil {
@@ -749,11 +844,18 @@ func (c *Controller) plannerCall(ctx context.Context, t *Task, req llmRequest) (
 		}
 		var resp *llmResponse
 		var err error
+		who := "Claude"
+		if planner == "openrouter" {
+			who = "OpenRouter"
+		}
+		live := taskLive.begin(t.ID, req.Sub, req.Label, who, true)
+		req.Live = live
 		if planner == "openrouter" {
 			resp, err = callOpenRouter(ctx, c.openRouterKey(), orModel, req)
 		} else {
 			resp, err = callClaude(ctx, c.anthropicKey(), model, req)
 		}
+		live.End()
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, errCancelled
@@ -771,6 +873,9 @@ func (c *Controller) plannerCall(ctx context.Context, t *Task, req llmRequest) (
 		t.saveLocked()
 		t.mu.Unlock()
 		t.logf("cost", "%s: %s in / %s out tokens, $%.4f (task total $%.4f)", req.Label, fmtInt(resp.InTokens+resp.CacheRead+resp.CacheWrite), fmtInt(resp.OutTokens), resp.CostUSD, total)
+		if resp.WebSearches > 0 {
+			t.logf("cost", "%s: %d web search(es), %s of that call", req.Label, resp.WebSearches, fmtUSD(float64(resp.WebSearches)*webSearchUSD))
+		}
 		return resp, nil
 	}
 }
@@ -823,17 +928,32 @@ func (c *Controller) nodeCall(ctx context.Context, t *Task, nodeID string, req l
 		defer c.releaseNode(nodeID)
 	}
 	temp := req.Temperature
-	spec := InferenceSpec{Messages: []ChatMessage{{Role: "system", Content: req.System}, {Role: "user", Content: req.User}},
+	user := ChatMessage{Role: "user", Content: req.User}
+	if len(req.Images) > 0 {
+		if !c.nodeVision(nodeID) {
+			return nil, errNoVisionLocal
+		}
+		for _, img := range req.Images {
+			user.Images = append(user.Images, img.dataURI())
+		}
+	}
+	spec := InferenceSpec{Messages: []ChatMessage{{Role: "system", Content: req.System}, user},
 		Params: InferenceParams{Temperature: &temp, MaxTokens: req.MaxTokens}}
+	if len(req.Msgs) > 0 {
+		spec.Messages = append([]ChatMessage{{Role: "system", Content: req.System}}, openAIMessages(req.Msgs)...)
+		spec.Tools = toolDefs(req.Tools)
+	}
 	start := time.Now()
-	out, err := c.runInferenceJob(ctx, nodeID, spec, req.Label, inferTimeout)
+	live := taskLive.begin(t.ID, req.Sub, req.Label, c.nodeLabel(nodeID), false)
+	defer live.End()
+	out, err := c.runInferenceJobLive(ctx, nodeID, spec, req.Label, inferTimeout, live)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, errCancelled
 		}
 		return nil, err
 	}
-	return &llmResponse{Text: out.Text, InTokens: out.PromptTokens, OutTokens: out.OutputTokens, Model: out.Model,
+	return &llmResponse{Text: out.Text, Calls: fromWireCalls(out.ToolCalls), InTokens: out.PromptTokens, OutTokens: out.OutputTokens, Model: out.Model,
 		TokensPerSec: out.TokensPerSec, ElapsedSecond: time.Since(start).Seconds()}, nil
 }
 
@@ -995,26 +1115,56 @@ Each worker sees only: the project summary, the list of all subtasks, its own in
 - Include a README.md that explains how to run the project and its tests.
 - Prefer the language's standard library. Avoid anything that needs network access at test time.
 - If the project can be tested automatically, include small tests and give a test_command that runs them from the project root on Linux (for example "python3 -m unittest discover -s tests"). Use setup_command only if something must be installed or built first. Leave test_command empty if testing is not practical.
+- If the project produces something to ship (a binary, a package, a bundle), give a build_command that builds it from the project root (for example "sh build.sh") and artifacts, the glob patterns of the files it produces (for example ["dist/*"]; one * matches within a directory, there is no **). The build runs after the tests pass. Leave both empty for a project that is only source code.
 - Use at most 12 subtasks.
+- If the project has a web page, set preview_page to its HTML file (for example "index.html") so it can be screenshotted and checked. For a server app that needs running first, set preview_command (starts it, e.g. "python3 app.py") and preview_url (where it listens, e.g. "http://127.0.0.1:8000"). Leave them empty otherwise.
 
-Follow-up requests on an existing project include its current files. Plan only the files to add or change; a subtask that changes an existing file lists it, and its worker gets the file's current content and outputs the complete new version. Keep the summary describing the whole project, and keep test_command running the whole test suite.
+Follow-up requests on an existing project include its current files. Plan only the files to add or change; a subtask that changes an existing file lists it, and its worker gets the file's current content and outputs the complete new version. Keep the summary describing the whole project, and keep test_command running the whole test suite, and keep build_command and artifacts unless the build changes.
 
 Questions: if the request leaves open a choice that would change the design (language, interface, storage, platform, scope) and a wrong guess would waste the work, you may ask before planning, once per request. Prefer sensible defaults; most requests need no questions. To ask, answer with only:
 {"questions": [{"id": "q1", "question": "short question", "options": ["option A", "option B"], "multi": false}], "note": "one sentence on why you are asking"}
 Use at most 4 questions with 2 to 4 short options each; the user can also type their own answer.
 
 Otherwise answer with only a JSON object, no other text:
-{"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "note": "one or two sentences to the user: the approach and any assumption you made", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "instructions": "precise instructions"}]}`
+{"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "preview_page": "", "preview_command": "", "preview_url": "", "build_command": "", "artifacts": [], "note": "one or two sentences to the user: the approach and any assumption you made", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "instructions": "precise instructions"}]}`
+
+// plannerIndexHelp is added to the planner's instructions when the project is
+// too large to paste in, so it sees an index instead.
+const plannerIndexHelp = `
+
+This project is large, so you see an index (each file's path, size and top-level declarations) instead of the file contents. If you need to read some files before planning, answer once with only {"need_files": ["path/one", "path/two"]} (at most 12 paths) and they will be added. Otherwise plan from the index; a worker is given the current content of every file its subtask changes and the declarations of the files it depends on.`
 
 func (c *Controller) planTask(ctx context.Context, t *Task) {
 	t.mu.Lock()
 	mayAsk := !t.Asked
 	t.mu.Unlock()
-	user := c.plannerPrompt(t, c.plannerBudget(t))
+	budget := c.plannerBudget(t)
+	user := c.plannerPrompt(t, budget, nil)
+	user += c.webContext(ctx, c.roundURLs(t))
+	c.mu.Lock()
+	webSearch := c.settings.WebSearch
+	c.mu.Unlock()
+	t.mu.Lock()
+	webSearch = webSearch && t.Planner == "claude"
+	t.mu.Unlock()
+	indexed := t.roundHasFiles() && repoNeedsIndex(t.repoDir(), budget)
+	t.mu.Lock()
+	mockup := t.Mockup
+	t.mu.Unlock()
+	fetched := false
 	var plan *Plan
 	var lastErr error
 	for attempt := 0; attempt < 2 && plan == nil; attempt++ {
-		req := llmRequest{System: plannerSystem, User: user, MaxTokens: 8000, Temperature: 0.2, Label: "Planning"}
+		req := llmRequest{System: plannerSystem + c.toolsPrompt(), User: user, MaxTokens: 8000, Temperature: 0.2, Label: "Planning", WebSearch: webSearch, Images: t.roundImages()}
+		if indexed {
+			req.System += plannerIndexHelp
+		}
+		if mockup {
+			req.System += mockupHelp
+		}
+		if c.agentEnabled() {
+			req.System += plannerInvestigateHelp
+		}
 		if !mayAsk {
 			req.User += "\n\nYou have already asked your questions for this request. Do not ask again; produce the plan, using sensible defaults for anything still open."
 		}
@@ -1027,6 +1177,16 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 			return
 		}
 		raw := []byte(extractJSON(resp.Text))
+		var need struct {
+			NeedFiles []string `json:"need_files"`
+		}
+		if indexed && !fetched && json.Unmarshal(raw, &need) == nil && len(need.NeedFiles) > 0 {
+			fetched = true
+			user = c.plannerPrompt(t, budget, need.NeedFiles)
+			t.logf("info", "The planner asked for %d file(s) from the project index.", len(need.NeedFiles))
+			attempt-- // the file exchange is not a failed attempt
+			continue
+		}
 		var ask struct {
 			Questions []Question `json:"questions"`
 			Note      string     `json:"note"`
@@ -1058,6 +1218,13 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 		if err := validatePlan(p); err != nil {
 			lastErr = err
 			continue
+		}
+		if mockup {
+			p.Mockup, p.SetupCommand, p.TestCommand = true, "", ""
+			if err := validateMockupPlan(p); err != nil {
+				lastErr = err
+				continue
+			}
 		}
 		plan = p
 	}
@@ -1137,7 +1304,12 @@ func validatePlan(p *Plan) error {
 			return fmt.Errorf("subtask ids must be unique and non-empty (%q)", s.ID)
 		}
 		ids[s.ID] = true
-		if len(s.Files) == 0 {
+		if k := strings.ToLower(strings.TrimSpace(s.Kind)); k == "investigate" {
+			s.Kind = k
+		} else {
+			s.Kind = ""
+		}
+		if len(s.Files) == 0 && s.Kind != "investigate" {
 			return fmt.Errorf("subtask %s lists no files", s.ID)
 		}
 		for j, f := range s.Files {
@@ -1152,6 +1324,18 @@ func validatePlan(p *Plan) error {
 			owner[f] = s.ID
 		}
 	}
+	var pats []string
+	for _, a := range p.Artifacts {
+		a = strings.TrimPrefix(strings.TrimSpace(a), "./")
+		if _, err := safeJoin("/repo", a); err != nil || a == "" {
+			return fmt.Errorf("the artifact pattern %q is not a path inside the project", a)
+		}
+		pats = append(pats, a)
+	}
+	if len(pats) > 20 {
+		return errors.New("the plan lists more than 20 artifact patterns")
+	}
+	p.Artifacts = pats
 	for _, s := range p.Subtasks {
 		for _, d := range s.DependsOn {
 			if !ids[d] {
@@ -1300,7 +1484,7 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 					t.mu.Lock()
 					review := t.Review
 					t.mu.Unlock()
-					if review {
+					if review && specs[id].Kind != "investigate" {
 						c.reviewSubtask(ctx, t, specs[id], node)
 					}
 					t.mu.Lock()
@@ -1351,6 +1535,10 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 		case <-time.After(2 * time.Second):
 		}
 	}
+	c.visualCheck(ctx, t)
+	if ctx.Err() != nil {
+		return
+	}
 	c.testAndFix(ctx, t)
 }
 
@@ -1361,6 +1549,9 @@ Output only your assigned files, with no explanations before or after.`
 
 // runSubtask asks a worker node to write a subtask's files, retrying with feedback.
 func (c *Controller) runSubtask(ctx context.Context, t *Task, spec PlanSubtask, node string) error {
+	if spec.Kind == "investigate" {
+		return c.investigate(ctx, t, spec, node)
+	}
 	ctxTokens := c.nodeCtx(node)
 	maxOut := 4096
 	if maxOut > ctxTokens/2 {
@@ -1373,7 +1564,7 @@ func (c *Controller) runSubtask(ctx context.Context, t *Task, spec PlanSubtask, 
 		user := c.subtaskPrompt(t, spec, budget) + feedback
 		label := fmt.Sprintf("%s · %s (attempt %d)", t.Title, spec.ID, attempt)
 		t.logf("info", "%s: %s → %s (attempt %d)", spec.ID, spec.Title, c.nodeLabel(node), attempt)
-		resp, err := c.nodeCall(ctx, t, node, llmRequest{System: workerSystem, User: user, MaxTokens: maxOut, Temperature: 0.2, Label: label}, false)
+		resp, err := c.nodeCall(ctx, t, node, llmRequest{System: workerSystem, User: user, MaxTokens: maxOut, Temperature: 0.2, Label: label, Sub: spec.ID}, false)
 		if err != nil && !errors.Is(err, errCancelled) && isNodeProblem(err) {
 			t.logf("warn", "%s is not ready (%v); %s goes back in the queue.", c.nodeLabel(node), err, spec.ID)
 			c.coolDown(node, 15*time.Second)
@@ -1408,7 +1599,7 @@ func (c *Controller) runSubtask(ctx context.Context, t *Task, spec PlanSubtask, 
 			continue
 		}
 		for _, f := range spec.Files {
-			if err := writeRepoFile(t.repoDir(), f, got[f]); err != nil {
+			if err := t.writeFile(f, got[f]); err != nil {
 				return err
 			}
 		}
@@ -1448,6 +1639,7 @@ func (c *Controller) subtaskPromptWith(t *Task, spec PlanSubtask, budget int, wi
 	plan := t.Plan
 	t.mu.Unlock()
 	var b strings.Builder
+	b.WriteString(t.instructionsBlock())
 	fmt.Fprintf(&b, "Project: %s\n%s\nLanguage: %s\n", plan.Title, plan.Summary, plan.Language)
 	if plan.TestCommand != "" {
 		fmt.Fprintf(&b, "Tests run with: %s\n", plan.TestCommand)
@@ -1483,6 +1675,7 @@ func (c *Controller) subtaskPromptWith(t *Task, spec PlanSubtask, budget int, wi
 			fmt.Fprintf(&b, "<<<FILE %s>>>\n%s<<<END>>>\n", f, s)
 		}
 	}
+	b.WriteString(c.dependencyReports(t, spec))
 	// Dependencies' files, trimmed to fit the worker's context window.
 	var depFiles []string
 	for _, d := range spec.DependsOn {
@@ -1495,12 +1688,17 @@ func (c *Controller) subtaskPromptWith(t *Task, spec PlanSubtask, budget int, wi
 	if len(depFiles) > 0 {
 		b.WriteString("\nFiles you depend on (already written):\n")
 		remaining := budget - b.Len()
+		indexed := repoNeedsIndex(t.repoDir(), budget*2)
 		for _, f := range depFiles {
 			data, err := os.ReadFile(filepath.Join(t.repoDir(), filepath.FromSlash(f)))
 			if err != nil {
 				continue
 			}
 			s := string(data)
+			if indexed {
+				// Large project: declarations only, not whole files.
+				s = declsText(t.repoDir(), f)
+			}
 			if remaining <= 200 {
 				fmt.Fprintf(&b, "<<<FILE %s>>>\n(omitted to fit the context window)\n<<<END>>>\n", f)
 				continue
@@ -1516,6 +1714,9 @@ func (c *Controller) subtaskPromptWith(t *Task, spec PlanSubtask, budget int, wi
 }
 
 func writeRepoFile(repo, rel, content string) error {
+	if inGitDir(rel) {
+		return fmt.Errorf("refusing to write inside .git: %s", rel)
+	}
 	p, err := safeJoin(repo, rel)
 	if err != nil {
 		return err
@@ -1535,7 +1736,7 @@ func repoSnapshot(repo string, budget int) string {
 // test output) come first, so they are the last to be left out of a small
 // prompt.
 func repoSnapshotFirst(repo string, budget int, hint string) string {
-	files := listRepo(repo)
+	files := promptFiles(repo)
 	if hint != "" {
 		sort.SliceStable(files, func(i, j int) bool {
 			return strings.Contains(hint, path.Base(files[i].Path)) && !strings.Contains(hint, path.Base(files[j].Path))
@@ -1549,7 +1750,7 @@ func repoSnapshotFirst(repo string, budget int, hint string) string {
 		}
 		s := string(data)
 		if b.Len()+len(s) > budget {
-			fmt.Fprintf(&b, "<<<FILE %s>>>\n(omitted: too large for this prompt)\n<<<END>>>\n", f.Path)
+			fmt.Fprintf(&b, "<<<FILE %s>>>\n(omitted: too large for this prompt; declarations follow)\n%s<<<END>>>\n", f.Path, declsText(repo, f.Path))
 			continue
 		}
 		fmt.Fprintf(&b, "<<<FILE %s>>>\n%s<<<END>>>\n", f.Path, s)
@@ -1580,6 +1781,9 @@ const plannerWriteSystem = `You are the lead engineer. A worker could not comple
 ` + fileFormatHelp
 
 func (c *Controller) plannerWritesSubtask(ctx context.Context, t *Task, spec PlanSubtask) error {
+	if spec.Kind == "investigate" {
+		return c.investigate(ctx, t, spec, "")
+	}
 	user := c.subtaskPrompt(t, spec, c.plannerBudget(t)/2) + "\n\nCurrent project files:\n" + repoSnapshot(t.repoDir(), c.plannerBudget(t)/2)
 	resp, err := c.plannerCall(ctx, t, llmRequest{System: plannerWriteSystem, User: user, MaxTokens: 16000, Temperature: 0.2, Label: "Writing " + spec.ID})
 	if err != nil {
@@ -1595,7 +1799,7 @@ func (c *Controller) plannerWritesSubtask(ctx context.Context, t *Task, spec Pla
 		}
 	}
 	for _, f := range spec.Files {
-		if err := writeRepoFile(t.repoDir(), f, got[f]); err != nil {
+		if err := t.writeFile(f, got[f]); err != nil {
 			return err
 		}
 	}
@@ -1625,6 +1829,9 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		t.TestStatus = "skipped"
 		t.mu.Unlock()
 		t.logf("info", "The plan has no automated tests.")
+		if !c.runBuild(ctx, t) {
+			return
+		}
 		c.finishTask(t)
 		return
 	}
@@ -1642,14 +1849,30 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 			c.finishTask(t)
 			return
 		}
+		if need := toolsInCommand(cmd); len(need) > 0 {
+			capable := c.execNodesWith(execs, need)
+			if len(capable) == 0 {
+				t.mu.Lock()
+				t.TestStatus = "skipped"
+				t.mu.Unlock()
+				t.logf("warn", "No exec node has %s, so the tests were not run. Install it on a node (Go can be installed from the Nodes tab).", c.missingToolsNote(execs, need))
+				c.finishTask(t)
+				return
+			}
+			execs = capable
+		}
 		node := execs[round%len(execs)]
 		t.setStatus("testing")
 		t.logf("info", "Running tests on %s: %s", c.nodeLabel(node), cmd)
-		inputs, skipped := repoInputs(t.repoDir())
+		inputs, srcs, skipped := repoJobInputs(t.repoDir())
 		if len(skipped) > 0 {
-			t.logf("warn", "Not sent to the test node (over 1 MiB): %s", strings.Join(skipped, ", "))
+			t.logf("warn", "Not sent to the test node (over the 2 GiB limit): %s", strings.Join(skipped, ", "))
 		}
-		out, status, err := c.runExecJob(ctx, node, []string{"sh", "-c", cmd}, inputs, t.Title+" · tests", testTimeout)
+		out, res, err := c.runExecJobFiles(ctx, node, c.execArgv(node, plan.SetupCommand, plan.TestCommand), inputs, srcs, nil, t.Title+" · tests", testTimeout)
+		status := ""
+		if res != nil {
+			status = res.Status
+		}
 		if errors.Is(err, errCancelled) || ctx.Err() != nil {
 			return
 		}
@@ -1680,6 +1903,9 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 			t.TestStatus = "passed"
 			t.mu.Unlock()
 			t.logf("info", "Tests passed.")
+			if !c.runBuild(ctx, t) {
+				return
+			}
 			c.finishTask(t)
 			return
 		}
@@ -1693,30 +1919,56 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		}
 		t.logf("warn", "Tests failed; fix round %d of %d.", round+1, maxFixRounds)
 		t.setStatus("fixing")
-		budget := c.plannerBudget(t)
-		// A local planner has a small window: keep the test output to a third
-		// of it so the code under test still fits.
-		shown := output
-		if limit := budget / 3; len(shown) > limit && limit > 0 {
-			shown = "…" + shown[len(shown)-limit:]
-		}
-		var earlier strings.Builder
-		if len(history) > 0 {
-			earlier.WriteString("\n\nEarlier fix rounds (the tests still failed after each):\n")
-			for _, h := range history {
-				earlier.WriteString("- " + h + "\n")
+		var changed []string
+		agentDone := false
+		if c.agentEnabled() {
+			ch, err := c.agentFix(ctx, t, plan, cmd, output, history, round)
+			switch {
+			case errors.Is(err, errCancelled) || ctx.Err() != nil:
+				return
+			case err == nil:
+				changed, agentDone = ch, true
+			case errors.Is(err, errAgentUnsupported):
+				t.logf("warn", "The planner cannot use tools here; fixing with a single request instead.")
+			default:
+				c.failTask(t, err)
+				return
 			}
 		}
-		user := fmt.Sprintf("Project: %s\n%s\n\nTest command: %s\n\nTest output:\n%s%s\n\nProject files:\n%s",
-			plan.Title, plan.Summary, cmd, shown, earlier.String(),
-			repoSnapshotFirst(t.repoDir(), budget-len(shown)-earlier.Len()-4000, output)) + t.steeringText()
-		resp, err := c.plannerCall(ctx, t, llmRequest{System: fixSystem, User: user, MaxTokens: 16000, Temperature: 0.2, Label: fmt.Sprintf("Fix round %d", round+1)})
-		if err != nil {
-			c.failTask(t, err)
-			return
+		if !agentDone {
+			budget := c.plannerBudget(t)
+			// A local planner has a small window: keep the test output to a third
+			// of it so the code under test still fits.
+			shown := output
+			if limit := budget / 3; len(shown) > limit && limit > 0 {
+				shown = "…" + shown[len(shown)-limit:]
+			}
+			var earlier strings.Builder
+			if len(history) > 0 {
+				earlier.WriteString("\n\nEarlier fix rounds (the tests still failed after each):\n")
+				for _, h := range history {
+					earlier.WriteString("- " + h + "\n")
+				}
+			}
+			user := t.instructionsBlock() + fmt.Sprintf("Project: %s\n%s\n\nTest command: %s\n\nTest output:\n%s%s\n\nProject files:\n%s",
+				plan.Title, plan.Summary, cmd, shown, earlier.String(),
+				repoSnapshotFirst(t.repoDir(), budget-len(shown)-earlier.Len()-4000, output)) + t.steeringText()
+			resp, err := c.plannerCall(ctx, t, llmRequest{System: fixSystem, User: user, MaxTokens: 16000, Temperature: 0.2, Label: fmt.Sprintf("Fix round %d", round+1)})
+			if err != nil {
+				c.failTask(t, err)
+				return
+			}
+			for _, b := range parseFileBlocks(resp.Text) {
+				p := strings.TrimPrefix(b.Path, "./")
+				if err := t.writeFile(p, b.Content); err != nil {
+					t.logf("warn", "Ignored a fix for %s: %v", p, err)
+					continue
+				}
+				changed = append(changed, p)
+			}
+			t.touch(changed...)
 		}
-		blocks := parseFileBlocks(resp.Text)
-		if len(blocks) == 0 {
+		if len(changed) == 0 {
 			t.mu.Lock()
 			t.TestStatus = "failing"
 			t.mu.Unlock()
@@ -1724,39 +1976,12 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 			c.finishTask(t)
 			return
 		}
-		var changed []string
-		for _, b := range blocks {
-			p := strings.TrimPrefix(b.Path, "./")
-			if err := writeRepoFile(t.repoDir(), p, b.Content); err != nil {
-				t.logf("warn", "Ignored a fix for %s: %v", p, err)
-				continue
-			}
-			changed = append(changed, p)
-		}
-		t.touch(changed...)
 		t.mu.Lock()
 		t.FixRounds++
 		t.mu.Unlock()
 		history = append(history, fmt.Sprintf("round %d changed %s", round+1, strings.Join(changed, ", ")))
 		t.logf("info", "Fix round %d changed: %s", round+1, strings.Join(changed, ", "))
 	}
-}
-
-func repoInputs(repo string) ([]FileEntry, []string) {
-	var inputs []FileEntry
-	var skipped []string
-	for _, f := range listRepo(repo) {
-		if f.Bytes > maxRepoFileSize {
-			skipped = append(skipped, f.Path)
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(f.Path)))
-		if err != nil {
-			continue
-		}
-		inputs = append(inputs, inlineFile(f.Path, data))
-	}
-	return inputs, skipped
 }
 
 func (c *Controller) finishTask(t *Task) {
@@ -1863,7 +2088,7 @@ func (c *Controller) reviewSubtask(ctx context.Context, t *Task, spec PlanSubtas
 	prompt = strings.Replace(prompt, "Write these files:", "Files in this subtask:", 1)
 	user := prompt + "\nYour teammate wrote:\n" + written.String()
 	resp, err := c.nodeCall(ctx, t, reviewer, llmRequest{System: reviewSystem, User: user, MaxTokens: maxOut, Temperature: 0.1,
-		Label: fmt.Sprintf("%s · review %s", t.Title, spec.ID)}, false)
+		Label: fmt.Sprintf("%s · review %s", t.Title, spec.ID), Sub: spec.ID}, false)
 	if err != nil {
 		if !errors.Is(err, errCancelled) {
 			note("skipped: " + err.Error())
@@ -1896,7 +2121,7 @@ func (c *Controller) reviewSubtask(ctx context.Context, t *Task, spec PlanSubtas
 		if b.Content == orig {
 			continue
 		}
-		if err := writeRepoFile(t.repoDir(), p, b.Content); err == nil {
+		if err := t.writeFile(p, b.Content); err == nil {
 			changed = append(changed, p)
 		}
 	}
@@ -1910,3 +2135,6 @@ func (c *Controller) reviewSubtask(ctx context.Context, t *Task, spec PlanSubtas
 	t.mu.Unlock()
 	t.logf("info", "%s: %s fixed %s.", spec.ID, c.nodeLabel(reviewer), strings.Join(changed, ", "))
 }
+
+// roundHasFiles reports whether the task repo holds any files yet.
+func (t *Task) roundHasFiles() bool { return len(listRepo(t.repoDir())) > 0 }
