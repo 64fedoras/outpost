@@ -1167,23 +1167,50 @@ async function updateController() {
   ctlUpdating = false;
   toast('The controller did not come back on the new version; check journalctl -u outpost-controller', 6000);
 }
+function uploadRelease(f, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', '/api/releases');
+    x.withCredentials = true;
+    x.setRequestHeader('X-Filename', f.name);
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(100 * e.loaded / e.total)); };
+    x.onerror = () => reject(new Error('network error'));
+    x.onload = () => {
+      let body = {}; try { body = JSON.parse(x.responseText); } catch (e) {}
+      x.status >= 200 && x.status < 300 ? resolve(body) : reject(new Error(body.error || x.statusText || 'upload failed'));
+    };
+    x.send(f);
+  });
+}
 async function uploadFiles(files) {
-  for (const f of files) {
-    toast(`Uploading ${f.name}…`, 60000);
+  const n = files.length;
+  for (const [i, f] of files.entries()) {
+    const tag = (n > 1 ? `[${i + 1}/${n}] ` : '') + f.name;
+    toast(`Uploading ${tag}…`, 60000);
     try {
-      const r = await fetch('/api/releases', { method: 'POST', credentials: 'same-origin', headers: { 'X-Filename': f.name }, body: f });
-      const body = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(body.error || r.statusText);
-      toast(`${f.name}: ${body.platform} v${body.version}`);
-    } catch (e) { toast(`${f.name}: ${e.message}`, 4000); await new Promise((r) => setTimeout(r, 2500)); }
+      const body = await uploadRelease(f, (p) => toast(`Uploading ${tag}… ${p}%`, 60000));
+      toast(`${tag}: ${body.platform} v${body.version}`);
+    } catch (e) { toast(`${tag}: ${e.message}`, 4000); await new Promise((r) => setTimeout(r, 2500)); }
   }
   refresh();
 }
 (() => {
-  const d = $('drop');
-  ['dragenter', 'dragover'].forEach((ev) => d.addEventListener(ev, (e) => { e.preventDefault(); d.classList.add('over'); }));
-  ['dragleave', 'drop'].forEach((ev) => d.addEventListener(ev, (e) => { e.preventDefault(); d.classList.remove('over'); }));
-  d.addEventListener('drop', (e) => uploadFiles([...e.dataTransfer.files]));
+  const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  const ov = $('drop-overlay');
+  let depth = 0;
+  const hide = () => { depth = 0; ov.classList.add('hidden'); };
+  // Whole page is the drop zone while Updates is showing; text drags are ignored.
+  window.addEventListener('dragenter', (e) => { if (page !== 'updates' || !hasFiles(e)) return; e.preventDefault(); depth++; ov.classList.remove('hidden'); });
+  window.addEventListener('dragover', (e) => { if (page !== 'updates' || !hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+  window.addEventListener('dragleave', (e) => { if (page !== 'updates' || !hasFiles(e)) return; if (--depth <= 0) hide(); });
+  window.addEventListener('drop', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); // never let the browser navigate to a dropped file
+    const onUpdates = page === 'updates';
+    hide();
+    if (onUpdates) uploadFiles([...e.dataTransfer.files]);
+  });
+  window.addEventListener('blur', hide);
   $('drop-input').onchange = (e) => { uploadFiles([...e.target.files]); e.target.value = ''; };
 })();
 
