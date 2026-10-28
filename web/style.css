@@ -329,6 +329,7 @@ label.check input { width: auto; }
 /* file browser and round changes */
 .fb { display: grid; grid-template-columns: minmax(160px, 260px) 1fr; gap: 12px; margin-top: 8px; }
 .fb-tree { max-height: 62vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px; font-family: var(--mono); font-size: 12.5px; display: flex; flex-direction: column; }
+.fb-row { display: flex; align-items: center; gap: 6px; }
 .fb-tree a { padding: 2px 6px; border-radius: 4px; word-break: break-all; }
 .fb-tree a:hover { background: var(--tint); }
 .fb-dir { color: var(--muted); padding: 2px 6px; }

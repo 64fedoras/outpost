@@ -143,7 +143,7 @@ func (c *Controller) plannerPrompt(t *Task, budget int, want []string) string {
 	} else if round > 1 && len(files) > 0 {
 		b.WriteString("This is a follow-up request on an existing project. Plan only the files to add or change.\n\n")
 		if prevPlan != nil {
-			fmt.Fprintf(&b, "Project: %s\n%s\nLanguage: %s\nTest command so far: %s\n\n", prevPlan.Title, prevPlan.Summary, prevPlan.Language, prevPlan.TestCommand)
+			fmt.Fprintf(&b, "Project: %s\n%s\nLanguage: %s\nTest command so far: %s\nBuild command so far: %s (artifacts: %s)\n\n", prevPlan.Title, prevPlan.Summary, prevPlan.Language, prevPlan.TestCommand, prevPlan.BuildCommand, strings.Join(prevPlan.Artifacts, ", "))
 		}
 		if len(earlier) > 0 {
 			b.WriteString("Earlier requests and answers, oldest first:\n")
@@ -240,7 +240,7 @@ func (c *Controller) handleTaskMessage(w http.ResponseWriter, r *http.Request) {
 	case "planning", "awaiting_approval":
 		t.addMsg(TaskMessage{Role: "user", Kind: "text", Text: text, Images: imgNames})
 		c.replan(t, "Revising the plan.")
-	case "running", "testing", "fixing", "paused_cap":
+	case "running", "testing", "building", "fixing", "paused_cap":
 		t.mu.Lock()
 		t.Steering = append(t.Steering, text)
 		t.addMsgLocked(TaskMessage{Role: "user", Kind: "steer", Text: text})
@@ -254,6 +254,7 @@ func (c *Controller) handleTaskMessage(w http.ResponseWriter, r *http.Request) {
 		t.Plan, t.Approved, t.Ended = nil, nil, nil
 		t.Subtasks = []*SubtaskState{}
 		t.TestStatus, t.TestOutput, t.FixRounds, t.Error, t.PausedFrom = "", "", 0, "", ""
+		t.BuildStatus, t.BuildOutput = "", ""
 		t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: text, Images: imgNames})
 		t.mu.Unlock()
 		c.replan(t, "Planning the follow-up on the existing project.")
