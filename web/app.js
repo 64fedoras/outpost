@@ -105,6 +105,7 @@ async function refresh() {
   ]);
   $('hdr-meta').textContent = `v${state.version}`;
   $('hdr-meta').title = state.advertise;
+  $('src-link').href = `https://github.com/64fedoras/outpost/tree/v${state.version}`; // AGPL section 13: source of the running version
   $('ctl-info').textContent = `Controller ${state.advertise} · ${state.platform} · certificate SHA-256 ${state.fingerprint}`;
   pollNotifications();
   renderBadges();
