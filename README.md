@@ -1,4 +1,4 @@
-# Outpost v0.7.2
+# Outpost v0.7.3
 
 Self-hosted AI cluster. One binary runs as the **controller** (web UI, planning, job dispatch) or as a
 **node** (runs local models with llama.cpp, runs commands, keeps nothing after a job).
