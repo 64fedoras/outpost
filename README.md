@@ -205,6 +205,19 @@ A review never holds up or fails a task. It is skipped when only one node has a 
 when no other node frees up within 2 minutes, or when the reviewer's answer looks broken (for
 example, a rewrite much shorter than the original).
 
+### Benchmarks and smart routing
+
+When a model finishes loading, the controller runs a short benchmark on it (about 1,000 tokens in,
+256 out) and the Nodes tab shows the speed. Real subtasks then update that figure as a rolling average.
+Each model also has a **tier**, Small, Medium or Large, guessed from the parameter count in its
+name (under 9B, under 25B, larger); change it in the Tier column on the Models tab.
+
+The planner tags every subtask `easy`, `normal` or `hard`, and the plan card lets you change the tag
+before you approve. Hard subtasks go to the strongest free model and wait up to 2 minutes for it
+before taking any free node. Easy ones go to the fastest free node. Normal ones take the best mix of
+tier and speed. Reviews prefer a node at least as strong as the one that wrote the code.
+The benchmark and the routing have only been tested against stubs, not on a real cluster.
+
 ### Pooling memory (experimental)
 
 For a model too big for any single machine, open **Load model** on the node that should run it

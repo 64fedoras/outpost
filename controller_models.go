@@ -83,6 +83,8 @@ type ModelRec struct {
 	BytesTotal int64       `json:"bytes_total"`
 	Error      string      `json:"error,omitempty"`
 	Added      time.Time   `json:"added"`
+	Tier       string      `json:"tier,omitempty"`       // small | medium | large; empty = guessed from the name
+	TierGuess  string      `json:"tier_guess,omitempty"` // filled in for the UI
 	cancel     context.CancelFunc
 }
 
@@ -739,6 +741,7 @@ func (c *Controller) handleListModels(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 	models := make([]*ModelRec, 0, len(c.models))
 	for _, m := range c.models {
+		m.TierGuess = tierName(guessTier(m.Name, m.BytesTotal))
 		models = append(models, m)
 	}
 	rts := make([]*RuntimeRec, 0, len(c.runtimes))
