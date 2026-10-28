@@ -243,6 +243,15 @@ to ask for different variants. Screenshots are kept with the task, not in the zi
 reviews to the next biggest, so a small test model only gets work when the bigger nodes are busy.
 To keep a node out of tasks altogether, unload its model on the Nodes tab.
 
+**Idle unload.** A node stops its model after it has served nothing for an hour, so the RAM or VRAM
+comes back. Change the wait in Settings → Idle unload, or per node with **change** on its card (empty =
+use the Settings value). Type a time such as `30s`, `5m`, `1hr`, `1.5h` or `2d` (10 seconds to 365 days; a number
+needs a unit), or `0` (also `never`) to keep models loaded. A bad value is refused with a message. The card
+shows the wait that applies and marks a node whose model was unloaded for idleness as **idle, unloaded**;
+the model is still offered for tasks, and the next request loads it again, so that request waits for a
+normal model load. Unloading it yourself with **Unload** is different: the node then has no model and
+gets no work until you load one. A pooled model is never unloaded for idleness.
+
 **When the tests fail**, the planner gets up to 3 fix rounds. Each round sees the test output and
 which files earlier rounds changed, and works as an agent (below). It treats the tests as the
 specification and only edits a test that is clearly wrong.
@@ -622,6 +631,9 @@ See also [SECURITY.md](SECURITY.md) for the security model and its limits (unsan
 - Vision projector (`mmproj`) file names and sizes in the model catalog are assumptions; check them
   the first time you download a Vision model. The Claude web search tool name and its price are
   unverified against the live API.
+- Idle unload is covered by unit tests but its reload timing is **untested with a real llama-server** on
+  the cluster. A request that wakes an unloaded model waits for the whole load (large models take minutes),
+  and a node restart reloads a model that was unloaded for idleness.
 - Version 0.8.0 is **untested on the real cluster** (nodes, GPUs, real transfer speeds), on real Windows
   (service, PowerShell test runs, Go install, Defender) and on a real Mac. It was tested against stub
   Claude and OpenRouter servers and fake llama-server and Chromium. The live OpenRouter API was never

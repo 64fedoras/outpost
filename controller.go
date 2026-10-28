@@ -42,7 +42,8 @@ type NodeRec struct {
 	Name        string     `json:"name"`
 	KeyHash     string     `json:"key_hash"`
 	ExecEnabled bool       `json:"exec_enabled"`
-	MaxJobs     int        `json:"max_jobs_override"` // 0 = use the node's own value
+	MaxJobs     int        `json:"max_jobs_override"`     // 0 = use the node's own value
+	IdleUnload  string     `json:"idle_unload,omitempty"` // idle unload wait typed by the owner ("30m", "0"); empty = the global setting
 	Added       time.Time  `json:"added"`
 	Hello       *Hello     `json:"hello,omitempty"`
 	LoadPrefs   *ModelLoad `json:"load_prefs,omitempty"` // last model loaded from the UI
@@ -395,6 +396,7 @@ type nodeView struct {
 	Restarting  bool          `json:"restarting,omitempty"`
 	LendingTo   string        `json:"lending_to,omitempty"` // name of the node this one lends memory to
 	PoolNames   []string      `json:"pool_names,omitempty"` // names of nodes lending memory to this one
+	IdleNow     string        `json:"idle_unload_effective"` // the idle unload wait that applies, as text ("1h", "never")
 	Update      *UpdateStatus `json:"update,omitempty"`
 }
 
@@ -433,7 +435,8 @@ func (c *Controller) handleState(w http.ResponseWriter, r *http.Request) {
 	defer c.mu.Unlock()
 	nodes := make([]nodeView, 0, len(c.nodes))
 	for id, n := range c.nodes {
-		v := nodeView{NodeRec: n, MaxJobs: c.effectiveMaxLocked(n), RunningJobs: c.runningLocked(id)}
+		v := nodeView{NodeRec: n, MaxJobs: c.effectiveMaxLocked(n), RunningJobs: c.runningLocked(id),
+			IdleNow: formatIdleDuration(idleUnloadFor(c.settings.IdleUnload, n.IdleUnload))}
 		if nc, ok := c.conns[id]; ok {
 			v.Online, v.Addr = true, nc.addr
 		}
@@ -544,16 +547,49 @@ func (c *Controller) handleTokenStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"status": "expired"})
 }
 
+// nodeSettingsLocked is what a node is told: the exec switch, the heartbeat and
+// the effective idle unload wait. c.mu must be held.
+func (c *Controller) nodeSettingsLocked(n *NodeRec) NodeSettings {
+	return NodeSettings{HeartbeatS: heartbeatSeconds, ExecEnabled: n.ExecEnabled,
+		IdleUnloadS: int(idleUnloadFor(c.settings.IdleUnload, n.IdleUnload) / time.Second)}
+}
+
+// pushNodeSettings sends every connected node its settings again.
+func (c *Controller) pushNodeSettings() {
+	type send struct {
+		nc *nodeConn
+		s  NodeSettings
+	}
+	var out []send
+	c.mu.Lock()
+	for id, n := range c.nodes {
+		if nc := c.conns[id]; nc != nil {
+			out = append(out, send{nc, c.nodeSettingsLocked(n)})
+		}
+	}
+	c.mu.Unlock()
+	for _, x := range out {
+		_ = x.nc.send("node.settings", x.s)
+	}
+}
+
 func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req struct {
 		Name        *string `json:"name"`
 		ExecEnabled *bool   `json:"exec_enabled"`
 		MaxJobs     *int    `json:"max_jobs_override"`
+		IdleUnload  *string `json:"idle_unload"` // "" = use the global setting
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
 		return
+	}
+	if req.IdleUnload != nil && strings.TrimSpace(*req.IdleUnload) != "" {
+		if _, err := parseIdleDuration(*req.IdleUnload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	c.mu.Lock()
 	n, ok := c.nodes[id]
@@ -561,6 +597,9 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 		c.mu.Unlock()
 		writeJSON(w, 404, map[string]string{"error": "no such node"})
 		return
+	}
+	if req.IdleUnload != nil {
+		n.IdleUnload = strings.TrimSpace(*req.IdleUnload)
 	}
 	if req.Name != nil {
 		n.Name = strings.TrimSpace(*req.Name)
@@ -573,7 +612,7 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	c.saveNodesLocked()
 	nc := c.conns[id]
-	settings := NodeSettings{HeartbeatS: heartbeatSeconds, ExecEnabled: n.ExecEnabled}
+	settings := c.nodeSettingsLocked(n)
 	c.mu.Unlock()
 	if nc != nil {
 		_ = nc.send("node.settings", settings)
@@ -837,7 +876,7 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 			c.finishJobLocked(j, "lost", errf("lost", true, "node reconnected without this job"))
 		}
 	}
-	settings := NodeSettings{HeartbeatS: heartbeatSeconds, ExecEnabled: n.ExecEnabled}
+	settings := c.nodeSettingsLocked(n)
 	c.mu.Unlock()
 	log.Printf("node %s (%s, %s/%s) connected from %s", n.ID, hello.Hostname, hello.OS, hello.Arch, r.RemoteAddr)
 	c.clearRepin(n.ID)
