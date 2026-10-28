@@ -131,7 +131,7 @@ func installController(args []string) error {
 	fsf := flag.NewFlagSet("install controller", flag.ExitOnError)
 	listen := fsf.String("listen", ":8443", "address to listen on")
 	data := fsf.String("data", "/var/lib/outpost/controller", "data directory")
-	advertise := fsf.String("advertise", "", "URL nodes use to reach the controller, e.g. https://10.0.4.130:8443")
+	advertise := fsf.String("advertise", "", "URL nodes use to reach the controller, e.g. https://192.0.2.10:8443")
 	restore := fsf.String("restore", "", "restore this backup file (.opb) into the data directory first")
 	force := fsf.Bool("force", false, "with --restore: overwrite an existing controller's data")
 	setupFrom := fsf.String("setup-allow-from", "", "who may choose the first admin password: comma-separated CIDRs, or \"any\" (default: private/LAN addresses only)")
