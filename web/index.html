@@ -223,7 +223,14 @@
         </div>
         <div class="section-head"><h2>Updates from GitHub</h2></div>
         <div class="card">
-          <p class="hint">Outpost can look at this project's GitHub releases (<code>64fedoras/outpost</code>) every 6 hours and download newer binaries for the controller and the platforms of your nodes. Each file is checked against the release's <code>SHA256SUMS</code> and must be an Outpost binary of that version before it is kept; it then appears in the Updates tab like an uploaded one. <code>SHA256SUMS</code> catches damaged downloads, not a tampered repository, since the releases are unsigned. Only the version check and downloads go to GitHub; nothing about your cluster is sent. Rollback works as before.</p>
+          <p class="hint">Outpost can look at a GitHub repository's releases every 6 hours and download newer binaries for the controller and the platforms of your nodes. Each file is checked against the release's <code>SHA256SUMS</code> and must be an Outpost binary of that version before it is kept; it then appears in the Updates tab like an uploaded one. <code>SHA256SUMS</code> catches damaged downloads, not a tampered repository, since the releases are unsigned. Only the version check and downloads go to GitHub; nothing about your cluster is sent. Rollback works as before.</p>
+          <label for="set-ghrepo">Repository to trust for updates <span class="hint">(a github.com address or owner/repo; empty uses the default)</span></label>
+          <input id="set-ghrepo" placeholder="https://github.com/64fedoras/outpost" autocomplete="off" spellcheck="false">
+          <div class="note warn"><b>Whoever controls this repository can supply the code that runs on your controller and every node.</b> Only enter a repository you own or fully trust.</div>
+          <label for="set-ghtoken">Access token for a private repository <span class="hint">(optional) <span id="set-ghtoken-state"></span></span></label>
+          <div class="btns u3"><input id="set-ghtoken" type="password" placeholder="github_pat_… (read-only)" autocomplete="new-password"><button id="set-ghtest">Test connection</button><button id="set-ghtoken-clear" class="danger">Clear</button></div>
+          <p class="hint">A fine-grained token limited to that one repository with read-only <em>Contents</em> access. It is stored encrypted on the controller, never sent to nodes, and only ever sent to <code>api.github.com</code>. It is not shown again after saving. Leave it empty for a public repository.</p>
+          <div id="set-ghtest-out" class="hint"></div>
           <label class="check"><input type="checkbox" id="set-ghupd"> Check GitHub for new releases and download them (on by default)</label>
           <label class="check"><input type="checkbox" id="set-ghauto"> Install them automatically: idle nodes update first, then the controller once no task is working. Off means you click Update in the Updates tab. After a rollback, the version you left is skipped.</label>
           <div class="modal-foot"><button class="primary" id="set-ghupd-save">Save</button></div>

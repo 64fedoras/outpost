@@ -491,6 +491,25 @@ tab does the same once, on request. After a rollback, automatic install skips th
 (and older ones) until a newer release appears. Nothing but the version check and the downloads goes to
 GitHub. This path has only been tested against a stub server, not the live GitHub API.
 
+**Which repository, and private repositories.** *Settings → Updates from GitHub* has a **Repository to
+trust for updates** field. Enter a `github.com` address such as `https://github.com/64fedoras/outpost`
+(or just `owner/repo`; other hosts are refused); empty means the default. Whoever controls that
+repository can ship code that runs on the controller and every node, so only enter one you own or fully
+trust. For a **private** repository add an access token:
+
+1. On GitHub: *Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate
+   new token*.
+2. Set *Repository access* to **Only select repositories** and pick the repository, then under
+   *Repository permissions* set **Contents: Read-only** (Metadata: Read-only is added automatically).
+   Choose an expiry you can live with; an expired token shows up as "GitHub rejected the access token".
+3. Paste the token into **Access token for a private repository**, press **Test connection**, then **Save**.
+
+The token is stored encrypted on the controller, is never sent to nodes, is not shown again after saving
+(the page only says *token set*; **Clear** removes it) and is sent only to `api.github.com`; private
+release files are downloaded through the authenticated API. Public repositories need no token. Changing
+the repository clears the rollback hold. The private-repository path has only been tested against a stub
+server, not a live private repository.
+
 Or by hand:
 
 1. **Updates tab:** drop the new binaries anywhere on the page (or click the box to choose them), one per platform you use (`outpost-linux-amd64`, …).

@@ -42,7 +42,7 @@ func ghStub(t *testing.T, badSum bool) (*httptest.Server, []byte) {
 	}
 	mux := http.NewServeMux()
 	var srv *httptest.Server
-	mux.HandleFunc("/repos/"+ghRepo+"/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/repos/"+ghDefaultRepo+"/releases/latest", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"tag_name":"v99.0.0","assets":[{"name":"SHA256SUMS","browser_download_url":"%s/dl/SHA256SUMS"},{"name":%q,"browser_download_url":"%s/dl/bin"}]}`, srv.URL, name, srv.URL)
 	})
 	mux.HandleFunc("/dl/SHA256SUMS", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(sums)) })
@@ -93,5 +93,106 @@ func TestRollbackHoldBlocksOlderAutoInstall(t *testing.T) {
 	c.holdAfterRollbackLocked("0.8.3") // never lowers the hold
 	if c.settings.GitHubHoldVersion != "0.8.5" {
 		t.Fatalf("hold = %q", c.settings.GitHubHoldVersion)
+	}
+}
+
+func TestParseGitHubRepo(t *testing.T) {
+	ok := map[string]string{
+		"":                                     ghDefaultRepo,
+		"https://github.com/64fedoras/outpost": "64fedoras/outpost",
+		"https://github.com/me/my.repo.git":    "me/my.repo",
+		"https://www.github.com/me/r/releases/tag/v1": "me/r",
+		"github.com/me/r/":                            "me/r",
+		"  me/r  ":                                    "me/r",
+	}
+	for in, want := range ok {
+		if got, err := parseGitHubRepo(in); err != nil || got != want {
+			t.Errorf("%q -> %q, %v (want %q)", in, got, err, want)
+		}
+	}
+	for _, in := range []string{
+		"http://github.com/me/r", "https://gitlab.com/me/r", "https://evil.example/github.com/me/r",
+		"git@github.com:me/r.git", "https://github.com/me", "me", "https://github.com/me/r?x=1",
+		"https://user:pw@github.com/me/r", "a/b/c", "../x", "me/..",
+	} {
+		if got, err := parseGitHubRepo(in); err == nil {
+			t.Errorf("%q accepted as %q", in, got)
+		}
+	}
+}
+
+// A private repository: the API wants the token, the asset must come from the API URL, and the
+// token must not reach a different host.
+func TestCheckGitHubPrivateRepoUsesToken(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("uses the test binary as an ELF")
+	}
+	exe, _ := os.Executable()
+	base, _ := os.ReadFile(exe)
+	marker := fmt.Sprintf("%s|%s|", strings.Split(buildInfo, "|")[0], "99.0.0")
+	bin := bytes.ReplaceAll(base, []byte(buildInfo), []byte(marker))
+	bin = append(bin, []byte(marker+"\x00")...)
+	sum := sha256.Sum256(bin)
+	name := releaseFileName(thisPlatform())
+	sums := hex.EncodeToString(sum[:]) + "  " + name + "\n"
+	var srv *httptest.Server
+	auth := func(h http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") != "Bearer sekrit" {
+				http.Error(w, "nope", 404)
+				return
+			}
+			h(w, r)
+		}
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/me/priv", auth(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"private":true}`)) }))
+	mux.HandleFunc("/repos/me/priv/releases/latest", auth(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"tag_name":"v99.0.0","assets":[{"name":"SHA256SUMS","url":"%s/repos/me/priv/releases/assets/1","browser_download_url":"%s/web/1"},{"name":%q,"url":"%s/repos/me/priv/releases/assets/2","browser_download_url":"%s/web/2"}]}`, srv.URL, srv.URL, name, srv.URL, srv.URL)
+	}))
+	mux.HandleFunc("/repos/me/priv/releases/assets/1", auth(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(sums)) }))
+	mux.HandleFunc("/repos/me/priv/releases/assets/2", auth(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept") != "application/octet-stream" {
+			http.Error(w, "accept", 415)
+			return
+		}
+		w.Write(bin)
+	}))
+	srv = httptest.NewServer(mux)
+	defer srv.Close()
+	t.Setenv("OUTPOST_GITHUB_API", srv.URL)
+	c := &Controller{dataDir: t.TempDir(), releases: map[string]*Release{}, nodes: map[string]*NodeRec{}}
+	enc, err := c.encrypt("sekrit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.settings.GitHubRepo = "me/priv"
+	if _, err := c.checkGitHub(context.Background()); err == nil || !strings.Contains(err.Error(), "token") {
+		t.Fatalf("without a token expected a helpful error, got %v", err)
+	}
+	c.settings.GitHubTokenEnc = enc
+	if latest, err := c.checkGitHub(context.Background()); err != nil || latest != "99.0.0" {
+		t.Fatalf("with token: %q %v", latest, err)
+	}
+	// Test connection: saved token is used when the request has none; a bad one is reported.
+	rec := httptest.NewRecorder()
+	c.handleTestGitHub(rec, httptest.NewRequest("POST", "/", strings.NewReader(`{"repo":"https://github.com/me/priv"}`)))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "private") {
+		t.Fatalf("test: %d %s", rec.Code, rec.Body)
+	}
+	rec = httptest.NewRecorder()
+	c.handleTestGitHub(rec, httptest.NewRequest("POST", "/", strings.NewReader(`{"token":"wrong"}`)))
+	if rec.Code != 502 {
+		t.Fatalf("bad token: %d %s", rec.Code, rec.Body)
+	}
+	// The token is never sent to a non-API address.
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			t.Error("token leaked to another host")
+		}
+	}))
+	defer other.Close()
+	if resp, err := c.ghGet(context.Background(), other.URL+"/x", "*/*", "sekrit"); err == nil {
+		resp.Body.Close()
 	}
 }
