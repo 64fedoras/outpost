@@ -115,6 +115,7 @@ func (c *Controller) plannerPrompt(t *Task, budget int) string {
 	msgs := append([]TaskMessage(nil), t.Messages...)
 	t.mu.Unlock()
 	var b strings.Builder
+	b.WriteString(t.instructionsBlock())
 	var prevPlan, roundPlan *Plan
 	var earlier []string
 	for _, m := range msgs {
