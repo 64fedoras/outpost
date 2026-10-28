@@ -344,6 +344,13 @@ type ModelRemove struct {
 	Name string `json:"name"`
 }
 
+// ModelCleanup asks a node to delete stored models. The node keeps any model
+// that is loaded, set to reload, or being copied, whatever the list says.
+type ModelCleanup struct {
+	Names      []string `json:"names"`
+	Incomplete bool     `json:"incomplete,omitempty"` // also delete folders left by interrupted downloads
+}
+
 // OpStatus reports progress of a long node operation (runtime, model push, load).
 type OpStatus struct {
 	Op         string   `json:"op"`     // runtime | model.push | model.load | model.unload | model.remove

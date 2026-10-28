@@ -63,6 +63,15 @@ The one exception is GPU drivers: GPU nodes use llama.cpp's Vulkan build, which 
 Vulkan driver (`sudo apt install libvulkan1 mesa-vulkan-drivers`). The node card tells you if it is
 missing.
 
+**Cleaning up old models:** a node's card lists the models stored on its disk. **clean up…** opens a
+list with sizes, everything ticked except the model that is loaded; the button shows how much space
+the deletion frees. The node itself always keeps the model that is loaded, the one it reloads after a
+restart (autoload), and any model being copied or downloaded right now, whatever the request says.
+*Also delete interrupted downloads* removes model folders that never finished (no manifest). Only
+folders directly inside the node's `models/` folder are deleted, and symlinks are skipped. Copies on
+the controller and on other nodes are untouched, so a node that needs a model again fetches it again.
+The **×** next to a model still deletes just that one.
+
 **Windows:** in PowerShell, in the folder with the exe, run the command from **Add node**:
 
 ```powershell

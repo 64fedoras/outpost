@@ -783,6 +783,17 @@ func (c *Controller) handleRemoveNodeModel(w http.ResponseWriter, r *http.Reques
 	c.sendToNode(w, r.PathValue("id"), "model.remove", ModelRemove{Name: r.PathValue("name")})
 }
 
+// handleCleanupNodeModels deletes several stored models from one node's disk.
+// The node decides what is in use and keeps those.
+func (c *Controller) handleCleanupNodeModels(w http.ResponseWriter, r *http.Request) {
+	var req ModelCleanup
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil || (len(req.Names) == 0 && !req.Incomplete) {
+		writeJSON(w, 400, map[string]string{"error": "nothing selected"})
+		return
+	}
+	c.sendToNode(w, r.PathValue("id"), "model.cleanup", req)
+}
+
 // handleListModels returns the catalog, the controller's model store and the
 // llama.cpp builds it holds.
 func (c *Controller) handleListModels(w http.ResponseWriter, r *http.Request) {
