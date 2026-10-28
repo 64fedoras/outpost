@@ -36,7 +36,7 @@ async def main():
         }""", real)
         assert await pg.evaluate("window._prevented"), "drop not default-prevented"
         assert await pg.locator("#drop-overlay").is_hidden(), "overlay stays after drop"
-        await pg.wait_for_function("document.querySelector('#releases').innerText.includes('linux-amd64')", timeout=60000)
+        await pg.locator("#releases", has_text="linux-amd64").wait_for(timeout=60000)  # no string eval: the CSP forbids it
         print("releases:", (await pg.inner_text("#releases")).replace("\n", " | ")[:200])
         assert not errors, errors
         print("OK")
