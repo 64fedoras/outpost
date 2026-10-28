@@ -3,9 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -26,8 +24,8 @@ import (
 )
 
 const (
-	inlineMax       = 1 << 20  // files above this need blob transfer (not in v0)
-	collectCap      = 64 << 20 // total collected per job in v0 (inline only)
+	inlineMax       = 1 << 20  // files above this move as blobs (see node_artifacts.go)
+	collectCap      = 64 << 20 // total inline-collected bytes per job
 	tailMax         = 64 << 10
 	workspaceTTL    = 30 * time.Minute
 	disconnectGrace = 60 * time.Second
@@ -62,6 +60,7 @@ type Node struct {
 	online      bool // connected and welcomed by the controller
 	tools       toolCache
 	peer        peerState
+	artifacts   map[string]string // "<job>/<path>" -> file on disk, served to the controller
 }
 
 func (n *Node) agentDir() string { return filepath.Join(n.dataDir, "agent") }
@@ -562,6 +561,7 @@ func (n *Node) closeWorkspace(id, reason string) {
 	dir := n.wsDir(id)
 	size := dirSize(dir)
 	err := os.RemoveAll(dir)
+	n.dropArtifacts(strings.TrimPrefix(id, "ws_"))
 	n.mu.Lock()
 	delete(n.wsLastUsed, id)
 	n.mu.Unlock()
@@ -583,6 +583,7 @@ func (n *Node) sweepWorkRoot() int64 {
 	}
 	n.mu.Lock()
 	n.wsLastUsed = map[string]time.Time{}
+	n.artifacts = nil
 	n.mu.Unlock()
 	return freed
 }
@@ -702,7 +703,7 @@ func (n *Node) runJob(jd JobDispatch) {
 	n.wsLastUsed[wsID] = time.Now()
 	n.mu.Unlock()
 
-	if e := writeInputs(dir, jd.Inputs); e != nil {
+	if e := n.writeInputs(dir, jd.JobID, jd.Inputs); e != nil {
 		fail(e)
 		return
 	}
@@ -750,73 +751,18 @@ func (n *Node) runJob(jd JobDispatch) {
 	}
 	res.Output, _ = json.Marshal(out)
 
-	files, e := collectFiles(dir, jd.Collect)
+	files, e := n.collectFiles(dir, jd.JobID, jd.Collect)
 	res.Files = files
+	for _, f := range files {
+		if f.Blob { // the controller fetches these, then closes the workspace
+			private = false
+			break
+		}
+	}
 	if e != nil && res.Status == "succeeded" {
 		res.Status, res.Error = "failed", e
 	}
 	finish()
-}
-
-func writeInputs(dir string, inputs []FileEntry) *ErrInfo {
-	for _, f := range inputs {
-		if f.Blob {
-			return errf("bad_request", false, "blob transfer is not implemented in this agent version (file %s)", f.Path)
-		}
-		p, err := safeJoin(dir, f.Path)
-		if err != nil {
-			return err.(*ErrInfo)
-		}
-		data, err := base64.StdEncoding.DecodeString(f.InlineB64)
-		if err != nil {
-			return errf("bad_request", false, "file %s: bad base64", f.Path)
-		}
-		sum := sha256.Sum256(data)
-		if f.SHA256 != "" && !strings.EqualFold(hex.EncodeToString(sum[:]), f.SHA256) {
-			return errf("checksum_mismatch", true, "file %s failed sha256 check", f.Path)
-		}
-		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-			return errf("disk_full", true, "%v", err)
-		}
-		if err := os.WriteFile(p, data, 0o644); err != nil {
-			return errf("disk_full", true, "%v", err)
-		}
-	}
-	return nil
-}
-
-func collectFiles(dir string, patterns []string) ([]FileEntry, *ErrInfo) {
-	out := []FileEntry{}
-	seen := map[string]bool{}
-	var total int64
-	for _, pat := range patterns {
-		if _, err := safeJoin(dir, pat); err != nil {
-			return out, err.(*ErrInfo)
-		}
-		matches, _ := filepath.Glob(filepath.Join(dir, filepath.FromSlash(pat)))
-		for _, m := range matches {
-			info, err := os.Lstat(m)
-			if err != nil || !info.Mode().IsRegular() || seen[m] {
-				continue
-			}
-			rel, _ := filepath.Rel(dir, m)
-			if info.Size() > inlineMax {
-				return out, errf("collect_too_large", false, "%s is %d bytes; files over 1 MiB need blob transfer (next version)", rel, info.Size())
-			}
-			total += info.Size()
-			if total > collectCap {
-				return out, errf("collect_too_large", false, "collected files exceed %d bytes", collectCap)
-			}
-			data, err := os.ReadFile(m)
-			if err != nil {
-				continue
-			}
-			sum := sha256.Sum256(data)
-			seen[m] = true
-			out = append(out, FileEntry{Path: filepath.ToSlash(rel), SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(data)), InlineB64: base64.StdEncoding.EncodeToString(data)})
-		}
-	}
-	return out, nil
 }
 
 // tailBuf keeps the last tailMax bytes written.

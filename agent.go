@@ -461,7 +461,7 @@ func (a *agentRun) run(ctx context.Context, command string) string {
 		execs = capable
 	}
 	node := execs[a.Calls%len(execs)]
-	inputs, _ := repoInputs(t.repoDir())
+	inputs, srcs, _ := repoJobInputs(t.repoDir())
 	limit := agentRunLimit
 	if left := maxAgentTime - a.active; left < limit {
 		limit = left
@@ -470,7 +470,11 @@ func (a *agentRun) run(ctx context.Context, command string) string {
 		limit = 10 * time.Second
 	}
 	t.logf("info", "%s: run on %s: %s", a.label, c.nodeLabel(node), firstLine(command, 160))
-	out, status, err := c.runExecJob(ctx, node, c.execArgv(node, command), inputs, t.Title+" · agent run", limit)
+	out, res, err := c.runExecJobFiles(ctx, node, c.execArgv(node, command), inputs, srcs, nil, t.Title+" · agent run", limit)
+	status := ""
+	if res != nil {
+		status = res.Status
+	}
 	if ctx.Err() != nil {
 		return "error: cancelled"
 	}

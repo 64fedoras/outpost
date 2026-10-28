@@ -115,8 +115,8 @@ async function refresh() {
   if (page === 'updates') renderUpdates();
 }
 
-const ACTIVE = ['queued', 'planning', 'awaiting_answers', 'awaiting_approval', 'running', 'testing', 'fixing', 'paused_cap'];
-const WORKING = ['planning', 'running', 'testing', 'fixing'];
+const ACTIVE = ['queued', 'planning', 'awaiting_answers', 'awaiting_approval', 'running', 'testing', 'building', 'fixing', 'paused_cap'];
+const WORKING = ['planning', 'running', 'testing', 'building', 'fixing'];
 function workerCount() { return state.nodes.filter((n) => n.online && n.heartbeat && n.heartbeat.inference_ready && !n.heartbeat.paused).length; }
 function execCount() { return state.nodes.filter((n) => n.online && n.exec_enabled && !(n.heartbeat && n.heartbeat.paused)).length; }
 function updatesAvailable() { return state.nodes.filter((n) => n.update_to).length + (state.controller_update_to ? 1 : 0); }
@@ -131,7 +131,7 @@ function renderBadges() {
 // What a task's status means to the person, in a few words.
 const STATUS_WORDS = {
   queued: 'Waiting for project', planning: 'Planning', awaiting_answers: 'Has questions', awaiting_approval: 'Plan ready', running: 'Working',
-  testing: 'Testing', fixing: 'Fixing tests', paused_cap: 'Paused at cap', interrupted: 'Interrupted',
+  testing: 'Testing', building: 'Building', fixing: 'Fixing tests', paused_cap: 'Paused at cap', interrupted: 'Interrupted',
   done: 'Done', failed: 'Failed', cancelled: 'Stopped',
 };
 function statusWord(t) {
@@ -420,7 +420,7 @@ function threadItems(t) {
   const round = t.round || 1;
   const lastIdx = (kind) => { for (let i = msgs.length - 1; i >= 0; i--) if (msgs[i].kind === kind) return i; return -1; };
   const lastQ = lastIdx('questions'), lastPlan = lastIdx('plan');
-  const started = t.approved && ['running', 'testing', 'fixing', 'paused_cap', 'done', 'failed', 'cancelled', 'interrupted'].includes(t.status) && t.subtasks && t.subtasks.length;
+  const started = t.approved && ['running', 'testing', 'building', 'fixing', 'paused_cap', 'done', 'failed', 'cancelled', 'interrupted'].includes(t.status) && t.subtasks && t.subtasks.length;
   let progressPlaced = false;
   msgs.forEach((m, i) => {
     // The live progress card sits right after this round's approval.
@@ -483,7 +483,7 @@ function planCard(t, m, live) {
   const p = m.plan || {};
   const subs = (p.subtasks || []).map((s) => `<li><details><summary><span class="st-title">${esc(s.title)}</span><span class="st-files">${s.kind === 'investigate' ? 'investigates, writes no files' : s.files.map(esc).join(', ')}</span></summary>
       <p class="st-ins">${esc(s.instructions)}</p>${s.depends_on && s.depends_on.length ? `<p class="st-dep">Starts after ${s.depends_on.map(esc).join(', ')}</p>` : ''}</details></li>`).join('');
-  const facts = [p.language ? esc(p.language) : '', p.test_command ? `tests: <code>${esc(p.test_command)}</code>` : 'no automated tests', `${(p.subtasks || []).length} subtasks`].filter(Boolean).join(' · ');
+  const facts = [p.language ? esc(p.language) : '', p.test_command ? `tests: <code>${esc(p.test_command)}</code>` : 'no automated tests', p.build_command ? `build: <code>${esc(p.build_command)}</code>` : '', `${(p.subtasks || []).length} subtasks`].filter(Boolean).join(' · ');
   let actions = '';
   if (live) {
     const warn = [];
@@ -522,12 +522,23 @@ function progressCard(t) {
   }).join('');
   let phase = '';
   if (t.status === 'testing') phase = 'Running the tests…';
+  else if (t.status === 'building') phase = 'Building…';
   else if (t.status === 'fixing') phase = `Tests failed; fixing (round ${t.fix_rounds + 1} of 3). The fixer reads, edits and re-runs on its own.`;
   else if (t.status === 'running' && !t.workers_online) phase = 'Waiting for a node with a model ready. Load one on the Nodes page.';
-  const head = t.status === 'running' || t.status === 'testing' || t.status === 'fixing'
+  const head = t.status === 'running' || t.status === 'testing' || t.status === 'building' || t.status === 'fixing'
     ? `Working · ${done} of ${specs.length} subtasks done` : `${done} of ${specs.length} subtasks done`;
   return `<div class="card-msg progress"><div class="card-head">${head}</div><div class="strip" role="img" aria-label="${done} of ${specs.length} subtasks done">${strip}</div>
     <ul class="p-list">${rows}</ul>${phase ? `<p class="card-note">${esc(phase)}</p>` : ''}</div>`;
+}
+
+// Build outputs: one link each, plus zips. Sizes use the same bytes() as the file browser.
+function artifactsBlock(t) {
+  const arts = t.artifacts || [];
+  if (t.build_status === 'failed') return `<details class="testout"><summary>The build failed</summary><pre class="out">${esc(t.build_output || '')}</pre></details>`;
+  if (!arts.length) return '';
+  const links = arts.map((a) => `<a href="/api/tasks/${t.id}/artifact?path=${encodeURIComponent(a.path)}">${esc(a.path)} <span class="muted">(${bytes(a.bytes)})</span></a>`).join('');
+  return `<div class="changed"><span class="hint">Build outputs</span>${links}</div>
+    <div class="card-actions"><a href="/api/tasks/${t.id}/artifacts.zip"><button class="small">artifacts.zip</button></a><a href="/api/tasks/${t.id}/download?artifacts=1"><button class="small">Source and artifacts .zip</button></a></div>`;
 }
 
 function resultCard(t, m) {
@@ -536,6 +547,7 @@ function resultCard(t, m) {
   const tone = /tests still fail/.test(m.text) ? 'warn' : 'good';
   return `<div class="card-msg result ${tone}"><div class="card-head">${tone === 'good' ? 'Finished' : 'Finished with failing tests'}</div><p>${esc(m.text)}</p>
     ${files ? `<div class="changed"><span class="hint">${m.round > 1 ? 'Changed in this request' : 'Files'}</span>${files}</div>` : ''}
+    ${latest ? artifactsBlock(t) : ''}
     ${latest && t.test_output && t.test_status !== 'passed' ? `<details class="testout"><summary>Last test output</summary><pre class="out">${esc(t.test_output)}</pre></details>` : ''}
     ${(taskRounds || []).some((r) => r.round === m.round) ? `<div class="card-actions"><button class="small" data-act="show-changes" data-round="${m.round}">Changes</button></div>` : ''}
     ${latest ? `<div class="card-actions"><a href="/api/tasks/${t.id}/download"><button class="primary">Download .zip</button></a><span class="hint">Want changes? Send a follow-up below; it builds on these files.</span></div>` : ''}</div>`;
@@ -614,7 +626,7 @@ function renderFiles(t) {
   setHTML('tv-files', files.map((f) => {
     const parts = f.path.split('/'), out = [];
     parts.slice(0, -1).forEach((d, i) => { const k = parts.slice(0, i + 1).join('/'); if (!seen.has(k)) { seen.add(k); out.push(`<div class="fb-dir" style="padding-left:${i * 14}px">${esc(d)}/</div>`); } });
-    out.push(`<a href="#" data-act="view-file" data-path="${esc(f.path)}" style="padding-left:${(parts.length - 1) * 14}px">${esc(parts[parts.length - 1])} <span class="muted">(${bytes(f.bytes)})</span></a>`);
+    out.push(`<div class="fb-row" style="padding-left:${(parts.length - 1) * 14}px"><input type="checkbox" class="fb-tick" value="${esc(f.path)}" aria-label="Tick ${esc(f.path)}"><a href="#" data-act="view-file" data-path="${esc(f.path)}">${esc(parts[parts.length - 1])} <span class="muted">(${bytes(f.bytes)})</span></a></div>`);
     return out.join('');
   }).join(''));
   $('files-dl').href = `/api/tasks/${t.id}/download`;
@@ -725,6 +737,17 @@ async function taskAction(act, el) {
   $('thread')._scrolled = false;
   pollTask(); refresh();
 }
+
+// Zip the ticked files: a form post, so the browser streams the download.
+$('files-zip').onclick = () => {
+  const paths = [...document.querySelectorAll('.fb-tick:checked')].map((c) => c.value);
+  if (!paths.length) { toast('Tick the files to zip first'); return; }
+  const f = document.createElement('form');
+  f.method = 'POST'; f.action = `/api/tasks/${pageArg}/zip`;
+  const i = document.createElement('input');
+  i.type = 'hidden'; i.name = 'paths'; i.value = paths.join('\n');
+  f.appendChild(i); document.body.appendChild(f); f.submit(); f.remove();
+};
 
 async function viewFile(path) {
   if (taskDetail) renderFiles(taskDetail);
