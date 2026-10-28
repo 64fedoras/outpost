@@ -21,7 +21,7 @@ shipped by 0.8.0) and the notes on what is untested.
 - Linux machines use a single admin login (kept in the private project artifact, not in the repo).
 - The Add-node command shown in the UI must be a single paste with no scp line:
   `sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install node --join TOKEN`
-- Update README.md for every user-visible change. **Patch versions are automatic**: every push to `main` is built as the next patch after the latest `v*` tag (0.8.0 -> 0.8.1 -> 0.8.2), stamped at build time by `.github/next-version.sh` and `OUTPOST_VERSION` in `build.sh`, with nothing committed back. PRs must not bump `Version`. `const Version` in `proto.go` is only the base: change it by hand (to 0.9.0, 1.0.0, ...) for a minor or major release, and the next build uses it if it is higher than the next patch.
+- Update README.md for every user-visible change. **Patch versions are automatic**: every push to `main` is built as the next patch after the latest `v*` tag (0.8.0 -> 0.8.1 -> 0.8.2), stamped at build time by `.github/next-version.sh` and `OUTPOST_VERSION` in `build.sh`, with nothing committed back. **Minor bumps need no sign-off** (0.8.x -> 0.9.0 is fine whenever a release warrants it); only a **major** bump (1.0.0, 2.0.0) must be deliberate, at the owner's say-so. PRs must not bump `Version` for a patch. `const Version` in `proto.go` is only the base: to move to a new minor or major, change it by hand, and the next build uses it if it is higher than the next patch.
 
 ## The cluster it runs on
 The owner's own cluster: one controller VM, a few Linux nodes (a small 4 GB test VM, a large-RAM CPU server),
