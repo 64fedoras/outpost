@@ -36,6 +36,7 @@
     <div class="side-foot">
       <div class="cluster" id="side-cluster"></div>
       <nav class="side-nav" aria-label="Cluster">
+        <a href="#/projects" data-tab="projects">Projects</a>
         <a href="#/nodes" data-tab="nodes">Nodes <span class="badge hidden" id="badge-nodes"></span></a>
         <a href="#/models" data-tab="models">Models</a>
         <a href="#/updates" data-tab="updates">Updates <span class="badge hidden" id="badge-updates"></span></a>
@@ -56,6 +57,8 @@
         <div class="composer big">
           <textarea id="nt-prompt" rows="4" placeholder="Describe a program, script or change. The planner asks if anything is unclear, then shows you a plan before any work starts."></textarea>
           <div class="composer-bar">
+            <select id="nt-project" class="chip-select" aria-label="Project" title="Start from a project's files"></select>
+            <label class="chip-select attach" title="Attach text files or a .zip of starting files (up to 50 MB)">📎 <span id="nt-attach-n">Attach</span><input type="file" id="nt-files" multiple class="hidden"></label>
             <select id="nt-planner" class="chip-select" aria-label="Planner"></select>
             <select id="nt-model" class="chip-select" aria-label="Claude model"></select>
             <label class="chip-input" id="nt-cap-wrap" title="Spending cap for Claude on this task">cap $<input id="nt-cap" type="number" min="0.05" step="0.25" aria-label="Spending cap in US dollars"></label>
@@ -143,6 +146,26 @@
       </label>
       <div id="releases" style="margin-top:10px"></div>
       <p class="sub wrap" id="ctl-info" style="margin-top:14px"></p>
+    </section>
+
+    <!-- PROJECTS -->
+    <section data-page="projects" class="hidden">
+      <div class="section-head"><h2>Projects</h2></div>
+      <p class="hint">A project keeps its files between tasks. Every task you start in it begins from the project's current files, and one task works in a project at a time (the rest wait). Optionally it clones a git repository and commits each finished round to a branch.</p>
+      <div id="projects-list"></div>
+      <div class="section-head"><h2>New project</h2></div>
+      <div class="card settings-form" id="np-form">
+        <label for="np-name">Name</label><input id="np-name" placeholder="my-api">
+        <label for="np-url">Git URL <span class="hint">(optional; https://… or ssh://… or git@host:path)</span></label><input id="np-url" placeholder="https://github.com/me/repo.git" autocomplete="off">
+        <label for="np-branch">Branch to commit to <span class="hint">(created if missing; default outpost)</span></label><input id="np-branch" placeholder="outpost">
+        <label for="np-token">HTTPS token <span class="hint">(optional; stored encrypted)</span></label><input id="np-token" type="password" autocomplete="off">
+        <label for="np-key">or SSH private key <span class="hint">(optional; stored encrypted)</span></label><textarea id="np-key" rows="3" autocomplete="off"></textarea>
+        <label for="np-test">Test command <span class="hint">(optional)</span></label><input id="np-test" placeholder="go test ./...">
+        <label class="toggle"><input type="checkbox" id="np-push"> push each finished round to the branch</label>
+        <label class="toggle"><input type="checkbox" id="np-pr"> also open a GitHub pull request (needs an HTTPS token)</label>
+        <div class="btns"><button class="primary" id="np-go">Create project</button></div>
+        <div class="error-msg hidden" id="np-err"></div>
+      </div>
     </section>
 
     <!-- SETTINGS -->
