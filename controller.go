@@ -121,8 +121,9 @@ type Controller struct {
 	runtimes  map[string]*RuntimeRec
 	rtCache   *runtimeCache
 	nodeOps   map[string]*nodeOpView
-	pipelines map[string]*pipeline // model setups in progress; cancel stops one
-	peerBad   map[string]time.Time // nodes skipped as model sources until then (served data failing its hash)
+	pipelines map[string]*pipeline         // model setups in progress; cancel stops one
+	jobBlobs  map[string]map[string]string // job -> input path -> file on the controller, for nodes to download
+	peerBad   map[string]time.Time         // nodes skipped as model sources until then (served data failing its hash)
 	tasks     map[string]*Task
 	projects  map[string]*Project // see projects.go
 	reserved  map[string]bool
@@ -221,6 +222,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /v1/runtime/{variant}", c.handleServeRuntime)
 	c.toolchainRoutes(mux)
 	mux.HandleFunc("GET /v1/models/{name}/files/{index}", c.handleServeModelFile)
+	mux.HandleFunc("GET /v1/jobs/{id}/inputs", c.handleServeJobInput)
 	mux.HandleFunc("GET /api/settings", c.auth(c.handleGetSettings))
 	mux.HandleFunc("POST /api/settings", c.auth(c.handleSaveSettings))
 	mux.HandleFunc("GET /api/openrouter/models", c.auth(c.handleOpenRouterModels))
@@ -249,6 +251,9 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/tasks/{id}/resume", c.auth(c.handleResumeTask))
 	mux.HandleFunc("GET /api/tasks/{id}/events", c.auth(c.handleTaskEvents))
 	mux.HandleFunc("GET /api/tasks/{id}/file", c.auth(c.handleTaskFile))
+	mux.HandleFunc("GET /api/tasks/{id}/artifact", c.auth(c.handleTaskArtifact))
+	mux.HandleFunc("GET /api/tasks/{id}/artifacts.zip", c.auth(c.handleTaskArtifactsZip))
+	mux.HandleFunc("POST /api/tasks/{id}/zip", c.auth(c.handleTaskZip))
 	mux.HandleFunc("GET /api/tasks/{id}/rounds", c.auth(c.handleTaskRounds))
 	mux.HandleFunc("GET /api/tasks/{id}/changes", c.auth(c.handleTaskChanges))
 	mux.HandleFunc("POST /api/tasks/{id}/undo", c.auth(c.handleUndoRound))

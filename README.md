@@ -169,7 +169,16 @@ Each task is a conversation:
    (the last 64 KB per call) and is gone when the call ends.
    You can **steer while it works**: a message like "keep the output sorted" goes to every subtask,
    review and test fix that starts after it.
-5. **The result card** lists the files, the test outcome, and a **Download .zip** button.
+5. **The result card** lists the files, the test outcome, and a **Download .zip** button. If the
+   plan has a **build command** (for example `sh build.sh`) and **artifact patterns** (for example
+   `dist/*`), the build runs on an exec node after the tests pass and its outputs appear on the card.
+   Download them one by one, as `artifacts.zip`, or together with the source. A failed build does not
+   fail the task; the card shows the build output and the source stays available. The Project files
+   view has checkboxes and **Zip ticked files**.
+   Files of any size up to 2 GB per job move between the controller and exec nodes in hash-checked
+   pieces (project files over 1 MiB go to the build node, build outputs come back). A node holds a
+   build's output only until the controller has fetched it, and the node's file-sharing port (8444) must
+   be reachable from the controller for files over 1 MiB.
 6. **Follow-ups build on the same code.** Send another message after a task finishes ("add a --top N
    flag") and the planner plans only the files to add or change; workers get the current version
    of each file they change. Claude spend and the cap carry across follow-ups.
@@ -365,7 +374,7 @@ prompt). Nodes reconnect on their own because the node keys and certificate come
 | Config | `tls.crt/key`, `admin.json`, `api_tokens.json`, `settings.json` (secrets encrypted with `secret.key`), `nodes.json` | `node.json` (node key) |
 | Models | `models/<name>/` (only for models stored on the controller) | `models/<name>/` (from Hugging Face or the controller) |
 | llama.cpp | `runtime/<variant>/` (from GitHub releases) | `llama/<build>-<variant>/` |
-| Work | `tasks/<id>/` (conversation, `result.zip`, attachments; `repo/` unless the task is in a project), `projects/<id>/` (`project.json`, `repo/`) | `work/` — deleted after every job |
+| Work | `tasks/<id>/` (conversation, `result.zip`, `artifacts/`, attachments; `repo/` unless the task is in a project), `projects/<id>/` (`project.json`, `repo/`) | `work/` — deleted after every job |
 | Updates | `releases/`, `agent/` | `agent/` |
 
 ## Known limits

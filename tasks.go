@@ -43,6 +43,8 @@ type Plan struct {
 	Language     string        `json:"language"`
 	SetupCommand string        `json:"setup_command"`
 	TestCommand  string        `json:"test_command"`
+	BuildCommand string        `json:"build_command,omitempty"` // runs after the tests pass
+	Artifacts    []string      `json:"artifacts,omitempty"`     // glob patterns (relative to the project root) of files the build produces
 	Subtasks     []PlanSubtask `json:"subtasks"`
 	Note         string        `json:"note,omitempty"` // a sentence or two to the user, shown with the plan
 }
@@ -102,6 +104,9 @@ type Task struct {
 	Events       []TaskEvent     `json:"events"`
 	TestStatus   string          `json:"test_status"` // "" | passed | failing | skipped
 	TestOutput   string          `json:"test_output,omitempty"`
+	BuildStatus  string          `json:"build_status,omitempty"` // "" | passed | failed | skipped
+	BuildOutput  string          `json:"build_output,omitempty"`
+	Artifacts    []Artifact      `json:"artifacts,omitempty"`
 	FixRounds    int             `json:"fix_rounds"`
 	Error        string          `json:"error,omitempty"`
 	ResultBytes  int64           `json:"result_bytes"`
@@ -185,7 +190,7 @@ func (c *Controller) loadTasks() {
 			t.ProjectID = "" // its project is gone; the task keeps its conversation only
 		}
 		switch t.Status {
-		case "queued", "planning", "running", "testing", "fixing", "paused_cap":
+		case "queued", "planning", "running", "testing", "building", "fixing", "paused_cap":
 			t.PausedFrom = t.Status
 			t.Status = "interrupted"
 			for _, s := range t.Subtasks {
@@ -495,6 +500,18 @@ func (c *Controller) handleDownloadTask(w http.ResponseWriter, r *http.Request) 
 	t := c.getTask(r.PathValue("id"))
 	if t == nil {
 		writeJSON(w, 404, map[string]string{"error": "no such task"})
+		return
+	}
+	if r.URL.Query().Get("artifacts") != "" { // source plus build outputs, streamed
+		items := dirItems(t.repoDir(), "")
+		items = append(items, dirItems(t.artifactsDir(), "artifacts/")...)
+		name := slug(t.Title)
+		if name == "" {
+			name = t.ID
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-with-artifacts.zip"`, name))
+		_ = writeZip(w, items)
 		return
 	}
 	zp := filepath.Join(t.dir, "result.zip")
@@ -1074,16 +1091,17 @@ Each worker sees only: the project summary, the list of all subtasks, its own in
 - Include a README.md that explains how to run the project and its tests.
 - Prefer the language's standard library. Avoid anything that needs network access at test time.
 - If the project can be tested automatically, include small tests and give a test_command that runs them from the project root on Linux (for example "python3 -m unittest discover -s tests"). Use setup_command only if something must be installed or built first. Leave test_command empty if testing is not practical.
+- If the project produces something to ship (a binary, a package, a bundle), give a build_command that builds it from the project root (for example "sh build.sh") and artifacts, the glob patterns of the files it produces (for example ["dist/*"]; one * matches within a directory, there is no **). The build runs after the tests pass. Leave both empty for a project that is only source code.
 - Use at most 12 subtasks.
 
-Follow-up requests on an existing project include its current files. Plan only the files to add or change; a subtask that changes an existing file lists it, and its worker gets the file's current content and outputs the complete new version. Keep the summary describing the whole project, and keep test_command running the whole test suite.
+Follow-up requests on an existing project include its current files. Plan only the files to add or change; a subtask that changes an existing file lists it, and its worker gets the file's current content and outputs the complete new version. Keep the summary describing the whole project, and keep test_command running the whole test suite, and keep build_command and artifacts unless the build changes.
 
 Questions: if the request leaves open a choice that would change the design (language, interface, storage, platform, scope) and a wrong guess would waste the work, you may ask before planning, once per request. Prefer sensible defaults; most requests need no questions. To ask, answer with only:
 {"questions": [{"id": "q1", "question": "short question", "options": ["option A", "option B"], "multi": false}], "note": "one sentence on why you are asking"}
 Use at most 4 questions with 2 to 4 short options each; the user can also type their own answer.
 
 Otherwise answer with only a JSON object, no other text:
-{"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "note": "one or two sentences to the user: the approach and any assumption you made", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "instructions": "precise instructions"}]}`
+{"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "build_command": "", "artifacts": [], "note": "one or two sentences to the user: the approach and any assumption you made", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "instructions": "precise instructions"}]}`
 
 // plannerIndexHelp is added to the planner's instructions when the project is
 // too large to paste in, so it sees an index instead.
@@ -1258,6 +1276,18 @@ func validatePlan(p *Plan) error {
 			owner[f] = s.ID
 		}
 	}
+	var pats []string
+	for _, a := range p.Artifacts {
+		a = strings.TrimPrefix(strings.TrimSpace(a), "./")
+		if _, err := safeJoin("/repo", a); err != nil || a == "" {
+			return fmt.Errorf("the artifact pattern %q is not a path inside the project", a)
+		}
+		pats = append(pats, a)
+	}
+	if len(pats) > 20 {
+		return errors.New("the plan lists more than 20 artifact patterns")
+	}
+	p.Artifacts = pats
 	for _, s := range p.Subtasks {
 		for _, d := range s.DependsOn {
 			if !ids[d] {
@@ -1739,6 +1769,9 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		t.TestStatus = "skipped"
 		t.mu.Unlock()
 		t.logf("info", "The plan has no automated tests.")
+		if !c.runBuild(ctx, t) {
+			return
+		}
 		c.finishTask(t)
 		return
 	}
@@ -1771,11 +1804,15 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		node := execs[round%len(execs)]
 		t.setStatus("testing")
 		t.logf("info", "Running tests on %s: %s", c.nodeLabel(node), cmd)
-		inputs, skipped := repoInputs(t.repoDir())
+		inputs, srcs, skipped := repoJobInputs(t.repoDir())
 		if len(skipped) > 0 {
-			t.logf("warn", "Not sent to the test node (over 1 MiB): %s", strings.Join(skipped, ", "))
+			t.logf("warn", "Not sent to the test node (over the 2 GiB limit): %s", strings.Join(skipped, ", "))
 		}
-		out, status, err := c.runExecJob(ctx, node, c.execArgv(node, plan.SetupCommand, plan.TestCommand), inputs, t.Title+" · tests", testTimeout)
+		out, res, err := c.runExecJobFiles(ctx, node, c.execArgv(node, plan.SetupCommand, plan.TestCommand), inputs, srcs, nil, t.Title+" · tests", testTimeout)
+		status := ""
+		if res != nil {
+			status = res.Status
+		}
 		if errors.Is(err, errCancelled) || ctx.Err() != nil {
 			return
 		}
@@ -1806,6 +1843,9 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 			t.TestStatus = "passed"
 			t.mu.Unlock()
 			t.logf("info", "Tests passed.")
+			if !c.runBuild(ctx, t) {
+				return
+			}
 			c.finishTask(t)
 			return
 		}
@@ -1866,23 +1906,6 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		history = append(history, fmt.Sprintf("round %d changed %s", round+1, strings.Join(changed, ", ")))
 		t.logf("info", "Fix round %d changed: %s", round+1, strings.Join(changed, ", "))
 	}
-}
-
-func repoInputs(repo string) ([]FileEntry, []string) {
-	var inputs []FileEntry
-	var skipped []string
-	for _, f := range listRepo(repo) {
-		if f.Bytes > maxRepoFileSize {
-			skipped = append(skipped, f.Path)
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(f.Path)))
-		if err != nil {
-			continue
-		}
-		inputs = append(inputs, inlineFile(f.Path, data))
-	}
-	return inputs, skipped
 }
 
 func (c *Controller) finishTask(t *Task) {
