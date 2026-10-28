@@ -2,15 +2,15 @@
 
 Self-hosted distributed local-AI cluster, written in Go as **one binary** with two modes:
 `controller` (web UI, planning, job dispatch, model and release storage) and `node` (runs
-llama.cpp, runs commands, keeps no job data). Current version: **0.7.3** (`const Version` in `proto.go`).
+llama.cpp, runs commands, keeps no job data). Current version: **0.8.0** (`const Version` in `proto.go`).
 
 The owner uses it to fan programming tasks out across their home machines, as a supplement to Claude Code.
 You describe a task in the web UI; a planner (Claude API, or a local model on a node) splits it into
 subtasks, asks questions if unclear, shows a plan to approve; nodes write the files in parallel; the
 controller reviews, runs tests on an exec-enabled node, fixes failures, and offers a zip.
 
-Read `README.md` for user-facing behaviour and `docs/ROADMAP.md` for the planned work (0.7 to 1.1,
-nothing built yet, decisions pending with the owner).
+Read `README.md` for user-facing behaviour and `docs/ROADMAP.md` for what was built (rows 1 to 23, all
+shipped by 0.8.0) and the notes on what is untested.
 `docs/ARCHITECTURE.md` explains the data folders, node connection, task lifecycle and update flow.
 
 ## Owner preferences (standing)
@@ -95,6 +95,7 @@ although it is imported directly; harmless.
 - Playwright selectors: starter cards also contain words like "Python"; scope with `.opt >> text=...`.
 
 ## Status
+- v0.8.0 is one combined release: roadmap rows 5 to 23 (the features originally grouped as 0.8, 0.9, 1.0 and 1.1) on top of 0.7.3, kept under 0.8.0 at the owner's request. Gaps and deviations are listed in `docs/ROADMAP.md` ("0.8.0 build notes"). **Everything in it is untested on the real cluster**, and the Windows (PowerShell test runs, Go install) and macOS (LaunchAgent) parts are untested on real machines. New code is in `routing.go`, `bestofn.go`, `tasks_autoresume.go`, `tasks_rounds.go`, `tasks_live.go`, `notify.go`, `projects*.go`, `attachments.go`, `model_fit.go`, `controller_peers.go`, `node_peer.go`, `transfer/`, `install_launchd.go`, `toolchain.go`, `controller_toolchain.go`, `controller_files.go`, `node_artifacts.go`, `codeindex.go`, `agent.go`, `tasks_images.go`, `visual.go`, `instructions.go`, `weblookup.go`.
 - v0.7.3 adds OpenRouter as a second cloud planner (`llm_openrouter.go`); the live OpenRouter API is **untested** (no key in the build environment), only a stub (`OUTPOST_OPENROUTER_URL`).
 - v0.7.1 sends task work to the node with the biggest loaded model first and gives fix rounds memory of earlier rounds plus test-named files first.
 - v0.7.0 adds rows 1 to 4 of the roadmap (see `docs/ROADMAP.md`); the Windows service, Defender exclusion and signing are **untested on real Windows**.
@@ -102,5 +103,5 @@ although it is imported directly; harmless.
   is untested on real Windows**; the owner was about to try it and may report `node.log`
   (`C:\ProgramData\outpost\node\node.log`). Defender can still block web-UI updates of an unsigned exe;
   the documented workaround is `Add-MpPreference -ExclusionPath 'C:\ProgramData\outpost'`.
-- The tray icon exists for Linux (desktop sessions) and Windows; macOS has none yet.
-- Next: get the owner's decisions on `docs/ROADMAP.md`, then build releases in order.
+- The tray icon exists for Linux (desktop sessions) and Windows; macOS has a LaunchAgent but no menu bar icon (needs cgo and a Mac).
+- Next: the owner tries 0.8.0 on the cluster and reports what breaks.
