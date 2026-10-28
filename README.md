@@ -154,7 +154,11 @@ window) and which files earlier rounds changed. It treats the tests as the speci
 only edits a test that is clearly wrong.
 
 **Stop** halts a task and keeps its files; a later message continues from there. **Activity** shows
-the controller's full log for the task, and **Files** lets you read any file.
+the controller's full log for the task. **Files** opens a file tree with line numbers and light
+syntax colouring, and a download button per file. Before each request writes a file, the controller
+keeps the previous copy (`tasks/<id>/rounds/<n>/`). A result card's **Changes** button shows a
+unified diff of that request against the files as they are now, and **Undo this request** (latest
+request only, once the task has stopped) puts the files back and removes files the request added.
 
 ## Nodes working together
 

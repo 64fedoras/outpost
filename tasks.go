@@ -435,6 +435,9 @@ func (c *Controller) handleTaskFile(w http.ResponseWriter, r *http.Request) {
 		b = b[:maxRepoFileSize]
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if r.URL.Query().Get("download") != "" {
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+strings.ReplaceAll(filepath.Base(p), "\"", "")+"\"")
+	}
 	w.Write(b)
 }
 
@@ -1404,7 +1407,7 @@ func (c *Controller) runSubtask(ctx context.Context, t *Task, spec PlanSubtask, 
 			continue
 		}
 		for _, f := range spec.Files {
-			if err := writeRepoFile(t.repoDir(), f, got[f]); err != nil {
+			if err := t.writeFile(f, got[f]); err != nil {
 				return err
 			}
 		}
@@ -1591,7 +1594,7 @@ func (c *Controller) plannerWritesSubtask(ctx context.Context, t *Task, spec Pla
 		}
 	}
 	for _, f := range spec.Files {
-		if err := writeRepoFile(t.repoDir(), f, got[f]); err != nil {
+		if err := t.writeFile(f, got[f]); err != nil {
 			return err
 		}
 	}
@@ -1723,7 +1726,7 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		var changed []string
 		for _, b := range blocks {
 			p := strings.TrimPrefix(b.Path, "./")
-			if err := writeRepoFile(t.repoDir(), p, b.Content); err != nil {
+			if err := t.writeFile(p, b.Content); err != nil {
 				t.logf("warn", "Ignored a fix for %s: %v", p, err)
 				continue
 			}
@@ -1891,7 +1894,7 @@ func (c *Controller) reviewSubtask(ctx context.Context, t *Task, spec PlanSubtas
 		if b.Content == orig {
 			continue
 		}
-		if err := writeRepoFile(t.repoDir(), p, b.Content); err == nil {
+		if err := t.writeFile(p, b.Content); err == nil {
 			changed = append(changed, p)
 		}
 	}
