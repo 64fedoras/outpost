@@ -127,6 +127,14 @@ can check detection without joining.
    GPUs, CPU otherwise), gets the model onto the node, and starts it. Downloads resume if
    interrupted and are checked against Hugging Face's SHA-256. Progress shows on the card. The node
    reloads the same model by itself after a reboot or update.
+   **Node-to-node copies:** if another online node already holds the model, the new node copies it from up
+   to 3 such nodes over the LAN (TCP port 8444, 64 MiB chunks, resumable) instead of downloading again or
+   pulling it from the controller. The controller supplies the expected SHA-256, the peers' certificate
+   fingerprints and a one-time token; the node pins each peer's certificate, checks every chunk and then the
+   whole file, and only a match is stored. A peer that sends bad data is skipped for an hour. If no peer
+   works, it falls back to Hugging Face or the controller as before. Models stored on the controller stay
+   there as an optional seed. `outpost install node` opens port 8444 in ufw, firewalld or (Windows, as
+   administrator) Windows Firewall when one is active. Nodes started by hand may need that port opened.
 3. Tick **exec** on at least one node so tasks can run their tests.
    Exec nodes list the tools they have (Go, Python, Node, gcc, git, zip, Chromium; rescanned hourly)
    on their card. The planner is told what each node has and which shell it uses, and each test or

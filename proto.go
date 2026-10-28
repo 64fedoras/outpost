@@ -106,6 +106,29 @@ type Hello struct {
 	Paused            bool         `json:"paused,omitempty"`
 	Tools             []ToolInfo   `json:"tools,omitempty"` // developer tools found, rescanned hourly
 	Shell             string       `json:"shell,omitempty"` // sh | powershell | cmd: what exec jobs run in
+	Peer              *PeerInfo    `json:"peer,omitempty"`  // where this node serves model files to other nodes
+}
+
+// PeerInfo is a node's model-sharing endpoint: the port and the fingerprint
+// of its own self-signed certificate. The controller hands both to nodes that
+// want to download from it, so they can pin the certificate.
+type PeerInfo struct {
+	Port        int    `json:"port"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+// PeerSource is one node a model can be copied from.
+type PeerSource struct {
+	Name        string `json:"name"`
+	Addr        string `json:"addr"` // host:port
+	Fingerprint string `json:"fingerprint"`
+}
+
+// PeerGrant lets the holder of Token download from this node until TTLSeconds
+// pass. TTLSeconds <= 0 revokes the token.
+type PeerGrant struct {
+	Token      string `json:"token"`
+	TTLSeconds int    `json:"ttl_s"`
 }
 
 // NodeRollback asks a node to restart into an older installed version.
@@ -275,6 +298,11 @@ type ModelFile struct {
 type ModelPush struct {
 	Name  string      `json:"name"`
 	Files []ModelFile `json:"files"`
+	// Peers, when set, replace the controller as the source: the node copies
+	// the files from them and checks each against File.SHA256. If that fails the
+	// controller falls back to its normal route.
+	Peers     []PeerSource `json:"peers,omitempty"`
+	PeerToken string       `json:"peer_token,omitempty"`
 }
 
 // ModelLoad starts llama-server with a model. Zero values mean llama.cpp defaults.
@@ -314,14 +342,15 @@ type ModelRemove struct {
 
 // OpStatus reports progress of a long node operation (runtime, model push, load).
 type OpStatus struct {
-	Op         string  `json:"op"`     // runtime | model.push | model.load | model.unload | model.remove
-	Target     string  `json:"target"` // model name or runtime variant
-	State      string  `json:"state"`  // downloading | verifying | installing | loading | ready | done | failed
-	Progress   float64 `json:"progress"`
-	BytesDone  int64   `json:"bytes_done"`
-	BytesTotal int64   `json:"bytes_total"`
-	Error      string  `json:"error,omitempty"`
-	Detail     string  `json:"detail,omitempty"` // e.g. the RPC endpoint once ready
+	Op         string   `json:"op"`     // runtime | model.push | model.load | model.unload | model.remove
+	Target     string   `json:"target"` // model name or runtime variant
+	State      string   `json:"state"`  // downloading | verifying | installing | loading | ready | done | failed
+	Progress   float64  `json:"progress"`
+	BytesDone  int64    `json:"bytes_done"`
+	BytesTotal int64    `json:"bytes_total"`
+	Error      string   `json:"error,omitempty"`
+	Detail     string   `json:"detail,omitempty"`    // e.g. the RPC endpoint once ready
+	BadPeers   []string `json:"bad_peers,omitempty"` // nodes that served data failing its hash check
 }
 
 // InferenceSpec is the spec of a job with kind "inference".
