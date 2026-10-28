@@ -493,6 +493,14 @@ Sign out, and **Sign out everywhere**. **API tokens** are named, shown once, sto
 as `Authorization: Bearer opt_…` to any `/api/` endpoint a script needs (state, tasks and so on).
 Tokens cannot manage tokens, sessions, the certificate or backups; only a browser sign-in can.
 
+**Browser hardening.** Every controller response carries `Content-Security-Policy` (scripts, styles and
+images only from the controller itself, no inline code), `X-Frame-Options: DENY`,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cross-Origin-Opener-Policy` and a
+`Permissions-Policy` that turns off camera, microphone and location. There is deliberately no
+`Strict-Transport-Security`: the controller's certificate is self-signed, and HSTS would take away the
+browser's "continue anyway" button after a certificate change. The web UI therefore has no `style=`
+attributes or inline handlers; new UI code must use CSS classes and `addEventListener`.
+
 **Settings → HTTPS certificate.** Paste a certificate chain and key (PEM) from your own CA or a
 Let's Encrypt DNS-01 certificate. Connected nodes (0.7.0 and newer) are told the new fingerprint
 first and confirm it, then the controller switches without a restart. Nodes that were offline, or

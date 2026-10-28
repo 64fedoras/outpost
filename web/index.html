@@ -23,8 +23,8 @@
 <div id="setup" class="card hidden">
   <h1>Set up Outpost</h1>
   <p class="sub wrap">Choose an admin password. You only do this once.</p>
-  <div class="note" style="margin:8px 0"><b>Whoever opens this page first sets the password</b> and controls this cluster. Do it now, from a machine you trust; once it is set, this screen never appears again.</div>
-  <div class="note hidden" id="setup-blocked" style="margin:8px 0">This address is not allowed to do first-run setup. Open the web UI from the local network, or start the controller with <code>--setup-allow-from</code>.</div>
+  <div class="note u7"><b>Whoever opens this page first sets the password</b> and controls this cluster. Do it now, from a machine you trust; once it is set, this screen never appears again.</div>
+  <div class="note hidden u7" id="setup-blocked">This address is not allowed to do first-run setup. Open the web UI from the local network, or start the controller with <code>--setup-allow-from</code>.</div>
   <form id="setup-form">
     <label for="su-new">New password (8+ characters)</label><input id="su-new" type="password" autocomplete="new-password">
     <label for="su-new2">Repeat password</label><input id="su-new2" type="password" autocomplete="new-password">
@@ -63,7 +63,7 @@
   </aside>
   <div class="scrim hidden" id="scrim"></div>
   <div class="content">
-  <div id="offline-banner" class="note bad hidden" style="margin:0;border-radius:0;text-align:center"><b>Can't reach the controller.</b> Showing the last data received; retrying every 2 seconds. If this lasts, check <code>sudo systemctl status outpost-controller</code> on the controller.</div>
+  <div id="offline-banner" class="note bad hidden u1"><b>Can't reach the controller.</b> Showing the last data received; retrying every 2 seconds. If this lasts, check <code>sudo systemctl status outpost-controller</code> on the controller.</div>
 
     <!-- NEW TASK -->
     <section data-page="new" class="page-new hidden">
@@ -134,15 +134,15 @@
     <main class="page-plain">
     <!-- NODES -->
     <section data-page="nodes" class="hidden">
-      <div class="section-head"><h2>Nodes</h2><span class="sub" id="node-count" style="margin:0"></span><span class="spacer"></span><button id="btn-add" class="primary">Add node</button></div>
+      <div class="section-head"><h2>Nodes</h2><span class="sub u2" id="node-count"></span><span class="spacer"></span><button id="btn-add" class="primary">Add node</button></div>
       <div id="nodes" class="grid"></div>
-      <div class="section-head"><h2>Recent jobs</h2><span class="sub" style="margin:0">every model call and command sent to a node</span></div>
+      <div class="section-head"><h2>Recent jobs</h2><span class="sub u2">every model call and command sent to a node</span></div>
       <div id="jobs"></div>
     </section>
 
     <!-- MODELS -->
     <section data-page="models" class="hidden">
-      <div class="section-head"><h2>Model library</h2><span class="sub" id="models-disk" style="margin:0"></span></div>
+      <div class="section-head"><h2>Model library</h2><span class="sub u2" id="models-disk"></span></div>
       <p class="hint">Each model is either <b>downloaded by each node</b> straight from Hugging Face when you load it (uses no controller space; nodes need internet), or <b>stored on the controller</b> once and copied to nodes over your network.</p>
       <div id="models-list"></div>
       <div class="section-head"><h2>Suggested coding models</h2></div>
@@ -152,11 +152,11 @@
       <div class="catalog" id="catalog"></div>
       <div class="section-head"><h2>Any model from Hugging Face</h2></div>
       <div class="card">
-        <div class="btns" style="flex-wrap:nowrap">
+        <div class="btns u3">
           <input id="hf-repo" placeholder="owner/repo, e.g. unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF" autocomplete="off">
           <button id="hf-list">List files</button>
         </div>
-        <div id="hf-files" style="margin-top:10px"></div>
+        <div class="u4" id="hf-files"></div>
       </div>
       <div class="section-head"><h2>llama.cpp builds</h2><span class="spacer"></span><button id="rt-check" class="small">Check for a newer llama.cpp</button></div>
       <p class="hint">The controller downloads the matching build from llama.cpp's GitHub releases the first time a node needs it: Vulkan for nodes with a GPU, CPU otherwise.</p>
@@ -173,8 +173,8 @@
         <b>Drop new Outpost binaries here</b> or click to choose. Upload one per platform you use
         (for example <code>outpost-linux-amd64</code>); the controller reads each file's platform and version.
       </label>
-      <div id="releases" style="margin-top:10px"></div>
-      <p class="sub wrap" id="ctl-info" style="margin-top:14px"></p>
+      <div class="u4" id="releases"></div>
+      <p class="sub wrap u5" id="ctl-info"></p>
     </section>
 
     <!-- PROJECTS -->
@@ -204,7 +204,7 @@
         <div class="card">
           <p class="hint">Claude plans tasks, writes anything the local models cannot, and fixes failing tests. Use a separate API key for Outpost and set a monthly limit on it in the Claude Console as a backstop.</p>
           <label for="set-key">API key <span id="set-key-state"></span></label>
-          <div class="btns" style="flex-wrap:nowrap"><input id="set-key" type="password" placeholder="sk-ant-…" autocomplete="off"><button id="set-key-save">Save</button><button id="set-key-clear" class="danger">Remove</button></div>
+          <div class="btns u3"><input id="set-key" type="password" placeholder="sk-ant-…" autocomplete="off"><button id="set-key-save">Save</button><button id="set-key-clear" class="danger">Remove</button></div>
           <div class="row2">
             <div><label for="set-model">Default Claude model</label><select id="set-model"></select></div>
             <div><label for="set-cap">Default spending cap per task (USD)</label><input id="set-cap" type="number" min="0.05" step="0.25"></div>
@@ -236,23 +236,23 @@
         <div class="card">
           <p class="hint">Optional second cloud provider. Pick OpenRouter as the planner to plan, write what the nodes cannot, and fix failing tests with any model it offers. It shares the per-task spending cap above, using the cost OpenRouter reports for each call. Use a separate key and set a credit limit on it at openrouter.ai.</p>
           <label for="set-or-key">API key <span id="set-or-key-state"></span></label>
-          <div class="btns" style="flex-wrap:nowrap"><input id="set-or-key" type="password" placeholder="sk-or-…" autocomplete="off"><button id="set-or-key-save">Save</button><button id="set-or-key-clear" class="danger">Remove</button></div>
+          <div class="btns u3"><input id="set-or-key" type="password" placeholder="sk-or-…" autocomplete="off"><button id="set-or-key-save">Save</button><button id="set-or-key-clear" class="danger">Remove</button></div>
           <label for="set-or-model">Model <span id="set-or-model-state" class="muted"></span></label>
-          <div class="btns" style="flex-wrap:nowrap"><input id="set-or-model" list="or-models" placeholder="e.g. anthropic/claude-sonnet-5-5" autocomplete="off"><button id="set-or-model-save">Save model</button></div>
+          <div class="btns u3"><input id="set-or-model" list="or-models" placeholder="e.g. anthropic/claude-sonnet-5-5" autocomplete="off"><button id="set-or-model-save">Save model</button></div>
           <datalist id="or-models"></datalist>
         </div>
         <div class="section-head"><h2>Hugging Face</h2></div>
         <div class="card">
           <p class="hint">Only needed for gated models (accept the model's license on huggingface.co first).</p>
           <label for="set-hf">Access token <span id="set-hf-state"></span></label>
-          <div class="btns" style="flex-wrap:nowrap"><input id="set-hf" type="password" placeholder="hf_…" autocomplete="off"><button id="set-hf-save">Save</button><button id="set-hf-clear" class="danger">Remove</button></div>
+          <div class="btns u3"><input id="set-hf" type="password" placeholder="hf_…" autocomplete="off"><button id="set-hf-save">Save</button><button id="set-hf-clear" class="danger">Remove</button></div>
         </div>
         <div class="section-head"><h2>Notifications</h2></div>
         <div class="card">
           <p class="hint">Get told when a task needs you or finishes. Every notification links to the task.</p>
           <label>Events</label>
           <div id="nf-events"></div>
-          <label class="check" style="margin-top:10px"><input type="checkbox" id="nf-browser"> Browser notifications while an Outpost tab is open <span class="muted" id="nf-browser-state"></span></label>
+          <label class="check u4"><input type="checkbox" id="nf-browser"> Browser notifications while an Outpost tab is open <span class="muted" id="nf-browser-state"></span></label>
           <label for="nf-ntfy">ntfy topic URL <span class="muted">· e.g. https://ntfy.sh/my-topic, or your own ntfy server</span></label><input id="nf-ntfy" placeholder="https://ntfy.sh/my-topic" autocomplete="off">
           <label for="nf-ntfy-token">ntfy access token <span class="muted" id="nf-ntfy-token-state"></span></label><input id="nf-ntfy-token" type="password" autocomplete="off" placeholder="only for protected topics; blank keeps the saved one">
           <label for="nf-webhook">Webhook URL <span class="muted">· JSON POST: Home Assistant, Discord, anything that accepts one</span></label><input id="nf-webhook" placeholder="https://…" autocomplete="off">
@@ -278,10 +278,10 @@
           <label>Signed-in browsers</label>
           <div id="sessions-list"></div>
           <div class="modal-foot"><button class="danger" id="sess-all">Sign out everywhere</button></div>
-          <label for="tok-name" style="margin-top:14px">API tokens <span class="muted">· for scripts: <code>Authorization: Bearer …</code></span></label>
+          <label class="u5" for="tok-name">API tokens <span class="muted">· for scripts: <code>Authorization: Bearer …</code></span></label>
           <div id="tokens-list"></div>
-          <div class="btns" style="flex-wrap:nowrap"><input id="tok-name" placeholder="Token name, e.g. nightly script" autocomplete="off"><button id="tok-create">Create token</button></div>
-          <div class="note hidden" id="tok-new" style="margin-top:8px"></div>
+          <div class="btns u3"><input id="tok-name" placeholder="Token name, e.g. nightly script" autocomplete="off"><button id="tok-create">Create token</button></div>
+          <div class="note hidden u6" id="tok-new"></div>
         </div>
         <div class="section-head"><h2>HTTPS certificate</h2></div>
         <div class="card">
@@ -297,7 +297,7 @@
           <label for="bk-pass">Passphrase (8+ characters)</label><input id="bk-pass" type="password" autocomplete="new-password">
           <label class="check"><input type="checkbox" id="bk-large"> Include models, runtimes and releases (large)</label>
           <div class="modal-foot"><button class="primary" id="bk-download">Download backup</button></div>
-          <label class="check" style="margin-top:14px"><input type="checkbox" id="bk-on"> Nightly backup to a folder on the controller (keeps the last 7)</label>
+          <label class="check u5"><input type="checkbox" id="bk-on"> Nightly backup to a folder on the controller (keeps the last 7)</label>
           <label for="bk-dir">Folder (full path, e.g. an NFS mount)</label><input id="bk-dir" placeholder="/mnt/nas/outpost-backups">
           <label for="bk-sched-pass">Passphrase for scheduled backups <span class="muted" id="bk-pass-state"></span></label><input id="bk-sched-pass" type="password" autocomplete="new-password" placeholder="leave blank to keep the saved one">
           <div class="modal-foot"><button id="bk-sched-save">Save schedule</button></div>
@@ -313,7 +313,7 @@
   <div class="modal">
     <h3>Add a node</h3>
     <p class="hint">Linux: installs a service that starts at boot and runs as the user who ran <code>sudo</code>. Windows: runs in the background with a tray icon and starts at sign-in. Each code works once and expires in 1 hour. Once a node joins with it, a new code appears here, so you can add the next node straight away.</p>
-    <div id="add-note" class="note hidden" style="margin:8px 0"></div>
+    <div id="add-note" class="note hidden u7"></div>
     <label for="ssh-target">Run over SSH from this computer (optional, e.g. admin@192.0.2.11)</label>
     <input id="ssh-target" placeholder="user@host" autocomplete="off">
     <label>Linux (copy <code>outpost-linux-amd64</code> to the node's home folder first, e.g. <code>scp outpost-linux-amd64 admin@IP:~/</code>)</label>
@@ -322,7 +322,7 @@
     <div class="codebox"><span id="cmd-win"></span><button data-copy="cmd-win">Copy</button></div>
     <label>macOS (runs in the foreground for now)</label>
     <div class="codebox"><span id="cmd-mac"></span><button data-copy="cmd-mac">Copy</button></div>
-    <p class="hint" style="margin-top:10px">The node connects to <code id="add-url"></code>. If that address is wrong, reinstall the controller with <code>--advertise https://IP:8443</code>.</p>
+    <p class="hint u4">The node connects to <code id="add-url"></code>. If that address is wrong, reinstall the controller with <code>--advertise https://IP:8443</code>.</p>
     <div class="modal-foot"><button id="add-regen" title="Make a new code and cancel the current one">New code</button><button data-close>Done</button></div>
   </div>
 </div>
@@ -338,11 +338,11 @@
       <div><label for="load-ctx">Context size (tokens)</label><input id="load-ctx" type="number" min="512" step="1024"></div>
       <div><label for="load-ngl">GPU layers</label><select id="load-ngl"><option value="">Automatic (fit to VRAM)</option><option value="all">All on GPU</option><option value="0">CPU only</option></select></div>
     </div>
-    <details id="load-pool-wrap" class="hidden" style="margin-top:8px"><summary class="hint">Pool memory from other nodes (for models too big for this one)</summary>
-      <p class="hint" style="margin-top:6px">Helpers lend their RAM and VRAM over your network with llama.cpp's RPC mode; this node runs the model. Helpers stop their own model while lending, and only this node's address can connect to them. Expect slower generation over a home network: best for models that would not fit otherwise. Trusted networks only: pooling traffic is neither encrypted nor authenticated beyond that IP check.</p>
+    <details id="load-pool-wrap" class="hidden u6"><summary class="hint">Pool memory from other nodes (for models too big for this one)</summary>
+      <p class="hint u8">Helpers lend their RAM and VRAM over your network with llama.cpp's RPC mode; this node runs the model. Helpers stop their own model while lending, and only this node's address can connect to them. Expect slower generation over a home network: best for models that would not fit otherwise. Trusted networks only: pooling traffic is neither encrypted nor authenticated beyond that IP check.</p>
       <div id="load-pool"></div>
     </details>
-    <details style="margin-top:8px"><summary class="hint">Advanced</summary>
+    <details class="u6"><summary class="hint">Advanced</summary>
       <div class="row2">
         <div><label for="load-threads">CPU threads (0 = automatic)</label><input id="load-threads" type="number" min="0" value="0"></div>
         <div><label for="load-extra">Extra llama-server arguments</label><input id="load-extra" placeholder="--n-cpu-moe 20" class="mono"></div>
@@ -386,8 +386,8 @@
 
 <div id="modal-job" class="overlay hidden">
   <div class="modal wide">
-    <div style="display:flex;align-items:center;gap:10px">
-      <h3 style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="job-title"></h3>
+    <div class="u9">
+      <h3 class="u10" id="job-title"></h3>
       <span id="job-status" class="pill"></span>
     </div>
     <div class="kv" id="job-kv"></div>
@@ -403,7 +403,7 @@
   <div class="modal wide">
     <h3>Activity</h3>
     <p class="hint">Everything the controller did for this task, newest at the bottom.</p>
-    <div class="events" id="tv-events" style="max-height:60vh"></div>
+    <div class="events u11" id="tv-events"></div>
     <div class="modal-foot"><button data-close>Close</button></div>
   </div>
 </div>
