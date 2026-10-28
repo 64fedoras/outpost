@@ -53,7 +53,7 @@ Windows nodes currently run as a per-user process started from the HKCU Run key,
   - **A self-signed certificate** imported into Trusted Publishers on the owner's own machines. Free, and stops "unknown publisher" prompts, but does not help with Defender's machine-learning detections.
 - **Fallback, whatever the signing choice:** the installer adds the Defender exclusion for `C:\ProgramData\outpost` itself, with a printed explanation, instead of telling the user to run the command.
 
-Risk: llama.cpp's Vulkan backend under a Windows service (session 0) must be tested on the 16 GB GPU machine (windows-desktop) before this ships. If the GPU is not usable there, the service starts llama-server in the user's desktop session through the tray instead.
+Risk: llama.cpp's Vulkan backend under a Windows service (session 0) must be tested on a Windows machine with a GPU before this ships. If the GPU is not usable there, the service starts llama-server in the user's desktop session through the tray instead.
 
 Sources: [Code signing options for Windows apps](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options), [Artifact Signing pricing](https://azure.microsoft.com/pricing/details/trusted-signing/).
 
@@ -274,7 +274,7 @@ Each project has an `OUTPOST.md` at its root, editable in project settings, that
 
 When a task's artifacts include `outpost-<platform>` binaries, the result card offers Publish to Updates, which uploads them as a release (`handleUploadRelease`). Updating the controller or nodes is still the user's click on the Updates tab, and rollback works as it does now. A task never updates the controller it is running on by itself.
 
-**Expectations:** local models alone will struggle with Outpost-sized changes. The realistic setup is Claude as planner and judge, the largest model on the big node (node02) for hard subtasks, and the GPUs for the rest. Agent mode and the index are what make that workable.
+**Expectations:** local models alone will struggle with Outpost-sized changes. The realistic setup is Claude as planner and judge, the largest model on the biggest-RAM node for hard subtasks, and the GPUs for the rest. Agent mode and the index are what make that workable.
 
 ---
 
@@ -284,7 +284,7 @@ Every feature gets Go unit tests and an end-to-end run with the mock Claude and 
 
 | Area | How it is tested without the real hardware | Gap the owner covers |
 | --- | --- | --- |
-| Windows service, signing, Defender | Cross-compile, `go vet`, signature check with `osslsigncode verify` | Install and update on windows-desktop, including GPU use under the service |
+| Windows service, signing, Defender | Cross-compile, `go vet`, signature check with `osslsigncode verify` | Install and update on a Windows machine with a GPU, including GPU use under the service |
 | Routing, best-of-N, auto-resume | Fake nodes with set speeds and tiers; kill and restart the controller mid-task | Real speed differences across the four nodes |
 | Live output, notifications | Fake llama-server that streams; local ntfy and webhook receivers | Phone pushes from the real ntfy topic |
 | Git export | Local bare repo as the remote | Push to the real remote |
@@ -307,4 +307,4 @@ Every feature gets Go unit tests and an end-to-end run with the mock Claude and 
 - [ ] Which git host would export push to: GitHub, a self-hosted Gitea or Forgejo, or something else?
 - [ ] Is ntfy, Home Assistant or Discord already in use, so notifications target what is used?
 - [x] Model transfers: controller storage kept as an optional seed.
-- [ ] For working on Outpost: which node gets Go and Chromium, node02 or the gaming desktop?
+- [ ] For working on Outpost: which node gets Go and Chromium, the biggest-RAM node or a GPU desktop?
