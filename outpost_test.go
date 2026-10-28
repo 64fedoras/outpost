@@ -11,7 +11,7 @@ func TestCompareVersions(t *testing.T) {
 	cases := []struct {
 		a, b string
 		want int
-	}{{"0.2.10", "0.2.9", 1}, {"0.3.0", "0.3.0", 0}, {"v1.0", "1.0.0", 0}, {"0.2.1", "0.10.0", -1}}
+	}{{"0.2.10", "0.2.9", 1}, {"0.3.0", "0.3.0", 0}, {"v1.0", "1.0.0", 0}, {"0.2.1", "0.10.0", -1}, {"0.8.1", "0.8.0", 1}, {"0.8.10", "0.8.9", 1}, {"0.9.0", "0.8.12", 1}}
 	for _, c := range cases {
 		if got := compareVersions(c.a, c.b); got != c.want {
 			t.Errorf("compareVersions(%q,%q)=%d want %d", c.a, c.b, got, c.want)
