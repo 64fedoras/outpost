@@ -218,6 +218,12 @@ button.send:hover { opacity: .88; }
 .starter { text-align: left; white-space: normal; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; background: transparent; }
 .starter b { font-size: 13px; font-weight: 550; }
 .starter span { font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.optline { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+.optline .link-btn { text-decoration: underline; text-decoration-style: dotted; }
+.opts { margin-top: 10px; padding: 12px 14px; }
+.opts-grid { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.opt-field { width: auto; max-width: 260px; font-size: 12.5px; padding: 4px 8px; border-radius: 8px; }
+.task-menu { display: none; }
 .setup { margin-top: 22px; font-size: 13px; color: var(--muted); }
 .setup b { color: var(--ink); font-weight: 550; }
 .setup ol { margin: 6px 0 0 18px; padding: 0; }
@@ -304,7 +310,9 @@ fieldset.q[disabled] .opt span { opacity: .6; cursor: default; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .p-who { color: var(--muted); font-size: 12px; text-align: right; }
 .p-pending .p-title { color: var(--muted); }
-.changed { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-family: var(--mono); font-size: 12px; }
+.changed { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; font-family: var(--mono); font-size: 12px; }
+.changed a { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; color: var(--ink); text-decoration: none; }
+.changed a:hover { border-color: var(--accent); }
 .changed .hint { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; width: 100%; margin: 0; }
 .card-msg.quiet { background: transparent; }
 .asked { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
@@ -320,13 +328,20 @@ fieldset.q[disabled] .opt span { opacity: .6; cursor: default; }
   .side.open { transform: none; }
   .side-close { display: inline-block; }
   .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 25; }
-  .page-task { height: calc(100vh - 49px); }
-  .page-new { padding-top: 6vh; padding-left: 16px; padding-right: 16px; }
+  .page-task { height: calc(100vh - 49px); height: calc(100dvh - 49px); }
+  /* On a task the title bar carries the menu button, so the global top bar steps aside. */
+  .on-task .topbar { display: none; }
+  .on-task .page-task { height: 100vh; height: 100dvh; }
+  .task-menu { display: inline-block; flex: none; margin-left: -8px; }
   .starters { grid-template-columns: 1fr; }
+  .page-new { padding-top: 6vh; padding-left: 16px; padding-right: 16px; }
   .task-bar, .thread, .dock { padding-left: 16px; padding-right: 16px; }
-  .task-bar { padding-top: 8px; padding-bottom: 8px; gap: 6px; }
-  .task-bar-tools { flex-wrap: nowrap; overflow-x: auto; width: 100%; padding-bottom: 2px; }
-  .spend-bar { width: 40px; }
+  .task-bar { padding-top: 6px; padding-bottom: 6px; gap: 4px 8px; }
+  .task-bar-main { flex-basis: 100%; }
+  .task-bar-tools { width: 100%; flex-wrap: wrap; }
+  .task-bar-tools .spend { margin-right: auto; }
+  .opt-field { max-width: 100%; }
+  .spend-bar { display: none; }
   .page-plain { padding: 14px 16px 40px; }
   .p-list li { grid-template-columns: 18px minmax(0, 1fr); }
   .p-who { grid-column: 2; text-align: left; }
