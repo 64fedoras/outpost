@@ -1,7 +1,7 @@
 #!/bin/sh
 # Regenerates THIRD_PARTY_NOTICES.txt from vendor/ and bundled/. Run after `go mod vendor`.
 set -e
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 out=THIRD_PARTY_NOTICES.txt
 {
 cat <<'H'

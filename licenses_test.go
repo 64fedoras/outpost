@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Every vendored module must have its licence in THIRD_PARTY_NOTICES.txt (run gen_notices.sh).
+// Every vendored module must have its licence in THIRD_PARTY_NOTICES.txt (run scripts/gen_notices.sh).
 func TestNoticesCoverVendoredModules(t *testing.T) {
 	mods, err := os.ReadFile("vendor/modules.txt")
 	if err != nil {
@@ -18,7 +18,7 @@ func TestNoticesCoverVendoredModules(t *testing.T) {
 	for _, m := range regexp.MustCompile(`(?m)^# (\S+) (\S+)$`).FindAllStringSubmatch(string(mods), -1) {
 		found++
 		if !strings.Contains(thirdPartyNotices, "Go module "+m[1]+" "+m[2]) {
-			t.Errorf("THIRD_PARTY_NOTICES.txt lacks %s %s; run sh gen_notices.sh", m[1], m[2])
+			t.Errorf("THIRD_PARTY_NOTICES.txt lacks %s %s; run sh scripts/gen_notices.sh", m[1], m[2])
 		}
 	}
 	if found == 0 {
