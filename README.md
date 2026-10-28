@@ -156,6 +156,15 @@ only edits a test that is clearly wrong.
 **Stop** halts a task and keeps its files; a later message continues from there. **Activity** shows
 the controller's full log for the task, and **Files** lets you read any file.
 
+### Project instructions
+
+Settings has a **Project instructions** box for standing rules, like a `CLAUDE.md` ("vendor all
+dependencies, no cgo, keep the web UI vanilla JS"). The text is copied into each task when you create it
+and goes at the top of every planner, worker, reviewer and fix prompt of that task. If the task's files
+contain an `OUTPOST.md` at the root, its text is added as well. Both together are cut at 8,000 characters
+so a small local model keeps room for the code. Changing the box affects new tasks only. Per-project
+instructions will replace this once projects exist.
+
 ## Nodes working together
 
 There are two ways for nodes to share one task.
