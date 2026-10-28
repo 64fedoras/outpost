@@ -39,3 +39,6 @@ Vanilla JavaScript single-page app embedded in the binary, no build step: sideba
 
 ## Platforms
 Linux amd64 and arm64, macOS amd64 and arm64, Windows amd64, all built with CGO disabled. Linux service via systemd; tray icon via D-Bus StatusNotifierItem (Linux) and Win32 (Windows); none yet for macOS (a per-user LaunchAgent, `install_launchd.go`, starts the node there).
+
+## Repository layout
+Everything Go is `package main` in the repository root (one binary), with `transfer/` as the only sub-package. `web/` is embedded with `go:embed`. `bundled/` holds the gzipped libgomp; `vendor/` all dependencies; `winres/` the Windows version info and manifest; `scripts/` the notices and re-vendoring helpers; `build.sh` and `build.ps1` the build scripts (kept at the root because everything refers to them); `testing/` the end-to-end rig; `.github/` CI, release stamping and Dependabot.
