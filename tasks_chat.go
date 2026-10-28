@@ -111,7 +111,7 @@ func (t *Task) steeringText() string {
 // so far (for follow-ups), earlier requests, and this round's conversation.
 func (c *Controller) plannerPrompt(t *Task, budget int, want []string) string {
 	t.mu.Lock()
-	round := t.Round
+	round, seeded := t.Round, t.Seeded
 	msgs := append([]TaskMessage(nil), t.Messages...)
 	t.mu.Unlock()
 	var b strings.Builder
@@ -131,7 +131,15 @@ func (c *Controller) plannerPrompt(t *Task, budget int, want []string) string {
 		}
 	}
 	files := listRepo(t.repoDir())
-	if round > 1 && len(files) > 0 {
+	if round == 1 && len(files) > 0 && seeded {
+		b.WriteString("This request starts from existing files (a project or an attached archive). Plan only the files to add or change.\n\n")
+		if tc := c.projectTestCommand(t); tc != "" {
+			fmt.Fprintf(&b, "The project's test command is: %s\n\n", tc)
+		}
+		b.WriteString("Current project files:\n")
+		b.WriteString(repoSnapshot(t.repoDir(), budget/2))
+		b.WriteString("\n")
+	} else if round > 1 && len(files) > 0 {
 		b.WriteString("This is a follow-up request on an existing project. Plan only the files to add or change.\n\n")
 		if prevPlan != nil {
 			fmt.Fprintf(&b, "Project: %s\n%s\nLanguage: %s\nTest command so far: %s\n\n", prevPlan.Title, prevPlan.Summary, prevPlan.Language, prevPlan.TestCommand)
@@ -156,6 +164,7 @@ func (c *Controller) plannerPrompt(t *Task, budget int, want []string) string {
 		}
 		b.WriteString("\n")
 	}
+	b.WriteString(attachmentContext(t, budget/4))
 	b.WriteString("Conversation about this request:\n")
 	for _, m := range msgs {
 		if m.Round != round {

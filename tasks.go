@@ -114,16 +114,25 @@ type Task struct {
 	Asked        bool            `json:"asked,omitempty"`        // the planner already asked questions this round
 	Touched      []string        `json:"touched,omitempty"`      // files written this round
 	Instructions string          `json:"instructions,omitempty"` // standing rules copied from settings when the task was created
+	ProjectID    string          `json:"project_id,omitempty"`   // "" = unfiled; see projects.go
+	Seeded       bool            `json:"seeded,omitempty"`       // the repo started with files (project or attached zip)
+	Attachments  []Attachment    `json:"attachments,omitempty"`
 
 	mu     sync.Mutex
 	dir    string
+	repo   string // working files; the project's repo for a project task, else <dir>/repo
 	cancel context.CancelFunc
 	resume chan struct{}
 }
 
 func (c *Controller) tasksDir() string { return filepath.Join(c.dataDir, "tasks") }
 
-func (t *Task) repoDir() string { return filepath.Join(t.dir, "repo") }
+func (t *Task) repoDir() string {
+	if t.repo != "" {
+		return t.repo
+	}
+	return filepath.Join(t.dir, "repo")
+}
 
 // saveLocked writes task.json; t.mu must be held.
 func (t *Task) saveLocked() {
@@ -170,8 +179,13 @@ func (c *Controller) loadTasks() {
 			continue
 		}
 		t.dir = dir
+		if p := c.projects[t.ProjectID]; p != nil {
+			t.repo = p.repoDir()
+		} else {
+			t.ProjectID = "" // its project is gone; the task keeps its conversation only
+		}
 		switch t.Status {
-		case "planning", "running", "testing", "fixing", "paused_cap":
+		case "queued", "planning", "running", "testing", "fixing", "paused_cap":
 			t.PausedFrom = t.Status
 			t.Status = "interrupted"
 			for _, s := range t.Subtasks {
@@ -207,12 +221,13 @@ type taskSummary struct {
 	ResultBytes int64      `json:"result_bytes"`
 	NeedsYou    bool       `json:"needs_you"` // waiting for answers, approval, a higher cap or a resume
 	Round       int        `json:"round"`
+	ProjectID   string     `json:"project_id,omitempty"`
 	Updated     time.Time  `json:"updated"`
 }
 
 func (t *Task) summaryLocked() taskSummary {
 	s := taskSummary{ID: t.ID, Title: t.Title, Status: t.Status, Planner: t.Planner, CostUSD: t.CostUSD, CapUSD: t.CapUSD,
-		Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created}
+		ProjectID: t.ProjectID, Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created}
 	switch t.Status {
 	case "awaiting_answers", "awaiting_approval", "paused_cap", "interrupted":
 		s.NeedsYou = true
@@ -270,21 +285,26 @@ func (c *Controller) handleListTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Prompt      string  `json:"prompt"`
-		Planner     string  `json:"planner"`
-		ClaudeModel string  `json:"claude_model"`
-		ORModel     string  `json:"openrouter_model"`
-		CapUSD      float64 `json:"cap_usd"`
-		Review      *bool   `json:"review"`
+	req, files, err := readCreateRequest(w, r)
+	if err != nil || strings.TrimSpace(req.Prompt) == "" {
+		msg := "describe the task"
+		if err != nil {
+			msg = err.Error()
+		}
+		writeJSON(w, 400, map[string]string{"error": msg})
+		return
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Prompt) == "" {
-		writeJSON(w, 400, map[string]string{"error": "describe the task"})
+	proj := c.getProject(req.Project)
+	if req.Project != "" && proj == nil {
+		writeJSON(w, 404, map[string]string{"error": "no such project"})
 		return
 	}
 	c.mu.Lock()
 	set := c.settings
 	c.mu.Unlock()
+	if proj != nil {
+		req = proj.applyDefaults(req)
+	}
 	if req.Planner == "" {
 		req.Planner = set.DefaultPlanner
 	}
@@ -305,11 +325,20 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	review := req.Review == nil || *req.Review
-	t := &Task{ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, ORModel: req.ORModel, Review: review,
+	t := &Task{ProjectID: req.Project, ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, ORModel: req.ORModel, Review: review,
 		Instructions: set.Instructions, CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1}
 	t.dir = filepath.Join(c.tasksDir(), t.ID)
+	if proj != nil {
+		t.repo = proj.repoDir()
+		t.Seeded = len(listRepo(t.repo)) > 0
+	}
 	if err := os.MkdirAll(t.repoDir(), 0o755); err != nil {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := c.applyAttachments(t, files); err != nil {
+		os.RemoveAll(t.dir)
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
 	t.Events = append(t.Events, TaskEvent{Time: time.Now(), Level: "info", Text: "Task created; planning with " + c.plannerLabel(t.Planner, t.ClaudeModel, t.ORModel) + "."})
@@ -386,6 +415,9 @@ type repoFile struct {
 func listRepo(dir string) []repoFile {
 	out := []repoFile{}
 	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
 		if err == nil && !d.IsDir() {
 			rel, _ := filepath.Rel(dir, p)
 			info, _ := d.Info()
@@ -491,6 +523,9 @@ func zipDir(src, dst string) error {
 	}
 	zw := zip.NewWriter(f)
 	err = filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -547,7 +582,7 @@ func (c *Controller) handleApproveTask(w http.ResponseWriter, r *http.Request) {
 	t.addMsgLocked(TaskMessage{Role: "event", Kind: "event", Text: ev})
 	t.mu.Unlock()
 	t.logf("info", "Plan approved with a %s cap.", fmtUSD(t.CapUSD))
-	c.startTask(t, c.executeTask)
+	c.startTask(t, c.execTask)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -689,7 +724,7 @@ func (c *Controller) handleResumeTask(w http.ResponseWriter, r *http.Request) {
 			t.setStatus("awaiting_approval")
 		default:
 			t.setStatus("running")
-			c.startTask(t, c.executeTask)
+			c.startTask(t, c.execTask)
 		}
 		t.logf("info", "Resumed.")
 		t.addMsg(TaskMessage{Role: "event", Kind: "event", Text: "Resumed."})
@@ -1567,6 +1602,9 @@ func (c *Controller) subtaskPromptWith(t *Task, spec PlanSubtask, budget int, wi
 }
 
 func writeRepoFile(repo, rel, content string) error {
+	if inGitDir(rel) {
+		return fmt.Errorf("refusing to write inside .git: %s", rel)
+	}
 	p, err := safeJoin(repo, rel)
 	if err != nil {
 		return err

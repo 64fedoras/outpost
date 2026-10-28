@@ -207,6 +207,27 @@ contain an `OUTPOST.md` at the root, its text is added as well. Both together ar
 so a small local model keeps room for the code. Changing the box affects new tasks only. Per-project
 instructions will replace this once projects exist.
 
+## Projects, attachments and git
+
+**Projects** (sidebar → Projects) keep a folder of files between tasks. Pick a project in the
+composer and the task starts from the project's current files and writes into them, the way a
+follow-up round does. Only one task works in a project at a time; later ones show *Waiting for
+project* and start when the first finishes. A project can store defaults (test command, peer
+review). Tasks without a project work as before, and existing tasks stay as they were. Delete a
+project's tasks before deleting the project.
+
+**Attachments:** the 📎 button in the composer takes up to 50 MB in total. A `.zip` becomes the
+task's starting files (one top-level folder is stripped). Other files must be text and are shown
+to the planner as context. Images and other binary files are refused for now.
+
+**Git:** give a project an HTTPS (`https://…`) or SSH (`ssh://…` or `git@host:path`) URL and the
+controller clones it (needs the `git` command on the controller VM, `sudo apt install git`). Each
+finished round is committed to the branch you choose (default `outpost`, created if missing),
+with your request as the commit message, and pushed if *push* is on. An HTTPS token or an SSH
+private key is stored encrypted with `secret.key`. With a `github.com` URL and a token with repo
+access, *open PR* also opens a pull request from that branch to the repository's default branch.
+Nothing is pulled after the first clone, so edits made on the remote afterwards are not seen.
+
 ## Nodes working together
 
 There are two ways for nodes to share one task.
@@ -334,7 +355,7 @@ prompt). Nodes reconnect on their own because the node keys and certificate come
 | Config | `tls.crt/key`, `admin.json`, `api_tokens.json`, `settings.json` (secrets encrypted with `secret.key`), `nodes.json` | `node.json` (node key) |
 | Models | `models/<name>/` (only for models stored on the controller) | `models/<name>/` (from Hugging Face or the controller) |
 | llama.cpp | `runtime/<variant>/` (from GitHub releases) | `llama/<build>-<variant>/` |
-| Work | `tasks/<id>/repo` and `result.zip` | `work/` — deleted after every job |
+| Work | `tasks/<id>/` (conversation, `result.zip`, attachments; `repo/` unless the task is in a project), `projects/<id>/` (`project.json`, `repo/`) | `work/` — deleted after every job |
 | Updates | `releases/`, `agent/` | `agent/` |
 
 ## Known limits

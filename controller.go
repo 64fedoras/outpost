@@ -124,6 +124,7 @@ type Controller struct {
 	pipelines map[string]*pipeline // model setups in progress; cancel stops one
 	peerBad   map[string]time.Time // nodes skipped as model sources until then (served data failing its hash)
 	tasks     map[string]*Task
+	projects  map[string]*Project // see projects.go
 	reserved  map[string]bool
 	cooldown  map[string]time.Time
 	restarts  map[string]time.Time
@@ -161,6 +162,7 @@ func runController(args []string) error {
 	c.loadSettings()
 	c.loadModels()
 	c.loadRuntimes()
+	c.loadProjects()
 	c.loadTasks()
 	c.advertise = *advertise
 	if c.advertise == "" {
@@ -234,6 +236,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/nodes/{id}/load", c.auth(c.handleLoadModel))
 	mux.HandleFunc("POST /api/nodes/{id}/unload", c.auth(c.handleUnloadModel))
 	mux.HandleFunc("DELETE /api/nodes/{id}/models/{name}", c.auth(c.handleRemoveNodeModel))
+	c.projectRoutes(mux)
 	mux.HandleFunc("GET /api/tasks", c.auth(c.handleListTasks))
 	mux.HandleFunc("POST /api/tasks", c.auth(c.handleCreateTask))
 	mux.HandleFunc("GET /api/tasks/{id}", c.auth(c.handleGetTask))

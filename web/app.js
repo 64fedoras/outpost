@@ -1,6 +1,6 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
-let state = null, models = null, tasks = [], settings = null, taskDetail = null;
+let state = null, models = null, tasks = [], projects = [], settings = null, taskDetail = null;
 let stateTimer = null, jobTimer = null, taskTimer = null, openJobId = null, loadNodeId = null, runNodeId = null;
 
 // ---------- helpers ----------
@@ -61,7 +61,7 @@ $('login-form').onsubmit = async (e) => {
 };
 $('btn-logout').onclick = async () => { await post('/api/logout').catch(() => {}); showLogin(); };
 
-const PAGES = ['new', 'task', 'nodes', 'models', 'updates', 'settings'];
+const PAGES = ['new', 'task', 'projects', 'nodes', 'models', 'updates', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
   const m = location.hash.match(/^#\/(\w+)(?:\/([\w-]+))?/) || [];
@@ -69,7 +69,7 @@ function route() {
   pageArg = page === 'task' ? m[2] : null;
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
   document.querySelectorAll('.side-nav a').forEach((a) => a.classList.toggle('active', a.dataset.tab === page));
-  document.querySelector('.page-plain').classList.toggle('hidden', !['nodes', 'models', 'updates', 'settings'].includes(page));
+  document.querySelector('.page-plain').classList.toggle('hidden', !['projects', 'nodes', 'models', 'updates', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task' }[page] || page[0].toUpperCase() + page.slice(1));
   closeSide();
   clearTimeout(taskTimer);
@@ -100,6 +100,7 @@ async function refresh() {
   await Promise.all([
     needModels ? api('/api/models').then((m) => { models = m; }).catch(() => {}) : null,
     api('/api/tasks').then((t) => { tasks = t; }).catch(() => {}),
+    api('/api/projects').then((p) => { projects = p; }).catch(() => {}),
   ]);
   $('hdr-meta').textContent = `v${state.version}`;
   $('hdr-meta').title = state.advertise;
@@ -108,12 +109,13 @@ async function refresh() {
   renderSideTasks();
   renderSideCluster();
   if (page === 'new') renderNew();
+  if (page === 'projects') renderProjects();
   if (page === 'nodes') { renderNodes(); renderJobs(); }
   if (page === 'models') renderModels();
   if (page === 'updates') renderUpdates();
 }
 
-const ACTIVE = ['planning', 'awaiting_answers', 'awaiting_approval', 'running', 'testing', 'fixing', 'paused_cap'];
+const ACTIVE = ['queued', 'planning', 'awaiting_answers', 'awaiting_approval', 'running', 'testing', 'fixing', 'paused_cap'];
 const WORKING = ['planning', 'running', 'testing', 'fixing'];
 function workerCount() { return state.nodes.filter((n) => n.online && n.heartbeat && n.heartbeat.inference_ready && !n.heartbeat.paused).length; }
 function execCount() { return state.nodes.filter((n) => n.online && n.exec_enabled && !(n.heartbeat && n.heartbeat.paused)).length; }
@@ -128,7 +130,7 @@ function renderBadges() {
 
 // What a task's status means to the person, in a few words.
 const STATUS_WORDS = {
-  planning: 'Planning', awaiting_answers: 'Has questions', awaiting_approval: 'Plan ready', running: 'Working',
+  queued: 'Waiting for project', planning: 'Planning', awaiting_answers: 'Has questions', awaiting_approval: 'Plan ready', running: 'Working',
   testing: 'Testing', fixing: 'Fixing tests', paused_cap: 'Paused at cap', interrupted: 'Interrupted',
   done: 'Done', failed: 'Failed', cancelled: 'Stopped',
 };
@@ -143,13 +145,25 @@ function taskTone(t) {
   return 'idle';
 }
 
-function renderSideTasks() {
-  if (!tasks) return;
-  const html = tasks.length ? tasks.map((t) => `<a href="#/tasks/${t.id}" class="side-task ${page === 'task' && pageArg === t.id ? 'active' : ''}">
+function sideTaskHTML(t) {
+  return `<a href="#/tasks/${t.id}" class="side-task ${page === 'task' && pageArg === t.id ? 'active' : ''}">
       <span class="tdot ${taskTone(t)}" aria-hidden="true"></span>
       <span class="side-task-text"><span class="side-task-title">${esc(t.title)}</span>
-      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>`).join('')
-    : `<p class="side-empty">Tasks you start show up here.</p>`;
+      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>`;
+}
+function renderSideTasks() {
+  if (!tasks) return;
+  if (!tasks.length) { setHTML('side-tasks', `<p class="side-empty">Tasks you start show up here.</p>`); return; }
+  // Tasks in a project are grouped under its name; unfiled tasks come first.
+  const names = {};
+  (projects || []).forEach((p) => { names[p.id] = p.name; });
+  const groups = [];
+  const unfiled = tasks.filter((t) => !t.project_id || !names[t.project_id]);
+  let html = unfiled.map(sideTaskHTML).join('');
+  (projects || []).forEach((p) => {
+    const mine = tasks.filter((t) => t.project_id === p.id);
+    if (mine.length) html += `<a class="side-group" href="#/projects">${esc(p.name)}</a>` + mine.map(sideTaskHTML).join('');
+  });
   setHTML('side-tasks', html);
 }
 
@@ -189,6 +203,7 @@ const STARTERS = [
   ['A log summariser', 'A script that reads an nginx access log and prints the top 10 paths, status codes and client IPs, with tests on a sample log.'],
 ];
 let ntInit = false;
+let ntFiles = [];
 function renderNew() {
   const sel = $('nt-planner');
   const cur = sel.value || state.default_planner || 'claude';
@@ -200,6 +215,8 @@ function renderNew() {
     setHTML('nt-model', claudeModelOptions(state.claude_model, true));
     setHTML('nt-starters', STARTERS.map(([t, p], i) => `<button class="starter" data-act="starter" data-i="${i}"><b>${esc(t)}</b><span>${esc(p)}</span></button>`).join(''));
   }
+  const psel = $('nt-project'), pcur = psel.value || localStorage.getItem('nt-project') || '';
+  setHTML(psel, `<option value="">No project</option>` + projects.map((p) => `<option value="${p.id}" ${p.id === pcur ? 'selected' : ''}>Project: ${esc(p.name)}</option>`).join(''));
   $('nt-model').classList.toggle('hidden', sel.value !== 'claude');
   $('nt-cap-wrap').classList.toggle('hidden', sel.value !== 'claude' && sel.value !== 'openrouter');
   const w = workerCount(), ex = execCount(), on = state.nodes.filter((n) => n.online).length;
@@ -215,13 +232,27 @@ function renderNew() {
   setHTML('home-setup', steps.length ? `<div class="setup"><b>Before your first task</b><ol>${steps.map((s) => `<li>${s}</li>`).join('')}</ol></div>` : '');
 }
 $('nt-planner').addEventListener('change', () => renderNew());
+$('nt-project').addEventListener('change', () => { try { localStorage.setItem('nt-project', $('nt-project').value); } catch (e) {} });
+$('nt-files').addEventListener('change', () => {
+  ntFiles = Array.from($('nt-files').files);
+  $('nt-attach-n').textContent = ntFiles.length ? `${ntFiles.length} file${ntFiles.length === 1 ? '' : 's'}` : 'Attach';
+});
 async function startTask() {
   $('nt-err').classList.add('hidden');
-  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked };
+  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, project: $('nt-project').value };
   if (!body.prompt.trim()) { $('nt-prompt').focus(); return; }
   $('nt-go').disabled = true;
   try {
-    const r = await post('/api/tasks', body);
+    let r;
+    if (ntFiles.length) {
+      const fd = new FormData();
+      fd.append('payload', JSON.stringify(body));
+      ntFiles.forEach((f) => fd.append('files', f, f.name));
+      const resp = await fetch('/api/tasks', { method: 'POST', credentials: 'same-origin', body: fd });
+      r = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(r.error || resp.statusText);
+    } else r = await post('/api/tasks', body);
+    ntFiles = []; $('nt-files').value = ''; $('nt-attach-n').textContent = 'Attach';
     $('nt-prompt').value = '';
     location.hash = '#/tasks/' + r.id;
     refresh();
@@ -230,6 +261,50 @@ async function startTask() {
 }
 $('nt-go').onclick = startTask;
 $('nt-prompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) startTask(); });
+
+// ---------- projects ----------
+function renderProjects() {
+  setHTML('projects-list', !projects.length ? `<div class="empty">No projects yet. Tasks outside a project work as before.</div>` :
+    projects.map((p) => `<div class="card" style="margin-bottom:10px">
+      <div class="section-head" style="margin:0 0 6px"><b>${esc(p.name)}</b><span class="spacer"></span>
+        <a href="/api/projects/${p.id}/download"><button>Download .zip</button></a>
+        <button class="danger" data-act="project-delete" data-id="${p.id}">Delete</button></div>
+      <p class="hint">${p.files} file${p.files === 1 ? '' : 's'} · ${p.tasks} task${p.tasks === 1 ? '' : 's'}${p.git_url ? ` · ${esc(p.git_url)} → branch <code>${esc(p.git_branch)}</code>${p.git_push ? ' (pushed after each round)' : ' (committed, not pushed)'}${p.last_push ? ' · last push ' + ago(p.last_push) : ''}` : ''}${p.last_pr ? ` · <a href="${esc(p.last_pr)}" target="_blank" rel="noopener">last pull request</a>` : ''}</p>
+      <div class="btns" style="flex-wrap:wrap;align-items:center">
+        <label class="chip-input">tests <input data-pf="test_command" data-id="${p.id}" value="${esc(p.test_command)}" placeholder="none"></label>
+        <label class="toggle"><input type="checkbox" data-pf="review" data-id="${p.id}" ${p.review === false ? '' : 'checked'}> peer review</label>
+        ${p.git_url ? `<label class="toggle"><input type="checkbox" data-pf="git_push" data-id="${p.id}" ${p.git_push ? 'checked' : ''}> push</label>
+        <label class="toggle"><input type="checkbox" data-pf="git_pr" data-id="${p.id}" ${p.git_pr ? 'checked' : ''}> open PR</label>` : ''}
+        <button data-act="project-save" data-id="${p.id}">Save</button>
+        <a href="#/new" data-act="project-use" data-id="${p.id}"><button class="primary">New task here</button></a></div></div>`).join(''));
+}
+$('np-go').onclick = async () => {
+  const err = $('np-err'); err.classList.add('hidden');
+  $('np-go').disabled = true; $('np-go').textContent = $('np-url').value.trim() ? 'Cloning…' : 'Creating…';
+  try {
+    await post('/api/projects', { name: $('np-name').value, git_url: $('np-url').value.trim(), git_branch: $('np-branch').value.trim(), git_token: $('np-token').value, git_ssh_key: $('np-key').value,
+      test_command: $('np-test').value, git_push: $('np-push').checked, git_pr: $('np-pr').checked });
+    ['np-name', 'np-url', 'np-branch', 'np-token', 'np-key', 'np-test'].forEach((i) => { $(i).value = ''; });
+    $('np-push').checked = $('np-pr').checked = false;
+    toast('Project created'); refresh();
+  } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
+  $('np-go').disabled = false; $('np-go').textContent = 'Create project';
+};
+async function projectAction(act, el) {
+  const id = el.dataset.id;
+  if (act === 'project-delete') {
+    if (!confirm('Delete this project and its files? Its git remote is not touched.')) return;
+    await api(`/api/projects/${id}`, { method: 'DELETE' }); toast('Project deleted');
+  } else if (act === 'project-save') {
+    const f = (k) => document.querySelector(`[data-pf="${k}"][data-id="${id}"]`);
+    const body = { test_command: f('test_command').value, review: f('review').checked };
+    if (f('git_push')) { body.git_push = f('git_push').checked; body.git_pr = f('git_pr').checked; }
+    await post(`/api/projects/${id}`, body); toast('Saved');
+  } else if (act === 'project-use') {
+    try { localStorage.setItem('nt-project', id); } catch (e) {}
+    $('nt-project').value = id;
+  }
+}
 
 // ---------- task thread ----------
 async function pollTask() {
@@ -1240,6 +1315,7 @@ document.addEventListener('click', async (e) => {
       case 'del-release': if (confirm(`Delete the uploaded ${el.dataset.platform} release?`)) await api(`/api/releases/${el.dataset.platform}`, { method: 'DELETE' }); break;
       case 'view-file': viewFile(el.dataset.path); return;
       case 'starter': $('nt-prompt').value = STARTERS[+el.dataset.i][1]; $('nt-prompt').focus(); return;
+      case 'project-delete': case 'project-save': case 'project-use': await projectAction(act, el); break;
       default: if (act.startsWith('task-')) { await taskAction(act, el); return; }
     }
   } catch (x) { toast(x.message, 4000); }
