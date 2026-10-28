@@ -304,7 +304,7 @@ func resultText(t *Task) string {
 		extra = append(extra, fmt.Sprintf("%d fix round(s)", t.FixRounds))
 	}
 	if t.CostUSD > 0 {
-		extra = append(extra, "Claude cost so far "+fmtUSD(t.CostUSD))
+		extra = append(extra, "Cloud model cost so far "+fmtUSD(t.CostUSD))
 	}
 	return s + " " + strings.Join(extra, " · ") + "."
 }

@@ -13,18 +13,20 @@ import (
 	"strings"
 )
 
-// Settings live in <data>/settings.json. Secrets (Claude API key, Hugging Face
-// token) are encrypted with AES-256-GCM using <data>/secret.key, so they never
+// Settings live in <data>/settings.json. Secrets (Claude and OpenRouter API
+// keys, Hugging Face token) are encrypted with AES-256-GCM using <data>/secret.key, so they never
 // sit in plain text in the settings file or in backups of it alone.
 type Settings struct {
-	AnthropicKeyEnc string  `json:"anthropic_key_enc,omitempty"`
-	HFTokenEnc      string  `json:"hf_token_enc,omitempty"`
-	ClaudeModel     string  `json:"claude_model"`
-	DefaultCapUSD   float64 `json:"default_cap_usd"`
-	DefaultPlanner  string  `json:"default_planner"` // "claude" or "node:<id>"
-	BackupEnabled   bool    `json:"backup_enabled,omitempty"`
-	BackupDir       string  `json:"backup_dir,omitempty"`
-	BackupPassEnc   string  `json:"backup_pass_enc,omitempty"`
+	AnthropicKeyEnc  string  `json:"anthropic_key_enc,omitempty"`
+	HFTokenEnc       string  `json:"hf_token_enc,omitempty"`
+	ClaudeModel      string  `json:"claude_model"`
+	DefaultCapUSD    float64 `json:"default_cap_usd"`
+	DefaultPlanner   string  `json:"default_planner"` // "claude", "openrouter" or "node:<id>"
+	OpenRouterKeyEnc string  `json:"openrouter_key_enc,omitempty"`
+	OpenRouterModel  string  `json:"openrouter_model,omitempty"`
+	BackupEnabled    bool    `json:"backup_enabled,omitempty"`
+	BackupDir        string  `json:"backup_dir,omitempty"`
+	BackupPassEnc    string  `json:"backup_pass_enc,omitempty"`
 }
 
 func defaultSettings() Settings {
@@ -124,7 +126,7 @@ func keyHint(k string) string {
 }
 
 func (c *Controller) settingsView() map[string]any {
-	ak, hf := c.anthropicKey(), c.hfToken()
+	ak, hf, ork := c.anthropicKey(), c.hfToken(), c.openRouterKey()
 	fails, locked := c.lockoutStatus()
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -136,7 +138,9 @@ func (c *Controller) settingsView() map[string]any {
 	return map[string]any{
 		"has_anthropic_key": ak != "", "anthropic_key_hint": keyHint(ak),
 		"has_hf_token": hf != "", "claude_model": c.settings.ClaudeModel,
-		"default_cap_usd": c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner,
+		"has_openrouter_key": ork != "", "openrouter_key_hint": keyHint(ork), "openrouter_model": c.settings.OpenRouterModel,
+		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
+		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner,
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
 		"backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
@@ -148,19 +152,27 @@ func (c *Controller) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		AnthropicKey   *string  `json:"anthropic_key"`
-		HFToken        *string  `json:"hf_token"`
-		ClaudeModel    *string  `json:"claude_model"`
-		DefaultCapUSD  *float64 `json:"default_cap_usd"`
-		DefaultPlanner *string  `json:"default_planner"`
+		AnthropicKey    *string  `json:"anthropic_key"`
+		HFToken         *string  `json:"hf_token"`
+		ClaudeModel     *string  `json:"claude_model"`
+		DefaultCapUSD   *float64 `json:"default_cap_usd"`
+		DefaultPlanner  *string  `json:"default_planner"`
+		OpenRouterKey   *string  `json:"openrouter_key"`
+		OpenRouterModel *string  `json:"openrouter_model"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
 		return
 	}
-	var akEnc, hfEnc *string
-	if req.AnthropicKey != nil {
-		v := strings.TrimSpace(*req.AnthropicKey)
+	var akEnc, hfEnc, orEnc *string
+	for _, s := range []struct {
+		in  *string
+		out **string
+	}{{req.AnthropicKey, &akEnc}, {req.OpenRouterKey, &orEnc}} {
+		if s.in == nil {
+			continue
+		}
+		v := strings.TrimSpace(*s.in)
 		enc := ""
 		if v != "" {
 			var err error
@@ -169,7 +181,7 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 		}
-		akEnc = &enc
+		*s.out = &enc
 	}
 	if req.HFToken != nil {
 		v := strings.TrimSpace(*req.HFToken)
@@ -185,6 +197,12 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if hfEnc != nil {
 		c.settings.HFTokenEnc = *hfEnc
+	}
+	if orEnc != nil {
+		c.settings.OpenRouterKeyEnc = *orEnc
+	}
+	if req.OpenRouterModel != nil {
+		c.settings.OpenRouterModel = strings.TrimSpace(*req.OpenRouterModel)
 	}
 	if req.ClaudeModel != nil {
 		if _, ok := claudePrices[*req.ClaudeModel]; ok {

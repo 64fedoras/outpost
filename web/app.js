@@ -169,6 +169,8 @@ function renderJobs() {
 function plannerOptions(selected) {
   const opts = [];
   opts.push(`<option value="claude" ${state.has_claude_key ? '' : 'disabled'} ${selected === 'claude' ? 'selected' : ''}>Planner: Claude${state.has_claude_key ? '' : ' (add an API key in Settings)'}</option>`);
+  const orOk = state.has_openrouter_key && state.openrouter_model;
+  opts.push(`<option value="openrouter" ${orOk ? '' : 'disabled'} ${selected === 'openrouter' ? 'selected' : ''}>Planner: ${state.has_openrouter_key ? (state.openrouter_model ? esc(state.openrouter_label) : 'OpenRouter (pick a model in Settings)') : 'OpenRouter (add an API key in Settings)'}</option>`);
   for (const n of state.nodes) {
     const hb = n.online && n.heartbeat, model = hb && hb.loaded_model;
     const v = 'node:' + n.id;
@@ -197,9 +199,8 @@ function renderNew() {
     setHTML('nt-model', claudeModelOptions(state.claude_model, true));
     setHTML('nt-starters', STARTERS.map(([t, p], i) => `<button class="starter" data-act="starter" data-i="${i}"><b>${esc(t)}</b><span>${esc(p)}</span></button>`).join(''));
   }
-  const claude = sel.value === 'claude';
-  $('nt-model').classList.toggle('hidden', !claude);
-  $('nt-cap-wrap').classList.toggle('hidden', !claude);
+  $('nt-model').classList.toggle('hidden', sel.value !== 'claude');
+  $('nt-cap-wrap').classList.toggle('hidden', sel.value !== 'claude' && sel.value !== 'openrouter');
   const w = workerCount(), ex = execCount(), on = state.nodes.filter((n) => n.online).length;
   setHTML('new-cluster', state.nodes.length
     ? `${on} of ${state.nodes.length} nodes online, ${w} with a model ready${ex ? `, ${ex} can run tests` : '. No node can run tests yet (tick exec on the Nodes page)'}.`
@@ -208,7 +209,7 @@ function renderNew() {
   if (!state.nodes.length) steps.push(`Add a node on the <a href="#/nodes">Nodes</a> page.`);
   if (models && !models.models.some((m) => m.status === 'ready')) steps.push(`Add a model on the <a href="#/models">Models</a> page.`);
   if (state.nodes.length && !w) steps.push(`Load a model on a node (<a href="#/nodes">Nodes</a> → Load model).`);
-  if (!state.has_claude_key) steps.push(`Optional: add a Claude API key in <a href="#/settings">Settings</a> to plan with Claude.`);
+  if (!state.has_claude_key && !state.has_openrouter_key) steps.push(`Optional: add a Claude or OpenRouter API key in <a href="#/settings">Settings</a> to plan with a cloud model.`);
   if (!state.nodes.some((n) => n.exec_enabled)) steps.push(`Optional: tick <b>exec</b> on a node so tasks can run their tests.`);
   setHTML('home-setup', steps.length ? `<div class="setup"><b>Before your first task</b><ol>${steps.map((s) => `<li>${s}</li>`).join('')}</ol></div>` : '');
 }
@@ -271,7 +272,7 @@ function renderTask(t) {
   setHTML('tv-title', esc(t.title || firstWords(t.prompt)));
   setHTML('tv-status', `<span class="tdot ${taskTone({ ...t, needs_you: ['awaiting_answers', 'awaiting_approval', 'paused_cap', 'interrupted'].includes(t.status) })}"></span>${esc(statusWord(t))}`);
   $('tv-status').className = 'status-chip';
-  setHTML('tv-spend', t.planner === 'claude' || t.cost_usd > 0 ? spendMeter(t) : '');
+  setHTML('tv-spend', t.planner === 'claude' || t.planner === 'openrouter' || t.cost_usd > 0 ? spendMeter(t) : '');
   const files = t.files || [];
   $('tv-files-btn').classList.toggle('hidden', !files.length);
   $('tv-download').classList.toggle('hidden', !files.length || !['done', 'cancelled', 'failed'].includes(t.status));
@@ -287,7 +288,7 @@ const firstWords = (s) => { s = String(s || '').trim().split('\n')[0]; return s.
 
 function spendMeter(t) {
   const pct = t.cap_usd ? Math.min(100, 100 * t.cost_usd / t.cap_usd) : 0;
-  return `<span class="spend" title="Claude spend on this task: ${usd(t.cost_usd)} of a ${usd(t.cap_usd)} cap">${usd(t.cost_usd)}<span class="spend-bar"><i class="${pct >= 100 ? 'bad' : pct > 80 ? 'hot' : ''}" style="width:${pct}%"></i></span>${usd(t.cap_usd)}</span>`;
+  return `<span class="spend" title="Cloud model spend on this task: ${usd(t.cost_usd)} of a ${usd(t.cap_usd)} cap">${usd(t.cost_usd)}<span class="spend-bar"><i class="${pct >= 100 ? 'bad' : pct > 80 ? 'hot' : ''}" style="width:${pct}%"></i></span>${usd(t.cap_usd)}</span>`;
 }
 
 // The conversation, plus live cards for the current round.
@@ -351,9 +352,9 @@ function planCard(t, m, live) {
     const warn = [];
     if (p.test_command && !t.exec_nodes) warn.push('No node has exec on, so the tests will be skipped.');
     if (!t.workers_online) warn.push('No node has a model ready; work waits until one does.');
-    const est = t.planner === 'claude' && t.estimate_usd ? `Planning cost ${usd(t.cost_usd)}; the rest is estimated at about ${usd(Math.max(0, t.estimate_usd - t.cost_usd))}.` : '';
+    const est = (t.planner === 'claude' || t.planner === 'openrouter') && t.estimate_usd ? `Planning cost ${usd(t.cost_usd)}; the rest is estimated at about ${usd(Math.max(0, t.estimate_usd - t.cost_usd))}.` : '';
     actions = `${warn.length || est ? `<p class="card-note">${esc([est, ...warn].filter(Boolean).join(' '))}</p>` : ''}
-      <div class="card-actions">${t.planner === 'claude' ? `<label class="chip-input">cap $<input id="ta-cap" type="number" min="0.05" step="0.25" value="${t.cap_usd}" aria-label="Spending cap in US dollars"></label>` : ''}
+      <div class="card-actions">${t.planner === 'claude' || t.planner === 'openrouter' ? `<label class="chip-input">cap $<input id="ta-cap" type="number" min="0.05" step="0.25" value="${t.cap_usd}" aria-label="Spending cap in US dollars"></label>` : ''}
       <button class="primary" data-act="task-approve">Approve and start</button><span class="hint">or reply below to change the plan</span></div>`;
   }
   return `<div class="card-msg plan ${live ? 'live' : ''}"><div class="card-head">Plan · ${esc(p.title || '')}</div>
@@ -407,7 +408,7 @@ function statusCard(t) {
       return { key: 'tail-planning', cls: 'from-planner', html: `<div class="said thinking">Thinking it through with ${esc(t.planner_label)}<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></div>` };
     case 'paused_cap':
       return { key: 'tail-cap', cls: 'card-row', html: `<div class="card-msg warn"><div class="card-head">Paused at the spending cap</div>
-        <p>Spent ${usd(t.cost_usd)} of ${usd(t.cap_usd)}. Raise the cap to keep going with Claude, or finish with a local planner.</p>
+        <p>Spent ${usd(t.cost_usd)} of ${usd(t.cap_usd)}. Raise the cap to keep going with the cloud model, or finish with a local planner.</p>
         <div class="card-actions"><label class="chip-input">new cap $<input id="ta-newcap" type="number" min="0.05" step="0.25" value="${(Math.ceil((t.cap_usd * 2) * 4) / 4).toFixed(2)}"></label><button class="primary" data-act="task-raise">Raise cap and continue</button></div>
         ${locals ? `<div class="card-actions"><select id="ta-local" class="chip-select">${locals}</select><button data-act="task-local">Finish with this local planner</button></div>` : ''}</div>` };
     case 'interrupted':
@@ -807,12 +808,25 @@ async function uploadFiles(files) {
 async function loadSettings() {
   try { settings = await api('/api/settings'); } catch (e) { return; }
   $('set-key-state').innerHTML = settings.has_anthropic_key ? `<span class="st-done">· saved (${esc(settings.anthropic_key_hint)})</span>` : '<span class="muted">· not set</span>';
+  $('set-or-key-state').innerHTML = settings.has_openrouter_key ? `<span class="st-done">· saved (${esc(settings.openrouter_key_hint)})</span>` : '<span class="muted">· not set</span>';
+  $('set-or-model').value = settings.openrouter_model || '';
+  if (settings.has_openrouter_key) loadOpenRouterModels();
   $('set-hf-state').innerHTML = settings.has_hf_token ? '<span class="st-done">· saved</span>' : '<span class="muted">· not set</span>';
   $('set-model').innerHTML = claudeModelOptions(settings.claude_model);
   $('set-cap').value = settings.default_cap_usd;
   if (!state) state = await api('/api/state').catch(() => null);
   if (state) $('set-planner').innerHTML = plannerOptions(settings.default_planner);
   loadSecurity();
+}
+let orLoaded = false;
+async function loadOpenRouterModels() {
+  if (orLoaded) return;
+  try {
+    const r = await api('/api/openrouter/models');
+    orLoaded = true;
+    setHTML('or-models', r.models.map((m) => `<option value="${esc(m.id)}">${esc(m.name)} ($${m.in.toFixed(2)} in / $${m.out.toFixed(2)} out per M tokens)</option>`).join(''));
+    $('set-or-model-state').textContent = `· ${r.models.length} models`;
+  } catch (e) { $('set-or-model-state').textContent = '· ' + e.message; }
 }
 async function loadSecurity() {
   try {
@@ -866,6 +880,9 @@ async function saveSettings(body, msg) {
 }
 $('set-key-save').onclick = () => { const v = $('set-key').value.trim(); if (!v) return; $('set-key').value = ''; saveSettings({ anthropic_key: v }, 'API key saved'); };
 $('set-key-clear').onclick = () => { if (confirm('Remove the Claude API key?')) saveSettings({ anthropic_key: '' }, 'API key removed'); };
+$('set-or-key-save').onclick = () => { const v = $('set-or-key').value.trim(); if (!v) return; $('set-or-key').value = ''; orLoaded = false; saveSettings({ openrouter_key: v }, 'OpenRouter key saved'); };
+$('set-or-key-clear').onclick = () => { if (confirm('Remove the OpenRouter API key?')) saveSettings({ openrouter_key: '' }, 'OpenRouter key removed'); };
+$('set-or-model-save').onclick = () => saveSettings({ openrouter_model: $('set-or-model').value.trim() }, 'OpenRouter model saved');
 $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value }, 'Defaults saved');
