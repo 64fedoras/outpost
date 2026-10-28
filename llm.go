@@ -35,6 +35,7 @@ type llmRequest struct {
 	MaxTokens   int
 	Temperature float64
 	Label       string
+	WebSearch   bool // Claude only: allow the web search tool (priced per search)
 }
 
 type llmResponse struct {
@@ -44,6 +45,7 @@ type llmResponse struct {
 	CacheRead     int
 	CacheWrite    int
 	CostUSD       float64
+	WebSearches   int
 	Model         string
 	TokensPerSec  float64
 	ElapsedSecond float64
@@ -90,6 +92,9 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 		"system":     []map[string]any{{"type": "text", "text": req.System, "cache_control": map[string]string{"type": "ephemeral"}}},
 		"messages":   []map[string]any{{"role": "user", "content": req.User}},
 	}
+	if req.WebSearch {
+		body["tools"] = []map[string]any{{"type": "web_search_20250305", "name": "web_search", "max_uses": webSearchUses}}
+	}
 	if req.Temperature > 0 {
 		body["temperature"] = req.Temperature
 	}
@@ -122,6 +127,9 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 						Out    int `json:"output_tokens"`
 						CacheW int `json:"cache_creation_input_tokens"`
 						CacheR int `json:"cache_read_input_tokens"`
+						Server struct {
+							Searches int `json:"web_search_requests"`
+						} `json:"server_tool_use"`
 					} `json:"usage"`
 				}
 				if err := json.Unmarshal(raw, &out); err != nil {
@@ -135,8 +143,8 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 				}
 				r := &llmResponse{Text: text.String(), InTokens: out.Usage.In, OutTokens: out.Usage.Out,
 					CacheRead: out.Usage.CacheR, CacheWrite: out.Usage.CacheW, Model: model,
-					ElapsedSecond: time.Since(start).Seconds()}
-				r.CostUSD = usageCost(model, r.InTokens, r.OutTokens, r.CacheWrite, r.CacheRead)
+					WebSearches: out.Usage.Server.Searches, ElapsedSecond: time.Since(start).Seconds()}
+				r.CostUSD = usageCost(model, r.InTokens, r.OutTokens, r.CacheWrite, r.CacheRead) + float64(r.WebSearches)*webSearchUSD
 				return r, nil
 			}
 			var e struct {

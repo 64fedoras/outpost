@@ -234,6 +234,16 @@ routine code writing runs on your nodes. Every Claude call is metered live on th
   Claude Console.
 - The key is stored encrypted on the controller and never sent to nodes.
 
+### Web lookups
+
+- **Pasted links:** http(s) links in your messages (up to 5 per round) are fetched by the controller
+  as plain text (1 MB read, 12,000 characters kept, 15 s limit) and given to the planner as reference
+  material. Links to loopback, LAN, link-local and other internal addresses are refused, including
+  through redirects, unless you tick *Allow pasted links to reach internal addresses* in Settings.
+- **Claude web search (off by default):** tick *Let the Claude planner search the web* in Settings.
+  The Claude planner may then make up to 3 searches per planning call, charged about $0.01 each and
+  counted against the task's spending cap. Not available with OpenRouter or a local planner.
+
 ### OpenRouter
 
 OpenRouter works as a second cloud planner and does the same jobs as Claude (planning, writing
