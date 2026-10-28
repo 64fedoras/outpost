@@ -1,8 +1,8 @@
 #!/bin/sh
 # Re-vendors third-party code from local clones (this build machine has no Go
-# module proxy). Usage: sh vendor_sync.sh /path/systray /path/dbus /path/x-sys
+# module proxy). Usage: sh scripts/vendor_sync.sh /path/systray /path/dbus /path/x-sys
 set -e
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 cp go.mod go.mod.orig
 cat >> go.mod <<EOT
 
