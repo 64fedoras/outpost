@@ -55,9 +55,18 @@ func (c *Controller) notifyWaiterLocked(j *JobRec) {
 
 // runInferenceJob runs one chat completion on a node and waits for the answer.
 func (c *Controller) runInferenceJob(ctx context.Context, nodeID string, spec InferenceSpec, label string, timeout time.Duration) (*InferenceOutput, error) {
+	return c.runInferenceJobLive(ctx, nodeID, spec, label, timeout, nil)
+}
+
+// runInferenceJobLive is runInferenceJob with the streamed text also going to a live handle.
+func (c *Controller) runInferenceJobLive(ctx context.Context, nodeID string, spec InferenceSpec, label string, timeout time.Duration, live *liveHandle) (*InferenceOutput, error) {
 	spec.Stream = true
 	b, _ := json.Marshal(spec)
 	job := &JobDispatch{Kind: "inference", TimeoutS: int(timeout.Seconds()), Spec: b}
+	if live != nil {
+		job.JobID = newID("job")
+		live.bindJob(job.JobID)
+	}
 	ch, err := c.dispatchJob(nodeID, job, label)
 	if err != nil {
 		return nil, err

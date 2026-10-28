@@ -28,8 +28,9 @@ type orModel struct {
 	ID       string  `json:"id"`
 	Name     string  `json:"name"`
 	Ctx      int     `json:"context_length"`
-	In       float64 `json:"in"`  // per million tokens, for the UI
-	Out      float64 `json:"out"` // per million tokens, for the UI
+	In       float64 `json:"in"`     // per million tokens, for the UI
+	Out      float64 `json:"out"`    // per million tokens, for the UI
+	Vision   bool    `json:"vision"` // accepts image input
 	inTok    float64
 	outTok   float64
 	cacheTok float64
@@ -98,6 +99,9 @@ func (cat *orCatalog) refresh(ctx context.Context, key string, force bool) error
 			Top struct {
 				MaxOut int `json:"max_completion_tokens"`
 			} `json:"top_provider"`
+			Arch struct {
+				In []string `json:"input_modalities"`
+			} `json:"architecture"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
@@ -116,6 +120,11 @@ func (cat *orCatalog) refresh(ctx context.Context, key string, force bool) error
 			m.Name = d.ID
 		}
 		m.In, m.Out = m.inTok*1e6, m.outTok*1e6
+		for _, mod := range d.Arch.In {
+			if mod == "image" {
+				m.Vision = true
+			}
+		}
 		models[d.ID] = m
 		order = append(order, d.ID)
 	}
@@ -191,8 +200,18 @@ func callOpenRouter(ctx context.Context, key, model string, req llmRequest) (*ll
 	body := map[string]any{
 		"model":      model,
 		"max_tokens": req.MaxTokens,
-		"messages":   []map[string]any{{"role": "system", "content": system}, {"role": "user", "content": req.User}},
+		"messages":   []map[string]any{{"role": "system", "content": system}, {"role": "user", "content": openRouterUser(req)}},
 		"usage":      map[string]bool{"include": true},
+	}
+	if len(req.Msgs) > 0 {
+		msgs := []any{map[string]any{"role": "system", "content": system}}
+		for _, m := range openAIMessages(req.Msgs) {
+			msgs = append(msgs, m)
+		}
+		body["messages"] = msgs
+	}
+	if len(req.Tools) > 0 {
+		body["tools"] = toolDefs(req.Tools)
 	}
 	if m := openRouterModels.get(model); m != nil && m.maxOut > 0 && req.MaxTokens > m.maxOut {
 		body["max_tokens"] = m.maxOut
@@ -200,11 +219,15 @@ func callOpenRouter(ctx context.Context, key, model string, req llmRequest) (*ll
 	if req.Temperature > 0 {
 		body["temperature"] = req.Temperature
 	}
+	if req.Live != nil {
+		body["stream"] = true
+	}
 	b, _ := json.Marshal(body)
 	client := &http.Client{Timeout: 10 * time.Minute}
 	start := time.Now()
 	var lastErr error
 	for attempt := 0; attempt < 6; attempt++ {
+		req.Live.Reset()
 		hr, _ := http.NewRequestWithContext(ctx, "POST", openRouterBaseURL()+"/v1/chat/completions", bytes.NewReader(b))
 		hr.Header.Set("Authorization", "Bearer "+key)
 		hr.Header.Set("Content-Type", "application/json")
@@ -217,13 +240,19 @@ func callOpenRouter(ctx context.Context, key, model string, req llmRequest) (*ll
 			}
 			lastErr = err
 		} else {
-			raw, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+			var raw []byte
+			if resp.StatusCode == 200 && strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+				raw = readOpenRouterStream(resp.Body, req.Live)
+			} else {
+				raw, _ = io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+			}
 			resp.Body.Close()
 			var out struct {
 				Model   string `json:"model"`
 				Choices []struct {
 					Message struct {
-						Content string `json:"content"`
+						Content   string         `json:"content"`
+						ToolCalls []WireToolCall `json:"tool_calls"`
 					} `json:"message"`
 					FinishReason string `json:"finish_reason"`
 				} `json:"choices"`
@@ -242,7 +271,7 @@ func callOpenRouter(ctx context.Context, key, model string, req llmRequest) (*ll
 			}
 			_ = json.Unmarshal(raw, &out)
 			if resp.StatusCode == 200 && out.Error == nil && len(out.Choices) > 0 {
-				r := &llmResponse{Text: out.Choices[0].Message.Content, Model: model, ElapsedSecond: time.Since(start).Seconds()}
+				r := &llmResponse{Text: out.Choices[0].Message.Content, Calls: fromWireCalls(out.Choices[0].Message.ToolCalls), Model: model, ElapsedSecond: time.Since(start).Seconds()}
 				if u := out.Usage; u != nil {
 					r.InTokens, r.OutTokens, r.CacheRead = u.In-u.Details.Cached, u.Out, u.Details.Cached
 					if r.InTokens < 0 {
@@ -317,4 +346,100 @@ func (c *Controller) handleOpenRouterModels(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, 200, map[string]any{"models": list})
+}
+
+// readOpenRouterStream reads a streamed chat completion, sending text to live,
+// and returns the equivalent non-streamed JSON body so the caller parses one shape.
+// A stream that ends without a finish reason yields an error body.
+func readOpenRouterStream(body io.Reader, live *liveHandle) []byte {
+	var text strings.Builder
+	var usage json.RawMessage
+	var finish string
+	var errBody json.RawMessage
+	var calls []WireToolCall
+	_ = sseData(body, func(data string) bool {
+		if data == "[DONE]" {
+			return false
+		}
+		var ch struct {
+			Choices []struct {
+				Delta struct {
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
+				} `json:"delta"`
+				FinishReason *string `json:"finish_reason"`
+			} `json:"choices"`
+			Usage json.RawMessage `json:"usage"`
+			Error json.RawMessage `json:"error"`
+		}
+		if json.Unmarshal([]byte(data), &ch) != nil {
+			return true // keep-alive comments and the like
+		}
+		if len(ch.Error) > 0 && string(ch.Error) != "null" {
+			errBody = ch.Error
+			return false
+		}
+		for _, c := range ch.Choices {
+			if c.Delta.Content != "" {
+				text.WriteString(c.Delta.Content)
+				live.Write(c.Delta.Content)
+			}
+			for _, tc := range c.Delta.ToolCalls { // pieces keyed by index
+				for len(calls) <= tc.Index {
+					calls = append(calls, WireToolCall{Type: "function"})
+				}
+				w := &calls[tc.Index]
+				if tc.ID != "" {
+					w.ID = tc.ID
+				}
+				w.Function.Name += tc.Function.Name
+				w.Function.Arguments += tc.Function.Arguments
+			}
+			if c.FinishReason != nil {
+				finish = *c.FinishReason
+			}
+		}
+		if len(ch.Usage) > 0 && string(ch.Usage) != "null" {
+			usage = ch.Usage
+		}
+		return true
+	})
+	if errBody != nil {
+		b, _ := json.Marshal(map[string]any{"error": errBody})
+		return b
+	}
+	if finish == "" {
+		b, _ := json.Marshal(map[string]any{"error": map[string]any{"code": 502, "message": "OpenRouter stream ended early"}})
+		return b
+	}
+	msg := map[string]any{"content": text.String()}
+	if len(calls) > 0 {
+		msg["tool_calls"] = calls
+	}
+	out := map[string]any{"choices": []any{map[string]any{"message": msg, "finish_reason": finish}}}
+	if usage != nil {
+		out["usage"] = usage
+	}
+	b, _ := json.Marshal(out)
+	return b
+}
+
+// openRouterUser is the user turn: plain text, or text plus image_url parts
+// (data URIs) when images are attached.
+func openRouterUser(req llmRequest) any {
+	if len(req.Images) == 0 {
+		return req.User
+	}
+	parts := []map[string]any{{"type": "text", "text": req.User}}
+	for _, img := range req.Images {
+		parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]string{"url": img.dataURI()}})
+	}
+	return parts
 }

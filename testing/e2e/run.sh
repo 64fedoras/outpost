@@ -29,6 +29,17 @@ sh "$HERE/stop_all.sh" 2>/dev/null || true
 rm -rf "$RUN"; mkdir -p "$RUN/ctl" "$RUN/node"
 (cd "$ROOT" && CGO_ENABLED=0 go build -tags e2e -o "$RUN/outpost" .)
 cp -r "$HERE/fixtures/ctl-seed/." "$RUN/ctl/"
+# fake_llama_server.py is the source of the stub llama.cpp archive: repack it so the two never drift apart
+RT=$RUN/ctl/runtime/linux-x64-cpu; ARC=llama-b99999-bin-ubuntu-x64.tar.gz
+mkdir -p "$RUN/pack/llama-fake"; cp "$HERE/fake_llama_server.py" "$RUN/pack/llama-fake/llama-server"; chmod +x "$RUN/pack/llama-fake/llama-server"
+tar czf "$RT/$ARC" -C "$RUN/pack" llama-fake
+python3 - "$RT" "$ARC" <<'PY'
+import hashlib, json, sys
+d, arc = sys.argv[1], sys.argv[2]
+b = open(d + "/" + arc, "rb").read(); m = json.load(open(d + "/runtime.json"))
+m["sha256"], m["bytes"] = hashlib.sha256(b).hexdigest(), len(b)
+json.dump(m, open(d + "/runtime.json", "w"))
+PY
 
 python3 "$HERE/mock_claude.py" 18700 >"$RUN/claude.log" 2>&1 &
 cd "$RUN"
