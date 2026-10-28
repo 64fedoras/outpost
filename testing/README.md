@@ -9,7 +9,7 @@
 (`fake_llama_server.py`, shipped inside the stub llama.cpp archive in `fixtures/ctl-seed`).
 It enables exec on the node and loads the 1 MiB `tiny-test` model. State is in
 `testing/e2e/run/` (git-ignored); `run.sh down` stops everything, `run.sh pw` prints the
-admin password. UI: https://127.0.0.1:18460 (self-signed).
+admin password (chosen through the first-run setup endpoint; it is in `run/pw.txt`). UI: https://127.0.0.1:18460 (self-signed).
 
 Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 
