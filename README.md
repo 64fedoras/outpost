@@ -407,7 +407,7 @@ subtasks the nodes could not finish, fixing failing tests).
 
 ## Updating
 
-Every merge to `main` is built by GitHub Actions as the next patch version (0.8.1, 0.8.2, ...) and published as a release `v<version>` with the five binaries, a zip and `SHA256SUMS`, so each build shows up as a newer version in the Updates tab. Minor and major versions (0.9, 1.0) are set by hand in `proto.go`.
+Every merge to `main` is built by GitHub Actions as the next patch version (0.8.1, 0.8.2, ...) and published as a release `v<version>` with the five binaries, a zip and `SHA256SUMS`, so each build shows up as a newer version in the Updates tab. Minor and major versions (0.9, 0.10, 1.0) are set by hand, and versions compare numerically (0.8.10 is newer than 0.8.9) in `proto.go`.
 
 1. **Updates tab:** drop in the new binaries, one per platform you use (`outpost-linux-amd64`, …).
 2. Click **Update** on the controller row (updates the web UI too; you stay signed in), then
