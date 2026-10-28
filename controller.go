@@ -184,6 +184,7 @@ func runController(args []string) error {
 	if err := c.loadNodes(); err != nil {
 		return err
 	}
+	c.migratePooling()
 	pw, err := c.loadOrCreateAdmin(*resetPw)
 	if err != nil {
 		return err
@@ -467,6 +468,7 @@ func (c *Controller) handleState(w http.ResponseWriter, r *http.Request) {
 		"default_cap_usd": c.settings.DefaultCapUSD, "claude_model": c.settings.ClaudeModel,
 		"has_openrouter_key": c.settings.OpenRouterKeyEnc != "", "openrouter_model": c.settings.OpenRouterModel,
 		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
+		"pooling_enabled":  c.poolingOnLocked(),
 	})
 }
 
@@ -874,6 +876,13 @@ func (c *Controller) handleNodeMessage(nodeID string, env *Envelope) {
 		var hb Heartbeat
 		if json.Unmarshal(env.Body, &hb) == nil {
 			c.lastHB[nodeID] = &hb
+			if hb.RPCEndpoint != "" && !c.poolingOnLocked() {
+				// A node is still lending (it resumed after a restart) while pooling is off.
+				if nc := c.conns[nodeID]; nc != nil {
+					log.Printf("pooling is off: telling %s to stop lending memory", c.nodeLabel(nodeID))
+					go nc.send("rpc.stop", struct{}{})
+				}
+			}
 		}
 	case "job.output":
 		var o JobOutput
