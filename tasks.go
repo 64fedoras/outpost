@@ -109,10 +109,11 @@ type Task struct {
 	Approved     *time.Time      `json:"approved,omitempty"`
 	Ended        *time.Time      `json:"ended,omitempty"`
 	Messages     []TaskMessage   `json:"messages"`
-	Round        int             `json:"round"`              // 1 for the first request, +1 per follow-up
-	Steering     []string        `json:"steering,omitempty"` // notes the user sent while this round ran
-	Asked        bool            `json:"asked,omitempty"`    // the planner already asked questions this round
-	Touched      []string        `json:"touched,omitempty"`  // files written this round
+	Round        int             `json:"round"`                  // 1 for the first request, +1 per follow-up
+	Steering     []string        `json:"steering,omitempty"`     // notes the user sent while this round ran
+	Asked        bool            `json:"asked,omitempty"`        // the planner already asked questions this round
+	Touched      []string        `json:"touched,omitempty"`      // files written this round
+	Instructions string          `json:"instructions,omitempty"` // standing rules copied from settings when the task was created
 
 	mu     sync.Mutex
 	dir    string
@@ -304,7 +305,7 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	review := req.Review == nil || *req.Review
 	t := &Task{ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, ORModel: req.ORModel, Review: review,
-		CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1}
+		Instructions: set.Instructions, CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1}
 	t.dir = filepath.Join(c.tasksDir(), t.ID)
 	if err := os.MkdirAll(t.repoDir(), 0o755); err != nil {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -1444,6 +1445,7 @@ func (c *Controller) subtaskPromptWith(t *Task, spec PlanSubtask, budget int, wi
 	plan := t.Plan
 	t.mu.Unlock()
 	var b strings.Builder
+	b.WriteString(t.instructionsBlock())
 	fmt.Fprintf(&b, "Project: %s\n%s\nLanguage: %s\n", plan.Title, plan.Summary, plan.Language)
 	if plan.TestCommand != "" {
 		fmt.Fprintf(&b, "Tests run with: %s\n", plan.TestCommand)
@@ -1703,7 +1705,7 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 				earlier.WriteString("- " + h + "\n")
 			}
 		}
-		user := fmt.Sprintf("Project: %s\n%s\n\nTest command: %s\n\nTest output:\n%s%s\n\nProject files:\n%s",
+		user := t.instructionsBlock() + fmt.Sprintf("Project: %s\n%s\n\nTest command: %s\n\nTest output:\n%s%s\n\nProject files:\n%s",
 			plan.Title, plan.Summary, cmd, shown, earlier.String(),
 			repoSnapshotFirst(t.repoDir(), budget-len(shown)-earlier.Len()-4000, output)) + t.steeringText()
 		resp, err := c.plannerCall(ctx, t, llmRequest{System: fixSystem, User: user, MaxTokens: 16000, Temperature: 0.2, Label: fmt.Sprintf("Fix round %d", round+1)})

@@ -27,6 +27,7 @@ type Settings struct {
 	BackupEnabled    bool    `json:"backup_enabled,omitempty"`
 	BackupDir        string  `json:"backup_dir,omitempty"`
 	BackupPassEnc    string  `json:"backup_pass_enc,omitempty"`
+	Instructions     string  `json:"instructions,omitempty"` // standing rules copied into every new task (OUTPOST.md text)
 }
 
 func defaultSettings() Settings {
@@ -142,7 +143,7 @@ func (c *Controller) settingsView() map[string]any {
 		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
 		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner,
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
-		"backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
+		"instructions": c.settings.Instructions, "backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
 }
 
@@ -159,6 +160,7 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		DefaultPlanner  *string  `json:"default_planner"`
 		OpenRouterKey   *string  `json:"openrouter_key"`
 		OpenRouterModel *string  `json:"openrouter_model"`
+		Instructions    *string  `json:"instructions"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
@@ -214,6 +216,9 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.DefaultPlanner != nil {
 		c.settings.DefaultPlanner = *req.DefaultPlanner
+	}
+	if req.Instructions != nil {
+		c.settings.Instructions = clipInstructions(*req.Instructions)
 	}
 	err := c.saveSettingsLocked()
 	c.mu.Unlock()

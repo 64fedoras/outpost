@@ -157,6 +157,12 @@
           <label for="set-planner">Default planner</label><select id="set-planner"></select>
           <div class="modal-foot"><button class="primary" id="set-save">Save defaults</button></div>
         </div>
+        <div class="section-head"><h2>Project instructions</h2></div>
+        <div class="card">
+          <p class="hint">Standing rules (like <code>CLAUDE.md</code>) put at the top of every planner, worker, reviewer and fix prompt of tasks you create from now on. A file named <code>OUTPOST.md</code> at the root of a task's files is added too. Keep it short; it is cut at 8,000 characters.</p>
+          <textarea id="set-instr" rows="6" maxlength="8000" placeholder="e.g. Vendor all dependencies. No cgo. Keep the web UI vanilla JS."></textarea>
+          <div class="modal-foot"><button class="primary" id="set-instr-save">Save instructions</button></div>
+        </div>
         <div class="section-head"><h2>OpenRouter</h2></div>
         <div class="card">
           <p class="hint">Optional second cloud provider. Pick OpenRouter as the planner to plan, write what the nodes cannot, and fix failing tests with any model it offers. It shares the per-task spending cap above, using the cost OpenRouter reports for each call. Use a separate key and set a credit limit on it at openrouter.ai.</p>
