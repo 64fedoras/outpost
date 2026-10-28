@@ -54,6 +54,25 @@ func nodeMemory(h *Hello) (vram, ram int64) {
 	return vram, int64(h.RAMBytes)
 }
 
+// loadableMemory is nodeMemory as llama.cpp will actually use it: GPU memory
+// only counts when the node gets a GPU (Vulkan) build, so a Linux node with a
+// card but no Vulkan driver is sized as a CPU machine. ok is false when no
+// llama.cpp build exists for the node's OS and CPU.
+func loadableMemory(h *Hello) (vram, ram int64, ok bool) {
+	if h == nil {
+		return 0, 0, false
+	}
+	vram, ram = nodeMemory(h)
+	variant, _ := nodeVariant(h)
+	if variant == "" {
+		return 0, ram, false
+	}
+	if !strings.HasSuffix(variant, "-vulkan") {
+		vram = 0
+	}
+	return vram, ram, true
+}
+
 // fitOnNode classifies a model needing `need` bytes on a node with the given
 // memory. Headroom is left for the OS and the desktop.
 func fitOnNode(need, vram, ram int64) string {
@@ -88,10 +107,14 @@ func (c *Controller) nodeFitsLocked(weights int64, ctx int) []NodeFit {
 	need := estimateModelBytes(weights, ctx)
 	out := []NodeFit{}
 	for id, n := range c.nodes {
-		vram, ram := nodeMemory(n.Hello)
+		vram, ram, ok := loadableMemory(n.Hello)
 		online := c.conns[id] != nil
+		fit := fitNo
+		if ok {
+			fit = fitOnNode(need, vram, ram)
+		}
 		out = append(out, NodeFit{
-			NodeID: id, Name: displayName(n), Fit: fitOnNode(need, vram, ram), Online: online, Need: need,
+			NodeID: id, Name: displayName(n), Fit: fit, Online: online, Need: need,
 			CanLoad: online && n.Hello != nil && c.pipelines[id] == nil && c.lendingToLocked(id) == "",
 		})
 	}
