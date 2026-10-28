@@ -1272,6 +1272,7 @@ $('rt-check').onclick = async () => {
 const UPD_BUSY = ['sent', 'downloading', 'installing', 'restarting'];
 let ctlUpdating = false;
 function renderUpdates() {
+  renderGitHub();
   const rows = [];
   const cu = state.controller_update_to;
   rows.push(`<tr><td><span class="dot on"></span></td><td><b>Controller</b></td><td>${esc(state.platform)}</td><td>v${esc(state.version)}</td>
@@ -1307,6 +1308,25 @@ function renderUpdates() {
     rel.map((r) => `<tr><td>${esc(r.platform)}</td><td>v${esc(r.version)}</td><td>${bytes(r.bytes)}</td><td class="mono" title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 12))}…</td><td>${ago(r.uploaded)}</td>
       <td class="r"><button class="small danger" data-act="del-release" data-platform="${esc(r.platform)}">Delete</button></td></tr>`).join('')}</tbody></table></div>` : '');
 }
+function renderGitHub() {
+  const g = state.github_updates || {};
+  let t;
+  if (g.busy) t = g.busy.startsWith('checking') ? 'Checking GitHub…' : 'Downloading ' + g.busy.replace('downloading ', '') + '…';
+  else {
+    const mode = !g.enabled ? 'Automatic checks are off (Settings)' : g.auto_install ? 'Checks every 6 hours and installs automatically' : 'Checks every 6 hours; you click Update';
+    t = `${mode}. ` + (g.checked && g.checked > '2000' ? `Last checked ${ago(g.checked)}${g.latest ? ', latest is v' + g.latest : ''}.` : 'Not checked yet.');
+    if (g.hold) t += ` Auto-install skips v${g.hold} and older after a rollback.`;
+  }
+  $('gh-info').textContent = t;
+  if (g.error) { const e = document.createElement('span'); e.className = 'error-msg'; e.style.display = 'block'; e.textContent = g.error; $('gh-info').appendChild(e); }
+  $('btn-gh-check').disabled = $('btn-gh-install').disabled = !!g.busy;
+}
+async function ghAction(path, msg) {
+  try { await post(path); toast(msg); } catch (e) { toast(e.message, 6000); }
+  refresh();
+}
+$('btn-gh-check').onclick = () => ghAction('/api/github-updates/check', 'Checked GitHub');
+$('btn-gh-install').onclick = () => { if (confirm('Check GitHub and update idle nodes and the controller to the latest release now?')) ghAction('/api/github-updates/install', 'Installing from GitHub'); };
 $('btn-upd-all').onclick = async () => {
   try { const r = await post('/api/update-all'); toast(`Started ${r.started} update(s)`); refresh(); } catch (e) { toast(e.message); }
 };
@@ -1401,6 +1421,7 @@ async function loadSettings() {
   $('set-autoresume').checked = !!settings.auto_resume;
   $('set-bestofn').value = settings.best_of_n || 'hard';
   $('set-instr').value = settings.instructions || '';
+  $('set-ghupd').checked = settings.github_updates !== false; $('set-ghauto').checked = !!settings.github_auto_install;
   $('set-pooling').checked = !!settings.pooling_enabled;
   $('set-pooling-notice').classList.toggle('hidden', !settings.pooling_notice);
   $('set-agent').checked = settings.agent_mode !== false; $('set-websearch').checked = !!settings.web_search; $('set-webprivate').checked = !!settings.web_allow_private;
@@ -1515,6 +1536,7 @@ $('set-or-model-save').onclick = () => saveSettings({ openrouter_model: $('set-o
 $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-instr-save').onclick = () => saveSettings({ instructions: $('set-instr').value }, 'Instructions saved');
+$('set-ghupd-save').onclick = () => saveSettings({ github_updates: $('set-ghupd').checked, github_auto_install: $('set-ghauto').checked }, 'GitHub update settings saved');
 $('set-pooling-save').onclick = () => saveSettings({ pooling_enabled: $('set-pooling').checked }, $('set-pooling').checked ? 'Pooling enabled' : 'Pooling off; pools dissolved');
 $('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, agent_mode: $('set-agent').checked, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked, auto_resume: $('set-autoresume').checked, best_of_n: $('set-bestofn').value }, 'Defaults saved');
 $('pw-form').onsubmit = async (e) => {

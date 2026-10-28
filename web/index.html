@@ -167,6 +167,8 @@
     <section data-page="updates" class="hidden">
       <div class="section-head"><h2>Controller and nodes</h2><span class="spacer"></span><button id="btn-upd-all">Update all</button></div>
       <div class="table-wrap" id="upd-table"></div>
+      <div class="section-head"><h2>GitHub releases</h2><span class="spacer"></span><button id="btn-gh-check" class="small">Check now</button> <button id="btn-gh-install" class="small primary">Check and install</button></div>
+      <p class="sub wrap" id="gh-info"></p>
       <div class="section-head"><h2>Uploaded releases</h2></div>
       <label class="drop" id="drop">
         <input type="file" id="drop-input" multiple class="hidden">
@@ -218,6 +220,13 @@
           <label class="check"><input type="checkbox" id="set-websearch"> Let the Claude planner search the web (about $0.01 per search, counted against the task cap)</label>
           <label class="check"><input type="checkbox" id="set-webprivate"> Allow pasted links to reach internal addresses (loopback, LAN). Off blocks them.</label>
           <div class="modal-foot"><button class="primary" id="set-save">Save defaults</button></div>
+        </div>
+        <div class="section-head"><h2>Updates from GitHub</h2></div>
+        <div class="card">
+          <p class="hint">Outpost can look at this project's GitHub releases (<code>64fedoras/outpost</code>) every 6 hours and download newer binaries for the controller and the platforms of your nodes. Each file is checked against the release's <code>SHA256SUMS</code> and must be an Outpost binary of that version before it is kept; it then appears in the Updates tab like an uploaded one. <code>SHA256SUMS</code> catches damaged downloads, not a tampered repository, since the releases are unsigned. Only the version check and downloads go to GitHub; nothing about your cluster is sent. Rollback works as before.</p>
+          <label class="check"><input type="checkbox" id="set-ghupd"> Check GitHub for new releases and download them (on by default)</label>
+          <label class="check"><input type="checkbox" id="set-ghauto"> Install them automatically: idle nodes update first, then the controller once no task is working. Off means you click Update in the Updates tab. After a rollback, the version you left is skipped.</label>
+          <div class="modal-foot"><button class="primary" id="set-ghupd-save">Save</button></div>
         </div>
         <div class="section-head"><h2>Memory pooling</h2></div>
         <div class="card">
