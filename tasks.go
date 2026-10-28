@@ -127,6 +127,7 @@ func (t *Task) repoDir() string { return filepath.Join(t.dir, "repo") }
 
 // saveLocked writes task.json; t.mu must be held.
 func (t *Task) saveLocked() {
+	defer taskLive.changed(t.ID)
 	b, _ := json.MarshalIndent(t, "", "  ")
 	tmp := filepath.Join(t.dir, "task.json.tmp")
 	if os.WriteFile(tmp, b, 0o644) == nil {
@@ -756,11 +757,18 @@ func (c *Controller) plannerCall(ctx context.Context, t *Task, req llmRequest) (
 		}
 		var resp *llmResponse
 		var err error
+		who := "Claude"
+		if planner == "openrouter" {
+			who = "OpenRouter"
+		}
+		live := taskLive.begin(t.ID, req.Sub, req.Label, who, true)
+		req.Live = live
 		if planner == "openrouter" {
 			resp, err = callOpenRouter(ctx, c.openRouterKey(), orModel, req)
 		} else {
 			resp, err = callClaude(ctx, c.anthropicKey(), model, req)
 		}
+		live.End()
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, errCancelled
@@ -835,7 +843,9 @@ func (c *Controller) nodeCall(ctx context.Context, t *Task, nodeID string, req l
 	spec := InferenceSpec{Messages: []ChatMessage{{Role: "system", Content: req.System}, {Role: "user", Content: req.User}},
 		Params: InferenceParams{Temperature: &temp, MaxTokens: req.MaxTokens}}
 	start := time.Now()
-	out, err := c.runInferenceJob(ctx, nodeID, spec, req.Label, inferTimeout)
+	live := taskLive.begin(t.ID, req.Sub, req.Label, c.nodeLabel(nodeID), false)
+	defer live.End()
+	out, err := c.runInferenceJobLive(ctx, nodeID, spec, req.Label, inferTimeout, live)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, errCancelled
@@ -1408,7 +1418,7 @@ func (c *Controller) runSubtask(ctx context.Context, t *Task, spec PlanSubtask, 
 		user := c.subtaskPrompt(t, spec, budget) + feedback
 		label := fmt.Sprintf("%s · %s (attempt %d)", t.Title, spec.ID, attempt)
 		t.logf("info", "%s: %s → %s (attempt %d)", spec.ID, spec.Title, c.nodeLabel(node), attempt)
-		resp, err := c.nodeCall(ctx, t, node, llmRequest{System: workerSystem, User: user, MaxTokens: maxOut, Temperature: 0.2, Label: label}, false)
+		resp, err := c.nodeCall(ctx, t, node, llmRequest{System: workerSystem, User: user, MaxTokens: maxOut, Temperature: 0.2, Label: label, Sub: spec.ID}, false)
 		if err != nil && !errors.Is(err, errCancelled) && isNodeProblem(err) {
 			t.logf("warn", "%s is not ready (%v); %s goes back in the queue.", c.nodeLabel(node), err, spec.ID)
 			c.coolDown(node, 15*time.Second)
@@ -1915,7 +1925,7 @@ func (c *Controller) reviewSubtask(ctx context.Context, t *Task, spec PlanSubtas
 	prompt = strings.Replace(prompt, "Write these files:", "Files in this subtask:", 1)
 	user := prompt + "\nYour teammate wrote:\n" + written.String()
 	resp, err := c.nodeCall(ctx, t, reviewer, llmRequest{System: reviewSystem, User: user, MaxTokens: maxOut, Temperature: 0.1,
-		Label: fmt.Sprintf("%s · review %s", t.Title, spec.ID)}, false)
+		Label: fmt.Sprintf("%s · review %s", t.Title, spec.ID), Sub: spec.ID}, false)
 	if err != nil {
 		if !errors.Is(err, errCancelled) {
 			note("skipped: " + err.Error())

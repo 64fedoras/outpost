@@ -200,11 +200,15 @@ func callOpenRouter(ctx context.Context, key, model string, req llmRequest) (*ll
 	if req.Temperature > 0 {
 		body["temperature"] = req.Temperature
 	}
+	if req.Live != nil {
+		body["stream"] = true
+	}
 	b, _ := json.Marshal(body)
 	client := &http.Client{Timeout: 10 * time.Minute}
 	start := time.Now()
 	var lastErr error
 	for attempt := 0; attempt < 6; attempt++ {
+		req.Live.Reset()
 		hr, _ := http.NewRequestWithContext(ctx, "POST", openRouterBaseURL()+"/v1/chat/completions", bytes.NewReader(b))
 		hr.Header.Set("Authorization", "Bearer "+key)
 		hr.Header.Set("Content-Type", "application/json")
@@ -217,7 +221,12 @@ func callOpenRouter(ctx context.Context, key, model string, req llmRequest) (*ll
 			}
 			lastErr = err
 		} else {
-			raw, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+			var raw []byte
+			if resp.StatusCode == 200 && strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+				raw = readOpenRouterStream(resp.Body, req.Live)
+			} else {
+				raw, _ = io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+			}
 			resp.Body.Close()
 			var out struct {
 				Model   string `json:"model"`
@@ -317,4 +326,63 @@ func (c *Controller) handleOpenRouterModels(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, 200, map[string]any{"models": list})
+}
+
+// readOpenRouterStream reads a streamed chat completion, sending text to live,
+// and returns the equivalent non-streamed JSON body so the caller parses one shape.
+// A stream that ends without a finish reason yields an error body.
+func readOpenRouterStream(body io.Reader, live *liveHandle) []byte {
+	var text strings.Builder
+	var usage json.RawMessage
+	var finish string
+	var errBody json.RawMessage
+	_ = sseData(body, func(data string) bool {
+		if data == "[DONE]" {
+			return false
+		}
+		var ch struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+				FinishReason *string `json:"finish_reason"`
+			} `json:"choices"`
+			Usage json.RawMessage `json:"usage"`
+			Error json.RawMessage `json:"error"`
+		}
+		if json.Unmarshal([]byte(data), &ch) != nil {
+			return true // keep-alive comments and the like
+		}
+		if len(ch.Error) > 0 && string(ch.Error) != "null" {
+			errBody = ch.Error
+			return false
+		}
+		for _, c := range ch.Choices {
+			if c.Delta.Content != "" {
+				text.WriteString(c.Delta.Content)
+				live.Write(c.Delta.Content)
+			}
+			if c.FinishReason != nil {
+				finish = *c.FinishReason
+			}
+		}
+		if len(ch.Usage) > 0 && string(ch.Usage) != "null" {
+			usage = ch.Usage
+		}
+		return true
+	})
+	if errBody != nil {
+		b, _ := json.Marshal(map[string]any{"error": errBody})
+		return b
+	}
+	if finish == "" {
+		b, _ := json.Marshal(map[string]any{"error": map[string]any{"code": 502, "message": "OpenRouter stream ended early"}})
+		return b
+	}
+	out := map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": text.String()}, "finish_reason": finish}}}
+	if usage != nil {
+		out["usage"] = usage
+	}
+	b, _ := json.Marshal(out)
+	return b
 }

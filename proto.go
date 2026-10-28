@@ -206,6 +206,7 @@ type JobOutput struct {
 	Seq    int    `json:"seq"`
 	Stream string `json:"stream"`
 	Data   string `json:"data"`
+	Tokens int    `json:"tokens,omitempty"` // model tokens in Data (inference jobs)
 }
 
 type JobResult struct {
