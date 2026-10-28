@@ -44,7 +44,7 @@ jobs:
           V=$OUTPOST_VERSION
           echo "version=$V" >> "$GITHUB_OUTPUT"
           sh build.sh "$PWD/dist/outpost-$V"
-          cp README.md "dist/outpost-$V/"
+          cp README.md LICENSE THIRD_PARTY_NOTICES.txt "dist/outpost-$V/"
           (cd dist && zip -qr "outpost-$V.zip" "outpost-$V")
           (cd "dist/outpost-$V/bin" && sha256sum * > SHA256SUMS)
           # The stamped binary must report the stamped version, and the updater must be able to read it.

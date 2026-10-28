@@ -539,10 +539,20 @@ you fill it in (set it if you reach the controller by a name or IP different fro
   Claude and OpenRouter servers and fake llama-server and Chromium. The live OpenRouter API was never
   called.
 
+## License
+
+Outpost is free software under the GNU Affero General Public License v3.0 only (SPDX:
+`AGPL-3.0-only`); the full text is in `LICENSE`. Copyright (C) 2026 Mark (64fedoras). Because the web UI
+is a network service, section 13 applies: the sidebar and the sign-in page link to the source code
+(the tag of the running version) and to `/licenses`, which shows the licence and the third-party notices.
+`outpost licenses` prints the same text. Licences of everything Outpost vendors, bundles or downloads are in
+`THIRD_PARTY_NOTICES.txt` (regenerate with `sh gen_notices.sh` after `go mod vendor`); `LICENSE` and the
+notices are also in the release zip. This is not legal advice.
+
 ## Third-party code inside the binary
 
 Linux x86-64 builds include `libgomp.so.1` from GCC (GPLv3 with the GCC Runtime Library Exception),
-unmodified, from Debian's `libgomp1` package; its license is in `bundled/LICENSE-libgomp.txt` and its
+unmodified, from Debian's `libgomp1` package; its license is in `bundled/LICENSE-libgomp.txt` (also in `THIRD_PARTY_NOTICES.txt`) and its
 source is available from Debian (`apt source gcc`). Outpost writes it to disk only on machines that
 lack it.
 
