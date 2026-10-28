@@ -29,7 +29,7 @@ Set up as a service that starts at boot (Linux, systemd; run with sudo):
   outpost install node --join TOKEN [--user USER] [--data DIR] [--name NAME]
   outpost install node                  (machine already joined; reuse its config)
   outpost uninstall controller|node     (removes the service, keeps data)
-  outpost reset-password                (new admin password; restarts the service)
+  outpost reset-password                (set a password, or clear it to choose in the web UI; restarts the service)
   outpost install controller --restore backup.opb    (rebuild a controller from a backup)
 
 Run in the foreground:

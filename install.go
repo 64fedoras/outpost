@@ -134,8 +134,12 @@ func installController(args []string) error {
 	advertise := fsf.String("advertise", "", "URL nodes use to reach the controller, e.g. https://10.0.4.130:8443")
 	restore := fsf.String("restore", "", "restore this backup file (.opb) into the data directory first")
 	force := fsf.Bool("force", false, "with --restore: overwrite an existing controller's data")
+	setupFrom := fsf.String("setup-allow-from", "", "who may choose the first admin password: comma-separated CIDRs, or \"any\" (default: private/LAN addresses only)")
 	_ = fsf.Parse(args)
 
+	if _, err := parseSetupAllow(*setupFrom); err != nil {
+		return err
+	}
 	if err := copySelfToBin(); err != nil {
 		return err
 	}
@@ -151,11 +155,13 @@ func installController(args []string) error {
 		return err
 	}
 	c := &Controller{dataDir: *data}
-	pw, err := c.loadOrCreateAdmin(false)
-	if err != nil {
+	if err := c.loadAdmin(false); err != nil {
 		return err
 	}
 	execArgs := []string{"controller", "--data", *data, "--listen", *listen}
+	if *setupFrom != "" {
+		execArgs = append(execArgs, "--setup-allow-from", *setupFrom)
+	}
 	if *advertise != "" {
 		execArgs = append(execArgs, "--advertise", *advertise)
 	}
@@ -168,8 +174,9 @@ func installController(args []string) error {
 		url = "https://<this-machine's-IP>" + *listen
 	}
 	fmt.Println("Web UI:", url)
-	if pw != "" {
-		fmt.Println("ADMIN PASSWORD:", pw, " (shown once; `sudo outpost controller --reset-password` makes a new one)")
+	if c.needsSetup() {
+		fmt.Println("No admin password yet: open the web UI and choose one. Whoever opens it first does that,")
+		fmt.Println("so do it now; by default only private/LAN addresses are accepted (see --setup-allow-from).")
 	} else {
 		fmt.Println("Admin password: unchanged from before.")
 	}
@@ -268,15 +275,15 @@ func installNode(args []string) error {
 func runResetPassword(args []string) error {
 	fsf := flag.NewFlagSet("reset-password", flag.ExitOnError)
 	data := fsf.String("data", defaultDataDir("controller"), "controller data directory")
-	generate := fsf.Bool("generate", false, "generate a random password instead of asking")
+	clearPw := fsf.Bool("clear", false, "remove the password; choose a new one in the web UI (no prompt)")
 	_ = fsf.Parse(args)
-	if _, err := os.Stat(filepath.Join(*data, "admin.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(*data, "tls.crt")); err != nil {
 		return fmt.Errorf("no controller data in %s (use --data DIR, or run with sudo for /var/lib/outpost/controller)", *data)
 	}
 	c := &Controller{dataDir: *data}
-	pw, generated := "", false
-	if !*generate {
-		pw = readPassword("New admin password (leave blank to generate one): ")
+	pw := ""
+	if !*clearPw {
+		pw = readPassword("New admin password (leave blank to choose it in the web UI instead): ")
 		if pw != "" {
 			if err := validNewPassword(pw); err != nil {
 				return err
@@ -287,15 +294,18 @@ func runResetPassword(args []string) error {
 		}
 	}
 	if pw == "" {
-		pw = randHex(8)
-		generated = true
-		defer fmt.Println("NEW ADMIN PASSWORD:", pw)
+		// Back to first-run state: the next visitor to the web UI chooses the password.
+		if err := c.loadAdmin(true); err != nil {
+			return err
+		}
+		fmt.Println("Admin password removed. Open the web UI right away to choose a new one (first-run setup).")
+	} else {
+		if err := c.setAdminPassword(pw); err != nil {
+			return err
+		}
+		_ = os.Remove(filepath.Join(*data, "sessions.json"))
+		fmt.Println("Admin password changed.")
 	}
-	if err := c.storeAdminPassword(pw, generated); err != nil {
-		return err
-	}
-	_ = os.Remove(filepath.Join(*data, "sessions.json"))
-	fmt.Println("Admin password changed.")
 	if runtime.GOOS == "linux" && exec.Command("systemctl", "is-active", "--quiet", "outpost-controller").Run() == nil {
 		if out, err := exec.Command("systemctl", "restart", "outpost-controller").CombinedOutput(); err != nil {
 			return fmt.Errorf("password saved, but restarting the service failed: %v: %s", err, strings.TrimSpace(string(out)))

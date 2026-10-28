@@ -10,12 +10,26 @@
 
 <div id="login" class="card hidden">
   <h1>Outpost</h1>
-  <p class="sub wrap">Sign in with the admin password. It was printed when the controller was installed; <code>sudo outpost reset-password</code> on the controller sets a new one.</p>
+  <p class="sub wrap">Sign in with the admin password. Forgot it? Run <code>sudo outpost reset-password</code> on the controller.</p>
   <form id="login-form">
     <label for="pw">Password</label>
     <input id="pw" type="password" autocomplete="current-password" autofocus>
     <div class="error-msg hidden" id="login-err"></div>
     <div class="modal-foot"><button class="primary" type="submit">Sign in</button></div>
+  </form>
+  <p class="legal">Free software under the <a href="/licenses">AGPL-3.0</a> · <a href="https://github.com/64fedoras/outpost" target="_blank" rel="noopener">Source code</a></p>
+</div>
+
+<div id="setup" class="card hidden">
+  <h1>Set up Outpost</h1>
+  <p class="sub wrap">Choose an admin password. You only do this once.</p>
+  <div class="note" style="margin:8px 0"><b>Whoever opens this page first sets the password</b> and controls this cluster. Do it now, from a machine you trust; once it is set, this screen never appears again.</div>
+  <div class="note hidden" id="setup-blocked" style="margin:8px 0">This address is not allowed to do first-run setup. Open the web UI from the local network, or start the controller with <code>--setup-allow-from</code>.</div>
+  <form id="setup-form">
+    <label for="su-new">New password (8+ characters)</label><input id="su-new" type="password" autocomplete="new-password">
+    <label for="su-new2">Repeat password</label><input id="su-new2" type="password" autocomplete="new-password">
+    <div class="error-msg hidden" id="setup-err"></div>
+    <div class="modal-foot"><button class="primary" type="submit">Set password and sign in</button></div>
   </form>
   <p class="legal">Free software under the <a href="/licenses">AGPL-3.0</a> · <a href="https://github.com/64fedoras/outpost" target="_blank" rel="noopener">Source code</a></p>
 </div>
@@ -240,7 +254,6 @@
         </div>
         <div class="section-head"><h2>Admin password</h2></div>
         <div class="card">
-          <div class="note hidden" id="pw-initial-note">You are still using the password Outpost generated. Choosing your own is a good idea, but you can keep this one.</div>
           <form id="pw-form">
             <label for="pw-cur">Current password</label><input id="pw-cur" type="password" autocomplete="current-password">
             <div class="row2">
@@ -289,21 +302,6 @@
 </div>
 
 <!-- MODALS -->
-<div id="modal-pw" class="overlay hidden">
-  <div class="modal">
-    <h3>Change your admin password?</h3>
-    <p class="hint">You signed in with the password Outpost generated. You can choose your own now, or keep this one and change it later in Settings. Changing it signs out other browsers.</p>
-    <form id="pw-first-form">
-      <div class="row2">
-        <div><label for="pwf-new">New password (8+ characters)</label><input id="pwf-new" type="password" autocomplete="new-password"></div>
-        <div><label for="pwf-new2">Repeat new password</label><input id="pwf-new2" type="password" autocomplete="new-password"></div>
-      </div>
-      <div class="error-msg hidden" id="pwf-err"></div>
-      <div class="modal-foot"><button type="button" data-close>Not now</button><button class="primary" type="submit">Change password</button></div>
-    </form>
-  </div>
-</div>
-
 <div id="modal-add" class="overlay hidden">
   <div class="modal">
     <h3>Add a node</h3>

@@ -19,9 +19,12 @@ scp outpost-linux-amd64 sysmaint@10.0.4.130:~/
 ssh -t sysmaint@10.0.4.130 'sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install controller --advertise https://10.0.4.130:8443'
 ```
 
-On a first install this prints the **admin password**. Open the web UI, accept the self-signed
-certificate warning and sign in. The first time you sign in with that generated password, Outpost offers to
-change it (**Not now** keeps it; Settings → Admin password then shows a reminder until you do).
+A first install sets **no password** and prints or logs none. Open the web UI right away, accept the
+self-signed certificate warning and choose your admin password on the "Set up Outpost" screen (8+
+characters); you are signed in and that screen never appears again. Whoever opens it first sets the
+password, so do it straight after installing. By default only private/LAN addresses (and loopback) are
+accepted for this step; to allow others add `--setup-allow-from 203.0.113.0/24,10.0.0.5` (or `any`) to
+`install controller` / `controller`. Setup is rate limited and only works while no password exists.
 
 ### Nodes
 
@@ -453,9 +456,11 @@ build on disk.
 
 ## Passwords
 
-- Change it in **Settings → Admin password** (8+ characters; other browsers are signed out). While the password is still a generated one (first install, or `reset-password` with a blank answer), each sign-in offers to change it once; **Not now** just continues. Existing installs are not asked.
-- Locked out: on the controller run `sudo outpost reset-password`. It asks for a new password
-  (or generates one if you leave it blank) and restarts the service.
+- Change it in **Settings → Admin password** (8+ characters; other browsers are signed out).
+- Locked out: on the controller run `sudo outpost reset-password`. It asks for a new password, or
+  you leave it blank (or pass `--clear`) to remove the password so you choose a new one in the web UI
+  (open it right away, as on first install). It restarts the service and signs everyone out. Outpost
+  never generates a password.
 - The password is stored as a PBKDF2 hash in `/var/lib/outpost/controller/admin.json` and persists
   across restarts, reboots and updates.
 

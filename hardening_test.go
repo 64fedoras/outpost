@@ -258,46 +258,96 @@ func TestSetTLSCertificate(t *testing.T) {
 	}
 }
 
-// The initial flag is set only for generated passwords and cleared by a chosen one.
-func TestInitialPasswordFlag(t *testing.T) {
-	dir := t.TempDir()
-	c := &Controller{dataDir: dir, sessions: map[string]time.Time{}, sessMeta: map[string]sessionMeta{}}
-	pw, err := c.loadOrCreateAdmin(false)
-	if err != nil || pw == "" || !c.admin.Initial {
-		t.Fatalf("generated password should be initial: %q %v %v", pw, err, c.admin.Initial)
-	}
-	// Survives a restart and a legacy-style rehash on sign-in.
-	c2 := &Controller{dataDir: dir, sessions: map[string]time.Time{}, sessMeta: map[string]sessionMeta{}}
-	if p, _ := c2.loadOrCreateAdmin(false); p != "" || !c2.admin.Initial || !c2.checkPassword(pw) {
-		t.Fatal("flag lost across reload")
-	}
-	// Changing the password through the API clears it.
-	r := httptest.NewRequest("POST", "/api/password", strings.NewReader(`{"current":"`+pw+`","new":"my own passphrase"}`))
+func setupPost(c *Controller, ip, pw string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest("POST", "/api/setup", strings.NewReader(`{"password":"`+pw+`"}`))
+	r.RemoteAddr = ip + ":1234"
 	w := httptest.NewRecorder()
-	c2.handleChangePassword(w, r)
-	if w.Code != 200 || c2.admin.Initial {
-		t.Fatalf("change: %d initial=%v", w.Code, c2.admin.Initial)
+	c.handleSetup(w, r)
+	return w
+}
+
+func freshController(t *testing.T) *Controller {
+	t.Helper()
+	c := &Controller{dataDir: t.TempDir(), sessions: map[string]time.Time{}, sessMeta: map[string]sessionMeta{},
+		loginFails: map[string][]time.Time{}}
+	if err := c.loadAdmin(false); err != nil {
+		t.Fatal(err)
 	}
-	c3 := &Controller{dataDir: dir}
-	c3.loadOrCreateAdmin(false)
-	if c3.admin.Initial {
-		t.Fatal("flag came back after reload")
+	return c
+}
+
+func TestFirstRunSetup(t *testing.T) {
+	c := freshController(t)
+	if !c.needsSetup() || c.checkPassword("") || c.checkPassword("anything") {
+		t.Fatal("a fresh controller must have no password and accept none")
 	}
-	// A user-chosen password (reset-password path) is never initial; a generated one is.
-	if err := c3.storeAdminPassword("generated1", true); err != nil || !c3.admin.Initial {
-		t.Fatal("generated reset should set the flag")
+	if w := setupPost(c, "10.0.0.5", "short"); w.Code != 400 {
+		t.Fatalf("short password: %d", w.Code)
 	}
-	if err := c3.setAdminPassword("chosen password"); err != nil || c3.admin.Initial {
-		t.Fatal("chosen password should clear the flag")
+	w := setupPost(c, "10.0.0.5", "a long enough one")
+	if w.Code != 200 || !strings.Contains(w.Header().Get("Set-Cookie"), "outpost_session=") {
+		t.Fatalf("setup: %d %v", w.Code, w.Header())
+	}
+	if c.needsSetup() || !c.checkPassword("a long enough one") {
+		t.Fatal("password not stored")
+	}
+	// Never again once a password exists.
+	if w := setupPost(c, "10.0.0.5", "another password"); w.Code != 409 || !c.checkPassword("a long enough one") {
+		t.Fatalf("second setup: %d", w.Code)
+	}
+	// Survives a restart.
+	c2 := &Controller{dataDir: c.dataDir}
+	c2.loadAdmin(false)
+	if c2.needsSetup() || !c2.checkPassword("a long enough one") {
+		t.Fatal("password lost on reload")
 	}
 }
 
-// Records written before the flag existed must not be nagged.
-func TestInitialFlagAbsentIsFalse(t *testing.T) {
-	c := authTestController(t)
+func TestSetupAddressRestriction(t *testing.T) {
+	c := freshController(t)
+	for ip, want := range map[string]bool{"10.1.2.3": true, "192.168.0.9": true, "127.0.0.1": true, "::1": true, "fd00::1": true, "8.8.8.8": false, "2001:4860::1": false} {
+		if c.setupAllowed(ip) != want {
+			t.Errorf("default allow %s = %v, want %v", ip, !want, want)
+		}
+	}
+	if w := setupPost(c, "8.8.8.8", "a long enough one"); w.Code != 403 || !c.needsSetup() {
+		t.Fatalf("public address: %d", w.Code)
+	}
+	var err error
+	if c.setupAllow, err = parseSetupAllow("203.0.113.0/24, 10.9.9.9"); err != nil {
+		t.Fatal(err)
+	}
+	if !c.setupAllowed("203.0.113.7") || !c.setupAllowed("10.9.9.9") || c.setupAllowed("10.0.0.1") {
+		t.Fatal("explicit list not honoured")
+	}
+	c.setupAllow, _ = parseSetupAllow("any")
+	if !c.setupAllowed("8.8.8.8") {
+		t.Fatal("any should allow everything")
+	}
+	if _, err := parseSetupAllow("nonsense"); err == nil {
+		t.Fatal("bad CIDR accepted")
+	}
+}
+
+func TestSetupRateLimitAndReset(t *testing.T) {
+	c := freshController(t)
+	c.setupAllow, _ = parseSetupAllow("10.0.0.0/8")
+	for i := 0; i < lockoutFails; i++ {
+		setupPost(c, "8.8.4.4", "a long enough one")
+	}
+	if w := setupPost(c, "8.8.4.4", "a long enough one"); w.Code != 429 {
+		t.Fatalf("expected lockout, got %d", w.Code)
+	}
+	// Reset removes the password and nothing generated is left behind.
+	if w := setupPost(c, "10.0.0.5", "a long enough one"); w.Code != 200 {
+		t.Fatal("setup failed")
+	}
+	if err := c.loadAdmin(true); err != nil {
+		t.Fatal(err)
+	}
 	c2 := &Controller{dataDir: c.dataDir}
-	c2.loadOrCreateAdmin(false)
-	if c2.admin.Initial {
-		t.Fatal("existing install flagged as initial")
+	c2.loadAdmin(false)
+	if !c2.needsSetup() {
+		t.Fatal("reset should return to first-run state")
 	}
 }

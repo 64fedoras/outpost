@@ -29,9 +29,6 @@ type adminRecord struct {
 	Iter int    `json:"iter,omitempty"`
 	Salt string `json:"Salt"`
 	Hash string `json:"Hash"`
-	// Initial is true only while the password is the one Outpost generated;
-	// absent (false) on records from earlier versions, so they are never nagged.
-	Initial bool `json:"initial,omitempty"`
 }
 
 func (c *Controller) adminPath() string { return filepath.Join(c.dataDir, "admin.json") }
@@ -44,13 +41,9 @@ func hashPassword(pw, salt string, iter int) string {
 	return hex.EncodeToString(k)
 }
 
-// setAdminPassword stores a password the user chose; it clears the initial flag.
-func (c *Controller) setAdminPassword(pw string) error { return c.storeAdminPassword(pw, false) }
-
-// storeAdminPassword stores a new password hash on disk and in memory. initial
-// marks an auto-generated password the web UI should ask the user to replace.
-func (c *Controller) storeAdminPassword(pw string, initial bool) error {
-	rec := adminRecord{Algo: "pbkdf2-sha256", Iter: pbkdf2Iter, Salt: randHex(16), Initial: initial}
+// setAdminPassword stores a new password hash on disk and in memory.
+func (c *Controller) setAdminPassword(pw string) error {
+	rec := adminRecord{Algo: "pbkdf2-sha256", Iter: pbkdf2Iter, Salt: randHex(16)}
 	rec.Hash = hashPassword(pw, rec.Salt, rec.Iter)
 	b, _ := json.Marshal(rec)
 	tmp := c.adminPath() + ".tmp"
@@ -66,26 +59,44 @@ func (c *Controller) storeAdminPassword(pw string, initial bool) error {
 	return nil
 }
 
-// loadOrCreateAdmin loads admin.json, or creates a random password when the file
-// is missing or reset is true. It returns the new password, or "" if unchanged.
-func (c *Controller) loadOrCreateAdmin(reset bool) (string, error) {
-	if b, err := os.ReadFile(c.adminPath()); err == nil && !reset {
-		var rec adminRecord
-		if err := json.Unmarshal(b, &rec); err == nil && rec.Hash != "" {
-			c.mu.Lock()
-			c.admin = rec
-			c.mu.Unlock()
-			return "", nil
+// loadAdmin loads admin.json. A controller without one has no password yet: the
+// web UI then asks for one on first visit (see setup.go). With reset true the
+// stored password is removed first, so the next visitor chooses a new one.
+// Outpost never generates a password, so there is nothing to print or log.
+func (c *Controller) loadAdmin(reset bool) error {
+	if reset {
+		if err := os.Remove(c.adminPath()); err != nil && !os.IsNotExist(err) {
+			return err
 		}
+		_ = os.Remove(c.sessionsPath())
 	}
-	pw := randHex(8)
-	return pw, c.storeAdminPassword(pw, true)
+	b, err := os.ReadFile(c.adminPath())
+	if err != nil {
+		return nil
+	}
+	var rec adminRecord
+	if err := json.Unmarshal(b, &rec); err == nil && rec.Hash != "" {
+		c.mu.Lock()
+		c.admin = rec
+		c.mu.Unlock()
+	}
+	return nil
+}
+
+// needsSetup reports whether no admin password has been chosen yet.
+func (c *Controller) needsSetup() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.admin.Hash == ""
 }
 
 func (c *Controller) checkPassword(pw string) bool {
 	c.mu.Lock()
 	rec := c.admin
 	c.mu.Unlock()
+	if rec.Hash == "" {
+		return false // no password chosen yet: nothing signs in until setup
+	}
 	var got string
 	if rec.Algo == "pbkdf2-sha256" {
 		got = hashPassword(pw, rec.Salt, rec.Iter)
@@ -96,7 +107,7 @@ func (c *Controller) checkPassword(pw string) bool {
 		return false
 	}
 	if rec.Algo != "pbkdf2-sha256" {
-		_ = c.storeAdminPassword(pw, rec.Initial) // upgrade the stored hash
+		_ = c.setAdminPassword(pw) // upgrade the stored hash
 	}
 	return true
 }
