@@ -65,35 +65,41 @@ func (c *Controller) handleUploadRelease(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, 400, map[string]string{"error": "upload failed: " + err.Error()})
 		return
 	}
-	platform, version, err := inspectBinary(tmp.Name())
+	rel, err := c.installRelease(tmp.Name(), filepath.Base(r.Header.Get("X-Filename")))
 	if err != nil {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
-	sum, size, err := fileSHA256(tmp.Name())
+	writeJSON(w, 200, rel)
+}
+
+// installRelease moves the binary at src (which must be on the releases
+// volume) into place as the release for its own platform.
+func (c *Controller) installRelease(src, fileName string) (*Release, error) {
+	platform, version, err := inspectBinary(src)
 	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
-		return
+		return nil, err
+	}
+	sum, size, err := fileSHA256(src)
+	if err != nil {
+		return nil, err
 	}
 	dst := c.releasePath(platform)
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
-		return
+		return nil, err
 	}
-	if err := os.Rename(tmp.Name(), dst); err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
-		return
+	if err := os.Rename(src, dst); err != nil {
+		return nil, err
 	}
 	_ = os.Chmod(dst, 0o755)
-	rel := &Release{Platform: platform, Version: version, SHA256: sum, Bytes: size, Uploaded: time.Now(),
-		FileName: filepath.Base(r.Header.Get("X-Filename"))}
+	rel := &Release{Platform: platform, Version: version, SHA256: sum, Bytes: size, Uploaded: time.Now(), FileName: fileName}
 	b, _ := json.MarshalIndent(rel, "", "  ")
 	_ = os.WriteFile(filepath.Join(filepath.Dir(dst), "release.json"), b, 0o600)
 	c.mu.Lock()
 	c.releases[platform] = rel
 	c.mu.Unlock()
 	log.Printf("release uploaded: %s %s (%d bytes)", platform, version, size)
-	writeJSON(w, 200, rel)
+	return rel, nil
 }
 
 func (c *Controller) handleDeleteRelease(w http.ResponseWriter, r *http.Request) {
