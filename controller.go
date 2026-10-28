@@ -458,7 +458,8 @@ func (c *Controller) handleState(w http.ResponseWriter, r *http.Request) {
 		ctlUpdate = r.Version
 	}
 	writeJSON(w, 200, map[string]any{
-		"version": Version, "platform": thisPlatform(), "controller_update_to": ctlUpdate,
+		"password_initial": c.admin.Initial,
+		"version":          Version, "platform": thisPlatform(), "controller_update_to": ctlUpdate,
 		"controller_rollback_to": previousVersion(c.agentDir()),
 		"fingerprint":            c.fingerprint, "advertise": c.advertise,
 		"nodes": nodes, "jobs": jobs, "releases": releases, "ops": c.nodeOps,

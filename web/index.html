@@ -238,6 +238,7 @@
         </div>
         <div class="section-head"><h2>Admin password</h2></div>
         <div class="card">
+          <div class="note hidden" id="pw-initial-note">You are still using the password Outpost generated. Choosing your own is a good idea, but you can keep this one.</div>
           <form id="pw-form">
             <label for="pw-cur">Current password</label><input id="pw-cur" type="password" autocomplete="current-password">
             <div class="row2">
@@ -286,6 +287,21 @@
 </div>
 
 <!-- MODALS -->
+<div id="modal-pw" class="overlay hidden">
+  <div class="modal">
+    <h3>Change your admin password?</h3>
+    <p class="hint">You signed in with the password Outpost generated. You can choose your own now, or keep this one and change it later in Settings. Changing it signs out other browsers.</p>
+    <form id="pw-first-form">
+      <div class="row2">
+        <div><label for="pwf-new">New password (8+ characters)</label><input id="pwf-new" type="password" autocomplete="new-password"></div>
+        <div><label for="pwf-new2">Repeat new password</label><input id="pwf-new2" type="password" autocomplete="new-password"></div>
+      </div>
+      <div class="error-msg hidden" id="pwf-err"></div>
+      <div class="modal-foot"><button type="button" data-close>Not now</button><button class="primary" type="submit">Change password</button></div>
+    </form>
+  </div>
+</div>
+
 <div id="modal-add" class="overlay hidden">
   <div class="modal">
     <h3>Add a node</h3>

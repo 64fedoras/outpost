@@ -257,3 +257,47 @@ func TestSetTLSCertificate(t *testing.T) {
 		t.Fatalf("bad key: %d", w.Code)
 	}
 }
+
+// The initial flag is set only for generated passwords and cleared by a chosen one.
+func TestInitialPasswordFlag(t *testing.T) {
+	dir := t.TempDir()
+	c := &Controller{dataDir: dir, sessions: map[string]time.Time{}, sessMeta: map[string]sessionMeta{}}
+	pw, err := c.loadOrCreateAdmin(false)
+	if err != nil || pw == "" || !c.admin.Initial {
+		t.Fatalf("generated password should be initial: %q %v %v", pw, err, c.admin.Initial)
+	}
+	// Survives a restart and a legacy-style rehash on sign-in.
+	c2 := &Controller{dataDir: dir, sessions: map[string]time.Time{}, sessMeta: map[string]sessionMeta{}}
+	if p, _ := c2.loadOrCreateAdmin(false); p != "" || !c2.admin.Initial || !c2.checkPassword(pw) {
+		t.Fatal("flag lost across reload")
+	}
+	// Changing the password through the API clears it.
+	r := httptest.NewRequest("POST", "/api/password", strings.NewReader(`{"current":"`+pw+`","new":"my own passphrase"}`))
+	w := httptest.NewRecorder()
+	c2.handleChangePassword(w, r)
+	if w.Code != 200 || c2.admin.Initial {
+		t.Fatalf("change: %d initial=%v", w.Code, c2.admin.Initial)
+	}
+	c3 := &Controller{dataDir: dir}
+	c3.loadOrCreateAdmin(false)
+	if c3.admin.Initial {
+		t.Fatal("flag came back after reload")
+	}
+	// A user-chosen password (reset-password path) is never initial; a generated one is.
+	if err := c3.storeAdminPassword("generated1", true); err != nil || !c3.admin.Initial {
+		t.Fatal("generated reset should set the flag")
+	}
+	if err := c3.setAdminPassword("chosen password"); err != nil || c3.admin.Initial {
+		t.Fatal("chosen password should clear the flag")
+	}
+}
+
+// Records written before the flag existed must not be nagged.
+func TestInitialFlagAbsentIsFalse(t *testing.T) {
+	c := authTestController(t)
+	c2 := &Controller{dataDir: c.dataDir}
+	c2.loadOrCreateAdmin(false)
+	if c2.admin.Initial {
+		t.Fatal("existing install flagged as initial")
+	}
+}

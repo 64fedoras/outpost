@@ -54,9 +54,15 @@ function showApp() {
   $('login').classList.add('hidden'); $('app').classList.remove('hidden'); route();
   refresh(); if (!stateTimer) stateTimer = setInterval(refresh, 2000);
 }
+let loginPw = ''; // held only while the first-login password offer is open
 $('login-form').onsubmit = async (e) => {
   e.preventDefault(); $('login-err').classList.add('hidden');
-  try { await post('/api/login', { password: $('pw').value }); $('pw').value = ''; showApp(); }
+  try {
+    const typed = $('pw').value;
+    await post('/api/login', { password: typed }); $('pw').value = ''; showApp();
+    // A still-generated password gets one offer per sign-in; Settings keeps a note afterwards.
+    api('/api/state').then((st) => { if (st.password_initial) { loginPw = typed; $('modal-pw').classList.remove('hidden'); $('pwf-new').focus(); } }).catch(() => {});
+  }
   catch (err) { $('login-err').textContent = err.message; $('login-err').classList.remove('hidden'); }
 };
 $('btn-logout').onclick = async () => { await post('/api/logout').catch(() => {}); showLogin(); };
@@ -103,6 +109,7 @@ async function refresh() {
     api('/api/tasks').then((t) => { tasks = t; }).catch(() => {}),
     api('/api/projects').then((p) => { projects = p; }).catch(() => {}),
   ]);
+  $('pw-initial-note').classList.toggle('hidden', !state.password_initial);
   $('hdr-meta').textContent = `v${state.version}`;
   $('hdr-meta').title = state.advertise;
   $('ctl-info').textContent = `Controller ${state.advertise} · ${state.platform} · certificate SHA-256 ${state.fingerprint}`;
@@ -1500,6 +1507,17 @@ $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) r
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-instr-save').onclick = () => saveSettings({ instructions: $('set-instr').value }, 'Instructions saved');
 $('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, agent_mode: $('set-agent').checked, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked, auto_resume: $('set-autoresume').checked, best_of_n: $('set-bestofn').value }, 'Defaults saved');
+$('modal-pw').addEventListener('click', (e) => { if (e.target.hasAttribute('data-close') || e.target === $('modal-pw')) loginPw = ''; });
+$('pw-first-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const err = $('pwf-err'); err.classList.add('hidden');
+  if ($('pwf-new').value !== $('pwf-new2').value) { err.textContent = 'The new passwords do not match.'; err.classList.remove('hidden'); return; }
+  try {
+    await post('/api/password', { current: loginPw, new: $('pwf-new').value });
+    loginPw = ''; ['pwf-new', 'pwf-new2'].forEach((id) => { $(id).value = ''; });
+    close('modal-pw'); toast('Password changed. Other browsers were signed out.', 4000); refresh();
+  } catch (x) { err.textContent = x.message; err.classList.remove('hidden'); }
+};
 $('pw-form').onsubmit = async (e) => {
   e.preventDefault();
   const err = $('pw-err'); err.classList.add('hidden');
@@ -1507,7 +1525,7 @@ $('pw-form').onsubmit = async (e) => {
   try {
     await post('/api/password', { current: $('pw-cur').value, new: $('pw-new').value });
     ['pw-cur', 'pw-new', 'pw-new2'].forEach((id) => { $(id).value = ''; });
-    toast('Password changed. Other browsers were signed out.', 4000);
+    toast('Password changed. Other browsers were signed out.', 4000); refresh();
   } catch (x) { err.textContent = x.message; err.classList.remove('hidden'); }
 };
 

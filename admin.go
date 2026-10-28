@@ -29,6 +29,9 @@ type adminRecord struct {
 	Iter int    `json:"iter,omitempty"`
 	Salt string `json:"Salt"`
 	Hash string `json:"Hash"`
+	// Initial is true only while the password is the one Outpost generated;
+	// absent (false) on records from earlier versions, so they are never nagged.
+	Initial bool `json:"initial,omitempty"`
 }
 
 func (c *Controller) adminPath() string { return filepath.Join(c.dataDir, "admin.json") }
@@ -41,9 +44,13 @@ func hashPassword(pw, salt string, iter int) string {
 	return hex.EncodeToString(k)
 }
 
-// setAdminPassword stores a new password hash on disk and in memory.
-func (c *Controller) setAdminPassword(pw string) error {
-	rec := adminRecord{Algo: "pbkdf2-sha256", Iter: pbkdf2Iter, Salt: randHex(16)}
+// setAdminPassword stores a password the user chose; it clears the initial flag.
+func (c *Controller) setAdminPassword(pw string) error { return c.storeAdminPassword(pw, false) }
+
+// storeAdminPassword stores a new password hash on disk and in memory. initial
+// marks an auto-generated password the web UI should ask the user to replace.
+func (c *Controller) storeAdminPassword(pw string, initial bool) error {
+	rec := adminRecord{Algo: "pbkdf2-sha256", Iter: pbkdf2Iter, Salt: randHex(16), Initial: initial}
 	rec.Hash = hashPassword(pw, rec.Salt, rec.Iter)
 	b, _ := json.Marshal(rec)
 	tmp := c.adminPath() + ".tmp"
@@ -72,7 +79,7 @@ func (c *Controller) loadOrCreateAdmin(reset bool) (string, error) {
 		}
 	}
 	pw := randHex(8)
-	return pw, c.setAdminPassword(pw)
+	return pw, c.storeAdminPassword(pw, true)
 }
 
 func (c *Controller) checkPassword(pw string) bool {
@@ -89,7 +96,7 @@ func (c *Controller) checkPassword(pw string) bool {
 		return false
 	}
 	if rec.Algo != "pbkdf2-sha256" {
-		_ = c.setAdminPassword(pw) // upgrade the stored hash
+		_ = c.storeAdminPassword(pw, rec.Initial) // upgrade the stored hash
 	}
 	return true
 }

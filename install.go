@@ -274,7 +274,7 @@ func runResetPassword(args []string) error {
 		return fmt.Errorf("no controller data in %s (use --data DIR, or run with sudo for /var/lib/outpost/controller)", *data)
 	}
 	c := &Controller{dataDir: *data}
-	pw := ""
+	pw, generated := "", false
 	if !*generate {
 		pw = readPassword("New admin password (leave blank to generate one): ")
 		if pw != "" {
@@ -288,9 +288,10 @@ func runResetPassword(args []string) error {
 	}
 	if pw == "" {
 		pw = randHex(8)
+		generated = true
 		defer fmt.Println("NEW ADMIN PASSWORD:", pw)
 	}
-	if err := c.setAdminPassword(pw); err != nil {
+	if err := c.storeAdminPassword(pw, generated); err != nil {
 		return err
 	}
 	_ = os.Remove(filepath.Join(*data, "sessions.json"))

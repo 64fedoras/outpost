@@ -20,7 +20,8 @@ ssh -t sysmaint@10.0.4.130 'sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpos
 ```
 
 On a first install this prints the **admin password**. Open the web UI, accept the self-signed
-certificate warning and sign in. Change the password under **Settings → Admin password**.
+certificate warning and sign in. The first time you sign in with that generated password, Outpost offers to
+change it (**Not now** keeps it; Settings → Admin password then shows a reminder until you do).
 
 ### Nodes
 
@@ -452,7 +453,7 @@ build on disk.
 
 ## Passwords
 
-- Change it in **Settings → Admin password** (8+ characters; other browsers are signed out).
+- Change it in **Settings → Admin password** (8+ characters; other browsers are signed out). While the password is still a generated one (first install, or `reset-password` with a blank answer), each sign-in offers to change it once; **Not now** just continues. Existing installs are not asked.
 - Locked out: on the controller run `sudo outpost reset-password`. It asks for a new password
   (or generates one if you leave it blank) and restarts the service.
 - The password is stored as a PBKDF2 hash in `/var/lib/outpost/controller/admin.json` and persists
