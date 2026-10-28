@@ -191,7 +191,7 @@ Each task is a conversation:
    once per request; clear requests go straight to a plan.
 3. **The plan appears as a card.** Approve it, adjust the cap, or reply with changes ("use SQLite
    instead", "drop the web UI") and it revises the plan. Nothing runs until you approve.
-4. **Progress is live.** A strip fills in as subtasks finish, with which node wrote and checked each.
+4. **Progress is live.** A strip fills in as subtasks finish, with which node wrote and checked each. Each running subtask has a "live output" pane showing what the model is writing; it starts collapsed, click to expand.
    A running subtask expands to show the text its node is writing, with tokens per second, and
    planning with Claude or OpenRouter streams the same way. The page also updates as soon as the
    task changes instead of waiting for the next refresh. Live text is kept in controller memory only

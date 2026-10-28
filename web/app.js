@@ -358,7 +358,7 @@ async function pollTask() {
 
 // ---------- live output (server-sent events) ----------
 let liveES = null, liveCalls = {}, liveKick = null;
-const liveClosed = new Set();   // subtask ids whose live pane the user collapsed
+const liveExpanded = new Set();   // subtask ids whose live pane the user expanded (panes start collapsed)
 function liveClose() {
   if (liveES) liveES.close();
   liveES = null; liveCalls = {}; clearTimeout(liveKick);
@@ -390,12 +390,12 @@ function setLiveText(pre, c) {
   if (stick) pre.scrollTop = pre.scrollHeight;
 }
 function livePane(c, id) {
-  const open = !liveClosed.has(c.sub || id);
+  const open = liveExpanded.has(c.sub || id);
   return `<details class="live" data-sub="${esc(c.sub || id)}" ${open ? 'open' : ''}><summary>live output <span class="live-rate">${esc(liveRate(c))}</span></summary><pre class="live-text" data-live="${esc(id)}">${esc(c.text)}</pre></details>`;
 }
 document.addEventListener('toggle', (e) => {
   const d = e.target;
-  if (d.classList && d.classList.contains('live')) d.open ? liveClosed.delete(d.dataset.sub) : liveClosed.add(d.dataset.sub);
+  if (d.classList && d.classList.contains('live')) d.open ? liveExpanded.add(d.dataset.sub) : liveExpanded.delete(d.dataset.sub);
 }, true);
 
 function threadReset() {
