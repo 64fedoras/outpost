@@ -176,6 +176,9 @@ pre.out .err { color: var(--stderr); }
 .side-foot { border-top: 1px solid var(--line); padding: 10px 8px 12px; }
 .cluster-link { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); text-decoration: none; padding: 4px 8px 8px; }
 .cluster-link:hover { color: var(--ink); }
+.side-group { display: block; padding: 8px 8px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .7px; color: var(--muted); text-decoration: none; }
+.attach { cursor: pointer; }
+.settings-form { display: flex; flex-direction: column; gap: 6px; max-width: 560px; }
 .side-nav { display: flex; flex-direction: column; }
 .side-nav a { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 13.5px; }
 .side-nav a:hover { background: var(--side-hover); }
@@ -322,3 +325,43 @@ fieldset.q[disabled] .opt span { opacity: .6; cursor: default; }
 .rowline > span { min-width: 0; overflow-wrap: anywhere; }
 label.check { display: flex; align-items: center; gap: 8px; }
 label.check input { width: auto; }
+
+/* file browser and round changes */
+.fb { display: grid; grid-template-columns: minmax(160px, 260px) 1fr; gap: 12px; margin-top: 8px; }
+.fb-tree { max-height: 62vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px; font-family: var(--mono); font-size: 12.5px; display: flex; flex-direction: column; }
+.fb-row { display: flex; align-items: center; gap: 6px; }
+.fb-tree a { padding: 2px 6px; border-radius: 4px; word-break: break-all; }
+.fb-tree a:hover { background: var(--tint); }
+.fb-dir { color: var(--muted); padding: 2px 6px; }
+.fb-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; }
+pre.code { white-space: pre; word-break: normal; max-height: 62vh; tab-size: 4; }
+pre.code .ln { display: inline-block; min-width: 3.2em; padding-right: 1em; text-align: right; color: #7d7e84; user-select: none; }
+.hl-k { color: #c792ea; } .hl-s { color: #a5d6a7; } .hl-n { color: #f5b971; }
+pre.diff { max-height: 40vh; }
+.d-add { background: rgba(46, 160, 67, .25); display: block; } .d-del { background: rgba(220, 70, 60, .25); display: block; }
+.d-ctx { display: block; } .d-gap { color: #7d7e84; display: block; }
+.diffs details { margin: 6px 0; } .diffs summary { cursor: pointer; }
+@media (max-width: 700px) { .fb { grid-template-columns: 1fr; } }
+/* live output of a running subtask */
+.p-list li > details.live { grid-column: 2 / -1; margin: 4px 0 2px; }
+details.live summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.live-rate { margin-left: 8px; font-family: var(--mono); }
+.live-text { margin: 4px 0 0; padding: 8px 10px; max-height: 220px; overflow: auto; font-family: var(--mono); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+/* image attachments */
+.img-strip { display: flex; gap: 8px; flex-wrap: wrap; }
+.img-strip:not(:empty) { margin-top: 8px; }
+.img-chip { position: relative; display: inline-flex; }
+.img-chip img { height: 56px; max-width: 120px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.img-chip button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; border-radius: 50%; line-height: 1; font-size: 14px; }
+.attach-img { white-space: nowrap; }
+.shot-grid { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
+.shot { margin: 0; flex: 1 1 260px; min-width: 0; }
+.shot figcaption { margin-bottom: 6px; font-size: 13px; }
+.shot-pair { display: flex; gap: 8px; align-items: flex-start; }
+.shot-pair a { display: block; min-width: 0; }
+.shot-pair img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.shot-pair a:first-child { flex: 3 1 0; }
+.shot-pair a:last-child { flex: 1 1 0; }
+.shot .primary { margin-top: 8px; }
+.bubble-imgs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.bubble-imgs img { max-height: 120px; max-width: 200px; border-radius: 8px; border: 1px solid var(--line); display: block; }
