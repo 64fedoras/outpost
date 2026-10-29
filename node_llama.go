@@ -1075,6 +1075,15 @@ func (l *llamaMgr) wake(model string) *ErrInfo {
 		if msg == "" {
 			msg = "the model did not load"
 		}
+		// load() ends a failed start with stop(), which forgets the model. Put it back so the
+		// node stays available and the next request tries again, instead of waiting for the
+		// Nodes menu.
+		l.mu.Lock()
+		if l.cmd == nil && l.cold == nil {
+			l.cold = cold
+		}
+		l.mu.Unlock()
+		l.n.resendHello()
 		return errf("inference_unavailable", true, "reloading %s after idle unload failed: %s", cold.Name, msg)
 	}
 	return nil
