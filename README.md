@@ -330,7 +330,8 @@ stays in the thread, dimmed, and the new one is marked *edited*. On a finished, 
 *Re-run plan* (or *Save and re-run* after editing) puts back the files the last run wrote and runs the
 plan again from the start as a new request, without planning again; the earlier run stays above. *Retry
 failed subtasks* keeps finished subtasks and their files and runs only the failed ones (and the tests)
-again. Nothing can be edited or re-run while the task is running. Cloud spend keeps counting against the
+again. *Try again* on a failed task does the same for a task that stopped mid-run: failed subtasks go back
+to pending and run again, finished ones are kept. Nothing can be edited or re-run while the task is running. Cloud spend keeps counting against the
 cap. Design-variant (mockup) plans cannot be edited.
 
 ### Project instructions
