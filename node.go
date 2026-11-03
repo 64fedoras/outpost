@@ -62,6 +62,7 @@ type Node struct {
 	peer        peerState
 	artifacts   map[string]string // "<job>/<path>" -> file on disk, served to the controller
 	busyModels  map[string]int    // models being written right now; cleanup skips them
+	verifyMu    sync.Mutex        // serialises model re-checks (node_verify.go)
 }
 
 func (n *Node) agentDir() string { return filepath.Join(n.dataDir, "agent") }
@@ -124,6 +125,7 @@ func runNode(args []string) error {
 	log.Printf("outpost node %s starting; node id %s; work root %s (startup sweep freed %d bytes)", Version, n.cfg.NodeID, n.workRoot, freed)
 	go n.workspaceJanitor()
 	go n.autoload()
+	go n.verifyModelsBackground()
 	go n.llama.idleLoop(context.Background())
 	go n.autostartRPC()
 	n.startPeerServer()
