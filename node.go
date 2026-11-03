@@ -768,7 +768,12 @@ func (n *Node) runJob(jd JobDispatch) {
 	cmd.Stdout = io.MultiWriter(stdoutTail, sw.writer("stdout"))
 	cmd.Stderr = io.MultiWriter(stderrTail, sw.writer("stderr"))
 
-	runErr := cmd.Run()
+	runErr := cmd.Start()
+	if runErr == nil {
+		release := sandboxAttach(cmd, mode)
+		runErr = cmd.Wait()
+		release()
+	}
 	if mode != sandboxOff {
 		killProcGroup(cmd) // nothing a sandboxed job started may outlive it
 	}
@@ -927,10 +932,7 @@ func (n *Node) sandboxMode() string {
 	if m == "" {
 		m = sandboxBasic
 	}
-	if runtime.GOOS != "linux" {
-		return sandboxOff
-	}
-	return m
+	return sandboxPlatformMode(m)
 }
 
 func (n *Node) sandboxCacheDir() string { return filepath.Join(n.dataDir, "sandbox-cache") }

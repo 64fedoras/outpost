@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux && !windows
 
 package main
 
@@ -11,3 +11,9 @@ func sandboxLayers(mode string) []string { return nil }
 func sandboxWrap(cmd *exec.Cmd, p *sandboxPolicy) *ErrInfo { return nil }
 
 func runSandboxChild(args []string) {}
+
+// sandboxAttach runs after the command started; the returned func runs when it ended.
+func sandboxAttach(cmd *exec.Cmd, mode string) func() { return func() {} }
+
+// sandboxPlatformMode is the mode this OS can enforce for the one asked for.
+func sandboxPlatformMode(mode string) string { return sandboxOff }

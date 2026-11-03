@@ -143,6 +143,10 @@ func sandboxWrap(cmd *exec.Cmd, p *sandboxPolicy) *ErrInfo {
 	return nil
 }
 
+func sandboxAttach(cmd *exec.Cmd, mode string) func() { return func() {} }
+
+func sandboxPlatformMode(mode string) string { return mode }
+
 // runSandboxChild is the hidden "sandbox-child" mode: lock this process in, then exec.
 func runSandboxChild(args []string) {
 	if len(args) > 0 && args[0] == "--probe" {
