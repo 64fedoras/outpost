@@ -56,3 +56,6 @@ func setProcGroup(cmd *exec.Cmd) {
 
 // Windows cannot deliver SIGTERM; Kill stops llama-server.
 func osInterrupt() os.Signal { return os.Kill }
+
+// killProcGroup is a no-op on Windows for now (job objects come with the Windows sandbox).
+func killProcGroup(cmd *exec.Cmd) {}

@@ -259,6 +259,12 @@
           <div class="hint" id="set-idle-now"></div>
           <div class="modal-foot"><button class="primary" id="set-idle-save">Save</button></div>
         </div>
+        <div class="section-head"><h2>Command sandbox</h2></div>
+        <div class="card">
+          <p class="hint">How nodes run the commands tasks send them (tests, builds, fixes). <b>Basic</b>: a command can only change files in its own job folder, sees a cleaned-up environment and has no special rights; the network stays open. <b>Strict</b>: basic, with the network off unless the step downloads packages, and a deny list for dangerous system calls. <b>Off</b>: commands run with the node's own rights, as before. Linux nodes only for now; Windows and macOS nodes run commands unsandboxed. A node can override this on its card. If a build breaks and you suspect the sandbox, set it to Off to compare.</p>
+          <select id="set-sandbox"><option value="basic">Basic (recommended)</option><option value="strict">Strict</option><option value="off">Off</option></select>
+          <div class="modal-foot"><button class="primary" id="set-sandbox-save">Save</button></div>
+        </div>
         <div class="section-head"><h2>Project instructions</h2></div>
         <div class="card">
           <p class="hint">Standing rules (like <code>CLAUDE.md</code>) put at the top of every planner, worker, reviewer and fix prompt of tasks you create from now on. A file named <code>OUTPOST.md</code> at the root of a task's files is added too. Keep it short; it is cut at 8,000 characters.</p>

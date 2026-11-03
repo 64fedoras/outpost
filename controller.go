@@ -43,6 +43,7 @@ type NodeRec struct {
 	KeyHash     string     `json:"key_hash"`
 	ExecEnabled bool       `json:"exec_enabled"`
 	MaxJobs     int        `json:"max_jobs_override"`     // 0 = use the node's own value
+	Sandbox     string     `json:"sandbox,omitempty"`     // this node's sandbox mode; empty = the global setting
 	IdleUnload  string     `json:"idle_unload,omitempty"` // idle unload wait typed by the owner ("30m", "0"); empty = the global setting
 	Added       time.Time  `json:"added"`
 	Hello       *Hello     `json:"hello,omitempty"`
@@ -552,7 +553,8 @@ func (c *Controller) handleTokenStatus(w http.ResponseWriter, r *http.Request) {
 // the effective idle unload wait. c.mu must be held.
 func (c *Controller) nodeSettingsLocked(n *NodeRec) NodeSettings {
 	return NodeSettings{HeartbeatS: heartbeatSeconds, ExecEnabled: n.ExecEnabled,
-		IdleUnloadS: int(idleUnloadFor(c.settings.IdleUnload, n.IdleUnload) / time.Second)}
+		IdleUnloadS: int(idleUnloadFor(c.settings.IdleUnload, n.IdleUnload) / time.Second),
+		Sandbox:     effectiveSandbox(c.settings.Sandbox, n.Sandbox)}
 }
 
 // pushNodeSettings sends every connected node its settings again.
@@ -581,6 +583,7 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 		ExecEnabled *bool   `json:"exec_enabled"`
 		MaxJobs     *int    `json:"max_jobs_override"`
 		IdleUnload  *string `json:"idle_unload"` // "" = use the global setting
+		Sandbox     *string `json:"sandbox"`     // "" = use the global setting; off | basic | strict
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
@@ -592,12 +595,19 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	if req.Sandbox != nil && strings.TrimSpace(*req.Sandbox) != "" && normSandbox(*req.Sandbox) == "" {
+		writeJSON(w, 400, map[string]string{"error": "sandbox must be off, basic, strict or empty"})
+		return
+	}
 	c.mu.Lock()
 	n, ok := c.nodes[id]
 	if !ok {
 		c.mu.Unlock()
 		writeJSON(w, 404, map[string]string{"error": "no such node"})
 		return
+	}
+	if req.Sandbox != nil {
+		n.Sandbox = normSandbox(*req.Sandbox)
 	}
 	if req.IdleUnload != nil {
 		n.IdleUnload = strings.TrimSpace(*req.IdleUnload)
@@ -701,7 +711,7 @@ func (c *Controller) handleNewJob(w http.ResponseWriter, r *http.Request) {
 			job.Collect = append(job.Collect, p)
 		}
 	}
-	job.Spec, _ = json.Marshal(ExecSpec{Argv: argv, Stream: true})
+	job.Spec, _ = json.Marshal(ExecSpec{Argv: argv, Stream: true, Network: "allow"}) // typed by the owner: trusted
 	rec := &JobRec{ID: job.JobID, NodeID: id, NodeName: displayName(n), Kind: "exec", Command: req.Command, Status: "dispatched", Created: time.Now()}
 	c.addJobLocked(rec)
 	c.mu.Unlock()

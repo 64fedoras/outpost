@@ -1055,6 +1055,7 @@ function nodeCard(n) {
     ${toolsBox(n)}
     <div class="node-foot">
       <label class="toggle" title="Allow this node to run shell commands (needed for tests)"><input type="checkbox" data-exec="${n.id}" ${n.exec_enabled ? 'checked' : ''}> exec</label>
+      ${sandboxPicker(n)}
       <span class="u20"></span>
       <button class="small" data-act="restart" data-id="${n.id}" ${n.online && !n.restarting ? '' : 'disabled'} title="Restart the Outpost service on this node">${n.restarting ? 'Restarting…' : 'Restart'}</button>
       <button class="small" data-act="rename" data-id="${n.id}">Rename</button>
@@ -1062,6 +1063,21 @@ function nodeCard(n) {
       <button class="small" data-act="run" data-id="${n.id}" ${n.online && n.exec_enabled ? '' : 'disabled'} title="${n.exec_enabled ? '' : 'Enable exec first'}">Run…</button>
     </div>
   </div>`;
+}
+
+function sandboxPicker(n) {
+  if (!n.exec_enabled) return '';
+  const h = n.hello || {};
+  const eff = h.sandbox || '';
+  const layers = (h.sandbox_layers || []).join(', ');
+  const badge = !n.online ? '' : !eff ? 'Off (node is older than the sandbox)' : eff === 'off' ? 'Off' : (layers.includes('landlock') ? 'Sandboxed' : 'Partly') + ' · ' + eff;
+  const sel = (v, t) => `<option value="${v}" ${(n.sandbox || '') === v ? 'selected' : ''}>${t}</option>`;
+  return `<label class="toggle" title="${esc(layers ? 'Enforced here: ' + layers : 'How commands run on this node. Default follows Settings.')}">sandbox
+    <select data-sandbox="${n.id}">${sel('', 'default')}${sel('off', 'off')}${sel('basic', 'basic')}${sel('strict', 'strict')}</select>
+    ${badge ? `<span class="muted">${esc(badge)}</span>` : ''}</label>`;
+}
+async function setSandbox(id, v) {
+  try { await post(`/api/nodes/${id}/settings`, { sandbox: v }); toast('Sandbox ' + (v || 'default')); refresh(); } catch (e) { toast(e.message); }
 }
 
 function toolsBox(n) {
@@ -1489,6 +1505,7 @@ async function loadSettings() {
   $('set-ghtoken-state').innerHTML = settings.github_token_set ? '<span class="st-done">· token set</span>' : '<span class="muted">· not set</span>';
   $('set-ghupd').checked = settings.github_updates !== false; $('set-ghauto').checked = !!settings.github_auto_install;
   $('set-idle').value = settings.idle_unload || '';
+  $('set-sandbox').value = settings.sandbox || 'basic';
   $('set-idle-now').textContent = settings.idle_unload_effective ? 'Nodes unload after: ' + settings.idle_unload_effective + (settings.idle_unload ? '' : ' (default)') : '';
   $('set-pooling').checked = !!settings.pooling_enabled;
   $('set-pooling-notice').classList.toggle('hidden', !settings.pooling_notice);
@@ -1621,6 +1638,7 @@ $('set-ghtest').onclick = async () => {
     out.className = 'st-done'; out.textContent = r.message;
   } catch (e) { out.className = 'error-msg'; out.textContent = e.message; }
 };
+$('set-sandbox-save').onclick = () => saveSettings({ sandbox: $('set-sandbox').value }, 'Sandbox saved');
 $('set-idle-save').onclick = () => saveSettings({ idle_unload: $('set-idle').value.trim() }, 'Idle unload saved');
 $('set-pooling-save').onclick = () => saveSettings({ pooling_enabled: $('set-pooling').checked }, $('set-pooling').checked ? 'Pooling enabled' : 'Pooling off; pools dissolved');
 $('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, agent_mode: $('set-agent').checked, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked, auto_resume: $('set-autoresume').checked, best_of_n: $('set-bestofn').value }, 'Defaults saved');
@@ -1774,6 +1792,8 @@ document.addEventListener('change', async (e) => {
     try { await post(`/api/models/${encodeURIComponent(tier.dataset.tier)}/tier`, { tier: tier.value }); toast('Tier saved'); } catch (err) { toast(err.message); }
     return;
   }
+  const sb = e.target.closest('[data-sandbox]');
+  if (sb) { setSandbox(sb.dataset.sandbox, sb.value); return; }
   const cb = e.target.closest('[data-exec]');
   if (cb) setExec(cb.dataset.exec, cb.checked);
 });

@@ -46,6 +46,7 @@ type Node struct {
 
 	mu          sync.Mutex
 	execEnabled bool
+	sandbox     string // mode from the controller: off | basic | strict
 	hbSeconds   int
 	jobs        map[string]context.CancelFunc
 	wsLastUsed  map[string]time.Time
@@ -436,6 +437,11 @@ func (n *Node) applySettings(s NodeSettings) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.execEnabled = s.ExecEnabled
+	prev := n.sandbox
+	n.sandbox = effectiveSandbox("", s.Sandbox)
+	if prev != "" && prev != n.sandbox {
+		go n.resendHello() // the controller shows the mode and what it enforces here
+	}
 	if s.HeartbeatS > 0 {
 		n.hbSeconds = s.HeartbeatS
 	}
@@ -478,6 +484,7 @@ func (n *Node) hello() Hello {
 		RollbackTo:      previousVersion(n.agentDir()),
 		Paused:          n.isPaused(),
 		Tools:           n.toolInventory(false), Shell: nodeShell(),
+		Sandbox: n.sandboxMode(), SandboxLayers: sandboxLayers(n.sandboxMode()),
 	}
 	if rt := n.currentRuntime(); rt != nil {
 		h.Runtime = &rt.RuntimeInfo
@@ -740,6 +747,19 @@ func (n *Node) runJob(jd JobDispatch) {
 	}
 	setProcGroup(cmd)
 	cmd.WaitDelay = 5 * time.Second
+	mode := n.sandboxMode()
+	netOn := true
+	if mode != sandboxOff {
+		pol := buildSandboxPolicy(sandboxInput{Mode: mode, Dir: dir, ToolDir: n.toolchainDir(), CacheDir: n.sandboxCacheDir(),
+			GoBin: n.goBinDirIfAny(), HostEnv: os.Environ(), ExtraRO: filepath.SplitList(os.Getenv("OUTPOST_SANDBOX_EXTRA_RO")), Spec: spec})
+		_ = os.MkdirAll(n.sandboxCacheDir(), 0o700)
+		_ = os.MkdirAll(pol.Tmp, 0o700)
+		if e := sandboxWrap(cmd, pol); e != nil {
+			fail(e)
+			return
+		}
+		netOn = pol.Net && !pol.NetNS && !pol.LLNet
+	}
 
 	sw := newStreamer(n, jd.JobID, spec.Stream)
 	stdoutTail, stderrTail := &tailBuf{}, &tailBuf{}
@@ -747,11 +767,19 @@ func (n *Node) runJob(jd JobDispatch) {
 	cmd.Stderr = io.MultiWriter(stderrTail, sw.writer("stderr"))
 
 	runErr := cmd.Run()
+	if mode != sandboxOff {
+		killProcGroup(cmd) // nothing a sandboxed job started may outlive it
+	}
 	sw.close()
 
 	out := ExecOutput{ExitCode: -1, StdoutTail: stdoutTail.String(), StderrTail: stderrTail.String()}
 	if cmd.ProcessState != nil {
 		out.ExitCode = cmd.ProcessState.ExitCode()
+	}
+	if mode != sandboxOff {
+		out.Sandbox = mode
+		out.SandboxNote = sandboxNote(mode, netOn)
+		out.SandboxDenied = looksSandboxDenied(out.ExitCode, out.StdoutTail, out.StderrTail)
 	}
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
@@ -887,4 +915,28 @@ func (s *streamer) close() {
 		close(s.done)
 		s.flush()
 	})
+}
+
+// sandboxMode is the mode exec jobs run in. Only Linux has a sandbox so far.
+func (n *Node) sandboxMode() string {
+	n.mu.Lock()
+	m := n.sandbox
+	n.mu.Unlock()
+	if m == "" {
+		m = sandboxBasic
+	}
+	if runtime.GOOS != "linux" {
+		return sandboxOff
+	}
+	return m
+}
+
+func (n *Node) sandboxCacheDir() string { return filepath.Join(n.dataDir, "sandbox-cache") }
+
+// goBinDirIfAny is the Outpost-installed Go's bin folder when it exists.
+func (n *Node) goBinDirIfAny() string {
+	if st, err := os.Stat(n.goBinDir()); err == nil && st.IsDir() {
+		return n.goBinDir()
+	}
+	return ""
 }
