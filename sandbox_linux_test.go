@@ -189,10 +189,10 @@ func TestSandboxStrictSeccompAndCaps(t *testing.T) {
 		t.Skipf("strict unavailable: %s", r.err.Message)
 	}
 	if !strings.Contains(r.stdout, "NoNewPrivs:\t1") || !strings.Contains(r.stdout, "CapEff:\t0000000000000000") {
-		t.Errorf("no_new_privs/caps: %s", r.stdout)
+		t.Errorf("no_new_privs/caps: exit %d stdout %q stderr %q", r.exit, r.stdout, r.stderr)
 	}
 	if seccompArch != 0 && !strings.Contains(r.stdout, "Seccomp:\t2") {
-		t.Errorf("seccomp filter not active: %s", r.stdout)
+		t.Errorf("seccomp filter not active: exit %d stdout %q stderr %q", r.exit, r.stdout, r.stderr)
 	}
 }
 
