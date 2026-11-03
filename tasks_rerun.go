@@ -63,14 +63,7 @@ func (c *Controller) handleRerunPlan(w http.ResponseWriter, r *http.Request) {
 
 	if req.Mode == "failed" {
 		t.mu.Lock()
-		reset := 0
-		for _, s := range t.Subtasks {
-			if s.Status == "failed" {
-				s.Status, s.Node, s.NodeName, s.Started, s.Ended = "pending", "", "", nil, nil
-				s.Attempts, s.Error, s.ReviewNote = 0, "", ""
-				reset++
-			}
-		}
+		reset := t.resetFailedSubtasksLocked()
 		t.applyRerunCap(req.CapUSD)
 		t.Ended, t.Error, t.PausedFrom = nil, "", ""
 		t.TestStatus, t.TestOutput, t.FixRounds = "", "", 0
@@ -130,6 +123,20 @@ func (c *Controller) rerunWhole(t *Task, capUSD float64, edited bool) (restored,
 	t.logf("info", "Re-running the approved plan (round %d, %d files put back).", old+1, restored)
 	c.startTask(t, c.execTask)
 	return restored, old + 1, nil
+}
+
+// resetFailedSubtasksLocked puts failed subtasks back to pending and returns how
+// many there were; t.mu must be held.
+func (t *Task) resetFailedSubtasksLocked() int {
+	n := 0
+	for _, s := range t.Subtasks {
+		if s.Status == "failed" {
+			s.Status, s.Node, s.NodeName, s.Started, s.Ended = "pending", "", "", nil, nil
+			s.Attempts, s.Error, s.ReviewNote = 0, "", ""
+			n++
+		}
+	}
+	return n
 }
 
 // applyRerunCap raises the spend cap when the request asks for a higher one;
