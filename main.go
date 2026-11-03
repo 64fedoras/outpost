@@ -67,6 +67,8 @@ func main() {
 		err = runUninstall(os.Args[2:])
 	case "reset-password":
 		err = runResetPassword(os.Args[2:])
+	case "sandbox-child":
+		runSandboxChild(os.Args[2:])
 	case "tray":
 		err = runTray(os.Args[2:])
 	case "service":

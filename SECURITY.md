@@ -84,14 +84,17 @@ other than your own LAN.
 
 These are real gaps. Please do not treat them as fixed.
 
-- **Node command execution is not sandboxed.** An exec-enabled node runs model-written commands (and
-  project build and test commands) with the node's own rights in the job workspace. A bad model output, a
-  poisoned dependency or a prompt injection from a web lookup could read or change anything that account can
-  reach, and use the node's network access. A node installed with `sudo` may run jobs as root. Mitigations
-  today: run nodes as an ordinary user, enable exec only on machines you can wipe, and keep valuables off
-  them. A per-OS sandbox design (Landlock, seccomp and namespaces on Linux, job objects and restricted
-  tokens on Windows, Seatbelt on macOS) is written up in `design/sandbox-exec.md` in the project files,
-  and is a proposal that is not built or decided.
+- **Node command execution is sandboxed on Linux only, and the sandbox is new and untested on the real cluster.**
+  Linux nodes run exec jobs in a sandbox by default (Settings → Command sandbox, overridable per node):
+  *basic* confines file access to the job folder with Landlock (kernel 5.13 or newer), scrubs the
+  environment, drops all capabilities and limits file size; *strict* adds a network-off namespace (or Landlock
+  TCP rules) unless a step downloads packages, and a seccomp deny list. It is defence in depth for
+  semi-trusted code, not a multi-tenant sandbox: jobs still share the kernel, there is no memory or process
+  cap yet (no cgroups), a job that runs as root keeps the node's uid, and a job can poison the files and the
+  shared build cache of its own task. Kernels without Landlock get a reduced sandbox in *basic* (reported on
+  the node card) and a refused job in *strict*. **Windows and macOS nodes run commands unsandboxed**, with the
+  node's own rights, as before: use an ordinary user, enable exec only on machines you can wipe and keep
+  valuables off them. The design for those platforms is in `design/sandbox-exec.md` in the project files.
 - **File path checks do not follow symlinks.** Paths a job or request names are checked lexically to keep them inside
   the job workspace (`..` and absolute paths are refused). A symlink created inside a workspace (for
   example by a build command) is not resolved by that check, so it can point outside the workspace.

@@ -488,6 +488,7 @@ func (a *agentRun) run(ctx context.Context, command string) string {
 	if len(text) > a.resCap {
 		text = "…" + text[len(text)-a.resCap:]
 	}
+	text = withSandboxNote(text, out)
 	return fmt.Sprintf("exit code %d\n%s", out.ExitCode, text)
 }
 

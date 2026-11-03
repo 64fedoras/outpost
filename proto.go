@@ -129,9 +129,11 @@ type Hello struct {
 	LoadedModel       string       `json:"loaded_model"`
 	RollbackTo        string       `json:"rollback_to,omitempty"` // previous installed Outpost version
 	Paused            bool         `json:"paused,omitempty"`
-	Tools             []ToolInfo   `json:"tools,omitempty"` // developer tools found, rescanned hourly
-	Shell             string       `json:"shell,omitempty"` // sh | powershell | cmd: what exec jobs run in
-	Peer              *PeerInfo    `json:"peer,omitempty"`  // where this node serves model files to other nodes
+	Tools             []ToolInfo   `json:"tools,omitempty"`          // developer tools found, rescanned hourly
+	Shell             string       `json:"shell,omitempty"`          // sh | powershell | cmd: what exec jobs run in
+	Peer              *PeerInfo    `json:"peer,omitempty"`           // where this node serves model files to other nodes
+	Sandbox           string       `json:"sandbox,omitempty"`        // mode exec jobs run in on this node (empty on nodes older than the sandbox)
+	SandboxLayers     []string     `json:"sandbox_layers,omitempty"` // what that mode enforces here, e.g. landlock-v3, netns, seccomp
 }
 
 // PeerInfo is a node's model-sharing endpoint: the port and the fingerprint
@@ -162,9 +164,10 @@ type NodeRollback struct {
 }
 
 type NodeSettings struct {
-	HeartbeatS  int  `json:"heartbeat_s"`
-	ExecEnabled bool `json:"exec_enabled"`
-	IdleUnloadS int  `json:"idle_unload_s"` // unload the model after this many idle seconds; 0 = never
+	HeartbeatS  int    `json:"heartbeat_s"`
+	ExecEnabled bool   `json:"exec_enabled"`
+	IdleUnloadS int    `json:"idle_unload_s"`     // unload the model after this many idle seconds; 0 = never
+	Sandbox     string `json:"sandbox,omitempty"` // off | basic | strict; empty = the node's default (basic)
 }
 
 type Welcome struct {
@@ -217,15 +220,19 @@ type JobDispatch struct {
 }
 
 type ExecSpec struct {
-	Argv   []string          `json:"argv"`
-	Env    map[string]string `json:"env,omitempty"`
-	Stream bool              `json:"stream"`
+	Argv    []string          `json:"argv"`
+	Env     map[string]string `json:"env,omitempty"`
+	Stream  bool              `json:"stream"`
+	Network string            `json:"network,omitempty"` // "allow" opens the network for this command in a strict sandbox; "" = the mode's default
 }
 
 type ExecOutput struct {
-	ExitCode   int    `json:"exit_code"`
-	StdoutTail string `json:"stdout_tail"`
-	StderrTail string `json:"stderr_tail"`
+	ExitCode      int    `json:"exit_code"`
+	StdoutTail    string `json:"stdout_tail"`
+	StderrTail    string `json:"stderr_tail"`
+	Sandbox       string `json:"sandbox,omitempty"`        // mode the command ran in (omitted when off)
+	SandboxDenied bool   `json:"sandbox_denied,omitempty"` // the failure looks like the sandbox blocked something
+	SandboxNote   string `json:"sandbox_note,omitempty"`   // one line for the fixer about what the sandbox allowed
 }
 
 type JobOutput struct {
