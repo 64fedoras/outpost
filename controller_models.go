@@ -947,13 +947,19 @@ func (c *Controller) handleStoreModel(w http.ResponseWriter, r *http.Request) {
 // handleUnstoreModel deletes a model's files from the controller but keeps it
 // in the library; nodes that need it then download it from Hugging Face.
 func (c *Controller) handleUnstoreModel(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+	if err := c.unstoreModel(r.PathValue("name")); err != nil {
+		writeJSON(w, 409, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (c *Controller) unstoreModel(name string) error {
 	c.mu.Lock()
 	m, ok := c.models[name]
 	if !ok || m.Storage == "direct" {
 		c.mu.Unlock()
-		writeJSON(w, 409, map[string]string{"error": "that model is not stored on the controller"})
-		return
+		return errors.New("that model is not stored on the controller")
 	}
 	if m.cancel != nil {
 		m.cancel()
@@ -971,7 +977,112 @@ func (c *Controller) handleUnstoreModel(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 	}()
-	writeJSON(w, 200, map[string]bool{"ok": true})
+	return nil
+}
+
+// pickReleaseNode chooses where a released model should live: an online node
+// that already holds it, else the idle online node with the most free model
+// disk that has room for it. pushNeeded is false in the first case.
+func (c *Controller) pickReleaseNode(m *ModelRec, want string) (id string, pushNeeded bool, err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	need := uint64(m.BytesTotal)
+	var best string
+	var bestFree uint64
+	for nid, n := range c.nodes {
+		if c.conns[nid] == nil || n.Hello == nil || (want != "" && nid != want) {
+			continue
+		}
+		for _, h := range n.Hello.Models {
+			if h.Name == m.Name {
+				return nid, false, nil
+			}
+		}
+		if c.pipelines[nid] != nil || n.Hello.ModelsFreeBytes < need+need/20 {
+			continue
+		}
+		if best == "" || n.Hello.ModelsFreeBytes > bestFree {
+			best, bestFree = nid, n.Hello.ModelsFreeBytes
+		}
+	}
+	if best == "" {
+		return "", false, errors.New("no online, idle node has room for this model; free space on a node or bring one online")
+	}
+	return best, true, nil
+}
+
+// handleReleaseModel moves a controller-stored model onto one node, then frees
+// the controller's copy. The node stays a seed: other nodes copy from it over
+// the LAN and only fall back to Hugging Face if it is gone.
+func (c *Controller) handleReleaseModel(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	var req struct {
+		Node string `json:"node"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	c.mu.Lock()
+	m := c.models[name]
+	c.mu.Unlock()
+	if m == nil || m.Storage == "direct" || m.Status != "ready" {
+		writeJSON(w, 409, map[string]string{"error": "that model is not stored (and ready) on the controller"})
+		return
+	}
+	id, push, err := c.pickReleaseNode(m, req.Node)
+	if err != nil {
+		writeJSON(w, 409, map[string]string{"error": err.Error()})
+		return
+	}
+	c.mu.Lock()
+	nc := c.conns[id]
+	nodeName := id
+	if n := c.nodes[id]; n != nil && n.Hello != nil {
+		nodeName = n.Hello.Hostname
+	}
+	if push && (nc == nil || c.pipelines[id] != nil) {
+		c.mu.Unlock()
+		writeJSON(w, 409, map[string]string{"error": "that node is busy or offline"})
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	p := &pipeline{cancel}
+	if push {
+		c.pipelines[id] = p
+	}
+	files := append([]ModelFile(nil), m.Files...)
+	c.mu.Unlock()
+	if !push {
+		cancel()
+		if err := c.unstoreModel(name); err != nil {
+			writeJSON(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "node": nodeName, "pushed": false})
+		return
+	}
+	go func() {
+		defer c.endPipeline(id, p)
+		c.setNodeOp(id, OpStatus{Op: "model.push", Target: name, State: "downloading", BytesTotal: totalBytes(files)})
+		fail := func(err error) {
+			log.Printf("release %s to node %s failed: %v (the controller keeps its copy)", name, id, err)
+			c.setNodeOp(id, OpStatus{Op: "model.push", Target: name, State: "failed", Error: err.Error()})
+		}
+		if err := nc.send("model.push", ModelPush{Name: name, Files: files}); err != nil {
+			fail(err)
+			return
+		}
+		if err := c.waitNodeOp(ctx, id, "model.push", name, 24*time.Hour); err != nil {
+			fail(err)
+			return
+		}
+		if !c.nodeHasModel(id, name) {
+			fail(errors.New("the node did not report the model after copying"))
+			return
+		}
+		if err := c.unstoreModel(name); err != nil {
+			fail(err)
+		}
+	}()
+	writeJSON(w, 200, map[string]any{"ok": true, "node": nodeName, "pushed": true})
 }
 
 // ---------- pooling (llama.cpp RPC) ----------
