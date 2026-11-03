@@ -174,7 +174,8 @@ can check detection without joining.
    fingerprints and a one-time token; the node pins each peer's certificate, checks every chunk and then the
    whole file, and only a match is stored. A peer that sends bad data is skipped for an hour. If no peer
    works, it falls back to Hugging Face or the controller as before. Models stored on the controller stay
-   there as an optional seed. `outpost install node` opens port 8444 in ufw, firewalld or (Windows, as
+   there as an optional seed; **Release to a node** (Models tab) copies a stored model to the online node with
+   the most free disk and then frees the controller's copy, so that node becomes the seed. `outpost install node` opens port 8444 in ufw, firewalld or (Windows, as
    administrator) Windows Firewall when one is active. Nodes started by hand may need that port opened.
 3. Tick **exec** on at least one node so tasks can run their tests.
    Exec nodes list the tools they have (Go, Python, Node, gcc, git, zip, Chromium; rescanned hourly)
