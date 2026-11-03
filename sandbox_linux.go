@@ -146,6 +146,11 @@ func sandboxWrap(cmd *exec.Cmd, p *sandboxPolicy) *ErrInfo {
 // runSandboxChild is the hidden "sandbox-child" mode: lock this process in, then exec.
 func runSandboxChild(args []string) {
 	if len(args) > 0 && args[0] == "--probe" {
+		// Some distros (Ubuntu 24.04) let the namespace be created but strip its capabilities.
+		// Bringing loopback up proves they are there.
+		if err := loopbackUp(); err != nil {
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 	runtime.LockOSThread() // Landlock and seccomp apply per thread; exec from this one
