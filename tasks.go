@@ -2099,6 +2099,9 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		if len(output) > 12000 {
 			output = "…" + output[len(output)-12000:]
 		}
+		if !passed {
+			output = withSandboxNote(output, out)
+		}
 		t.mu.Lock()
 		t.TestOutput = output
 		t.mu.Unlock()

@@ -98,7 +98,7 @@ func (c *Controller) handleServeJobInput(w http.ResponseWriter, r *http.Request)
 // runExecJobFiles is runExecJob with blob inputs, collected output files and
 // the job's result files returned.
 func (c *Controller) runExecJobFiles(ctx context.Context, nodeID string, argv []string, inputs []FileEntry, srcs map[string]string, collect []string, label string, timeout time.Duration) (*ExecOutput, *JobResult, error) {
-	spec, _ := json.Marshal(ExecSpec{Argv: argv, Stream: true})
+	spec, _ := json.Marshal(ExecSpec{Argv: argv, Stream: true, Network: execNetwork(argv)})
 	job := &JobDispatch{JobID: newID("job"), Kind: "exec", TimeoutS: int(timeout.Seconds()), Inputs: inputs, Collect: collect, Spec: spec}
 	if len(srcs) > 0 {
 		c.mu.Lock()
@@ -301,7 +301,7 @@ func (c *Controller) runBuild(ctx context.Context, t *Task) bool {
 	output := strings.TrimSpace(out.StdoutTail + "\n" + out.StderrTail)
 	if out.ExitCode != 0 {
 		t.logf("warn", "The build failed (exit %d). The source is still available, with the build output.", out.ExitCode)
-		return fail(output)
+		return fail(withSandboxNote(output, out))
 	}
 	// Replace the artifacts of an earlier round only once the new ones arrived.
 	tmp := t.artifactsDir() + ".new"

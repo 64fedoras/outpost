@@ -184,6 +184,23 @@ can check detection without joining.
    node you choose: the controller downloads the official release once, checks its SHA-256 and
    sends it; Outpost keeps it in its own data folder and puts it on the PATH of exec jobs. Other
    tools are detected, not installed. Windows exec nodes run commands in PowerShell, not `sh`.
+   **Command sandbox (Linux nodes).** Commands run in a sandbox, set in Settings → *Command sandbox* and per
+   node on its card (*default*, *off*, *basic*, *strict*). *Basic* (the default): a command can only
+   change files in its own job folder, a private temporary folder and a shared build cache; it can read
+   system folders (`/usr`, `/lib`, `/bin`, `/opt`, a few files in `/etc`) and Outpost's toolchains but not
+   your home folder, SSH keys, Outpost's data or other jobs; the environment is cleaned (no tokens from
+   the node; proxy and Go module settings are kept); it has no special rights and cannot write huge
+   files. The network stays open. *Strict*: the same, with the network off except for steps that download
+   packages (`go mod download`, `npm install`, `pip install`, `git clone`, …) and commands you type under
+   **Run…**, plus a deny list for dangerous system calls. A failing command whose output looks like a
+   blocked file or network access gets a note so the fixer does not rewrite working code. The node card
+   shows *Sandboxed*, *Partly* or *Off*, and what is enforced when you hover. Needs Linux 5.13 or newer
+   for file confinement; *strict* is refused on kernels that cannot do it, *basic* quietly does less.
+   Tools installed in your home folder (`~/.cargo`, `nvm`) are hidden from commands: install them under `/usr/local`
+   or `/opt`, or set `OUTPOST_SANDBOX_EXTRA_RO` (colon-separated folders) in the node's service environment.
+   Test commands that start with a download step run with the network open for the whole step. If a build
+   breaks and you suspect the sandbox, set the node to *off* and compare. Windows and macOS nodes run
+   commands without a sandbox.
 4. **Settings:** add a Claude API key if you want Claude as the planner (recommended), or an
    OpenRouter key to plan with any model OpenRouter offers.
 5. **New task:** describe what to build and click **Plan it**. See below.
@@ -626,7 +643,7 @@ you fill it in (set it if you reach the controller by a name or IP different fro
 
 ## Known limits
 
-See also [SECURITY.md](SECURITY.md) for the security model and its limits (unsandboxed node commands, unsigned binaries and checksums).
+See also [SECURITY.md](SECURITY.md) for the security model and its limits (the Linux-only command sandbox, unsigned binaries and checksums).
 
 - One model per node at a time; each node runs one model call at a time. A node lending memory
   to a pool runs no model of its own.

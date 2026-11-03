@@ -92,7 +92,7 @@ func (c *Controller) runInferenceJobLive(ctx context.Context, nodeID string, spe
 
 // runExecJob runs a command on a node with the given input files.
 func (c *Controller) runExecJob(ctx context.Context, nodeID string, argv []string, inputs []FileEntry, label string, timeout time.Duration) (*ExecOutput, string, error) {
-	spec, _ := json.Marshal(ExecSpec{Argv: argv, Stream: true})
+	spec, _ := json.Marshal(ExecSpec{Argv: argv, Stream: true, Network: execNetwork(argv)})
 	job := &JobDispatch{Kind: "exec", TimeoutS: int(timeout.Seconds()), Inputs: inputs, Spec: spec}
 	ch, err := c.dispatchJob(nodeID, job, label)
 	if err != nil {
