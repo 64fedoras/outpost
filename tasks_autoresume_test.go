@@ -84,3 +84,20 @@ func TestAutoResumeOffLeavesTask(t *testing.T) {
 		t.Fatalf("setting off must leave the task interrupted, got %s", tk.Status)
 	}
 }
+
+func TestTryAgainResetsFailedSubtasks(t *testing.T) {
+	tk := &Task{Subtasks: []*SubtaskState{
+		{ID: "a", Status: "done"},
+		{ID: "b", Status: "failed", Attempts: 3, Error: "boom", ReviewNote: "bad"},
+	}}
+	if n := tk.resetFailedSubtasksLocked(); n != 1 {
+		t.Fatalf("reset %d, want 1", n)
+	}
+	if tk.Subtasks[0].Status != "done" {
+		t.Errorf("finished subtask must be kept")
+	}
+	b := tk.Subtasks[1]
+	if b.Status != "pending" || b.Attempts != 0 || b.Error != "" || b.ReviewNote != "" {
+		t.Errorf("failed subtask not reset: %+v", b)
+	}
+}

@@ -23,6 +23,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -788,6 +789,12 @@ func (c *Controller) restartTask(t *Task, status, from, note string) {
 	}
 	t.PausedFrom = ""
 	t.autoResume = false
+	if status == "failed" && from == "running" {
+		// Try again: failed subtasks run again instead of staying failed.
+		if n := t.resetFailedSubtasksLocked(); n > 0 {
+			note = "Trying again: " + strconv.Itoa(n) + " failed subtask(s) run again; finished ones are kept."
+		}
+	}
 	t.mu.Unlock()
 	switch from {
 	case "planning":
