@@ -164,6 +164,10 @@ can check detection without joining.
    GPUs, CPU otherwise), gets the model onto the node, and starts it. Downloads resume if
    interrupted and are checked against Hugging Face's SHA-256. Progress shows on the card. The node
    reloads the same model by itself after a reboot or update.
+   **Integrity re-check:** after a node starts on a new Outpost version it hashes each stored model once in the
+   background and compares it with the SHA-256 recorded when the model arrived (a model about to load is checked
+   first). A mismatch means the file is corrupt on disk: the node deletes that model and reports it, and loading
+   it again fetches a fresh copy.
    **Node-to-node copies:** if another online node already holds the model, the new node copies it from up
    to 3 such nodes over the LAN (TCP port 8444, 64 MiB chunks, resumable) instead of downloading again or
    pulling it from the controller. The controller supplies the expected SHA-256, the peers' certificate

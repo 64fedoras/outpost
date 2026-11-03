@@ -510,6 +510,7 @@ func (n *Node) pushModel(mp ModelPush) {
 		fail("%v", err)
 		return
 	}
+	n.markVerified(mp.Name, true) // just checked on arrival
 	log.Printf("model %s stored (%s)", mp.Name, humanBytes(total))
 	n.resendHello() // before "done": the controller checks the model list next
 	n.opStatus(op, mp.Name, "done", total, total, "")
@@ -659,6 +660,10 @@ func (l *llamaMgr) load(ml ModelLoad) {
 	l.mu.Unlock()
 	if busy > 0 {
 		fail("inference is running; try again when the node is idle")
+		return
+	}
+	if err := l.n.verifyModel(ml.Name); err != nil {
+		fail("model %s failed its integrity check: %v", ml.Name, err)
 		return
 	}
 	l.stop()
@@ -1275,6 +1280,7 @@ func (n *Node) fetchModel(mf ModelFetch) {
 		fail("%v", err)
 		return
 	}
+	n.markVerified(mf.Name, true)
 	log.Printf("model %s downloaded from Hugging Face (%s)", mf.Name, humanBytes(total))
 	n.resendHello() // before "done": the controller checks the model list next
 	n.opStatus(op, mf.Name, "done", total, total, "")
