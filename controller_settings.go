@@ -40,6 +40,7 @@ type Settings struct {
 	GitHubRepo        string         `json:"github_repo,omitempty"`         // owner/repo trusted for updates; empty = ghDefaultRepo
 	GitHubTokenEnc    string         `json:"github_token_enc,omitempty"`    // optional read-only token for a private repo; controller only
 	GitHubHoldVersion string         `json:"github_hold_version,omitempty"` // set by a rollback: auto-install skips this version and older
+	Sandbox           string         `json:"sandbox,omitempty"`             // default sandbox for exec jobs on nodes: off | basic | strict; empty = basic
 	IdleUnload        string         `json:"idle_unload,omitempty"`         // default idle unload wait for nodes, as typed ("1hr", "30m", "0" = never); empty = 1 hour
 	Notify            NotifySettings `json:"notify"`
 }
@@ -162,6 +163,7 @@ func (c *Controller) settingsView() map[string]any {
 		"pooling_enabled": c.poolingOnLocked(), "pooling_notice": c.settings.PoolingNotice,
 		"github_repo": c.ghRepoLocked(), "github_repo_default": ghDefaultRepo, "github_token_set": c.settings.GitHubTokenEnc != "",
 		"github_updates": !c.settings.GitHubUpdatesOff, "github_auto_install": c.settings.GitHubAutoInstall,
+		"sandbox":     effectiveSandbox(c.settings.Sandbox, ""),
 		"idle_unload": c.settings.IdleUnload, "idle_unload_effective": formatIdleDuration(idleUnloadFor(c.settings.IdleUnload, "")),
 		"instructions": c.settings.Instructions, "backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
@@ -204,6 +206,7 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		GitHubRepo      *string `json:"github_repo"`
 		GitHubToken     *string `json:"github_token"` // "" removes
 		IdleUnload      *string `json:"idle_unload"`  // "" = default (1 hour)
+		Sandbox         *string `json:"sandbox"`      // off | basic | strict
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
@@ -214,6 +217,10 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
+	}
+	if req.Sandbox != nil && normSandbox(*req.Sandbox) == "" {
+		writeJSON(w, 400, map[string]string{"error": "sandbox must be off, basic or strict"})
+		return
 	}
 	var akEnc, hfEnc, orEnc *string
 	for _, s := range []struct {
@@ -363,6 +370,10 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	if req.IdleUnload != nil {
 		c.settings.IdleUnload = strings.TrimSpace(*req.IdleUnload)
 		idleChanged = true
+	}
+	if req.Sandbox != nil {
+		c.settings.Sandbox = normSandbox(*req.Sandbox)
+		idleChanged = true // pushes node settings
 	}
 	poolingOff := false
 	if req.PoolingEnabled != nil {

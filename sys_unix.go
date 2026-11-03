@@ -32,3 +32,10 @@ func setProcGroup(cmd *exec.Cmd) {
 func windowsRAM() uint64 { return 0 }
 
 func osInterrupt() os.Signal { return syscall.SIGTERM }
+
+// killProcGroup kills whatever is left of the command's process group.
+func killProcGroup(cmd *exec.Cmd) {
+	if cmd.Process != nil {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+}

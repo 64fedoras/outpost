@@ -1,0 +1,103 @@
+package main
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestEffectiveSandbox(t *testing.T) {
+	cases := []struct{ g, n, want string }{
+		{"", "", "basic"}, {"strict", "", "strict"}, {"strict", "off", "off"}, {"bogus", "", "basic"}, {"off", "strict", "strict"}, {" STRICT ", "", "strict"},
+	}
+	for _, c := range cases {
+		if got := effectiveSandbox(c.g, c.n); got != c.want {
+			t.Errorf("effectiveSandbox(%q,%q)=%q want %q", c.g, c.n, got, c.want)
+		}
+	}
+}
+
+func TestBuildSandboxPolicy(t *testing.T) {
+	in := sandboxInput{Mode: sandboxStrict, Dir: "/data/work/ws1", ToolDir: "/data/toolchains", CacheDir: "/data/sandbox-cache",
+		GoBin:   "/data/toolchains/go/bin",
+		HostEnv: []string{"PATH=/x", "ANTHROPIC_API_KEY=secret", "HTTPS_PROXY=http://p:3128", "HOME=/root", "GOFLAGS=-v"},
+		Spec:    ExecSpec{Argv: []string{"go", "test"}, Env: map[string]string{"FOO": "1", "GOFLAGS": "-race"}}}
+	p := buildSandboxPolicy(in)
+	env := strings.Join(p.Env, "\n")
+	if strings.Contains(env, "secret") || strings.Contains(env, "/root") {
+		t.Fatalf("host secrets leaked into the job env:\n%s", env)
+	}
+	for _, want := range []string{"HTTPS_PROXY=http://p:3128", "FOO=1", "GOFLAGS=-race", "HOME=/data/work/ws1/.outpost-tmp", "GOPROXY=off", "PATH=/data/toolchains/go/bin:"} {
+		if !strings.Contains(env, want) {
+			t.Errorf("env missing %q:\n%s", want, env)
+		}
+	}
+	if strings.Count(env, "GOFLAGS=") != 1 {
+		t.Errorf("GOFLAGS duplicated:\n%s", env)
+	}
+	if p.Net || !p.Seccomp {
+		t.Errorf("strict without network opt-in: net=%v seccomp=%v", p.Net, p.Seccomp)
+	}
+	for _, rw := range p.RW {
+		if rw == "/etc" || rw == "/" || rw == "/data" {
+			t.Errorf("too broad a writable path: %s", rw)
+		}
+	}
+	for _, ro := range p.RO {
+		if ro == "/etc" || ro == "/" || ro == "/home" || ro == "/root" || ro == "/var" {
+			t.Errorf("too broad a readable path: %s", ro)
+		}
+	}
+	in.Spec.Network = "allow"
+	if p2 := buildSandboxPolicy(in); !p2.Net || strings.Contains(strings.Join(p2.Env, " "), "GOPROXY=off") {
+		t.Errorf("network allow not honoured: %+v", p2.Env)
+	}
+	in.Mode, in.Spec.Network = sandboxBasic, ""
+	if p3 := buildSandboxPolicy(in); !p3.Net || p3.Seccomp {
+		t.Errorf("basic should keep the network and skip seccomp")
+	}
+}
+
+func TestSandboxPolicyRoundTrip(t *testing.T) {
+	p := &sandboxPolicy{Mode: "basic", Dir: "/w", Argv: []string{"ls"}, Env: []string{"A=1"}, RO: []string{"/usr"}}
+	q, err := decodeSandboxPolicy(p.encode())
+	if err != nil || q.Dir != "/w" || q.Argv[0] != "ls" || q.RO[0] != "/usr" {
+		t.Fatalf("round trip: %+v %v", q, err)
+	}
+	if _, err := decodeSandboxPolicy("!!"); err == nil {
+		t.Error("garbage accepted")
+	}
+}
+
+func TestNeedsNetwork(t *testing.T) {
+	yes := []string{"go mod download", "cd x && npm ci", "pip install -r requirements.txt", "git clone https://x/y", "sh -c go get example.com/x"}
+	no := []string{"go test ./...", "go build ./...", "pytest -q", "ls", "make test"}
+	for _, c := range yes {
+		if !needsNetwork([]string{c}) {
+			t.Errorf("%q should need network", c)
+		}
+	}
+	for _, c := range no {
+		if needsNetwork([]string{c}) {
+			t.Errorf("%q should not need network", c)
+		}
+	}
+	if execNetwork([]string{"go test"}) != "" || execNetwork([]string{"npm install"}) != "allow" {
+		t.Error("execNetwork")
+	}
+}
+
+func TestSandboxNotes(t *testing.T) {
+	if sandboxNote(sandboxOff, true) != "" {
+		t.Error("off has no note")
+	}
+	if !strings.Contains(sandboxNote(sandboxStrict, false), "network was OFF") {
+		t.Error("strict note should say the network was off")
+	}
+	if !looksSandboxDenied(1, "", "dial tcp: lookup proxy.golang.org: no such host") || looksSandboxDenied(0, "permission denied", "") || looksSandboxDenied(1, "FAIL TestX", "") {
+		t.Error("looksSandboxDenied")
+	}
+	out := &ExecOutput{SandboxDenied: true, SandboxNote: "net off"}
+	if got := withSandboxNote("boom", out); !strings.Contains(got, "net off") || withSandboxNote("boom", &ExecOutput{}) != "boom" {
+		t.Errorf("withSandboxNote: %q", got)
+	}
+}
