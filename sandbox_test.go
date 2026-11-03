@@ -18,7 +18,7 @@ func TestEffectiveSandbox(t *testing.T) {
 
 func TestBuildSandboxPolicy(t *testing.T) {
 	in := sandboxInput{Mode: sandboxStrict, Dir: "/data/work/ws1", ToolDir: "/data/toolchains", CacheDir: "/data/sandbox-cache",
-		GoBin: "/data/toolchains/go/bin",
+		GoBin:   "/data/toolchains/go/bin",
 		HostEnv: []string{"PATH=/x", "ANTHROPIC_API_KEY=secret", "HTTPS_PROXY=http://p:3128", "HOME=/root", "GOFLAGS=-v"},
 		Spec:    ExecSpec{Argv: []string{"go", "test"}, Env: map[string]string{"FOO": "1", "GOFLAGS": "-race"}}}
 	p := buildSandboxPolicy(in)
