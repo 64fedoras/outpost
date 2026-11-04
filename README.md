@@ -337,6 +337,14 @@ gets no work until you load one. A pooled model is never unloaded for idleness.
 which files earlier rounds changed, and works as an agent (below). It treats the tests as the
 specification and only edits a test that is clearly wrong.
 
+**Unsaved changes and drafts.** If a Settings card, the plan editor, the message editor or the new-project
+form has unsaved changes, leaving the page (a sidebar link, the browser's back button, closing or
+reloading the tab) asks first: **Stay**, **Discard changes**, or **Save and leave** (plan and message
+editors only; Settings cards each keep their own Save button). Password, key and token fields are ignored.
+Text you type in the new-task box, a task's reply box and the "Something else…" answer boxes is kept as a
+draft in this browser only (never sent to the controller or the nodes), comes back when you return, and is
+cleared when you send it, delete the task, or press **Discard draft**. Drafts older than 30 days are dropped.
+
 ### Agent mode
 
 Fix rounds and `investigate` subtasks get tools instead of one-shot answers:

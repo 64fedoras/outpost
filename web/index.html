@@ -72,6 +72,7 @@
         <p class="new-sub" id="new-cluster"></p>
         <div class="composer big">
           <textarea id="nt-prompt" rows="4" placeholder="Describe a program, script or change. The planner asks if anything is unclear, then shows you a plan before any work starts."></textarea>
+          <div class="draft-note hidden" id="nt-draft">Draft restored · <button type="button" class="link-btn">Discard draft</button></div>
           <div class="img-strip" id="nt-imgs"></div>
           <div class="composer-bar">
             <select id="nt-project" class="chip-select" aria-label="Project" title="Start from a project's files"></select>
@@ -119,6 +120,7 @@
       <div class="dock">
         <div class="composer">
           <textarea id="tm-text" rows="1" placeholder="Message"></textarea>
+          <div class="draft-note hidden" id="tm-draft">Draft restored · <button type="button" class="link-btn">Discard draft</button></div>
           <div class="img-strip" id="tm-imgs"></div>
           <div class="composer-bar">
             <button type="button" class="small attach-img" id="tm-attach" title="Attach screenshots or images. You can also paste or drop them.">🖼 Image</button><input type="file" id="tm-file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
@@ -362,6 +364,14 @@
 </div>
 
 <!-- MODALS -->
+<div id="modal-leave" class="overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="leave-title" aria-describedby="leave-what">
+  <div class="modal leave-modal">
+    <h3 id="leave-title">Leave without saving?</h3>
+    <p class="hint" id="leave-what"></p>
+    <div class="modal-foot"><button id="leave-discard" class="danger">Discard changes</button><button id="leave-save" class="primary hidden">Save and leave</button><button id="leave-stay">Stay</button></div>
+  </div>
+</div>
+
 <div id="modal-add" class="overlay hidden">
   <div class="modal">
     <h3>Add a node</h3>
@@ -499,6 +509,7 @@
 <div id="drop-overlay" class="hidden"><div><b>Drop to upload</b><span>Outpost binaries (outpost-&lt;platform&gt;) become releases</span></div></div>
 <div id="toast" class="hidden"></div>
 <div id="task-ctx" class="ctx-menu hidden" role="menu"></div>
+<script src="guard.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
