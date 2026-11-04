@@ -96,6 +96,17 @@ runs only while you are signed in. Run the install again from an admin PowerShel
 join code is needed. Either way the exe lives in `C:\ProgramData\outpost\outpost.exe` and logs go
 to `C:\ProgramData\outpost\node\node.log`.
 
+**Windows Firewall prompts.** Each update runs a new exe (`node\agent\outpost-<version>.exe`), so a
+firewall rule tied to one exe path stopped matching and Windows asked "allow this app on public and
+private networks" after every update. The installer, when run as administrator, now adds one rule by
+port instead: **Outpost model sharing**, inbound TCP 8444, private and domain networks only, local
+subnet only, for every Outpost version. A service node also converts a rule from an older install by
+itself at start. A per-user install from a non-admin shell cannot add the rule, so the prompts
+continue there; run the install command once in an admin PowerShell to stop them. If Windows has the
+network marked **Public**, set it to **Private** (Settings, Network, the connection's properties):
+the rule deliberately does not apply on public networks. Pool helper ports (pooling, off by default)
+still get no rule. *Untested on real Windows.*
+
 *Untested on real Windows:* the service, and whether llama.cpp's Vulkan backend can use the GPU
 when run by a service (session 0). If a GPU node shows no GPU after switching, reinstall with
 `--no-service`.
