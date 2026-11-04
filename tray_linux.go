@@ -34,7 +34,7 @@ func trayDetachConsole(dataDir string) {
 	if f, err := os.OpenFile(filepath.Join(dataDir, "tray.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
 		log.SetOutput(f)
 	}
-	log.Printf("tray: starting (pid %d)", os.Getpid())
+	log.Printf("tray: Outpost %s starting (pid %d)", Version, os.Getpid())
 	go func() {
 		time.Sleep(10 * time.Second)
 		if !trayWatcherPresent() {
