@@ -78,6 +78,7 @@ $('btn-logout').onclick = async () => { await post('/api/logout').catch(() => {}
 const PAGES = ['new', 'task', 'projects', 'nodes', 'models', 'updates', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
+  ntDraft.flush(); tmDraft.flush();
   const m = location.hash.match(/^#\/(\w+)(?:\/([\w-]+))?/) || [];
   page = m[1] === 'tasks' && m[2] ? 'task' : PAGES.includes(m[1]) ? m[1] : 'new';
   pageArg = page === 'task' ? m[2] : null;
@@ -89,13 +90,14 @@ function route() {
   closeSide();
   clearTimeout(taskTimer);
   liveClose();
-  if (page === 'task') { taskDetail = null; threadReset(); liveOpen(pageArg); pollTask(); }
-  if (page === 'new') setTimeout(() => $('nt-prompt').focus(), 0);
+  if (page === 'task') { taskDetail = null; threadReset(); tmDraft.restore('task:' + pageArg); autoGrow($('tm-text')); liveOpen(pageArg); pollTask(); }
+  if (page === 'new') { ntDraft.restore('new'); setTimeout(() => $('nt-prompt').focus(), 0); }
   if (page === 'settings') loadSettings();
   renderSideTasks();
   if (state) refresh();
 }
-window.addEventListener('hashchange', route);
+Guard.stamp();
+window.addEventListener('hashchange', Guard.onHashChange);
 
 // Sidebar on small screens
 function openSide() { $('side').classList.add('open'); $('scrim').classList.remove('hidden'); }
@@ -278,7 +280,7 @@ function startRename(id) {
 async function deleteTask(id) {
   if (!confirm('Delete this task, its conversation and its files?')) return;
   try {
-    await api(`/api/tasks/${id}`, { method: 'DELETE' });
+    await api(`/api/tasks/${id}`, { method: 'DELETE' }); Drafts.clear('task:' + id); Drafts.clearPrefix('ans:' + id + ':');
     tasksSeq++; tasks = tasks.filter((t) => t.id !== id); renderSideTasks();
     if (page === 'task' && pageArg === id) location.hash = '#/new';
     toast('Task deleted'); refresh();
@@ -466,7 +468,7 @@ async function startTask() {
       if (!resp.ok) throw new Error(r.error || resp.statusText);
     } else r = await post('/api/tasks', body);
     ntFiles = []; $('nt-files').value = ''; $('nt-attach-n').textContent = 'Attach';
-    $('nt-prompt').value = ''; ntImg.clear();
+    $('nt-prompt').value = ''; ntDraft.done(); ntImg.clear();
     location.hash = '#/tasks/' + r.id;
     refresh();
   } catch (e) { $('nt-err').textContent = e.message; $('nt-err').classList.remove('hidden'); }
@@ -602,7 +604,27 @@ function renderThreadItems(items) {
     prev = el;
   }
   if (grew && (nearBottom || !th._scrolled)) { th.scrollTop = th.scrollHeight; th._scrolled = true; }
+  restoreAnswerDrafts();
 }
+
+// Answer boxes ("Something else…" and an agent's question) keep what was typed, per task and question.
+function answerKey(el) {
+  const card = el.closest('.card-msg'), btn = card && card.querySelector('button[data-msg]');
+  if (!btn || !pageArg) return '';
+  const q = el.closest('fieldset.q');
+  return `ans:${pageArg}:${btn.dataset.msg}:${q ? q.dataset.q : 'aq'}`;
+}
+function restoreAnswerDrafts() {
+  document.querySelectorAll('#thread .opt-other, #thread input[id^="aq-"]').forEach((el) => {
+    if (el.value || el.disabled) return;
+    const k = answerKey(el), d = k && Drafts.get(k);
+    if (d) el.value = d;
+  });
+}
+$('thread').addEventListener('input', (e) => {
+  if (!e.target.matches('.opt-other, input[id^="aq-"]')) return;
+  const k = answerKey(e.target); if (k) Drafts.set(k, e.target.value);
+});
 
 function renderTask(t) {
   setHTML('tv-title', esc(t.title || firstWords(t.prompt)));
@@ -910,7 +932,7 @@ async function sendTaskMessage() {
   const box = $('tm-text'), text = box.value.trim();
   if (!text || !pageArg) return;
   $('tm-send').disabled = true;
-  try { await post(`/api/tasks/${pageArg}/messages`, { text, images: tmImg.payload() }); box.value = ''; tmImg.clear(); autoGrow(box); $('thread')._scrolled = false; }
+  try { await post(`/api/tasks/${pageArg}/messages`, { text, images: tmImg.payload() }); box.value = ''; tmDraft.done(); tmImg.clear(); autoGrow(box); $('thread')._scrolled = false; }
   catch (e) { toast(e.message, 4000); }
   $('tm-send').disabled = false;
   pollTask(); refresh();
@@ -1044,6 +1066,7 @@ async function taskAction(act, el) {
         if (!m) return;
         planEdit = { id: m.id, plan: JSON.parse(JSON.stringify(m.plan)) };
         renderTask(taskDetail);
+        readPlanEditor(); planEdit.orig = JSON.stringify(planEdit.plan);   // baseline for the unsaved-changes check
         return;
       }
       case 'task-pe-cancel': planEdit = null; renderTask(taskDetail); return;
@@ -1089,12 +1112,14 @@ async function taskAction(act, el) {
       case 'task-answer': {
         const answers = collectAnswers();
         await post(`/api/tasks/${id}/answers`, { answers });
+        Drafts.clearPrefix('ans:' + id + ':' + el.dataset.msg + ':');
         break;
       }
       case 'task-agent-answer': {
         const msg = el.dataset.msg, answer = el.dataset.answer || ($('aq-' + msg) || {}).value || '';
         if (!answer.trim()) { toast('Write an answer first'); return; }
         await post(`/api/tasks/${id}/agent-answer`, { id: msg, answer });
+        Drafts.clear('ans:' + id + ':' + msg + ':aq');
         break;
       }
       case 'task-publish': {
@@ -1107,7 +1132,7 @@ async function taskAction(act, el) {
       case 'task-raise': await post(`/api/tasks/${id}/resume`, { cap_usd: parseFloat($('ta-newcap').value) || 0 }); toast('Continuing'); break;
       case 'task-local': await post(`/api/tasks/${id}/resume`, { planner: $('ta-local').value }); toast('Continuing with the local planner'); break;
       case 'task-resume': await post(`/api/tasks/${id}/resume`); toast('Resumed'); break;
-      case 'task-delete': if (!confirm('Delete this task, its conversation and its files?')) return; await api(`/api/tasks/${id}`, { method: 'DELETE' }); location.hash = '#/new'; refresh(); return;
+      case 'task-delete': if (!confirm('Delete this task, its conversation and its files?')) return; await api(`/api/tasks/${id}`, { method: 'DELETE' }); Drafts.clear('task:' + id); Drafts.clearPrefix('ans:' + id + ':'); location.hash = '#/new'; refresh(); return;
       case 'task-activity': if (taskDetail) { renderActivity(taskDetail); open('modal-activity'); } return;
       case 'show-changes': showChanges(parseInt(el.dataset.round, 10)); return;
       case 'undo-round': if (!confirm('Put the files back as they were before this request?')) return; await post(`/api/tasks/${id}/undo?round=${changesRound}`); close('modal-changes'); toast('Round undone'); break;
@@ -1696,6 +1721,7 @@ async function loadSettings() {
   if (state) $('set-planner').innerHTML = plannerOptions(settings.default_planner);
   loadNotifySettings();
   loadSecurity();
+  Guard.settingsReset();
 }
 let orLoaded = false;
 async function loadOpenRouterModels() {
@@ -1793,7 +1819,7 @@ $('bk-sched-save').onclick = async () => {
   try { settings = await post('/api/backup/schedule', { enabled: $('bk-on').checked, dir: $('bk-dir').value, passphrase: $('bk-sched-pass').value }); $('bk-sched-pass').value = ''; toast('Schedule saved'); loadSecurity(); } catch (e) { toast(e.message); }
 };
 async function saveSettings(body, msg) {
-  try { settings = await post('/api/settings', body); toast(msg); loadSettings(); refresh(); } catch (e) { toast(e.message); }
+  try { settings = await post('/api/settings', body); Guard.settingsSaved(); toast(msg); loadSettings(); refresh(); } catch (e) { toast(e.message); }
 }
 $('set-key-save').onclick = () => { const v = $('set-key').value.trim(); if (!v) return; $('set-key').value = ''; saveSettings({ anthropic_key: v }, 'API key saved'); };
 $('set-key-clear').onclick = () => { if (confirm('Remove the Claude API key?')) saveSettings({ anthropic_key: '' }, 'API key removed'); };
@@ -2104,3 +2130,4 @@ function imageAttach(pre, getPlanner, warnEl) {
 }
 const ntImg = imageAttach('nt', () => $('nt-planner').value, $('nt-img-warn'));
 const tmImg = imageAttach('tm', () => taskDetail && taskDetail.planner, $('tm-img-warn'));
+const ntDraft = Drafts.bind($('nt-prompt'), $('nt-draft')), tmDraft = Drafts.bind($('tm-text'), $('tm-draft'));
