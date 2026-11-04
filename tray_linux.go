@@ -4,10 +4,14 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"time"
+
+	"github.com/godbus/dbus/v5"
 )
 
 // trayLock keeps one tray per node data folder.
@@ -23,7 +27,32 @@ func trayLock(dataDir string) (func(), error) {
 	return func() { f.Close() }, nil
 }
 
-func trayDetachConsole(string) {}
+// trayDetachConsole sends the tray's log (including the systray library's
+// D-Bus errors) to tray.log, since an autostarted tray has no terminal, and
+// warns there when no desktop is listening for tray icons.
+func trayDetachConsole(dataDir string) {
+	if f, err := os.OpenFile(filepath.Join(dataDir, "tray.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
+		log.SetOutput(f)
+	}
+	log.Printf("tray: starting (pid %d)", os.Getpid())
+	go func() {
+		time.Sleep(10 * time.Second)
+		if !trayWatcherPresent() {
+			log.Printf("tray: nothing on the desktop is showing tray icons (no StatusNotifierWatcher). On GNOME, install and enable the AppIndicator extension (Ubuntu: gnome-shell-extension-appindicator), then log out and in.")
+		}
+	}()
+}
+
+func trayWatcherPresent() bool {
+	conn, err := dbus.SessionBus()
+	if err != nil {
+		log.Printf("tray: no desktop session bus: %v", err)
+		return false
+	}
+	var has bool
+	err = conn.BusObject().Call("org.freedesktop.DBus.NameHasOwner", 0, "org.kde.StatusNotifierWatcher").Store(&has)
+	return err == nil && has
+}
 
 // startNodeProcess starts the systemd service (asking for the admin password
 // through the desktop's polkit prompt) or, without a service, runs the node

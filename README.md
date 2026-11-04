@@ -119,9 +119,12 @@ Desktop nodes get a tent icon in the system tray (notification area): **green** 
   the next boot.
 - **Close this icon only:** the node keeps running.
 
-On Linux, `install node` adds the icon to your desktop login when the machine has a desktop. It shows
-at your next login, or run `outpost tray &` from a terminal on the desktop. GNOME needs the
-AppIndicator extension, which Ubuntu includes. Linux servers without a desktop get no icon.
+On Linux, `install node` adds the icon to your desktop login when the machine has a desktop. It is
+started right away if you are logged in to the desktop, and at every login after that. GNOME needs the
+AppIndicator extension (Ubuntu Desktop includes it; on other GNOME setups install
+`gnome-shell-extension-appindicator` and enable it). If no icon shows, read `tray.log` in the node's
+data folder: it says when nothing on the desktop is listening for tray icons. Linux servers without a
+desktop get no icon. Untested on a real desktop.
 
 On macOS the same menu appears in the menu bar. `install node` adds a second per-user LaunchAgent
 (`io.outpost.tray`, logs in `tray.log` in the data folder) that starts it at login; run `outpost tray &`
