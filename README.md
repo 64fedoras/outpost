@@ -96,6 +96,17 @@ runs only while you are signed in. Run the install again from an admin PowerShel
 join code is needed. Either way the exe lives in `C:\ProgramData\outpost\outpost.exe` and logs go
 to `C:\ProgramData\outpost\node\node.log`.
 
+**Windows Firewall prompts.** Each update runs a new exe (`node\agent\outpost-<version>.exe`), so a
+firewall rule tied to one exe path stopped matching and Windows asked "allow this app on public and
+private networks" after every update. The installer, when run as administrator, now adds one rule by
+port instead: **Outpost model sharing**, inbound TCP 8444, private and domain networks only, local
+subnet only, for every Outpost version. A service node also converts a rule from an older install by
+itself at start. A per-user install from a non-admin shell cannot add the rule, so the prompts
+continue there; run the install command once in an admin PowerShell to stop them. If Windows has the
+network marked **Public**, set it to **Private** (Settings, Network, the connection's properties):
+the rule deliberately does not apply on public networks. Pool helper ports (pooling, off by default)
+still get no rule. *Untested on real Windows.*
+
 *Untested on real Windows:* the service, and whether llama.cpp's Vulkan backend can use the GPU
 when run by a service (session 0). If a GPU node shows no GPU after switching, reinstall with
 `--no-service`.
@@ -113,9 +124,22 @@ Desktop nodes get a tent icon in the system tray (notification area): **green** 
 **amber** while paused, **gray** while disconnected or stopped. Its menu:
 
 - Status, the controller it is joined to, and the loaded model.
-- **Accept new work:** untick it to stop the controller sending tasks and jobs here (for example
-  while you game). Models stay loaded and pools keep lending. The node card in the web UI says
-  *Paused on the node*. The setting survives restarts.
+- **Work mode**, one of three (the ticked one is the current state):
+  - **Accept new work:** the controller can send tasks and jobs here.
+  - **Finish current work, then pause:** no new work; jobs already running here finish first. The
+    status line says *finishing N job(s)* until they are done, then the node is paused.
+  - **Pause now (cancels running work):** stops running jobs at once. A subtask that was being
+    written goes back in the queue for another node, and a test run starts again on another exec
+    node (up to twice). Other steps running there (review, fix, agent or build runs) fail as they
+    would if the node went offline. While paused with nothing running, this item is the ticked one.
+
+  Paused is amber, and the node card in the web UI says *Paused on the node*. Pausing survives
+  restarts. Pausing does **not** unload the model, and pools keep lending.
+- **Unload model:** frees the model's memory (RAM and VRAM) now, the same way an idle unload does.
+  The node keeps taking work and loads the model again when the next task needs it (pause
+  it as well if nothing should load it). Greyed out while a job is running, while
+  the model is still loading, and for a pooled model (unload that from the web UI). After a node
+  restart the model loads again as usual.
 - **Open controller web UI.**
 - **Join a different controller…:** opens a small local page where you paste a join code from
   the other controller's **Add node** dialog. Models stay on disk; the old settings are kept as
@@ -225,14 +249,16 @@ can check detection without joining.
 
 The web UI is laid out like a chat app. The sidebar lists your tasks in three groups: **Needs you**
 (amber dot), **Running** (green) and **Earlier**; a task in a project shows the project name on its
-second line. Pinned tasks sit above the groups.
+second line. Pinned tasks sit above the groups. **Projects** sits right under **New task** at the top of the sidebar, styled the same way.
 
 Right-click a task in the sidebar (or press its **⋯** button, which is always shown on a phone) for
 **Open in new tab**, **Rename**, **Pin to top**, **Copy prompt**, **Copy link**, **Duplicate as new
 task** (fills the new-task box with the same prompt; options are not copied), **Stop** (while it
 runs), **Try again** (when it failed or was interrupted) and **Delete** (asks first; removes the
 task's conversation and files from the controller, nodes keep none). From the keyboard, focus a task
-and press Shift+F10 or the menu key for the menu, F2 to rename, or Delete to delete. On a phone, the task page has one top bar with the menu button in it. Cluster pages (Nodes, Models, Updates, Settings) are at
+and press Shift+F10 or the menu key for the menu, F2 to rename, or Delete to delete.
+
+On a phone, the task page has one top bar with the menu button in it. Cluster pages (Nodes, Models, Updates, Settings) are at
 the bottom of the sidebar. Settings is one long page in five sections (Planning, API keys, Model settings, Application,
 Security and backup); the list on its left follows your scroll position and jumps to a section when clicked.
 

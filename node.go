@@ -57,8 +57,9 @@ type Node struct {
 	args        []string
 	llama       *llamaMgr
 	rpc         *rpcMgr
-	paused      bool // no new work (tray icon); kept in <data>/paused
-	online      bool // connected and welcomed by the controller
+	paused      bool            // no new work (tray icon); kept in <data>/paused
+	stoppedJobs map[string]bool // jobs cancelled by "Pause now" in the tray; reported as retryable
+	online      bool            // connected and welcomed by the controller
 	tools       toolCache
 	peer        peerState
 	artifacts   map[string]string // "<job>/<path>" -> file on disk, served to the controller
@@ -129,6 +130,7 @@ func runNode(args []string) error {
 	go n.verifyModelsBackground()
 	go n.llama.idleLoop(context.Background())
 	go n.autostartRPC()
+	go migratePeerFirewallRule()
 	n.startPeerServer()
 
 	backoff := time.Second
@@ -661,6 +663,7 @@ func (n *Node) runJob(jd JobDispatch) {
 	n.mu.Unlock()
 
 	finish := func() {
+		n.markStoppedByPause(&res)
 		res.EndedAt = time.Now().UTC()
 		if err := n.send("job.result", res); err != nil {
 			log.Printf("job %s: could not send result: %v", jd.JobID, err)
@@ -681,7 +684,7 @@ func (n *Node) runJob(jd JobDispatch) {
 
 	log.Printf("job %s (%s) received", jd.JobID, jd.Kind)
 	if n.isPaused() {
-		fail(errf("busy", true, "node is paused (tick Accept new work in its tray icon)"))
+		fail(errf("busy", true, "node is paused (choose Accept new work in its tray icon)"))
 		return
 	}
 	if jd.Kind == "inference" {

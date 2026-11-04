@@ -2084,6 +2084,7 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		return
 	}
 	var history []string
+	nodeRetries := 0
 	for round := 0; ; round++ {
 		if ctx.Err() != nil {
 			return
@@ -2123,6 +2124,20 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		}
 		if errors.Is(err, errCancelled) || ctx.Err() != nil {
 			return
+		}
+		if err != nil && isNodeProblem(err) && nodeRetries < 2 {
+			// The node stopped (paused from its tray, went offline): run the same
+			// round again, on another node if one is free, without using up a fix round.
+			nodeRetries++
+			t.logf("warn", "%s stopped running the tests (%v); trying again.", c.nodeLabel(node), err)
+			c.coolDown(node, 15*time.Second)
+			round--
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(3 * time.Second):
+			}
+			continue
 		}
 		var output string
 		passed := false
