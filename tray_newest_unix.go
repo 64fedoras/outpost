@@ -21,3 +21,6 @@ func traySwitchToNewest(dataDir string, args []string) {
 	}
 	execTo(c.path, append([]string{"tray"}, args...))
 }
+
+// startNodeService is only used by the Windows tray (`tray --service`).
+func startNodeService(dataDir string) error { return startNodeProcess(dataDir) }
