@@ -30,7 +30,10 @@ func installNodeWindows(args []string) error {
 	noService := fsf.Bool("no-service", false, "run as a per-user background app instead of a Windows service")
 	noDefender := fsf.Bool("no-defender-exclusion", false, "do not add the Microsoft Defender exclusion")
 	_ = fsf.Parse(args)
-	asService := !*noService && isElevated()
+	if err := needAdminForService(*noService, isElevated()); err != nil {
+		return err // before the join code is used, so it still works
+	}
+	asService := !*noService
 	if asService {
 		// An update from a previous install may be running; free the exe.
 		stopInstalledService()
@@ -101,7 +104,7 @@ func installNodeWindows(args []string) error {
 	}
 	startTrayDetached(exe, *data)
 	fmt.Println("Outpost runs in the background and starts when you sign in to Windows.")
-	fmt.Println("To run it as a Windows service (starts at boot, no sign-in needed), open an Administrator PowerShell and run this install command again.")
+	fmt.Println("To run it as a Windows service (starts at boot, no sign-in needed), open an Administrator PowerShell and run this install command again without --no-service.")
 	fmt.Println("Look for the tent icon in the notification area (it may be under the ^ arrow).")
 	fmt.Println("If you started `outpost.exe node` in another window, close that window.")
 	fmt.Printf("Logs: %s\n", nodeLogPath(*data))
@@ -148,10 +151,12 @@ func quitUserNode(data string) {
 	}
 }
 
+const peerFirewallRule = "Outpost model sharing"
+
 // openPeerPortWindows lets other nodes reach this node's model-sharing port (8444),
 // for private networks only. Best effort: without it copies fall back to the controller.
 func openPeerPortWindows(exe string) {
-	const rule = "Outpost model sharing"
+	const rule = peerFirewallRule
 	_ = exec.Command("netsh", "advfirewall", "firewall", "delete", "rule", "name="+rule).Run()
 	err := exec.Command("netsh", "advfirewall", "firewall", "add", "rule", "name="+rule, "dir=in", "action=allow",
 		"protocol=TCP", "localport="+strconv.Itoa(peerPort), "program="+exe, "profile=private,domain").Run()

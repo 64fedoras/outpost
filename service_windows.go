@@ -188,12 +188,53 @@ func installService(exe, data string) error {
 		return fmt.Errorf("registering the service: %w", err)
 	}
 	defer s.Close()
+	if err := setServiceDACL(s.Handle); err != nil {
+		fmt.Printf("Could not let signed-in users start the service from the tray (%v); use `sc start %s` as administrator after Quit.\n", err, serviceName)
+	}
 	_ = s.SetRecoveryActions([]mgr.RecoveryAction{
 		{Type: mgr.ServiceRestart, Delay: 5 * time.Second},
 		{Type: mgr.ServiceRestart, Delay: 30 * time.Second},
 		{Type: mgr.ServiceRestart, Delay: time.Minute},
 	}, 86400)
 	return s.Start()
+}
+
+// serviceSDDL is the service's access list: SYSTEM and Administrators keep the
+// Windows defaults, and interactive (signed-in) users may also start and stop
+// it (RP, WP), so Start in the tray works after Quit without an admin prompt.
+// Anyone signed in could already stop the node with Quit in the tray.
+const serviceSDDL = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWRPWPLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)"
+
+func setServiceDACL(h windows.Handle) error {
+	sd, err := windows.SecurityDescriptorFromString(serviceSDDL)
+	if err != nil {
+		return err
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+	return windows.SetSecurityInfo(h, windows.SE_SERVICE, windows.DACL_SECURITY_INFORMATION, nil, nil, dacl, nil)
+}
+
+// startServiceAsUser starts the service with only the start right, which
+// installService grants to signed-in users (no admin needed).
+func startServiceAsUser() error {
+	m, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
+	if err != nil {
+		return fmt.Errorf("opening the service manager: %w", err)
+	}
+	defer windows.CloseServiceHandle(m)
+	name, _ := windows.UTF16PtrFromString(serviceName)
+	h, err := windows.OpenService(m, name, windows.SERVICE_START)
+	if err != nil {
+		return fmt.Errorf("opening the %s service (run `sc start %s` as administrator, or reinstall from an Administrator PowerShell): %w", serviceName, serviceName, err)
+	}
+	defer windows.CloseServiceHandle(h)
+	if err := windows.StartService(h, 0, nil); err != nil && err != windows.ERROR_SERVICE_ALREADY_RUNNING {
+		return fmt.Errorf("starting the %s service: %w", serviceName, err)
+	}
+	return nil
 }
 
 func stopService(s *mgr.Service) {
@@ -244,6 +285,7 @@ func uninstallNodeWindows() error {
 		fmt.Println("The Outpost Node service is not installed.")
 	}
 	removeRunKey()
+	_ = exec.Command("netsh", "advfirewall", "firewall", "delete", "rule", "name="+peerFirewallRule).Run()
 	fmt.Println("The data folder and models were kept.")
 	return nil
 }

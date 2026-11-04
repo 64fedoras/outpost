@@ -86,3 +86,7 @@ func openURL(u string) {
 		go cmd.Wait()
 	}
 }
+
+// startNodeService starts the Outpost Node service again (after Quit), with
+// the start right the installer gives signed-in users.
+func startNodeService(string) error { return startServiceAsUser() }
