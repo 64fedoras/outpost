@@ -1032,14 +1032,60 @@ func (l *llamaMgr) idleCheck(now time.Time) bool {
 		l.mu.Unlock()
 		return false
 	}
+	idle := l.idleAfter
+	name := l.goCold()
+	log.Printf("model %s was idle for %s; unloading it (it loads again on the next request)", name, formatIdleDuration(idle))
+	l.finishCold()
+	return true
+}
+
+// goCold remembers the loaded model for reloading and returns its name. It must be
+// called with l.mu held and releases it; finishCold then stops the process.
+func (l *llamaMgr) goCold() string {
 	ml := l.opts
 	l.cold = &ml // set before stopping, so a request arriving now waits and reloads
 	name := l.model
 	l.mu.Unlock()
-	log.Printf("model %s was idle for %s; unloading it (it loads again on the next request)", name, formatIdleDuration(l.idleAfter))
+	return name
+}
+
+func (l *llamaMgr) finishCold() {
 	l.stopProc()
 	l.n.resendHello()
-	return true
+}
+
+// errUnloadBusy and friends are the reasons unloadNow refuses; the tray shows them.
+var (
+	errUnloadNothing = errors.New("no model is loaded")
+	errUnloadLoading = errors.New("the model is still loading; try again when it is ready")
+	errUnloadBusy    = errors.New("the model is answering a request; try again when the node is idle")
+	errUnloadPooled  = errors.New("this model is pooled across nodes; unload it from the controller's Nodes page")
+)
+
+// unloadNow unloads the model at once, as an idle unload does: memory is freed and
+// the model loads again on the next request for it. It refuses while the model is
+// loading, answering a request or pooled (the controller owns pooled helpers).
+// Callers check for running jobs first.
+func (l *llamaMgr) unloadNow(why string) (string, error) {
+	l.mu.Lock()
+	switch {
+	case l.cmd == nil:
+		l.mu.Unlock()
+		return "", errUnloadNothing
+	case len(l.opts.RPC) > 0:
+		l.mu.Unlock()
+		return "", errUnloadPooled
+	case !l.ready:
+		l.mu.Unlock()
+		return "", errUnloadLoading
+	case l.busy > 0:
+		l.mu.Unlock()
+		return "", errUnloadBusy
+	}
+	name := l.goCold()
+	log.Printf("unloading model %s (%s); it loads again on the next request", name, why)
+	l.finishCold()
+	return name, nil
 }
 
 func (l *llamaMgr) idleLoop(ctx context.Context) {
