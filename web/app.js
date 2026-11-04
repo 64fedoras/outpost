@@ -80,7 +80,7 @@ function route() {
   page = m[1] === 'tasks' && m[2] ? 'task' : PAGES.includes(m[1]) ? m[1] : 'new';
   pageArg = page === 'task' ? m[2] : null;
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
-  document.querySelectorAll('.side-nav a').forEach((a) => a.classList.toggle('active', a.dataset.tab === page));
+  document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === page));
   document.querySelector('.page-plain').classList.toggle('hidden', !['projects', 'nodes', 'models', 'updates', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task' }[page] || page[0].toUpperCase() + page.slice(1));
   document.body.classList.toggle('on-task', page === 'task');

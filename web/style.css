@@ -172,6 +172,8 @@ pre.out .err { color: var(--stderr); }
 .side-close { margin-left: auto; display: none; }
 .new-task { display: flex; align-items: center; gap: 8px; margin: 6px 12px 10px; padding: 9px 12px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); color: var(--ink); text-decoration: none; font-weight: 550; }
 .new-task:hover { border-color: var(--muted); }
+.new-task + .new-task { margin-top: -4px; }
+.new-task.active { border-color: var(--muted); }
 .side-tasks { flex: 1; overflow-y: auto; padding: 2px 8px 8px; }
 .side-task { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; align-items: start; padding: 7px 8px; border-radius: 8px; color: var(--ink); text-decoration: none; }
 .side-task:hover { background: var(--side-hover); }

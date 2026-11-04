@@ -238,7 +238,7 @@ can check detection without joining.
 
 The web UI is laid out like a chat app. The sidebar lists your tasks in three groups: **Needs you**
 (amber dot), **Running** (green) and **Earlier**; a task in a project shows the project name on its
-second line. On a phone, the task page has one top bar with the menu button in it. Cluster pages (Nodes, Models, Updates, Settings) are at
+second line. **Projects** sits right under **New task** at the top of the sidebar, styled the same way. On a phone, the task page has one top bar with the menu button in it. Cluster pages (Nodes, Models, Updates, Settings) are at
 the bottom of the sidebar. Settings is one long page in five sections (Planning, API keys, Model settings, Application,
 Security and backup); the list on its left follows your scroll position and jumps to a section when clicked.
 
