@@ -9,6 +9,7 @@ package main
 //
 //   GET  /status        what the tray shows
 //   POST /pause|resume  stop or allow new work being sent to this node
+//   POST /unload        unload the model now (it loads again on the next request)
 //   POST /quit          stop the node (a service stays stopped until started)
 //   GET  /join          small page for joining a different controller
 //   POST /join          {token, name}: join it, then restart on the new config
@@ -91,6 +92,8 @@ type controlStatus struct {
 	Paused      bool   `json:"paused"`
 	Model       string `json:"model"`
 	ModelReady  bool   `json:"model_ready"`
+	ModelCold   string `json:"model_cold,omitempty"` // unloaded (idle or from the tray); loads on the next request
+	Pooled      bool   `json:"pooled,omitempty"`     // the loaded model uses other nodes' memory
 	RunningJobs int    `json:"running_jobs"`
 	Lending     string `json:"lending,omitempty"`
 	Service     bool   `json:"service"` // started by systemd
@@ -140,6 +143,13 @@ func (n *Node) startControl() {
 		n.setPaused(false)
 		writeJSON(w, 200, n.controlStatus())
 	}))
+	mux.HandleFunc("POST /unload", auth(func(w http.ResponseWriter, r *http.Request) {
+		if err := n.unloadFromTray(); err != nil {
+			writeJSON(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, n.controlStatus())
+	}))
 	mux.HandleFunc("POST /quit", auth(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]bool{"ok": true})
 		go n.quit()
@@ -162,7 +172,24 @@ func (n *Node) controlStatus() controlStatus {
 	if ep := n.rpc.current(); ep != "" {
 		st.Lending = ep
 	}
+	st.ModelCold = n.llama.coldModel()
+	n.llama.mu.Lock()
+	st.Pooled = n.llama.cmd != nil && len(n.llama.opts.RPC) > 0
+	n.llama.mu.Unlock()
 	return st
+}
+
+var errUnloadJobs = errors.New("a job is running on this node; try again when it is idle")
+
+// unloadFromTray frees the model's memory now, like an idle unload: the node keeps
+// taking work and the model loads again when the next request needs it. Running
+// work is never interrupted; the tray is told why instead.
+func (n *Node) unloadFromTray() error {
+	if n.runningCount() > 0 {
+		return errUnloadJobs
+	}
+	_, err := n.llama.unloadNow("unloaded from the tray icon")
+	return err
 }
 
 // quit stops work cleanly and exits. A systemd service stays stopped until

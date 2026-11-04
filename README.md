@@ -109,7 +109,12 @@ Desktop nodes get a tent icon in the system tray (notification area): **green** 
 - Status, the controller it is joined to, and the loaded model.
 - **Accept new work:** untick it to stop the controller sending tasks and jobs here (for example
   while you game). Models stay loaded and pools keep lending. The node card in the web UI says
-  *Paused on the node*. The setting survives restarts.
+  *Paused on the node*. The setting survives restarts. It does **not** unload the model.
+- **Unload model:** frees the model's memory (RAM and VRAM) now, the same way an idle unload does.
+  The node keeps taking work and loads the model again when the next task needs it (untick
+  *Accept new work* as well if nothing should load it). Greyed out while a job is running, while
+  the model is still loading, and for a pooled model (unload that from the web UI). After a node
+  restart the model loads again as usual.
 - **Open controller web UI.**
 - **Join a different controller…:** opens a small local page where you paste a join code from
   the other controller's **Add node** dialog. Models stay on disk; the old settings are kept as

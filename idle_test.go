@@ -177,3 +177,65 @@ func TestIdleUnloadSettingsAPI(t *testing.T) {
 		t.Errorf("node override never = %d (want 0), inherited = %d (want 1800)", got, inherit)
 	}
 }
+
+func TestUnloadNowGoesColdAndRefuses(t *testing.T) {
+	l := idleTestMgr("m", nil)
+	l.busy = 1
+	if _, err := l.unloadNow("test"); err != errUnloadBusy || l.cold != nil {
+		t.Fatalf("busy: err %v, cold %v", err, l.cold)
+	}
+	l.busy, l.ready = 0, false
+	if _, err := l.unloadNow("test"); err != errUnloadLoading {
+		t.Fatalf("loading: err %v", err)
+	}
+	l.ready = true
+	if name, err := l.unloadNow("test"); err != nil || name != "m" {
+		t.Fatalf("unload: %q %v", name, err)
+	}
+	if l.coldModel() != "m" {
+		t.Fatalf("cold model = %q, want m (reloads on next request)", l.coldModel())
+	}
+	if hb := l.n.buildHeartbeat(); hb.LoadedModel != "m" || !hb.IdleUnloaded {
+		t.Errorf("heartbeat after tray unload: %+v", hb)
+	}
+	if _, err := l.unloadNow("again"); err != errUnloadNothing {
+		t.Errorf("second unload: %v", err)
+	}
+
+	p := idleTestMgr("big", []string{"192.0.2.5:50052"})
+	if _, err := p.unloadNow("test"); err != errUnloadPooled || p.cold != nil {
+		t.Errorf("pooled: err %v cold %v", err, p.cold)
+	}
+}
+
+func TestUnloadFromTrayRefusesDuringJob(t *testing.T) {
+	l := idleTestMgr("m", nil)
+	l.n.jobs["j1"] = func() {}
+	if err := l.n.unloadFromTray(); err != errUnloadJobs || l.cold != nil {
+		t.Fatalf("with a running job: err %v cold %v", err, l.cold)
+	}
+	delete(l.n.jobs, "j1")
+	if err := l.n.unloadFromTray(); err != nil || l.coldModel() != "m" {
+		t.Fatalf("idle: err %v cold %q", err, l.coldModel())
+	}
+}
+
+func TestUnloadItemState(t *testing.T) {
+	cases := []struct {
+		st   controlStatus
+		ok   bool
+		frag string
+	}{
+		{controlStatus{}, false, "Unload model"},
+		{controlStatus{Model: "m", ModelReady: true}, true, "Unload model"},
+		{controlStatus{Model: "m"}, false, "loading"},
+		{controlStatus{Model: "m", ModelReady: true, RunningJobs: 1}, false, "running job"},
+		{controlStatus{Model: "m", ModelReady: true, Pooled: true}, false, "pooled"},
+	}
+	for _, c := range cases {
+		title, ok := unloadItemState(&c.st)
+		if ok != c.ok || !strings.Contains(title, c.frag) {
+			t.Errorf("%+v: %q %v", c.st, title, ok)
+		}
+	}
+}

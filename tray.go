@@ -41,6 +41,7 @@ type trayApp struct {
 	mCtl      *trayItem
 	mModel    *trayItem
 	mWork     *trayItem
+	mUnload   *trayItem
 	mWeb      *trayItem
 	mJoin     *trayItem
 	mStart    *trayItem
@@ -80,6 +81,7 @@ func (t *trayApp) onReady() {
 	t.mModel.Disable()
 	trayAddSeparator()
 	t.mWork = trayAddCheckbox("Accept new work", "Untick to stop the controller sending work to this machine", true)
+	t.mUnload = trayAddItem("Unload model", "Free this machine's memory now; the model loads again when the next task needs it")
 	t.mWeb = trayAddItem("Open controller web UI", "")
 	t.mJoin = trayAddItem("Join a different controller…", "Enter a join code from another controller")
 	trayAddSeparator()
@@ -94,6 +96,8 @@ func (t *trayApp) onReady() {
 			select {
 			case <-t.mWork.ClickedCh:
 				t.toggleWork()
+			case <-t.mUnload.ClickedCh:
+				t.unload()
 			case <-t.mWeb.ClickedCh:
 				if st := t.status(); st != nil && st.Controller != "" {
 					openURL(st.Controller)
@@ -143,6 +147,12 @@ func (t *trayApp) call(method, path string) (*controlStatus, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
+		var e struct {
+			Error string `json:"error"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&e) == nil && e.Error != "" {
+			return nil, fmt.Errorf("node said %s: %s", resp.Status, e.Error)
+		}
 		return nil, fmt.Errorf("node said %s", resp.Status)
 	}
 	var st controlStatus
@@ -216,6 +226,7 @@ func (t *trayApp) render(st *controlStatus) {
 		t.mCtl.Hide()
 		t.mModel.Hide()
 		t.mWork.Disable()
+		t.mUnload.Hide()
 		t.mWeb.Disable()
 		t.mJoin.Disable()
 		t.mQuit.Hide()
@@ -252,10 +263,20 @@ func (t *trayApp) render(st *controlStatus) {
 		t.mModel.SetTitle("Model: " + st.Model)
 	case st.Model != "":
 		t.mModel.SetTitle("Model: " + st.Model + " (loading)")
+	case st.ModelCold != "":
+		t.mModel.SetTitle("Model: " + st.ModelCold + " (unloaded, loads on next task)")
 	default:
 		t.mModel.SetTitle("No model loaded")
 	}
 	t.mModel.Show()
+	title, ok := unloadItemState(st)
+	t.mUnload.SetTitle(title)
+	if ok {
+		t.mUnload.Enable()
+	} else {
+		t.mUnload.Disable()
+	}
+	t.mUnload.Show()
 	if st.Paused {
 		t.mWork.Uncheck()
 	} else {
@@ -280,6 +301,33 @@ func (t *trayApp) toggleWork() {
 	} else {
 		log.Printf("tray: %s: %v", path, err)
 	}
+}
+
+// unloadItemState is the Unload model item's title and whether it can be clicked.
+func unloadItemState(st *controlStatus) (string, bool) {
+	switch {
+	case st.Model == "":
+		return "Unload model", false
+	case st.Pooled:
+		return "Unload model (pooled: use the web UI)", false
+	case !st.ModelReady:
+		return "Unload model (still loading)", false
+	case st.RunningJobs > 0:
+		return "Unload model (after the running job)", false
+	}
+	return "Unload model", true
+}
+
+func (t *trayApp) unload() {
+	nst, err := t.call("POST", "/unload")
+	if err != nil {
+		log.Printf("tray: unload: %v", err)
+		return
+	}
+	t.mu.Lock()
+	t.last = nst
+	t.mu.Unlock()
+	t.render(nst)
 }
 
 func (t *trayApp) openJoin() {
