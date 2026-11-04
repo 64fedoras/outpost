@@ -8,12 +8,15 @@ package main
 // pages cannot drive it.
 //
 //   GET  /status        what the tray shows
-//   POST /pause|resume  stop or allow new work being sent to this node
+//   POST /pause|resume  stop or allow new work being sent to this node (running work finishes)
+//   POST /pause-now     pause and cancel running work; the controller gives it to other nodes
+//   POST /unload        unload the model now (it loads again on the next request)
 //   POST /quit          stop the node (a service stays stopped until started)
 //   GET  /join          small page for joining a different controller
 //   POST /join          {token, name}: join it, then restart on the new config
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -70,6 +73,42 @@ func (n *Node) setPaused(p bool) {
 	}
 }
 
+// pauseNow pauses the node and cancels its running jobs. Each cancelled job is
+// reported to the controller as retryable "busy", so the controller treats it like
+// a node that stopped being available (a subtask goes back in the queue for
+// another node) rather than as a task the user cancelled.
+func (n *Node) pauseNow() {
+	n.setPaused(true)
+	n.mu.Lock()
+	if n.stoppedJobs == nil {
+		n.stoppedJobs = map[string]bool{}
+	}
+	var cancels []context.CancelFunc
+	for id, c := range n.jobs {
+		n.stoppedJobs[id] = true
+		cancels = append(cancels, c)
+	}
+	n.mu.Unlock()
+	if len(cancels) > 0 {
+		log.Printf("pause now from the tray icon: cancelling %d running job(s)", len(cancels))
+	}
+	for _, c := range cancels {
+		c()
+	}
+}
+
+// markStoppedByPause turns the result of a job cancelled by pauseNow into a
+// retryable failure the controller can hand to another node.
+func (n *Node) markStoppedByPause(res *JobResult) {
+	n.mu.Lock()
+	stopped := n.stoppedJobs[res.JobID]
+	delete(n.stoppedJobs, res.JobID)
+	n.mu.Unlock()
+	if stopped && res.Status == "cancelled" {
+		res.Status, res.Error = "failed", errf("busy", true, "node was paused from its tray icon; the work goes to another node")
+	}
+}
+
 func (n *Node) isOnline() bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -91,6 +130,8 @@ type controlStatus struct {
 	Paused      bool   `json:"paused"`
 	Model       string `json:"model"`
 	ModelReady  bool   `json:"model_ready"`
+	ModelCold   string `json:"model_cold,omitempty"` // unloaded (idle or from the tray); loads on the next request
+	Pooled      bool   `json:"pooled,omitempty"`     // the loaded model uses other nodes' memory
 	RunningJobs int    `json:"running_jobs"`
 	Lending     string `json:"lending,omitempty"`
 	Service     bool   `json:"service"` // started by systemd
@@ -136,8 +177,19 @@ func (n *Node) startControl() {
 		n.setPaused(true)
 		writeJSON(w, 200, n.controlStatus())
 	}))
+	mux.HandleFunc("POST /pause-now", auth(func(w http.ResponseWriter, r *http.Request) {
+		n.pauseNow()
+		writeJSON(w, 200, n.controlStatus())
+	}))
 	mux.HandleFunc("POST /resume", auth(func(w http.ResponseWriter, r *http.Request) {
 		n.setPaused(false)
+		writeJSON(w, 200, n.controlStatus())
+	}))
+	mux.HandleFunc("POST /unload", auth(func(w http.ResponseWriter, r *http.Request) {
+		if err := n.unloadFromTray(); err != nil {
+			writeJSON(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(w, 200, n.controlStatus())
 	}))
 	mux.HandleFunc("POST /quit", auth(func(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +214,24 @@ func (n *Node) controlStatus() controlStatus {
 	if ep := n.rpc.current(); ep != "" {
 		st.Lending = ep
 	}
+	st.ModelCold = n.llama.coldModel()
+	n.llama.mu.Lock()
+	st.Pooled = n.llama.cmd != nil && len(n.llama.opts.RPC) > 0
+	n.llama.mu.Unlock()
 	return st
+}
+
+var errUnloadJobs = errors.New("a job is running on this node; try again when it is idle")
+
+// unloadFromTray frees the model's memory now, like an idle unload: the node keeps
+// taking work and the model loads again when the next request needs it. Running
+// work is never interrupted; the tray is told why instead.
+func (n *Node) unloadFromTray() error {
+	if n.runningCount() > 0 {
+		return errUnloadJobs
+	}
+	_, err := n.llama.unloadNow("unloaded from the tray icon")
+	return err
 }
 
 // quit stops work cleanly and exits. A systemd service stays stopped until
