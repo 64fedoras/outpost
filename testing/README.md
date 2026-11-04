@@ -47,3 +47,5 @@ WebSocket that executes the Chromium job locally. They use a headless Chromium f
 - macOS (builds only).
 - Linux sandbox on the real nodes: Ubuntu 24.04 restricts unprivileged user namespaces with AppArmor (strict then falls back to Landlock TCP rules on kernel 6.7+, or refuses); check a node installed with `sudo` (root) and one run as an ordinary user, the node card badge, `go build`/`go test` with an Outpost-installed Go and a distro Go, git, Chromium screenshots (`visual.go` runs under the sandbox and may need `OUTPOST_SANDBOX_EXTRA_RO` or sandbox off on that node), and a test step with a download.
 - Real Claude API cost figures.
+
+- Windows experimental job-object limits (`OUTPOST_EXPERIMENTAL_WINDOWS_SANDBOX=1`): run `go test -run 'Job|Windows' .` on a real Windows machine and check a cancelled exec job leaves no child processes (Task Manager).
