@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -186,7 +187,7 @@ func dedupeEnv(env []string) []string {
 // that the sandbox blocked.
 func sandboxNote(mode string, net bool) string {
 	switch {
-	case mode == sandboxOff || mode == "":
+	case mode == sandboxOff || mode == "" || runtime.GOOS != "linux": // only Linux confines files and network
 		return ""
 	case net:
 		return "this command ran in the Outpost sandbox (" + mode + "): it can only change files in its job folder; the network was open"
