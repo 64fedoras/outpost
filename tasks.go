@@ -96,6 +96,7 @@ type Task struct {
 	ID           string          `json:"id"`
 	Prompt       string          `json:"prompt"`
 	Title        string          `json:"title"`
+	Pinned       bool            `json:"pinned,omitempty"` // kept above the other groups in the sidebar
 	Status       string          `json:"status"`
 	PausedFrom   string          `json:"paused_from,omitempty"`
 	Planner      string          `json:"planner"` // "claude", "openrouter" or "node:<id>"
@@ -255,11 +256,12 @@ type taskSummary struct {
 	Round       int        `json:"round"`
 	ProjectID   string     `json:"project_id,omitempty"`
 	Updated     time.Time  `json:"updated"`
+	Pinned      bool       `json:"pinned,omitempty"`
 }
 
 func (t *Task) summaryLocked() taskSummary {
 	s := taskSummary{ID: t.ID, Title: t.Title, Status: t.Status, Planner: t.Planner, CostUSD: t.CostUSD, CapUSD: t.CapUSD,
-		ProjectID: t.ProjectID, Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created}
+		ProjectID: t.ProjectID, Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created, Pinned: t.Pinned}
 	switch t.Status {
 	case "awaiting_answers", "awaiting_approval", "paused_cap", "interrupted":
 		s.NeedsYou = true
@@ -712,6 +714,48 @@ func (c *Controller) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 	c.mu.Unlock()
 	os.RemoveAll(t.dir)
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+const maxTaskTitle = 120
+
+// handleTaskMeta renames or pins a task. Either field may be left out. An
+// empty title is refused; the planner never overwrites a title that is set.
+func (c *Controller) handleTaskMeta(w http.ResponseWriter, r *http.Request) {
+	t := c.getTask(r.PathValue("id"))
+	if t == nil {
+		writeJSON(w, 404, map[string]string{"error": "no such task"})
+		return
+	}
+	var req struct {
+		Title  *string `json:"title"`
+		Pinned *bool   `json:"pinned"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "bad request"})
+		return
+	}
+	var title string
+	if req.Title != nil {
+		title = strings.Join(strings.Fields(*req.Title), " ")
+		if title == "" {
+			writeJSON(w, 400, map[string]string{"error": "the name cannot be empty"})
+			return
+		}
+		if r := []rune(title); len(r) > maxTaskTitle {
+			title = string(r[:maxTaskTitle])
+		}
+	}
+	t.mu.Lock()
+	if req.Title != nil {
+		t.Title = title
+	}
+	if req.Pinned != nil {
+		t.Pinned = *req.Pinned
+	}
+	t.saveLocked()
+	s := t.summaryLocked()
+	t.mu.Unlock()
+	writeJSON(w, 200, s)
 }
 
 // handleResumeTask continues a paused task (after raising the cap or switching

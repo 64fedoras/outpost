@@ -225,7 +225,14 @@ can check detection without joining.
 
 The web UI is laid out like a chat app. The sidebar lists your tasks in three groups: **Needs you**
 (amber dot), **Running** (green) and **Earlier**; a task in a project shows the project name on its
-second line. On a phone, the task page has one top bar with the menu button in it. Cluster pages (Nodes, Models, Updates, Settings) are at
+second line. Pinned tasks sit above the groups.
+
+Right-click a task in the sidebar (or press its **⋯** button, which is always shown on a phone) for
+**Open in new tab**, **Rename**, **Pin to top**, **Copy prompt**, **Copy link**, **Duplicate as new
+task** (fills the new-task box with the same prompt; options are not copied), **Stop** (while it
+runs), **Try again** (when it failed or was interrupted) and **Delete** (asks first; removes the
+task's conversation and files from the controller, nodes keep none). From the keyboard, focus a task
+and press Shift+F10 or the menu key for the menu, F2 to rename, or Delete to delete. On a phone, the task page has one top bar with the menu button in it. Cluster pages (Nodes, Models, Updates, Settings) are at
 the bottom of the sidebar. Settings is one long page in five sections (Planning, API keys, Model settings, Application,
 Security and backup); the list on its left follows your scroll position and jumps to a section when clicked.
 
