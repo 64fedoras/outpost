@@ -280,7 +280,7 @@ function startRename(id) {
 async function deleteTask(id) {
   if (!confirm('Delete this task, its conversation and its files?')) return;
   try {
-    await api(`/api/tasks/${id}`, { method: 'DELETE' });
+    await api(`/api/tasks/${id}`, { method: 'DELETE' }); Drafts.clear('task:' + id); Drafts.clearPrefix('ans:' + id + ':');
     tasksSeq++; tasks = tasks.filter((t) => t.id !== id); renderSideTasks();
     if (page === 'task' && pageArg === id) location.hash = '#/new';
     toast('Task deleted'); refresh();
