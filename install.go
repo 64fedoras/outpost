@@ -262,7 +262,8 @@ func installNode(args []string) error {
 		if err := installTrayAutostart(u, uid, gid, dir); err != nil {
 			fmt.Println("Tray icon not set up:", err)
 		} else {
-			fmt.Println("Tray icon: starts when", u.Username, "logs in to the desktop (or now: outpost tray &, from a desktop terminal).")
+			fmt.Println("Tray icon: starts when", u.Username, "logs in to the desktop; now:", launchTrayNow(uid, gid, u.HomeDir, dir))
+			fmt.Println("If no icon shows, check the AppIndicator extension is on and read", filepath.Join(dir, "tray.log"))
 		}
 	}
 	fmt.Println("If you also started `outpost node` by hand, stop that copy (Ctrl+C) so only the service runs.")
