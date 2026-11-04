@@ -56,6 +56,7 @@ func runTray(args []string) error {
 	if _, err := os.Stat(filepath.Join(*data, "node.json")); err != nil {
 		return fmt.Errorf("no node config in %s; join first with `outpost install node --join TOKEN` (or --data DIR)", *data)
 	}
+	traySwitchToNewest(*data, args)
 	release, err := trayLock(*data)
 	if err != nil {
 		return err
