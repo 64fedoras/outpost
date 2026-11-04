@@ -129,6 +129,7 @@ func runNode(args []string) error {
 	go n.verifyModelsBackground()
 	go n.llama.idleLoop(context.Background())
 	go n.autostartRPC()
+	go migratePeerFirewallRule()
 	n.startPeerServer()
 
 	backoff := time.Second

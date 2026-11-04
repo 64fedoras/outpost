@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -78,7 +77,7 @@ func installNodeWindows(args []string) error {
 	}
 
 	if isElevated() {
-		openPeerPortWindows(exe)
+		openPeerPortWindows()
 	}
 	if asService {
 		if !*noDefender {
@@ -107,6 +106,10 @@ func installNodeWindows(args []string) error {
 	fmt.Println("To run it as a Windows service (starts at boot, no sign-in needed), open an Administrator PowerShell and run this install command again without --no-service.")
 	fmt.Println("Look for the tent icon in the notification area (it may be under the ^ arrow).")
 	fmt.Println("If you started `outpost.exe node` in another window, close that window.")
+	if !isElevated() {
+		fmt.Println("Without administrator rights the installer cannot add a Windows Firewall rule, so Windows may ask to allow Outpost on the network after each update.\n" +
+			"  Run this install command once in an Administrator PowerShell to stop those prompts.")
+	}
 	fmt.Printf("Logs: %s\n", nodeLogPath(*data))
 	fmt.Printf("If Microsoft Defender blocks updates, in an admin PowerShell run:\n  Add-MpPreference -ExclusionPath '%s'\n", filepath.Dir(*data))
 	return nil
@@ -151,18 +154,17 @@ func quitUserNode(data string) {
 	}
 }
 
-const peerFirewallRule = "Outpost model sharing"
-
 // openPeerPortWindows lets other nodes reach this node's model-sharing port (8444),
-// for private networks only. Best effort: without it copies fall back to the controller.
-func openPeerPortWindows(exe string) {
-	const rule = peerFirewallRule
-	_ = exec.Command("netsh", "advfirewall", "firewall", "delete", "rule", "name="+rule).Run()
-	err := exec.Command("netsh", "advfirewall", "firewall", "add", "rule", "name="+rule, "dir=in", "action=allow",
-		"protocol=TCP", "localport="+strconv.Itoa(peerPort), "program="+exe, "profile=private,domain").Run()
+// on private and domain networks and from the local subnet only. The rule is by
+// port, not by exe, so it keeps working after updates without firewall prompts.
+// Best effort: without it copies fall back to the controller.
+func openPeerPortWindows() {
+	_ = hiddenCmd("netsh", peerFirewallDeleteArgs()...).Run()
+	err := hiddenCmd("netsh", peerFirewallAddArgs(peerPort)...).Run()
 	if err != nil {
 		fmt.Printf("Could not open TCP port %d in Windows Firewall (%v); other nodes will copy models from the controller instead.\n", peerPort, err)
 		return
 	}
-	fmt.Printf("Opened TCP port %d in Windows Firewall (private and domain networks) so other nodes can copy models from this one.\n", peerPort)
+	fmt.Printf("Opened TCP port %d in Windows Firewall (private and domain networks, local subnet) so other nodes can copy models from this one.\n"+
+		"  The rule covers every Outpost version, so updates do not bring up firewall prompts.\n", peerPort)
 }
