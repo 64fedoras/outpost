@@ -72,23 +72,29 @@ folders directly inside the node's `models/` folder are deleted, and symlinks ar
 the controller and on other nodes are untouched, so a node that needs a model again fetches it again.
 The **×** next to a model still deletes just that one.
 
-**Windows:** in PowerShell, in the folder with the exe, run the command from **Add node**:
+**Windows:** open an **Administrator** PowerShell (right-click Start, *Terminal (Admin)*), go to the
+folder with the exe and run the command from **Add node**:
 
 ```powershell
 .\outpost-windows-amd64.exe install node --join <token>
 ```
 
-Run it from an **Administrator** PowerShell and Outpost installs the **Outpost Node** Windows
-service: it starts at boot with no one signed in, restarts if it stops, and updates from the web UI
-swap the exe and restart it by themselves. The installer also adds the Microsoft Defender exclusion
-for `C:\ProgramData\outpost` (and prints how to undo it; skip with `--no-defender-exclusion`). The
-tray icon still starts when you sign in; **Quit Outpost** there stops the service. Remove it with
+This installs the **Outpost Node** Windows service: it runs as LocalSystem, starts at boot with no
+one signed in, restarts if it stops, and updates and rollbacks from the web UI restart it by
+themselves. From a normal (non-admin) PowerShell the install stops before using the join code and
+says how to open an admin one, so the same code still works. The installer also adds the Microsoft
+Defender exclusion for `C:\ProgramData\outpost` (and prints how to undo it; skip with
+`--no-defender-exclusion`). The tray icon starts when you sign in and talks to the service;
+**Quit Outpost** there stops the service (it stays stopped until the next boot), and while it is
+stopped the tray shows **Start Outpost**, which starts it again without an admin prompt (the
+installer lets signed-in users start and stop this one service). Remove it with
 `outpost.exe uninstall node` (admin; data and models are kept).
 
-Without admin rights (or with `--no-service`) it falls back to the old per-user mode: a background
-process with a tray icon that starts when you sign in. Run the install again from an admin
-PowerShell to switch to the service. Either way the exe lives in `C:\ProgramData\outpost\outpost.exe`
-and logs go to `C:\ProgramData\outpost\node\node.log`.
+`--no-service` installs the old per-user mode instead: a background process with a tray icon that
+runs only while you are signed in. Run the install again from an admin PowerShell (without
+`--no-service`) to switch an existing per-user node to the service; its `node.json` is kept, so no
+join code is needed. Either way the exe lives in `C:\ProgramData\outpost\outpost.exe` and logs go
+to `C:\ProgramData\outpost\node\node.log`.
 
 *Untested on real Windows:* the service, and whether llama.cpp's Vulkan backend can use the GPU
 when run by a service (session 0). If a GPU node shows no GPU after switching, reinstall with

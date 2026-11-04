@@ -291,14 +291,14 @@ func (t *trayApp) openJoin() {
 }
 
 func (t *trayApp) startNode() {
-	if t.service {
-		log.Printf("tray: the Outpost Node service starts at boot; to start it now run `sc start OutpostNode` as administrator")
-		return
-	}
 	t.mu.Lock()
 	t.starting = time.Now()
 	t.mu.Unlock()
-	if err := startNodeProcess(t.dataDir); err != nil {
+	start := startNodeProcess
+	if t.service {
+		start = startNodeService // the Windows service, after Quit stopped it
+	}
+	if err := start(t.dataDir); err != nil {
 		log.Printf("tray: starting the node: %v", err)
 	}
 	t.render(nil)
