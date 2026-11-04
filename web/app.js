@@ -1470,13 +1470,15 @@ async function uploadFiles(files) {
 (function settingsNav() {
   const links = [...document.querySelectorAll('#set-nav a')];
   if (!links.length) return;
-  const secs = links.map((a) => $('set-' + a.dataset.sec));
+  // Section ids differ from data-sec for 'model': #set-model is the Claude model <select>, so never build ids from data-sec alone.
+  const secs = links.map((a) => document.querySelector('section.set-sec' + a.getAttribute('href')));
   let lock = 0;
   const mark = (i) => links.forEach((a, j) => a.classList.toggle('active', i === j));
   const spy = () => {
     if (Date.now() < lock || page !== 'settings') return;
     let cur = 0;
     secs.forEach((s, i) => { if (s.getBoundingClientRect().top <= (matchMedia('(max-width: 860px)').matches ? 140 : 90)) cur = i; });
+    if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) cur = secs.length - 1;
     mark(cur);
   };
   addEventListener('scroll', spy, { passive: true });
