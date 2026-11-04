@@ -40,7 +40,9 @@ type trayApp struct {
 	mStatus   *trayItem
 	mCtl      *trayItem
 	mModel    *trayItem
-	mWork     *trayItem
+	mWork     *trayItem // Accept new work
+	mFinish   *trayItem // Finish current work, then pause
+	mStop     *trayItem // Pause now (cancels running work)
 	mUnload   *trayItem
 	mWeb      *trayItem
 	mJoin     *trayItem
@@ -80,7 +82,9 @@ func (t *trayApp) onReady() {
 	t.mModel = trayAddItem("", "")
 	t.mModel.Disable()
 	trayAddSeparator()
-	t.mWork = trayAddCheckbox("Accept new work", "Untick to stop the controller sending work to this machine", true)
+	t.mWork = trayAddCheckbox("Accept new work", "The controller can send work to this machine", true)
+	t.mFinish = trayAddCheckbox("Finish current work, then pause", "No new work; jobs already running here finish first", false)
+	t.mStop = trayAddCheckbox("Pause now (cancels running work)", "No new work; running jobs stop and go to other nodes", false)
 	t.mUnload = trayAddItem("Unload model", "Free this machine's memory now; the model loads again when the next task needs it")
 	t.mWeb = trayAddItem("Open controller web UI", "")
 	t.mJoin = trayAddItem("Join a different controller…", "Enter a join code from another controller")
@@ -95,7 +99,11 @@ func (t *trayApp) onReady() {
 		for {
 			select {
 			case <-t.mWork.ClickedCh:
-				t.toggleWork()
+				t.setWorkMode("/resume")
+			case <-t.mFinish.ClickedCh:
+				t.setWorkMode("/pause")
+			case <-t.mStop.ClickedCh:
+				t.setWorkMode("/pause-now")
 			case <-t.mUnload.ClickedCh:
 				t.unload()
 			case <-t.mWeb.ClickedCh:
@@ -226,6 +234,8 @@ func (t *trayApp) render(st *controlStatus) {
 		t.mCtl.Hide()
 		t.mModel.Hide()
 		t.mWork.Disable()
+		t.mFinish.Disable()
+		t.mStop.Disable()
 		t.mUnload.Hide()
 		t.mWeb.Disable()
 		t.mJoin.Disable()
@@ -238,10 +248,14 @@ func (t *trayApp) render(st *controlStatus) {
 	t.mWeb.Enable()
 	t.mJoin.Enable()
 	t.mWork.Enable()
+	t.mFinish.Enable()
+	t.mStop.Enable()
 	state, word := trayOnline, "online"
 	switch {
 	case !st.Online:
 		state, word = trayOffline, "connecting to controller…"
+	case st.Paused && st.RunningJobs > 0:
+		state, word = trayPaused, fmt.Sprintf("finishing %d job(s), then paused", st.RunningJobs)
 	case st.Paused:
 		state, word = trayPaused, "paused (no new work)"
 	case st.RunningJobs > 0:
@@ -277,30 +291,45 @@ func (t *trayApp) render(st *controlStatus) {
 		t.mUnload.Disable()
 	}
 	t.mUnload.Show()
-	if st.Paused {
-		t.mWork.Uncheck()
-	} else {
-		t.mWork.Check()
+	checks := map[string]*trayItem{"ready": t.mWork, "finish": t.mFinish, "paused": t.mStop}
+	mode := workMode(st)
+	for m, it := range checks {
+		if m == mode {
+			it.Check()
+		} else {
+			it.Uncheck()
+		}
 	}
 }
 
-func (t *trayApp) toggleWork() {
-	st := t.status()
-	if st == nil {
+// workMode is which of the three work items is ticked: "ready" (taking work),
+// "finish" (paused, jobs still finishing) or "paused" (paused, nothing running).
+func workMode(st *controlStatus) string {
+	switch {
+	case !st.Paused:
+		return "ready"
+	case st.RunningJobs > 0:
+		return "finish"
+	}
+	return "paused"
+}
+
+// setWorkMode asks the node to resume, pause or pause now, then redraws the
+// menu even when nothing changed (some desktops flip a clicked checkbox by themselves).
+func (t *trayApp) setWorkMode(path string) {
+	if t.status() == nil {
 		return
 	}
-	path := "/pause"
-	if st.Paused {
-		path = "/resume"
-	}
-	if nst, err := t.call("POST", path); err == nil {
-		t.mu.Lock()
-		t.last = nst
-		t.mu.Unlock()
-		t.render(nst)
-	} else {
+	nst, err := t.call("POST", path)
+	if err != nil {
 		log.Printf("tray: %s: %v", path, err)
+		return
 	}
+	t.mu.Lock()
+	t.last = nst
+	t.shownKey = ""
+	t.mu.Unlock()
+	t.render(nst)
 }
 
 // unloadItemState is the Unload model item's title and whether it can be clicked.

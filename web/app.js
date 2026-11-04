@@ -1049,7 +1049,7 @@ function nodeCard(n) {
     <div class="metric"><span class="k">CPU</span>${bar(hb ? hb.cpu_pct : 0)}<span class="v">${hb ? hb.cpu_pct.toFixed(1) + '%' : '—'}</span></div>
     <div class="metric"><span class="k">RAM</span>${bar(ramPct)}<span class="v">${hb ? bytes(hb.ram_used_bytes) + '/' + bytes(hb.ram_total_bytes) : '—'}</span></div>
     ${gpus}
-    ${paused ? `<div class="note warn u17"><b>Paused on the node.</b> It takes no new work until someone ticks <b>Accept new work</b> in its tray icon.</div>` : ''}
+    ${paused ? `<div class="note warn u17"><b>Paused on the node.</b> It takes no new work until someone chooses <b>Accept new work</b> in its tray icon.</div>` : ''}
     <div class="sub u17">${status}${hb && hb.swap_used_bytes ? ` · swap ${bytes(hb.swap_used_bytes)}` : ''}${n.addr ? ` · ${esc(n.addr.split(':')[0])}` : ''}</div>
     ${modelBox}
     ${toolsBox(n)}

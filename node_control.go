@@ -8,13 +8,15 @@ package main
 // pages cannot drive it.
 //
 //   GET  /status        what the tray shows
-//   POST /pause|resume  stop or allow new work being sent to this node
+//   POST /pause|resume  stop or allow new work being sent to this node (running work finishes)
+//   POST /pause-now     pause and cancel running work; the controller gives it to other nodes
 //   POST /unload        unload the model now (it loads again on the next request)
 //   POST /quit          stop the node (a service stays stopped until started)
 //   GET  /join          small page for joining a different controller
 //   POST /join          {token, name}: join it, then restart on the new config
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -68,6 +70,42 @@ func (n *Node) setPaused(p bool) {
 		log.Printf("new work %s from the tray icon", map[bool]string{true: "paused", false: "resumed"}[p])
 		n.pushHeartbeat()
 		n.resendHello()
+	}
+}
+
+// pauseNow pauses the node and cancels its running jobs. Each cancelled job is
+// reported to the controller as retryable "busy", so the controller treats it like
+// a node that stopped being available (a subtask goes back in the queue for
+// another node) rather than as a task the user cancelled.
+func (n *Node) pauseNow() {
+	n.setPaused(true)
+	n.mu.Lock()
+	if n.stoppedJobs == nil {
+		n.stoppedJobs = map[string]bool{}
+	}
+	var cancels []context.CancelFunc
+	for id, c := range n.jobs {
+		n.stoppedJobs[id] = true
+		cancels = append(cancels, c)
+	}
+	n.mu.Unlock()
+	if len(cancels) > 0 {
+		log.Printf("pause now from the tray icon: cancelling %d running job(s)", len(cancels))
+	}
+	for _, c := range cancels {
+		c()
+	}
+}
+
+// markStoppedByPause turns the result of a job cancelled by pauseNow into a
+// retryable failure the controller can hand to another node.
+func (n *Node) markStoppedByPause(res *JobResult) {
+	n.mu.Lock()
+	stopped := n.stoppedJobs[res.JobID]
+	delete(n.stoppedJobs, res.JobID)
+	n.mu.Unlock()
+	if stopped && res.Status == "cancelled" {
+		res.Status, res.Error = "failed", errf("busy", true, "node was paused from its tray icon; the work goes to another node")
 	}
 }
 
@@ -137,6 +175,10 @@ func (n *Node) startControl() {
 	}))
 	mux.HandleFunc("POST /pause", auth(func(w http.ResponseWriter, r *http.Request) {
 		n.setPaused(true)
+		writeJSON(w, 200, n.controlStatus())
+	}))
+	mux.HandleFunc("POST /pause-now", auth(func(w http.ResponseWriter, r *http.Request) {
+		n.pauseNow()
 		writeJSON(w, 200, n.controlStatus())
 	}))
 	mux.HandleFunc("POST /resume", auth(func(w http.ResponseWriter, r *http.Request) {

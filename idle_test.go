@@ -239,3 +239,42 @@ func TestUnloadItemState(t *testing.T) {
 		}
 	}
 }
+
+func TestPauseNowCancelsAsRetryable(t *testing.T) {
+	l := idleTestMgr("m", nil)
+	n := l.n
+	n.dataDir = t.TempDir()
+	cancelled := false
+	n.jobs["j1"] = func() { cancelled = true }
+	n.pauseNow()
+	if !cancelled || !n.isPaused() {
+		t.Fatalf("pauseNow: cancelled %v paused %v", cancelled, n.isPaused())
+	}
+	res := JobResult{JobID: "j1", Status: "cancelled"}
+	n.markStoppedByPause(&res)
+	if res.Status != "failed" || res.Error == nil || res.Error.Code != "busy" || !isNodeProblem(res.Error) {
+		t.Fatalf("result after pause now: %+v %+v", res, res.Error)
+	}
+	// Only once, and only for jobs pauseNow cancelled.
+	other := JobResult{JobID: "j1", Status: "cancelled"}
+	n.markStoppedByPause(&other)
+	if other.Status != "cancelled" {
+		t.Errorf("second result: %+v", other)
+	}
+}
+
+func TestWorkMode(t *testing.T) {
+	for _, c := range []struct {
+		st   controlStatus
+		want string
+	}{
+		{controlStatus{}, "ready"},
+		{controlStatus{RunningJobs: 2}, "ready"},
+		{controlStatus{Paused: true, RunningJobs: 1}, "finish"},
+		{controlStatus{Paused: true}, "paused"},
+	} {
+		if got := workMode(&c.st); got != c.want {
+			t.Errorf("%+v: %s want %s", c.st, got, c.want)
+		}
+	}
+}

@@ -107,12 +107,20 @@ Desktop nodes get a tent icon in the system tray (notification area): **green** 
 **amber** while paused, **gray** while disconnected or stopped. Its menu:
 
 - Status, the controller it is joined to, and the loaded model.
-- **Accept new work:** untick it to stop the controller sending tasks and jobs here (for example
-  while you game). Models stay loaded and pools keep lending. The node card in the web UI says
-  *Paused on the node*. The setting survives restarts. It does **not** unload the model.
+- **Work mode**, one of three (the ticked one is the current state):
+  - **Accept new work:** the controller can send tasks and jobs here.
+  - **Finish current work, then pause:** no new work; jobs already running here finish first. The
+    status line says *finishing N job(s)* until they are done, then the node is paused.
+  - **Pause now (cancels running work):** stops running jobs at once. A subtask that was being
+    written goes back in the queue for another node, and a test run starts again on another exec
+    node (up to twice). Other steps running there (review, fix, agent or build runs) fail as they
+    would if the node went offline. While paused with nothing running, this item is the ticked one.
+
+  Paused is amber, and the node card in the web UI says *Paused on the node*. Pausing survives
+  restarts. Pausing does **not** unload the model, and pools keep lending.
 - **Unload model:** frees the model's memory (RAM and VRAM) now, the same way an idle unload does.
-  The node keeps taking work and loads the model again when the next task needs it (untick
-  *Accept new work* as well if nothing should load it). Greyed out while a job is running, while
+  The node keeps taking work and loads the model again when the next task needs it (pause
+  it as well if nothing should load it). Greyed out while a job is running, while
   the model is still loading, and for a pooled model (unload that from the web UI). After a node
   restart the model loads again as usual.
 - **Open controller web UI.**
