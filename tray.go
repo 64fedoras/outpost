@@ -1,4 +1,4 @@
-//go:build windows || linux
+//go:build windows || linux || darwin
 
 package main
 
@@ -7,7 +7,8 @@ package main
 // controller, open the web UI, or quit. It talks to the node over the local
 // control port (node_control.go); it never talks to the controller itself.
 //
-// Linux: the node runs as the systemd service; the tray starts at desktop
+// macOS: the node is a LaunchAgent and the tray one too (menu bar item, see
+// tray_ui_darwin.go). Linux: the node runs as the systemd service; the tray starts at desktop
 // login (~/.config/autostart). Windows: the tray starts at login (Run key)
 // and starts the node hidden in the background if it is not running.
 
@@ -24,8 +25,6 @@ import (
 	"runtime"
 	"sync"
 	"time"
-
-	"fyne.io/systray"
 )
 
 type trayApp struct {
@@ -38,15 +37,15 @@ type trayApp struct {
 	starting  time.Time
 	quitting  bool
 	shownKey  string
-	mStatus   *systray.MenuItem
-	mCtl      *systray.MenuItem
-	mModel    *systray.MenuItem
-	mWork     *systray.MenuItem
-	mWeb      *systray.MenuItem
-	mJoin     *systray.MenuItem
-	mStart    *systray.MenuItem
-	mQuit     *systray.MenuItem
-	mQuitTray *systray.MenuItem
+	mStatus   *trayItem
+	mCtl      *trayItem
+	mModel    *trayItem
+	mWork     *trayItem
+	mWeb      *trayItem
+	mJoin     *trayItem
+	mStart    *trayItem
+	mQuit     *trayItem
+	mQuitTray *trayItem
 }
 
 func runTray(args []string) error {
@@ -64,28 +63,28 @@ func runTray(args []string) error {
 	defer release()
 	trayDetachConsole(*data)
 	t := &trayApp{dataDir: *data, service: *service, client: &http.Client{Timeout: 4 * time.Second}}
-	systray.Run(t.onReady, func() {})
+	trayRunUI(t.onReady)
 	return nil
 }
 
 func (t *trayApp) onReady() {
-	systray.SetIcon(trayIconBytes(trayOffline))
-	systray.SetTitle("")
-	systray.SetTooltip("Outpost node")
-	t.mStatus = systray.AddMenuItem("Outpost: checking…", "")
+	traySetIcon(trayIconBytes(trayOffline))
+	traySetTitle("")
+	traySetTooltip("Outpost node")
+	t.mStatus = trayAddItem("Outpost: checking…", "")
 	t.mStatus.Disable()
-	t.mCtl = systray.AddMenuItem("", "")
+	t.mCtl = trayAddItem("", "")
 	t.mCtl.Disable()
-	t.mModel = systray.AddMenuItem("", "")
+	t.mModel = trayAddItem("", "")
 	t.mModel.Disable()
-	systray.AddSeparator()
-	t.mWork = systray.AddMenuItemCheckbox("Accept new work", "Untick to stop the controller sending work to this machine", true)
-	t.mWeb = systray.AddMenuItem("Open controller web UI", "")
-	t.mJoin = systray.AddMenuItem("Join a different controller…", "Enter a join code from another controller")
-	systray.AddSeparator()
-	t.mStart = systray.AddMenuItem("Start Outpost", "Start the node again")
-	t.mQuit = systray.AddMenuItem("Quit Outpost", "Stop the node and close this icon")
-	t.mQuitTray = systray.AddMenuItem("Close this icon only", "The node keeps running")
+	trayAddSeparator()
+	t.mWork = trayAddCheckbox("Accept new work", "Untick to stop the controller sending work to this machine", true)
+	t.mWeb = trayAddItem("Open controller web UI", "")
+	t.mJoin = trayAddItem("Join a different controller…", "Enter a join code from another controller")
+	trayAddSeparator()
+	t.mStart = trayAddItem("Start Outpost", "Start the node again")
+	t.mQuit = trayAddItem("Quit Outpost", "Stop the node and close this icon")
+	t.mQuitTray = trayAddItem("Close this icon only", "The node keeps running")
 	t.mStart.Hide()
 
 	go t.loop()
@@ -105,7 +104,7 @@ func (t *trayApp) onReady() {
 			case <-t.mQuit.ClickedCh:
 				t.quit()
 			case <-t.mQuitTray.ClickedCh:
-				systray.Quit()
+				trayQuitUI()
 			}
 		}
 	}()
@@ -206,12 +205,12 @@ func (t *trayApp) render(st *controlStatus) {
 		return
 	}
 	if st == nil {
-		systray.SetIcon(trayIconBytes(trayOffline))
+		traySetIcon(trayIconBytes(trayOffline))
 		label := "Outpost: stopped"
 		if starting {
 			label = "Outpost: starting…"
 		}
-		systray.SetTooltip(label)
+		traySetTooltip(label)
 		t.mStatus.SetTitle(label)
 		t.mCtl.Hide()
 		t.mModel.Hide()
@@ -236,8 +235,8 @@ func (t *trayApp) render(st *controlStatus) {
 	case st.RunningJobs > 0:
 		word = fmt.Sprintf("online · %d job(s) running", st.RunningJobs)
 	}
-	systray.SetIcon(trayIconBytes(state))
-	systray.SetTooltip("Outpost node: " + word)
+	traySetIcon(trayIconBytes(state))
+	traySetTooltip("Outpost node: " + word)
 	t.mStatus.SetTitle("Outpost " + st.Version + ": " + word)
 	host := st.Controller
 	if u, err := url.Parse(st.Controller); err == nil && u.Host != "" {
@@ -311,7 +310,7 @@ func (t *trayApp) quit() {
 	if _, err := t.call("POST", "/quit"); err != nil {
 		log.Printf("tray: quit: %v", err)
 	}
-	systray.Quit()
+	trayQuitUI()
 }
 
 func trayIconBytes(st trayState) []byte {

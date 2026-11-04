@@ -18,6 +18,44 @@ import (
 )
 
 const launchdLabel = "io.outpost.node"
+const launchdTrayLabel = "io.outpost.tray"
+
+func trayAgentPath(home string) string {
+	return filepath.Join(home, "Library", "LaunchAgents", launchdTrayLabel+".plist")
+}
+
+// launchdTrayPlist starts the menu bar item at login. It is not kept alive:
+// "Close this icon only" in its menu should stay closed until the next login.
+func launchdTrayPlist(bin, dataDir, logPath string) string {
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>` + launchdTrayLabel + `</string>
+	<key>ProgramArguments</key>
+	<array>
+`)
+	for _, a := range []string{bin, "tray", "--data", dataDir} {
+		fmt.Fprintf(&b, "\t\t<string>%s</string>\n", html.EscapeString(a))
+	}
+	fmt.Fprintf(&b, `	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+	<key>ProcessType</key>
+	<string>Interactive</string>
+	<key>StandardOutPath</key>
+	<string>%s</string>
+	<key>StandardErrorPath</key>
+	<string>%s</string>
+</dict>
+</plist>
+`, html.EscapeString(logPath), html.EscapeString(logPath))
+	return b.String()
+}
 
 func launchAgentPath(home string) string {
 	return filepath.Join(home, "Library", "LaunchAgents", launchdLabel+".plist")
@@ -141,6 +179,15 @@ func installNodeDarwin(args []string) error {
 	if out, err := exec.Command("launchctl", "bootstrap", "gui/"+uid, plist).CombinedOutput(); err != nil {
 		return fmt.Errorf("launchctl bootstrap: %v: %s (no desktop login? sign in on this Mac and run it again)", err, strings.TrimSpace(string(out)))
 	}
+	trayPlist := trayAgentPath(home)
+	_ = exec.Command("launchctl", "bootout", "gui/"+uid+"/"+launchdTrayLabel).Run()
+	if err := os.WriteFile(trayPlist, []byte(launchdTrayPlist(bin, *data, filepath.Join(*data, "tray.log"))), 0o644); err != nil {
+		fmt.Println("Could not write the menu bar item's LaunchAgent:", err)
+	} else if out, err := exec.Command("launchctl", "bootstrap", "gui/"+uid, trayPlist).CombinedOutput(); err != nil {
+		fmt.Printf("Could not start the menu bar item: %v: %s\n", err, strings.TrimSpace(string(out)))
+	} else {
+		fmt.Println("A menu bar item shows the node's status (pause work, open the web UI, quit); it starts at login too.")
+	}
 	fmt.Println("The Outpost node is a LaunchAgent now: it starts when you log in to this Mac and restarts if it stops.")
 	fmt.Println("Logs:", logPath)
 	return nil
@@ -152,6 +199,10 @@ func uninstallNodeDarwin() error {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
+		return err
+	}
+	_ = exec.Command("launchctl", "bootout", "gui/"+fmt.Sprint(os.Getuid())+"/"+launchdTrayLabel).Run()
+	if err := os.Remove(trayAgentPath(home)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	_ = exec.Command("launchctl", "bootout", "gui/"+fmt.Sprint(os.Getuid())+"/"+launchdLabel).Run()

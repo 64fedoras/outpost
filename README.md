@@ -98,7 +98,7 @@ when run by a service (session 0). If a GPU node shows no GPU after switching, r
 (without sudo). This writes a per-user LaunchAgent (`~/Library/LaunchAgents/io.outpost.node.plist`) so the
 node starts when you log in and restarts if it stops, with the binary in `~/.outpost/outpost` and logs in
 `~/.outpost/node/node.log`. It is per-user, not a system daemon, so llama.cpp can use the GPU through Metal.
-`outpost uninstall node` removes it. There is no menu bar icon yet (it needs cgo and a Mac build).
+`outpost uninstall node` removes it. A menu bar item (see *Tray icon* below) is installed with it and starts at login.
 *Untested on a real Mac.* Running `outpost node --join <token>` in a terminal still works.
 
 ### Tray icon (desktop machines)
@@ -122,6 +122,13 @@ Desktop nodes get a tent icon in the system tray (notification area): **green** 
 On Linux, `install node` adds the icon to your desktop login when the machine has a desktop. It shows
 at your next login, or run `outpost tray &` from a terminal on the desktop. GNOME needs the
 AppIndicator extension, which Ubuntu includes. Linux servers without a desktop get no icon.
+
+On macOS the same menu appears in the menu bar. `install node` adds a second per-user LaunchAgent
+(`io.outpost.tray`, logs in `tray.log` in the data folder) that starts it at login; run `outpost tray &`
+from Terminal to start it by hand. There is no cgo in Outpost's builds, so the item is drawn by a small
+script run through `/usr/bin/osascript` (AppKit via the JavaScript-for-Automation bridge) that the
+binary embeds. **Start Outpost** there restarts the node's LaunchAgent. *Untested on a real Mac:* the
+menu code is unit-tested and the macOS binaries compile, but the menu bar item itself has never run.
 
 
 **Windows and Microsoft Defender.** Defender sometimes flags Outpost (a false positive common for
@@ -656,7 +663,7 @@ See also [SECURITY.md](SECURITY.md) for the security model and its limits (the L
 - The low-level job history (Home → Recent jobs) is kept in memory and clears on restart; tasks
   and their files are kept on disk.
 - Service install: systemd on Linux, the Outpost Node service on Windows (admin shell) and a per-user
-  LaunchAgent on macOS. There is no macOS menu bar icon (it needs cgo and a Mac to build on).
+  LaunchAgent on macOS. The macOS menu bar item is built but has never run on a real Mac.
 - Files over 1 MiB travel between the controller and exec nodes through the node's file-sharing port
   (8444), which the controller must be able to reach. A failed build does not start fix rounds.
 - Agent fix rounds cost more per round than the old single request, because the conversation is sent
