@@ -1,6 +1,8 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
 let state = null, models = null, tasks = [], projects = [], settings = null, taskDetail = null;
+let tasksSeq = 0; // bumped by local task edits so an older poll result is dropped
+let ctxTaskId = null, ctxReturn = null, renamingId = null; // sidebar task menu and inline rename
 let stateTimer = null, jobTimer = null, taskTimer = null, openJobId = null, loadNodeId = null, runNodeId = null;
 
 // ---------- helpers ----------
@@ -112,7 +114,7 @@ async function refresh() {
   const needModels = ['nodes', 'models', 'new'].includes(page) || !models;
   await Promise.all([
     needModels ? api('/api/models').then((m) => { models = m; }).catch(() => {}) : null,
-    api('/api/tasks').then((t) => { tasks = t; }).catch(() => {}),
+    (() => { const seq = tasksSeq; return api('/api/tasks').then((t) => { if (seq === tasksSeq) tasks = t; }).catch(() => {}); })(), // a list fetched before a rename or pin must not undo it
     api('/api/projects').then((p) => { projects = p; }).catch(() => {}),
   ]);
   $('hdr-meta').textContent = `v${state.version}`;
@@ -161,25 +163,202 @@ function taskTone(t) {
 }
 
 function sideTaskHTML(t, projectName) {
-  return `<a href="#/tasks/${t.id}" class="side-task ${page === 'task' && pageArg === t.id ? 'active' : ''}">
+  const cls = [page === 'task' && pageArg === t.id ? 'active' : '', ctxTaskId === t.id ? 'menu-open' : ''].join(' ');
+  const title = renamingId === t.id
+    ? `<input class="side-rename" id="side-rename" value="${esc(t.title)}" maxlength="120" aria-label="New name for this task">`
+    : `<span class="side-task-title">${t.pinned ? '<span class="pin-mark" aria-label="Pinned">📌</span>' : ''}${esc(t.title)}</span>`;
+  return `<div class="side-task ${cls}" data-task="${esc(t.id)}">
+    <a href="#/tasks/${esc(t.id)}" class="side-task-link" aria-keyshortcuts="Shift+F10 F2 Delete">
       <span class="tdot ${taskTone(t)}" aria-hidden="true"></span>
-      <span class="side-task-text"><span class="side-task-title">${esc(t.title)}</span>
-      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${projectName ? esc(projectName) + ' · ' : ''}${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>`;
+      <span class="side-task-text">${title}
+      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${projectName ? esc(projectName) + ' · ' : ''}${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>
+    <button class="side-task-more" data-task-menu="${esc(t.id)}" aria-haspopup="menu" aria-expanded="${ctxTaskId === t.id}" aria-label="Actions for ${esc(t.title)}" title="Actions">⋯</button></div>`;
 }
 // Tasks are grouped by what the person needs to do: answer, watch, or nothing.
-function renderSideTasks() {
-  if (!tasks) return;
+// Pinned tasks sit above all groups.
+function renderSideTasks(force) {
+  if (!tasks || (renamingId && !force)) return; // a rename in progress must survive polling
   if (!tasks.length) { setHTML('side-tasks', `<p class="side-empty">Tasks you start show up here.</p>`); return; }
   const names = {};
   (projects || []).forEach((p) => { names[p.id] = p.name; });
-  const groups = [['Needs you', []], ['Running', []], ['Earlier', []]];
+  const groups = [['Pinned', []], ['Needs you', []], ['Running', []], ['Earlier', []]];
   tasks.forEach((t) => {
     const tone = taskTone(t);
-    groups[tone === 'needs' ? 0 : ACTIVE.includes(t.status) ? 1 : 2][1].push(t);
+    groups[t.pinned ? 0 : tone === 'needs' ? 1 : ACTIVE.includes(t.status) ? 2 : 3][1].push(t);
   });
   setHTML('side-tasks', groups.filter(([, list]) => list.length).map(([name, list]) =>
     `<div class="side-group">${name}</div>` + list.map((t) => sideTaskHTML(t, names[t.project_id])).join('')).join(''));
 }
+
+// ---------- task context menu (sidebar) ----------
+// Right-click a task, press its ⋯ button, or press Shift+F10 / the menu key on a
+// focused task. F2 renames and Delete deletes the focused task directly.
+const taskById = (id) => (tasks || []).find((t) => t.id === id);
+const canStop = (t) => ACTIVE.includes(t.status) || t.status === 'interrupted';
+const canRetry = (t) => t.status === 'failed' || t.status === 'interrupted';
+
+function openTaskMenu(id, x, y, from) {
+  const t = taskById(id);
+  if (!t) return;
+  closeTaskMenu(false);
+  ctxTaskId = id; ctxReturn = from || null;
+  const item = (act, text, extra = '') => `<button role="menuitem" tabindex="-1" data-ctx="${act}" ${extra}>${text}</button>`;
+  const html = [
+    item('open-tab', 'Open in new tab'),
+    item('rename', 'Rename…<span class="kbd">F2</span>'),
+    item('pin', t.pinned ? 'Unpin' : 'Pin to top'),
+    '<hr>',
+    item('copy-prompt', 'Copy prompt'),
+    item('copy-link', 'Copy link'),
+    item('duplicate', 'Duplicate as new task'),
+    '<hr>',
+    canStop(t) ? item('stop', 'Stop') : '',
+    canRetry(t) ? item('retry', 'Try again') : '',
+    item('delete', 'Delete…<span class="kbd">Del</span>', 'class="danger"'),
+  ].join('');
+  const m = $('task-ctx');
+  m.innerHTML = html; m.setAttribute('aria-label', `Actions for ${t.title}`);
+  m.classList.remove('hidden');
+  const r = m.getBoundingClientRect(), pad = 6;
+  m.style.left = Math.max(pad, Math.min(x, innerWidth - r.width - pad)) + 'px';
+  m.style.top = Math.max(pad, Math.min(y, innerHeight - r.height - pad)) + 'px';
+  renderSideTasks();
+  m.querySelector('button').focus();
+}
+function closeTaskMenu(restoreFocus = true) {
+  const m = $('task-ctx');
+  if (!m || m.classList.contains('hidden')) return;
+  m.classList.add('hidden'); m.innerHTML = '';
+  ctxTaskId = null;
+  renderSideTasks();
+  if (restoreFocus && ctxReturn && document.body.contains(ctxReturn)) ctxReturn.focus();
+  ctxReturn = null;
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return; } catch (e) {}
+  // Plain http or an older browser: fall back to a hidden textarea.
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.setAttribute('readonly', ''); ta.className = 'offscreen';
+  document.body.appendChild(ta); ta.select();
+  const ok = document.execCommand('copy');
+  ta.remove();
+  if (!ok) throw new Error('the browser blocked copying');
+}
+const taskLink = (id) => location.origin + location.pathname + '#/tasks/' + id;
+
+function startRename(id) {
+  const t = taskById(id);
+  if (!t) return;
+  renamingId = id; renderSideTasks(true);
+  if (!$('side-rename')) { renamingId = null; return; }
+  const inp = $('side-rename');
+  inp.focus(); inp.select();
+  let done = false;
+  const finish = async (save) => {
+    if (done) return; done = true;
+    const name = inp.value.trim();
+    renamingId = null;
+    if (save && name && name !== t.title) {
+      try { const s = await post(`/api/tasks/${id}/meta`, { title: name }); tasksSeq++; Object.assign(t, s); if (taskDetail && taskDetail.id === id) { taskDetail.title = s.title; setHTML('tv-title', esc(s.title)); } }
+      catch (e) { toast('Rename failed: ' + e.message); }
+    }
+    renderSideTasks();
+    const link = document.querySelector(`.side-task[data-task="${CSS.escape(id)}"] .side-task-link`);
+    if (link) link.focus();
+  };
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+  });
+  inp.addEventListener('blur', () => finish(true));
+  inp.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+}
+
+async function deleteTask(id) {
+  if (!confirm('Delete this task, its conversation and its files?')) return;
+  try {
+    await api(`/api/tasks/${id}`, { method: 'DELETE' });
+    tasksSeq++; tasks = tasks.filter((t) => t.id !== id); renderSideTasks();
+    if (page === 'task' && pageArg === id) location.hash = '#/new';
+    toast('Task deleted'); refresh();
+  } catch (e) { toast('Delete failed: ' + e.message); }
+}
+
+async function runTaskMenu(act, id) {
+  const t = taskById(id);
+  closeTaskMenu(act !== 'rename');
+  if (!t) return;
+  try {
+    switch (act) {
+      case 'open-tab': window.open('#/tasks/' + id, '_blank', 'noopener'); break;
+      case 'rename': startRename(id); break;
+      case 'pin': Object.assign(t, await post(`/api/tasks/${id}/meta`, { pinned: !t.pinned })); tasksSeq++; renderSideTasks(); toast(t.pinned ? 'Pinned' : 'Unpinned'); break;
+      case 'copy-prompt': { const d = await api(`/api/tasks/${id}`); await copyText(d.prompt || ''); toast('Prompt copied'); break; }
+      case 'copy-link': await copyText(taskLink(id)); toast('Link copied'); break;
+      case 'duplicate': {
+        const d = await api(`/api/tasks/${id}`);
+        const fill = () => { const box = $('nt-prompt'); box.value = d.prompt || ''; autoGrow(box); box.focus(); };
+        if (page === 'new') fill();
+        else { window.addEventListener('hashchange', fill, { once: true }); location.hash = '#/new'; }
+        toast('Prompt copied into a new task; check the options and press Start');
+        break;
+      }
+      case 'stop':
+        if (!confirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return;
+        await post(`/api/tasks/${id}/cancel`); toast('Stopped'); refresh(); break;
+      case 'retry': await post(`/api/tasks/${id}/resume`); toast('Trying again'); refresh(); break;
+      case 'delete': await deleteTask(id); break;
+    }
+  } catch (e) { toast(e.message); }
+}
+
+(function wireTaskMenu() {
+  const side = $('side-tasks'), m = $('task-ctx');
+  side.addEventListener('contextmenu', (e) => {
+    const row = e.target.closest('.side-task');
+    if (!row || renamingId) return;
+    e.preventDefault();
+    const link = row.querySelector('.side-task-link');
+    // A keyboard-opened menu (menu key, Shift+F10) has no pointer position.
+    if (e.clientX || e.clientY) openTaskMenu(row.dataset.task, e.clientX, e.clientY, link);
+    else { const r = row.getBoundingClientRect(); openTaskMenu(row.dataset.task, r.right - 24, r.top + 28, link); }
+  });
+  side.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-task-menu]');
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    if (ctxTaskId === b.dataset.taskMenu) { closeTaskMenu(); return; }
+    const r = b.getBoundingClientRect();
+    openTaskMenu(b.dataset.taskMenu, r.left, r.bottom + 4, b);
+  });
+  side.addEventListener('keydown', (e) => {
+    if (renamingId || e.target.tagName === 'INPUT') return;
+    const row = e.target.closest('.side-task');
+    if (!row) return;
+    if (e.key === 'F2') { e.preventDefault(); startRename(row.dataset.task); }
+    else if (e.key === 'Delete' && e.target.classList.contains('side-task-link')) { e.preventDefault(); deleteTask(row.dataset.task); }
+  });
+  m.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-ctx]');
+    if (b) runTaskMenu(b.dataset.ctx, ctxTaskId);
+  });
+  m.addEventListener('keydown', (e) => {
+    const items = [...m.querySelectorAll('button')];
+    const i = items.indexOf(document.activeElement);
+    const go = (n) => { e.preventDefault(); items[(n + items.length) % items.length].focus(); };
+    if (e.key === 'ArrowDown') go(i + 1);
+    else if (e.key === 'ArrowUp') go(i - 1);
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(items.length - 1);
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeTaskMenu(); }
+    else if (e.key === 'Tab') closeTaskMenu(false);
+  });
+  document.addEventListener('pointerdown', (e) => { if (ctxTaskId && !m.contains(e.target) && !e.target.closest('[data-task-menu]')) closeTaskMenu(false); });
+  side.addEventListener('scroll', () => closeTaskMenu(false));
+  window.addEventListener('resize', () => closeTaskMenu(false));
+  window.addEventListener('hashchange', () => closeTaskMenu(false));
+})();
 
 function renderSideCluster() {
   const n = state.nodes, on = n.filter((x) => x.online).length, w = workerCount();

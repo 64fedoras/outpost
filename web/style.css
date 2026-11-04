@@ -175,9 +175,24 @@ pre.out .err { color: var(--stderr); }
 .new-task + .new-task { margin-top: -4px; }
 .new-task.active { border-color: var(--muted); }
 .side-tasks { flex: 1; overflow-y: auto; padding: 2px 8px 8px; }
-.side-task { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; align-items: start; padding: 7px 8px; border-radius: 8px; color: var(--ink); text-decoration: none; }
-.side-task:hover { background: var(--side-hover); }
+.side-task { display: flex; align-items: flex-start; border-radius: 8px; }
+.side-task-link { flex: 1; min-width: 0; display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; align-items: start; padding: 7px 0 7px 8px; border-radius: 8px; color: var(--ink); text-decoration: none; }
+.side-task:hover, .side-task.menu-open { background: var(--side-hover); }
 .side-task.active { background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
+.side-task-more { flex: none; visibility: hidden; border: 0; background: none; width: 26px; height: 26px; margin: 5px 4px 0 2px; padding: 0; border-radius: 6px; color: var(--muted); font-size: 16px; line-height: 1; }
+.side-task:hover .side-task-more, .side-task.active .side-task-more, .side-task:focus-within .side-task-more, .side-task.menu-open .side-task-more { visibility: visible; }
+.side-task-more:hover, .side-task-more[aria-expanded="true"] { background: var(--bar); color: var(--ink); }
+@media (hover: none) { .side-task-more { visibility: visible; } }
+.side-rename { padding: 1px 6px; font-size: 13.5px; border-radius: 6px; }
+.pin-mark { font-size: 11px; margin-right: 4px; }
+.ctx-menu { position: fixed; z-index: 60; min-width: 200px; max-width: calc(100vw - 12px); padding: 5px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgba(0, 0, 0, .18); }
+.ctx-menu button { display: flex; width: 100%; align-items: center; gap: 10px; border: 0; background: none; border-radius: 6px; padding: 6px 10px; font-size: 13.5px; text-align: left; }
+.ctx-menu button:hover, .ctx-menu button:focus { background: var(--side-hover); outline: none; }
+.ctx-menu button:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.ctx-menu button.danger { color: var(--bad); }
+.ctx-menu .kbd { margin-left: auto; color: var(--muted); font-size: 12px; }
+.ctx-menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 4px; }
+.offscreen { position: fixed; left: -9999px; top: 0; opacity: 0; }
 .side-task .tdot { margin-top: 6px; }
 .side-task-text { min-width: 0; display: flex; flex-direction: column; }
 .side-task-title { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
