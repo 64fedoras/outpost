@@ -19,6 +19,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `flow.py dark\|light` | Full chat flow: question cards, plan approval, steering note, result, follow-up round. About 3 to 4 minutes, because the fake model sleeps 4 s per call. Screenshots go to `run/chat/`. |
 | `edit.py` | Editing messages: before approval, then after a finished round (files undone, new round). Set `OUTPOST_CHROMIUM` to a Chromium binary if Playwright's own is missing. |
 | `rerun.py` | Edit the plan (before approval, via the pencil on the plan card) and re-run an approved plan. |
+| `taskmenu.py dark\|light` | Sidebar task menu: right-click, the ⋯ button, Shift+F10, F2 rename, pin, copy link and prompt, duplicate, delete, and the phone drawer. Screenshots go to `run/menu/`. |
 | `mobile.py` | The same pages at phone width. |
 | `shots.py` | Screenshots of every tab (needs a task id edited into the script). |
 
