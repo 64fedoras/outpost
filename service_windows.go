@@ -285,7 +285,7 @@ func uninstallNodeWindows() error {
 		fmt.Println("The Outpost Node service is not installed.")
 	}
 	removeRunKey()
-	_ = exec.Command("netsh", "advfirewall", "firewall", "delete", "rule", "name="+peerFirewallRule).Run()
+	_ = hiddenCmd("netsh", peerFirewallDeleteArgs()...).Run()
 	fmt.Println("The data folder and models were kept.")
 	return nil
 }
