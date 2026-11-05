@@ -54,8 +54,16 @@ func (c *Controller) settingsPath() string { return filepath.Join(c.dataDir, "se
 
 func (c *Controller) loadSettings() {
 	c.settings = defaultSettings()
-	if b, err := os.ReadFile(c.settingsPath()); err == nil {
-		_ = json.Unmarshal(b, &c.settings)
+	if usedBak, err := readWithBackup(c.settingsPath(), func(b []byte) error {
+		c.settings = defaultSettings()
+		return json.Unmarshal(b, &c.settings)
+	}); err != nil {
+		c.settings = defaultSettings()
+		if !errors.Is(err, os.ErrNotExist) {
+			c.noteRecovered("settings.json could not be read (" + err.Error() + "); defaults are in use until you save Settings")
+		}
+	} else if usedBak {
+		c.noteRecovered("settings.json was damaged; loaded the previous copy")
 	}
 	if _, ok := claudePrices[c.settings.ClaudeModel]; !ok {
 		c.settings.ClaudeModel = "claude-sonnet-5-5"
@@ -68,7 +76,7 @@ func (c *Controller) loadSettings() {
 // saveSettingsLocked must be called with c.mu held.
 func (c *Controller) saveSettingsLocked() error {
 	b, _ := json.MarshalIndent(c.settings, "", "  ")
-	return os.WriteFile(c.settingsPath(), b, 0o600)
+	return writeFileAtomicBackup(c.settingsPath(), b, 0o600)
 }
 
 func (c *Controller) secretKey() ([]byte, error) {

@@ -76,7 +76,7 @@ func (t *Task) snapshot(rel string) error {
 		return err
 	}
 	b, _ := json.Marshal(m)
-	return os.WriteFile(filepath.Join(dir, "manifest.json"), b, 0o644)
+	return writeFileAtomic(filepath.Join(dir, "manifest.json"), b, 0o644)
 }
 
 // writeFile writes a project file, keeping its previous content for the round.

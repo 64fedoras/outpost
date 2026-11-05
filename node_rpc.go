@@ -151,7 +151,7 @@ func (r *rpcMgr) start(rs RPCStart) {
 		return
 	}
 	b, _ := json.Marshal(cfg)
-	_ = os.WriteFile(n.rpcConfigPath(), b, 0o644)
+	_ = writeFileAtomic(n.rpcConfigPath(), b, 0o644)
 	n.pushHeartbeat()
 	n.resendHello()
 	n.opStatus("rpc", "serve", "ready", 0, 0, "")

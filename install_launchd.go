@@ -47,13 +47,18 @@ func launchdTrayPlist(bin, dataDir, logPath string) string {
 	<string>Aqua</string>
 	<key>ProcessType</key>
 	<string>Interactive</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>OUTPOST_LOG_FILE</key>
+		<string>%s</string>
+	</dict>
 	<key>StandardOutPath</key>
 	<string>%s</string>
 	<key>StandardErrorPath</key>
 	<string>%s</string>
 </dict>
 </plist>
-`, html.EscapeString(logPath), html.EscapeString(logPath))
+`, html.EscapeString(logPath), html.EscapeString(consoleLogPath(logPath)), html.EscapeString(consoleLogPath(logPath)))
 	return b.String()
 }
 
@@ -92,13 +97,18 @@ func launchdPlist(bin, dataDir, logPath string) string {
 	<integer>3</integer>
 	<key>ProcessType</key>
 	<string>Interactive</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>OUTPOST_LOG_FILE</key>
+		<string>%s</string>
+	</dict>
 	<key>StandardOutPath</key>
 	<string>%s</string>
 	<key>StandardErrorPath</key>
 	<string>%s</string>
 </dict>
 </plist>
-`, html.EscapeString(logPath), html.EscapeString(logPath))
+`, html.EscapeString(logPath), html.EscapeString(consoleLogPath(logPath)), html.EscapeString(consoleLogPath(logPath)))
 	return b.String()
 }
 

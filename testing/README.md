@@ -3,6 +3,9 @@
 ## Unit tests
 The Linux sandbox tests (`sandbox_linux_test.go`) run real sandboxed commands and skip themselves on kernels without Landlock.
     go vet ./... && go test ./...
+    CGO_ENABLED=1 go test -race ./...     # also run on every pull request
+
+Every pull request also runs `govulncheck` (informational: it reports, it does not block).
 
 ## End-to-end rig (no model, no API key)
 `testing/e2e/run.sh up` builds with `-tags e2e`, starts a real controller and a real node on
@@ -23,6 +26,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `taskmenu.py dark\|light` | Sidebar task menu: right-click, the ⋯ button, Shift+F10, F2 rename, pin, copy link and prompt, duplicate, delete, and the phone drawer. Screenshots go to `run/menu/`. |
 | `mobile.py` | The same pages at phone width. |
 | `shots.py` | Screenshots of every tab (needs a task id edited into the script). |
+| `soak.py` | No browser. Runs `SOAK_TASKS` tasks (default 8) through the API and, at random (`SOAK_SEED`), kills and restarts the node, the controller or both mid-task; every task must end `done`. Presses Resume for Claude tasks after a controller restart. Runs nightly in `.github/workflows/soak.yml`. |
 
 Agent mode: the stub Claude answers requests that carry `tools` with a scripted fix (list, read,
 write, run the tests, summary), and `fake_llama_server.py` answers them with streamed tool calls

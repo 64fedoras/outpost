@@ -56,7 +56,7 @@ func (c *Controller) fetchCatalogShapes() int {
 		c.catShapes[e.ID] = s
 		b, _ := json.MarshalIndent(c.catShapes, "", "  ")
 		c.mu.Unlock()
-		_ = os.WriteFile(c.catalogShapesPath(), b, 0o644)
+		_ = writeFileAtomic(c.catalogShapesPath(), b, 0o644)
 	}
 	return missing
 }

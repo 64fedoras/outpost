@@ -299,6 +299,7 @@ type fetchState struct {
 
 	mu       sync.Mutex
 	pending  []int
+	inflight int // chunks a worker is fetching right now
 	attempts map[int]int
 	done     map[int]bool
 	doneSize int64
@@ -440,20 +441,28 @@ func (s *fetchState) chunkHashes(ctx context.Context, clients []*http.Client) []
 	return nil
 }
 
-func (s *fetchState) next() (int, bool) {
+// next hands out a pending chunk. With none pending it reports wait while
+// another worker still has a chunk in flight, because that chunk may fail and
+// come back: a worker that left at that point could leave it unfetched.
+func (s *fetchState) next() (i int, ok, wait bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.pending) == 0 {
-		return 0, false
+		return 0, false, s.inflight > 0
 	}
-	i := s.pending[0]
+	i = s.pending[0]
 	s.pending = s.pending[1:]
-	return i, true
+	s.inflight++
+	return i, true, false
 }
 
-func (s *fetchState) requeue(i int) {
+// finished ends a chunk handed out by next; failed puts it back in the queue.
+func (s *fetchState) finished(i int, failed bool) {
 	s.mu.Lock()
-	s.pending = append(s.pending, i)
+	if failed {
+		s.pending = append(s.pending, i)
+	}
+	s.inflight--
 	s.mu.Unlock()
 }
 
@@ -481,7 +490,14 @@ func (s *fetchState) run(ctx context.Context, clients []*http.Client) error {
 			p := s.req.Peers[pi]
 			strikes := 0
 			for ctx.Err() == nil && strikes < 3 {
-				i, ok := s.next()
+				i, ok, wait := s.next()
+				if wait {
+					select {
+					case <-ctx.Done():
+					case <-time.After(50 * time.Millisecond):
+					}
+					continue
+				}
 				if !ok {
 					return
 				}
@@ -490,15 +506,16 @@ func (s *fetchState) run(ctx context.Context, clients []*http.Client) error {
 				tries := s.attempts[i]
 				s.mu.Unlock()
 				if tries > 2*len(s.req.Peers)+2 {
+					s.finished(i, true)
 					fail(fmt.Errorf("chunk %d failed too many times", i))
 					return
 				}
 				err := s.getChunk(ctx, clients[pi], p, i)
+				s.finished(i, err != nil)
 				if err == nil {
 					strikes = 0
 					continue
 				}
-				s.requeue(i)
 				var be badData
 				if errors.As(err, &be) {
 					s.mu.Lock()

@@ -142,11 +142,12 @@ type Task struct {
 	// UI as "Resuming" instead of the Resume card.
 	AutoResume bool `json:"auto_resume,omitempty"`
 
-	mu     sync.Mutex
-	dir    string
-	repo   string // working files; the project's repo for a project task, else <dir>/repo
-	cancel context.CancelFunc
-	resume chan struct{}
+	saveTimer *time.Timer // pending delayed save (saveSoonLocked)
+	mu        sync.Mutex
+	dir       string
+	repo      string // working files; the project's repo for a project task, else <dir>/repo
+	cancel    context.CancelFunc
+	resume    chan struct{}
 
 	asks map[string]chan string // agent questions waiting for an answer, by message id
 	act  []ActStep              // what the test-and-fix phase is doing now (tasks_activity.go), memory only
@@ -161,14 +162,58 @@ func (t *Task) repoDir() string {
 	return filepath.Join(t.dir, "repo")
 }
 
-// saveLocked writes task.json; t.mu must be held.
+// saveLocked writes task.json now (safely, keeping the previous save as
+// task.json.bak); t.mu must be held.
 func (t *Task) saveLocked() {
 	defer taskLive.changed(t.ID)
-	b, _ := json.MarshalIndent(t, "", "  ")
-	tmp := filepath.Join(t.dir, "task.json.tmp")
-	if os.WriteFile(tmp, b, 0o644) == nil {
-		_ = os.Rename(tmp, filepath.Join(t.dir, "task.json"))
+	if t.saveTimer != nil {
+		t.saveTimer.Stop()
+		t.saveTimer = nil
 	}
+	b, _ := json.MarshalIndent(t, "", "  ")
+	if err := writeFileAtomicBackup(filepath.Join(t.dir, "task.json"), b, 0o644); err != nil {
+		log.Printf("task %s: save failed: %v", t.ID, err)
+	}
+}
+
+// saveSoonLocked saves within saveDelay, merging the saves of a burst of log
+// lines into one write; t.mu must be held. State changes use saveLocked.
+func (t *Task) saveSoonLocked() {
+	taskLive.changed(t.ID)
+	if t.saveTimer != nil {
+		return
+	}
+	t.saveTimer = time.AfterFunc(saveDelay, func() {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		if t.saveTimer != nil {
+			t.saveTimer = nil
+			t.saveLocked()
+		}
+	})
+}
+
+// flush writes a pending delayed save now (used on shutdown).
+func (t *Task) flush() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.saveTimer != nil {
+		t.saveLocked()
+	}
+}
+
+const saveDelay = 250 * time.Millisecond
+
+// damagedDir holds task folders whose task.json could not be read.
+const damagedDir = "_damaged"
+
+func (c *Controller) quarantineTask(dir, name string) (string, error) {
+	root := filepath.Join(c.tasksDir(), damagedDir)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return "", err
+	}
+	dst := filepath.Join(root, name+"-"+time.Now().Format("20060102-150405"))
+	return dst, os.Rename(dir, dst)
 }
 
 func (t *Task) logf(level, format string, a ...any) {
@@ -177,7 +222,7 @@ func (t *Task) logf(level, format string, a ...any) {
 	if len(t.Events) > 400 {
 		t.Events = t.Events[len(t.Events)-400:]
 	}
-	t.saveLocked()
+	t.saveSoonLocked()
 	t.mu.Unlock()
 }
 
@@ -196,14 +241,32 @@ func (c *Controller) loadTasks() {
 	c.tasks = map[string]*Task{}
 	entries, _ := os.ReadDir(c.tasksDir())
 	for _, e := range entries {
-		dir := filepath.Join(c.tasksDir(), e.Name())
-		b, err := os.ReadFile(filepath.Join(dir, "task.json"))
-		if err != nil {
+		if !e.IsDir() || e.Name() == damagedDir {
 			continue
 		}
+		dir := filepath.Join(c.tasksDir(), e.Name())
 		t := &Task{}
-		if json.Unmarshal(b, t) != nil || t.ID != e.Name() {
+		usedBak, err := readWithBackup(filepath.Join(dir, "task.json"), func(b []byte) error {
+			*t = Task{}
+			if err := json.Unmarshal(b, t); err != nil {
+				return err
+			}
+			if t.ID != e.Name() {
+				return fmt.Errorf("task id %q does not match its folder", t.ID)
+			}
+			return nil
+		})
+		if err != nil {
+			// Never drop a task silently: move it aside and say so.
+			if dst, merr := c.quarantineTask(dir, e.Name()); merr == nil {
+				c.noteRecovered(fmt.Sprintf("Task %s could not be read (%v). Its folder was moved to %s.", e.Name(), err, dst))
+			} else {
+				c.noteRecovered(fmt.Sprintf("Task %s could not be read (%v) and could not be moved aside (%v).", e.Name(), err, merr))
+			}
 			continue
+		}
+		if usedBak {
+			c.noteRecovered(fmt.Sprintf("Task %q: task.json was damaged; loaded the previous save, so the last few events may be missing.", firstNonEmpty(t.Title, t.ID)))
 		}
 		t.dir = dir
 		if p := c.projects[t.ProjectID]; p != nil {
@@ -2046,7 +2109,11 @@ func writeRepoFile(repo, rel, content string) error {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(p, []byte(content), 0o644)
+	mode := os.FileMode(0o644)
+	if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
+		mode = st.Mode().Perm() // keep an existing script executable
+	}
+	return writeFileAtomic(p, []byte(content), mode)
 }
 
 // repoSnapshot returns the project's files as text for a planner prompt.

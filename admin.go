@@ -46,11 +46,7 @@ func (c *Controller) setAdminPassword(pw string) error {
 	rec := adminRecord{Algo: "pbkdf2-sha256", Iter: pbkdf2Iter, Salt: randHex(16)}
 	rec.Hash = hashPassword(pw, rec.Salt, rec.Iter)
 	b, _ := json.Marshal(rec)
-	tmp := c.adminPath() + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, c.adminPath()); err != nil {
+	if err := writeFileAtomic(c.adminPath(), b, 0o600); err != nil {
 		return err
 	}
 	c.mu.Lock()

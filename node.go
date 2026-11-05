@@ -74,7 +74,7 @@ func (n *Node) agentDir() string { return filepath.Join(n.dataDir, "agent") }
 
 func writeNodeConfig(path string, cfg NodeConfig) error {
 	b, _ := json.MarshalIndent(cfg, "", "  ")
-	return os.WriteFile(path, b, 0o600)
+	return writeFileAtomicBackup(path, b, 0o600)
 }
 
 func runNode(args []string) error {
@@ -114,12 +114,18 @@ func runNode(args []string) error {
 		return err
 	}
 	defer unlock()
-	b, err := os.ReadFile(cfgPath)
-	if err != nil {
-		return fmt.Errorf("no node config at %s; run once with --join TOKEN (create one in the controller UI)", cfgPath)
+	if _, err := os.Stat(cfgPath); err != nil {
+		if _, berr := os.Stat(cfgPath + ".bak"); berr != nil {
+			return fmt.Errorf("no node config at %s; run once with --join TOKEN (create one in the controller UI)", cfgPath)
+		}
 	}
-	if err := json.Unmarshal(b, &n.cfg); err != nil {
+	usedBak, err := readWithBackup(cfgPath, func(b []byte) error { n.cfg = NodeConfig{}; return json.Unmarshal(b, &n.cfg) })
+	if err != nil {
 		return fmt.Errorf("%s: %w", cfgPath, err)
+	}
+	if usedBak {
+		log.Printf("%s was damaged; using the previous copy (%s.bak)", cfgPath, cfgPath)
+		_ = writeNodeConfig(cfgPath, n.cfg)
 	}
 
 	if _, err := os.Stat(pausedPath(n.dataDir)); err == nil {

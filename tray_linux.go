@@ -31,7 +31,7 @@ func trayLock(dataDir string) (func(), error) {
 // D-Bus errors) to tray.log, since an autostarted tray has no terminal, and
 // warns there when no desktop is listening for tray icons.
 func trayDetachConsole(dataDir string) {
-	if f, err := os.OpenFile(filepath.Join(dataDir, "tray.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
+	if f, err := openRotating(filepath.Join(dataDir, "tray.log"), logMaxBytes); err == nil {
 		log.SetOutput(f)
 	}
 	log.Printf("tray: Outpost %s starting (pid %d)", Version, os.Getpid())
@@ -70,13 +70,14 @@ func startNodeProcess(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	logf, err := openNodeLog(dataDir)
+	logf, err := openNodeConsoleLog(dataDir)
 	if err != nil {
 		return err
 	}
 	defer logf.Close()
 	cmd := exec.Command(self, "node", "--data", dataDir)
-	cmd.Stdout, cmd.Stderr = logf, logf
+	cmd.Stdout, cmd.Stderr = logf, logf // crashes only; the node writes node.log itself and rotates it
+	cmd.Env = append(os.Environ(), "OUTPOST_LOG_FILE="+nodeLogPath(dataDir))
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return err

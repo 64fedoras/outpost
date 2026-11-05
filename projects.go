@@ -75,11 +75,7 @@ func (p *Project) save() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	b, _ := json.MarshalIndent(p, "", "  ")
-	tmp := filepath.Join(p.dir, "project.json.tmp")
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, filepath.Join(p.dir, "project.json"))
+	return writeFileAtomicBackup(filepath.Join(p.dir, "project.json"), b, 0o600)
 }
 
 func (c *Controller) loadProjects() {
@@ -87,13 +83,16 @@ func (c *Controller) loadProjects() {
 	entries, _ := os.ReadDir(c.projectsDir())
 	for _, e := range entries {
 		dir := filepath.Join(c.projectsDir(), e.Name())
-		b, err := os.ReadFile(filepath.Join(dir, "project.json"))
-		if err != nil {
+		p := &Project{}
+		usedBak, err := readWithBackup(filepath.Join(dir, "project.json"), func(b []byte) error { *p = Project{}; return json.Unmarshal(b, p) })
+		if err != nil || p.ID != e.Name() {
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				c.noteRecovered("project " + e.Name() + ": project.json could not be read (" + err.Error() + ")")
+			}
 			continue
 		}
-		p := &Project{}
-		if json.Unmarshal(b, p) != nil || p.ID != e.Name() {
-			continue
+		if usedBak {
+			c.noteRecovered("project " + p.Name + ": project.json was damaged; loaded the previous copy")
 		}
 		p.dir, p.slot = dir, make(chan struct{}, 1)
 		c.projects[p.ID] = p

@@ -752,6 +752,24 @@ you fill it in (set it if you reach the controller by a name or IP different fro
 | llama.cpp | `runtime/<variant>/` (from GitHub releases) | `llama/<build>-<variant>/` |
 | Work | `tasks/<id>/` (conversation, `result.zip`, `artifacts/`, attachments; `repo/` unless the task is in a project), `projects/<id>/` (`project.json`, `repo/`) | `work/` — deleted after every job |
 | Updates | `releases/`, `agent/` | `agent/` |
+| Logs | journald on Linux (`journalctl -u outpost-controller`) | journald on Linux; `node.log` on Windows and macOS, and when a tray started the node |
+
+**Safe saves.** Settings, nodes, sessions, tokens, projects, model records and each task's `task.json` are written to a
+temporary file, flushed to disk and renamed into place, so a power cut or a full disk leaves the old file or the new one,
+never half of each. `settings.json`, `nodes.json`, `project.json`, `task.json` and the node's `node.json` also keep the
+previous save as `.bak`. If a file is damaged at start-up, the previous save is loaded instead; a task that cannot be read
+at all is moved to `tasks/_damaged/` rather than vanishing. Either way a notice at the top of the web UI says what happened
+until you dismiss it.
+
+**Log size.** `node.log` and `tray.log` stay under 10 MB each; the previous 10 MB is kept as `node.log.old` /
+`tray.log.old`. Crash output from a node started by the tray or the macOS LaunchAgent goes to `node-console.log`.
+
+**Stopping and updating.** A stop from systemd (or Ctrl+C), an update and a rollback first save every task, then the
+controller exits. Tasks that were running resume when it is back (local planners on their own, Claude and OpenRouter
+tasks with Resume, as before).
+
+**Uptime monitors.** `GET /healthz` needs no login and returns `{"ok":true,"nodes_online":N,"tasks_active":M}`
+(503 while the controller is shutting down). It shows counts only: no names, versions or addresses.
 
 ## Known limits
 
