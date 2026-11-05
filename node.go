@@ -109,6 +109,7 @@ func runNode(args []string) error {
 	launchNewest(n.agentDir(), n.args) // switch to an installed update, if newer
 	// One node per data folder. During an update or restart the old process
 	// may take a moment to exit, so wait for it rather than run alongside it.
+	log.SetOutput(io.MultiWriter(log.Writer(), nodeLog)) // keep the log's end for the web UI (node_ask.go)
 	unlock, err := acquireNodeLock(*data, 30*time.Second)
 	if err != nil {
 		return err
@@ -440,6 +441,11 @@ func (n *Node) sessionInner(welcomed *bool) error {
 					log.Printf("controller certificate changed; now pinning %s", rp.Fingerprint)
 					_ = n.send("node.repin_ack", rp)
 				}
+			}
+		case "node.ask":
+			var ar AskRequest
+			if json.Unmarshal(env.Body, &ar) == nil {
+				go n.answerAsk(ar)
 			}
 		case "node.remove":
 			return errRemoved

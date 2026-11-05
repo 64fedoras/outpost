@@ -36,6 +36,7 @@ var notifyEvents = []struct{ ID, Label string }{
 	{"failed", "A task failed"},
 	{"cap", "The spending cap paused a task"},
 	{"node_offline", "A node has been offline for 5 minutes"},
+	{"backup_failed", "A nightly backup failed its check"},
 }
 
 const nodeOfflineAfter = 5 * time.Minute
