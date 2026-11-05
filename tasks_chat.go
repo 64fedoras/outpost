@@ -116,13 +116,83 @@ func (t *Task) steeringText() string {
 	return b.String()
 }
 
-// takePlanNotes returns and clears the notes sent while the planner was answering.
-func (t *Task) takePlanNotes() []string {
+// QueuedNote is a note sent while the planner is answering. It waits above the
+// composer (and can be removed) until the planner takes it, at which point it
+// becomes a normal message in the thread.
+type QueuedNote struct {
+	ID     string   `json:"id"`
+	Text   string   `json:"text"`
+	Images []string `json:"images,omitempty"`
+}
+
+// flushQueuedLocked moves queued notes into the thread as user messages and
+// returns their text; t.mu must be held.
+func (t *Task) flushQueuedLocked() []string {
+	var texts []string
+	for _, q := range t.Queued {
+		t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: q.Text, Images: q.Images})
+		texts = append(texts, q.Text)
+	}
+	t.Queued = nil
+	return texts
+}
+
+// takeQueued returns and clears the notes sent while the planner was answering.
+func (t *Task) takeQueued() []string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	n := t.PlanNotes
-	t.PlanNotes = nil
-	return n
+	return t.flushQueuedLocked()
+}
+
+// handleSendNow interrupts the planner's running call (its partial answer is
+// discarded) and starts a new planning pass that includes the queued notes.
+func (c *Controller) handleSendNow(w http.ResponseWriter, r *http.Request) {
+	t := c.getTask(r.PathValue("id"))
+	if t == nil {
+		writeJSON(w, 404, map[string]string{"error": "no such task"})
+		return
+	}
+	t.mu.Lock()
+	status, from, queued := t.Status, t.PausedFrom, len(t.Queued)
+	t.mu.Unlock()
+	if status == "paused_cap" && from == "planning" {
+		status = "planning"
+	}
+	if status != "planning" || queued == 0 {
+		writeJSON(w, 409, map[string]string{"error": "nothing is waiting to be sent"})
+		return
+	}
+	t.addMsg(TaskMessage{Role: "event", Kind: "event", Text: "Sent now. The planner's unfinished answer was dropped and it is planning again with your note."})
+	c.replan(t, "Planning again with your note (sent now).")
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// handleRemoveQueued drops one queued note before the planner has seen it.
+func (c *Controller) handleRemoveQueued(w http.ResponseWriter, r *http.Request) {
+	t := c.getTask(r.PathValue("id"))
+	if t == nil {
+		writeJSON(w, 404, map[string]string{"error": "no such task"})
+		return
+	}
+	id := r.PathValue("note")
+	t.mu.Lock()
+	found := false
+	for i, q := range t.Queued {
+		if q.ID == id {
+			t.Queued = append(t.Queued[:i:i], t.Queued[i+1:]...)
+			found = true
+			break
+		}
+	}
+	if found {
+		t.saveLocked()
+	}
+	t.mu.Unlock()
+	if !found {
+		writeJSON(w, 409, map[string]string{"error": "the planner already has that note"})
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
 // foldNotesPrompt continues a planner conversation: its own answer so far, then
@@ -276,12 +346,12 @@ func (c *Controller) handleTaskMessage(w http.ResponseWriter, r *http.Request) {
 		t.addMsg(TaskMessage{Role: "user", Kind: "answers", Text: text, Images: imgNames})
 		c.replan(t, "Planning with your answers.")
 	case "planning":
-		// The planner is mid-request. Let it finish; planTask then gives it the note
-		// in the same conversation, so nothing it has written is thrown away.
+		// The planner is mid-request. The note is queued (shown above the composer);
+		// when the answer is in, planTask gives it the note in the same conversation,
+		// or "Send now" interrupts the call (handleSendNow).
 		t.mu.Lock()
-		t.PlanNotes = append(t.PlanNotes, text)
-		t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: text, Images: imgNames})
-		t.addMsgLocked(TaskMessage{Role: "event", Kind: "event", Text: "Got it. The planner gets your note as soon as its current answer is in; nothing it has done is thrown away."})
+		t.Queued = append(t.Queued, QueuedNote{ID: fmt.Sprintf("q%d", time.Now().UnixNano()), Text: text, Images: imgNames})
+		t.saveLocked()
 		t.mu.Unlock()
 		t.logf("info", "Note for the planner: %s", firstLine(text, 200))
 	case "awaiting_approval":
