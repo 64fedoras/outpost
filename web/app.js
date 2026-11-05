@@ -1438,22 +1438,41 @@ function openLoad(id) {
   onLoadModelChange(pref.ctx);
   open('modal-load');
 }
-function onLoadModelChange(ctx) {
-  const m = (models && models.models || []).find((x) => x.name === $('load-model').value);
-  const n = nodeById(loadNodeId);
-  $('load-ctx').value = ctx || (m && m.ctx) || 8192;
-  syncCtxRange();
-  const fit = $('load-fit');
-  if (!m || !n || !n.hello) { fit.classList.add('hidden'); return; }
+// Memory available to a load on node n, including ticked pool helpers.
+function loadMem(n) {
   let vram = (n.hello.gpus || []).filter((g) => g.vendor !== 'apple').reduce((a, g) => a + g.vram_bytes, 0);
   let ram = n.hello.ram_bytes || 0;
-  const size = m.bytes_total || 0;
   const pool = [...document.querySelectorAll('.pool-cb:checked')].map((cb) => nodeById(cb.value)).filter(Boolean);
   for (const p of pool) {
     const hp = p.hello || {};
     ram += hp.ram_bytes || 0;
     vram += (hp.gpus || []).filter((g) => g.vendor !== 'apple').reduce((a, g) => a + g.vram_bytes, 0);
   }
+  return { vram, ram, pool };
+}
+// Rough KV cache estimate; mirrors estimateModelBytes in model_fit.go (rule of thumb, GGUF header not read).
+function updateCtxHint() {
+  const el = $('load-ctx-hint');
+  const m = (models && models.models || []).find((x) => x.name === $('load-model').value);
+  const n = nodeById(loadNodeId), ctx = parseInt($('load-ctx').value, 10) || 0;
+  if (!m || !n || !n.hello || !m.bytes_total || !ctx) { el.classList.add('hidden'); return; }
+  const kv = m.bytes_total / (1 << 30) * (12 << 10) * ctx, need = m.bytes_total + kv + (600 << 20);
+  const { vram, ram } = loadMem(n);
+  let txt = `Context cache at ${ctx.toLocaleString()} tokens: about ${bytes(kv)}. Weights plus cache need roughly ${bytes(need)}.`, cls = 'hint';
+  if (vram && need > vram * 0.92) { txt += need > (vram + ram) * 0.9 ? ' More than this node can hold: lower the context size.' : ' More than the GPU memory, so part will run from system RAM (slower).'; cls = 'hint warn-text'; }
+  else if (!vram && need > ram * 0.75) { txt += ' Close to the RAM limit: lower the context size.'; cls = 'hint warn-text'; }
+  txt += ' Estimate only.';
+  el.className = cls; el.textContent = txt;
+}
+function onLoadModelChange(ctx) {
+  const m = (models && models.models || []).find((x) => x.name === $('load-model').value);
+  const n = nodeById(loadNodeId);
+  $('load-ctx').value = ctx || (m && m.ctx) || 8192;
+  syncCtxRange(); updateCtxHint();
+  const fit = $('load-fit');
+  if (!m || !n || !n.hello) { fit.classList.add('hidden'); return; }
+  const { vram, ram, pool } = loadMem(n);
+  const size = m.bytes_total || 0;
   let msg = '', cls = 'note';
   if (size > ram + vram) { msg = `This model (${bytes(size)}) is larger than this node's RAM${vram ? ' plus VRAM' : ''} (${bytes(ram + vram)}). It will not load.`; cls = 'note bad'; }
   else if (vram && size <= vram * 0.9) msg = `Fits in this node's ${bytes(vram)} of VRAM: fast.`;
@@ -1477,8 +1496,8 @@ function syncCtxRange() {
   CTX_STOPS.forEach((s, i) => { if (Math.abs(s - v) < Math.abs(CTX_STOPS[best] - v)) best = i; });
   $('load-ctx-range').value = best;
 }
-$('load-ctx-range').addEventListener('input', () => { $('load-ctx').value = CTX_STOPS[parseInt($('load-ctx-range').value, 10)]; });
-$('load-ctx').addEventListener('input', syncCtxRange);
+$('load-ctx-range').addEventListener('input', () => { $('load-ctx').value = CTX_STOPS[parseInt($('load-ctx-range').value, 10)]; updateCtxHint(); });
+$('load-ctx').addEventListener('input', () => { syncCtxRange(); updateCtxHint(); });
 $('load-model').addEventListener('change', () => onLoadModelChange());
 $('load-go').onclick = async () => {
   $('load-err').classList.add('hidden');
