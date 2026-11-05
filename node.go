@@ -505,6 +505,8 @@ func (n *Node) hello() Hello {
 	if rt := n.currentRuntime(); rt != nil {
 		h.Runtime = &rt.RuntimeInfo
 	}
+	h.MemBWGBs = memBandwidthGBs()
+	startMemBandwidth(hw.RAMBytes, n.resendHello)
 	h.LoadedModel, _, _, _ = n.llama.status()
 	h.Peer = n.peerInfo()
 	return h

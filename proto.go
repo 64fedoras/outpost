@@ -116,6 +116,7 @@ type Hello struct {
 	Arch              string       `json:"arch"`
 	CPU               CPUInfo      `json:"cpu"`
 	RAMBytes          uint64       `json:"ram_bytes"`
+	MemBWGBs          float64      `json:"mem_bw_gbs,omitempty"` // measured memory read bandwidth, GB/s (0 = not measured yet)
 	GPUs              []GPUInfo    `json:"gpus"`
 	Backends          []string     `json:"backends"`
 	Models            []ModelInfo  `json:"models"`
