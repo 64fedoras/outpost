@@ -1442,6 +1442,7 @@ function onLoadModelChange(ctx) {
   const m = (models && models.models || []).find((x) => x.name === $('load-model').value);
   const n = nodeById(loadNodeId);
   $('load-ctx').value = ctx || (m && m.ctx) || 8192;
+  syncCtxRange();
   const fit = $('load-fit');
   if (!m || !n || !n.hello) { fit.classList.add('hidden'); return; }
   let vram = (n.hello.gpus || []).filter((g) => g.vendor !== 'apple').reduce((a, g) => a + g.vram_bytes, 0);
@@ -1468,6 +1469,16 @@ function onLoadModelChange(ctx) {
   } else msg += ' Already on this node.';
   fit.className = cls; fit.textContent = msg;
 }
+// Context size slider: stops are powers of two (2048..131072); the number box beside it keeps exact values.
+const CTX_STOPS = [2048, 4096, 8192, 16384, 32768, 65536, 131072];
+function syncCtxRange() {
+  const v = parseInt($('load-ctx').value, 10) || 0;
+  let best = 0;
+  CTX_STOPS.forEach((s, i) => { if (Math.abs(s - v) < Math.abs(CTX_STOPS[best] - v)) best = i; });
+  $('load-ctx-range').value = best;
+}
+$('load-ctx-range').addEventListener('input', () => { $('load-ctx').value = CTX_STOPS[parseInt($('load-ctx-range').value, 10)]; });
+$('load-ctx').addEventListener('input', syncCtxRange);
 $('load-model').addEventListener('change', () => onLoadModelChange());
 $('load-go').onclick = async () => {
   $('load-err').classList.add('hidden');
