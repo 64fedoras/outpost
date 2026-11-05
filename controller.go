@@ -138,10 +138,12 @@ type Controller struct {
 	peerBad   map[string]time.Time         // nodes skipped as model sources until then (served data failing its hash)
 	tasks     map[string]*Task
 	projects  map[string]*Project // see projects.go
-	reserved  map[string]bool
-	cooldown  map[string]time.Time
-	restarts  map[string]time.Time
-	poolStale map[string]time.Time // main node -> when a helper reconnected
+	// resumeWake wakes autoResumeInterrupted on node heartbeats (nudgeResume).
+	resumeWake chan struct{}
+	reserved   map[string]bool
+	cooldown   map[string]time.Time
+	restarts   map[string]time.Time
+	poolStale  map[string]time.Time // main node -> when a helper reconnected
 }
 
 func runController(args []string) error {
@@ -168,6 +170,7 @@ func runController(args []string) error {
 		jobs: map[string]*JobRec{}, updates: map[string]*UpdateStatus{},
 		waiters: map[string]chan *JobResult{}, nodeOps: map[string]*nodeOpView{},
 		pipelines: map[string]*pipeline{}, reserved: map[string]bool{}, cooldown: map[string]time.Time{}, restarts: map[string]time.Time{}, poolStale: map[string]time.Time{},
+		resumeWake: make(chan struct{}, 1),
 	}
 	launchNewest(c.agentDir(), os.Args[1:]) // switch to an installed update, if newer
 	c.loadReleases()
@@ -178,7 +181,7 @@ func runController(args []string) error {
 	c.loadRuntimes()
 	c.loadProjects()
 	c.loadTasks()
-	go c.autoResumeInterrupted(autoResumeWait, 5*time.Second)
+	go c.autoResumeInterrupted(autoResumeWait, time.Second)
 	c.advertise = *advertise
 	if c.advertise == "" {
 		_, port, _ := net.SplitHostPort(*listen)
@@ -890,6 +893,10 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 			c.finishJobLocked(j, "lost", errf("lost", true, "node reconnected without this job"))
 		}
 	}
+	// Jobs the node still runs but the controller no longer tracks (it
+	// restarted, or gave up on them) have nobody waiting for their result.
+	// Cancel them so a resumed task does not queue behind its own old call.
+	orphans := orphanJobsLocked(c.jobs, hello.RunningJobs)
 	settings := c.nodeSettingsLocked(n)
 	c.mu.Unlock()
 	log.Printf("node %s (%s, %s/%s) connected from %s", n.ID, hello.Hostname, hello.OS, hello.Arch, r.RemoteAddr)
@@ -897,6 +904,10 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 
 	if err := nc.send("node.welcome", Welcome{Accepted: true, Protocol: proto, Settings: settings}); err != nil {
 		return
+	}
+	for _, id := range orphans {
+		log.Printf("node %s: cancelling job %s left over from before a controller restart", n.ID, id)
+		_ = nc.send("job.cancel", JobCancel{JobID: id, Reason: "controller restarted"})
 	}
 
 	defer func() {
@@ -945,6 +956,7 @@ func (c *Controller) handleNodeMessage(nodeID string, env *Envelope) {
 		var hb Heartbeat
 		if json.Unmarshal(env.Body, &hb) == nil {
 			c.lastHB[nodeID] = &hb
+			c.nudgeResume()
 			if hb.RPCEndpoint != "" && !c.poolingOnLocked() {
 				// A node is still lending (it resumed after a restart) while pooling is off.
 				if nc := c.conns[nodeID]; nc != nil {

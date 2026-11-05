@@ -153,13 +153,17 @@ const STATUS_WORDS = {
   testing: 'Testing', building: 'Building', fixing: 'Fixing tests', paused_cap: 'Paused at cap', interrupted: 'Interrupted',
   done: 'Done', failed: 'Failed', cancelled: 'Stopped',
 };
+// A task interrupted by a controller restart that resumes on its own reads as
+// working, not as waiting for the user.
+const resuming = (t) => t.status === 'interrupted' && !!t.auto_resume;
 function statusWord(t) {
+  if (resuming(t)) return 'Resuming';
   if (t.status === 'done' && t.test_status === 'failing') return 'Done, tests fail';
   return STATUS_WORDS[t.status] || label(t.status);
 }
 function taskTone(t) {
   if (t.needs_you) return 'needs';
-  if (WORKING.includes(t.status)) return 'work';
+  if (WORKING.includes(t.status) || resuming(t)) return 'work';
   if (t.status === 'failed' || (t.status === 'done' && t.test_status === 'failing')) return 'bad';
   return 'idle';
 }
@@ -527,8 +531,17 @@ async function pollTask() {
   clearTimeout(taskTimer);
   if (page !== 'task') return;
   const id = pageArg;
-  try { taskDetail = await api('/api/tasks/' + id); }
-  catch (e) { setHTML('tv-title', esc(e.message)); return; }
+  let t;
+  try { t = await api('/api/tasks/' + id); }
+  catch (e) {
+    if (id !== pageArg || e.message === 'login required') return;
+    // The controller is restarting (or the network blipped): keep showing the
+    // task as it was and try again shortly, so it comes back on its own.
+    if (!taskDetail || /no such task/.test(e.message)) setHTML('tv-title', esc(e.message));
+    taskTimer = setTimeout(pollTask, 1500);
+    return;
+  }
+  taskDetail = t;
   if (id !== pageArg) return;
   await loadRounds();
   if (id !== pageArg) return;
@@ -547,7 +560,16 @@ function liveClose() {
 }
 function liveOpen(id) {
   if (!window.EventSource) return;
-  liveES = new EventSource(`/api/tasks/${id}/events`);
+  const es = liveES = new EventSource(`/api/tasks/${id}/events`);
+  // After the controller restarts the stream reconnects: reload the task at
+  // once instead of waiting for the slow fallback poll.
+  es.onopen = () => { if (page === 'task' && pageArg === id) { liveCalls = {}; clearTimeout(liveKick); liveKick = setTimeout(pollTask, 50); } };
+  // A stream the browser gave up on (an error status while the controller
+  // was starting) is opened again.
+  es.onerror = () => {
+    if (es.readyState !== 2) return;
+    setTimeout(() => { if (liveES === es && page === 'task' && pageArg === id) { liveCalls = {}; liveOpen(id); } }, 2000);
+  };
   liveES.onmessage = (e) => {
     let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
     if (ev.t === 'start') liveCalls[ev.call] = { sub: ev.sub || '', label: ev.label, node: ev.node, text: ev.text || '', tok: ev.tok || 0, tps: ev.tps || 0, est: !!ev.est };
@@ -629,14 +651,16 @@ $('thread').addEventListener('input', (e) => {
 
 function renderTask(t) {
   setHTML('tv-title', esc(t.title || firstWords(t.prompt)));
-  setHTML('tv-status', `<span class="tdot ${taskTone({ ...t, needs_you: ['awaiting_answers', 'awaiting_approval', 'paused_cap', 'interrupted'].includes(t.status) || (t.messages || []).some((m) => m.pending) })}"></span>${esc(statusWord(t))}`);
+  setHTML('tv-status', `<span class="tdot ${taskTone({ ...t, needs_you: (['awaiting_answers', 'awaiting_approval', 'paused_cap', 'interrupted'].includes(t.status) && !resuming(t)) || (t.messages || []).some((m) => m.pending) })}"></span>${esc(statusWord(t))}`);
   $('tv-status').className = 'status-chip';
   setHTML('tv-spend', t.planner === 'claude' || t.planner === 'openrouter' || t.cost_usd > 0 ? spendMeter(t) : '');
   const files = t.files || [];
   $('tv-files-btn').classList.toggle('hidden', !files.length);
   $('tv-download').classList.toggle('hidden', !files.length || !['done', 'cancelled', 'failed'].includes(t.status));
   $('tv-download').href = `/api/tasks/${t.id}/download`;
-  $('tv-stop').classList.toggle('hidden', !ACTIVE.includes(t.status));
+  $('tv-stop').classList.toggle('hidden', !canStop(t));
+  // Stop next to Send while the task works (or waits to resume), so it is where the eye is.
+  $('tm-stop').classList.toggle('hidden', !(WORKING.includes(t.status) || resuming(t)));
   $('tv-delete').classList.toggle('hidden', ACTIVE.includes(t.status));
   renderThreadItems(threadItems(t));
   renderComposer(t);
@@ -907,6 +931,10 @@ function statusCard(t) {
         <div class="card-actions"><label class="chip-input">new cap $<input id="ta-newcap" type="number" min="0.05" step="0.25" value="${(Math.ceil((t.cap_usd * 2) * 4) / 4).toFixed(2)}"></label><button class="primary" data-act="task-raise">Raise cap and continue</button></div>
         ${locals ? `<div class="card-actions"><select id="ta-local" class="chip-select">${locals}</select><button data-act="task-local">Finish with this local planner</button></div>` : ''}</div>` };
     case 'interrupted':
+      if (resuming(t)) {
+        const node = state && state.nodes.find((n) => 'node:' + n.id === t.planner);
+        return { key: 'tail-resuming', cls: 'from-planner', html: `<div class="said thinking">The controller restarted. Picking up where it stopped as soon as ${node ? esc(nodeName(node)) : 'its node'} is back with its model loaded; finished subtasks are kept<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></div>` };
+      }
       return { key: 'tail-int', cls: 'card-row', html: `<div class="card-msg warn"><div class="card-head">Interrupted</div><p>The controller restarted while this task was active. Tasks on a local planner resume on their own when a node is ready (unless turned off in Settings); otherwise Resume picks up where it stopped; finished subtasks are kept.</p>
         <div class="card-actions"><button class="primary" data-act="task-resume">Resume</button></div></div>` };
   }
@@ -923,6 +951,7 @@ function renderComposer(t) {
     paused_cap: ['Steer the work…', 'Notes apply to the rest of this request.'],
     interrupted: ['Ask for something new…', 'Resume first to finish the current request; a message starts a new one on these files.'],
   };
+  if (resuming(t)) modes.interrupted = ['Ask for something new…', 'It resumes on its own; a message starts a new request on these files instead.'];
   modes.testing = modes.fixing = modes.running;
   const [ph, hint] = modes[t.status] || ['Ask for a follow-up change…', 'Builds on this project\'s files: the planner plans only what changes.'];
   if (box.placeholder !== ph) box.placeholder = ph;
@@ -939,6 +968,11 @@ async function sendTaskMessage() {
   pollTask(); refresh();
 }
 $('tm-send').onclick = sendTaskMessage;
+$('tm-stop').onclick = async () => {
+  if (!pageArg || !confirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return;
+  try { await post(`/api/tasks/${pageArg}/cancel`); toast('Stopped'); } catch (e) { toast(e.message, 4000); }
+  pollTask(); refresh();
+};
 $('tm-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendTaskMessage(); } });
 function autoGrow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 220) + 'px'; }
 $('tm-text').addEventListener('input', (e) => autoGrow(e.target));
@@ -1609,7 +1643,7 @@ async function rollbackController() {
 }
 
 async function updateController() {
-  if (!confirm(`Update the controller to v${state.controller_update_to} and restart it? Tasks pause for a moment; running jobs keep going on their nodes.`)) return;
+  if (!confirm(`Update the controller to v${state.controller_update_to} and restart it? Working tasks on a local planner pick up where they stopped once their node is back; Claude and OpenRouter tasks wait for you to press Resume.`)) return;
   const target = state.controller_update_to;
   try { await post('/api/controller/update'); } catch (e) { toast(e.message); return; }
   ctlUpdating = true; renderUpdates(); toast('Controller restarting…');

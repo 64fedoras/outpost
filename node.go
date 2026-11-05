@@ -29,6 +29,7 @@ const (
 	tailMax         = 64 << 10
 	workspaceTTL    = 30 * time.Minute
 	disconnectGrace = 60 * time.Second
+	fastReconnect   = 60 * time.Second // retry every second for this long after losing the controller
 )
 
 type NodeConfig struct {
@@ -151,8 +152,16 @@ func runNode(args []string) error {
 		if welcomed {
 			lostSince, swept, backoff = time.Now(), false, time.Second
 		}
-		log.Printf("not connected: %v; retrying in %s", err, backoff)
-		time.Sleep(backoff)
+		// For the first minute after losing the controller, retry every
+		// second: a controller update restarts it in a few seconds, and
+		// interrupted tasks resume as soon as this node is back.
+		wait := backoff
+		fast := time.Since(lostSince) < fastReconnect
+		if fast {
+			wait = time.Second
+		}
+		log.Printf("not connected: %v; retrying in %s", err, wait)
+		time.Sleep(wait)
 		if !swept && time.Since(lostSince) > disconnectGrace {
 			if n.runningCount() > 0 || n.workspaceCount() > 0 {
 				log.Printf("offline for %s; cancelling jobs and closing all workspaces", disconnectGrace)
@@ -162,7 +171,7 @@ func runNode(args []string) error {
 			}
 			swept = true
 		}
-		if backoff < 30*time.Second {
+		if !fast && backoff < 30*time.Second {
 			backoff *= 2
 		}
 	}
