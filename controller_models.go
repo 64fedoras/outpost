@@ -127,7 +127,7 @@ func (c *Controller) loadModels() {
 		}
 		m.Vision = m.hasVision()
 		c.models[m.Name] = &m
-		if m.Status == "ready" && m.Shape == nil {
+		if m.Status == "ready" && (m.Shape == nil || m.Shape.ActiveFrac == 0) {
 			go c.fillModelShape(&m) // models added before the header was read
 		}
 	}
