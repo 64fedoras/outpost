@@ -212,6 +212,13 @@ can check detection without joining.
    node (fully in VRAM first, then VRAM plus RAM, then RAM; skipped if the node's disk is too small, or
    if no llama.cpp build exists for it), with the reason and a one-click **Load**. A node running the
    CPU build (for example a Linux node with a GPU but no Vulkan driver) is sized as a CPU machine.
+   On CPU machines the pick favours speed over size: the node times its own memory (about a second,
+   at start-up), the controller reads each model's GGUF header to see how many weights one token
+   reads (a mixture-of-experts model reads a few percent, a dense one all of it), and the card shows
+   **~N tok/s** with the reason. Under 4 tok/s it is marked slow in orange. If the node has a
+   benchmark, that measured speed replaces the estimate for that model and rescales the others.
+   The estimates are conservative guesses until you compare them with real benchmarks; the full
+   **Load model** list still offers every model.
    Otherwise click **Load model** on a node. **Context size** is a slider (powers of two from 2K up to the
    model's trained context, or 128K when that is not known) with a box beside it for an exact number. Under it,
    the dialog shows the context cache that size needs and the total with the weights, and turns amber when that

@@ -102,6 +102,7 @@ type Controller struct {
 	inferStub   func(ctx context.Context, nodeID string, spec InferenceSpec) (*InferenceOutput, error)           // tests: stands in for node inference
 	execStub    func(ctx context.Context, nodeID string, argv []string, inputs []FileEntry) (*ExecOutput, error) // tests: stands in for the best-of-N syntax check
 	dataDir     string
+	catShapes   map[string]*ModelShape // GGUF headers of catalog models, read from Hugging Face in the background
 	advertise   string
 	fingerprint string
 	cert        tls.Certificate
@@ -319,6 +320,7 @@ func runController(args []string) error {
 	go c.backupLoop()
 	go c.ghLoop()
 	go c.benchLoop()
+	go c.catalogShapeLoop()
 
 	log.Printf("outpost controller %s listening on %s", Version, *listen)
 	log.Printf("web UI:           %s", c.advertise)

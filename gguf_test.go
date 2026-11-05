@@ -11,6 +11,19 @@ type ggufBuilder struct {
 	b  bytes.Buffer
 	n  int
 	kv bytes.Buffer
+	tb bytes.Buffer // tensor table
+	nt int
+}
+
+// tensor adds a tensor table entry of the given ggml type with elems elements.
+func (g *ggufBuilder) tensor(name string, typ uint32, elems uint64) {
+	binary.Write(&g.tb, binary.LittleEndian, uint64(len(name)))
+	g.tb.WriteString(name)
+	binary.Write(&g.tb, binary.LittleEndian, uint32(1))
+	binary.Write(&g.tb, binary.LittleEndian, elems)
+	binary.Write(&g.tb, binary.LittleEndian, typ)
+	binary.Write(&g.tb, binary.LittleEndian, uint64(0))
+	g.nt++
 }
 
 func (g *ggufBuilder) key(k string, t uint32) {
@@ -56,9 +69,10 @@ func (g *ggufBuilder) vocab(k string, words []string) {
 func (g *ggufBuilder) bytes() []byte {
 	g.b.WriteString("GGUF")
 	binary.Write(&g.b, binary.LittleEndian, uint32(3))
-	binary.Write(&g.b, binary.LittleEndian, uint64(0))
+	binary.Write(&g.b, binary.LittleEndian, uint64(g.nt))
 	binary.Write(&g.b, binary.LittleEndian, uint64(g.n))
 	g.b.Write(g.kv.Bytes())
+	g.b.Write(g.tb.Bytes())
 	g.b.WriteString("tensor data that must not be read")
 	return g.b.Bytes()
 }
@@ -143,5 +157,44 @@ func TestGGUFRejectsOtherFiles(t *testing.T) {
 	}
 	if _, err := readGGUFShape(bytes.NewReader([]byte("GGUF\x03\x00"))); err == nil {
 		t.Fatal("expected an error for a truncated header")
+	}
+}
+
+func TestGGUFActiveFraction(t *testing.T) {
+	g := &ggufBuilder{}
+	g.str("general.architecture", "qwen3moe")
+	g.u32("qwen3moe.block_count", 2)
+	g.u32("qwen3moe.embedding_length", 256)
+	g.u32("qwen3moe.attention.head_count", 4)
+	g.u32("qwen3moe.attention.head_count_kv", 2)
+	g.u32("qwen3moe.expert_count", 128)
+	g.u32("qwen3moe.expert_used_count", 8)
+	// 256-element Q4_K blocks are 144 bytes: 256*1000 elements = 144000 bytes.
+	g.tensor("token_embd.weight", 12, 256*1000) // lookup only: not counted (output.weight exists)
+	g.tensor("output.weight", 12, 256*1000)     // 144000 read
+	g.tensor("blk.0.attn_q.weight", 12, 256*1000)
+	g.tensor("blk.0.ffn_down_exps.weight", 12, 256*16000) // 2304000 bytes, 8/128 read = 144000
+	s, err := readGGUFShape(bytes.NewReader(g.bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// total = 4*144000 + 2304000-144000... compute: tensors 144000*3 + 2304000 = 2736000; active = 144000*2 + 144000 = 432000
+	want := 432000.0 / 2736000.0
+	if s.ActiveFrac < want-1e-9 || s.ActiveFrac > want+1e-9 {
+		t.Errorf("ActiveFrac = %v, want %v", s.ActiveFrac, want)
+	}
+	if got := s.activeBytes(1000); got != 157 {
+		t.Errorf("activeBytes(1000) = %d", got)
+	}
+	// An unknown tensor type leaves the fraction unknown but keeps the KV shape.
+	g2 := &ggufBuilder{}
+	g2.str("general.architecture", "qwen3moe")
+	g2.u32("qwen3moe.block_count", 2)
+	g2.u32("qwen3moe.embedding_length", 256)
+	g2.u32("qwen3moe.attention.head_count", 4)
+	g2.tensor("blk.0.x.weight", 9999, 10)
+	s2, err := readGGUFShape(bytes.NewReader(g2.bytes()))
+	if err != nil || s2.ActiveFrac != 0 || s2.FullBytesPerToken == 0 {
+		t.Errorf("unknown type: %+v %v", s2, err)
 	}
 }
