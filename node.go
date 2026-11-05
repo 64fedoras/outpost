@@ -64,8 +64,10 @@ type Node struct {
 	tools       toolCache
 	peer        peerState
 	artifacts   map[string]string // "<job>/<path>" -> file on disk, served to the controller
-	busyModels  map[string]int    // models being written right now; cleanup skips them
-	verifyMu    sync.Mutex        // serialises model re-checks (node_verify.go)
+	freedNote   string            // last automatic disk cleanup, shown on the node card
+	freedAt     int64
+	busyModels  map[string]int // models being written right now; cleanup skips them
+	verifyMu    sync.Mutex     // serialises model re-checks (node_verify.go)
 }
 
 func (n *Node) agentDir() string { return filepath.Join(n.dataDir, "agent") }
@@ -486,12 +488,13 @@ func (n *Node) hello() Hello {
 	hw := detectHardware()
 	n.mu.Lock()
 	execOn := n.execEnabled
+	freedNote, freedAt := n.freedNote, n.freedAt
 	n.mu.Unlock()
 	h := Hello{
 		AgentVersion: Version, Protocol: supportedProtocols(), NodeID: n.cfg.NodeID,
 		Hostname: host, OS: runtime.GOOS, Arch: runtime.GOARCH,
 		CPU: hw.CPU, RAMBytes: hw.RAMBytes, GPUs: hw.GPUs, Backends: hw.Backends,
-		Models: n.listModels(), WorkFreeBytes: diskFree(n.workRoot), ModelsFreeBytes: diskFree(filepath.Join(n.dataDir, "models")),
+		Models: n.listModels(), FreedNote: freedNote, FreedAt: freedAt, WorkFreeBytes: diskFree(n.workRoot), ModelsFreeBytes: diskFree(filepath.Join(n.dataDir, "models")),
 		MaxConcurrentJobs: autoMaxJobs(hw), ExecEnabled: execOn, RunningJobs: n.runningIDs(),
 		VulkanAvailable: vulkanAvailable(),
 		RollbackTo:      previousVersion(n.agentDir()),

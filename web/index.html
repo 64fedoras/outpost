@@ -263,6 +263,12 @@
           <div class="hint" id="set-idle-now"></div>
           <div class="modal-foot"><button class="primary" id="set-idle-save">Save</button></div>
         </div>
+        <div class="section-head"><h2>Free disk space</h2></div>
+        <div class="card">
+          <p class="hint">When a node has too little disk space for a model it is about to receive, it deletes stored models to make room: the least recently used first, and only as many as needed. Models this controller holds a copy of go first; only if that is not enough does it delete models a node downloaded straight from Hugging Face (they download again when needed). It never deletes the loaded model, one set to reload, or one being copied. If that still would not make room, nothing is deleted and the load fails with the usual disk space message. Each cleanup is noted on the node's card and in its log.</p>
+          <label class="check"><input type="checkbox" id="set-autofree"> Free disk space automatically when a node runs out</label>
+          <div class="modal-foot"><button class="primary" id="set-autofree-save">Save</button></div>
+        </div>
         <div class="section-head"><h2>Command sandbox</h2></div>
         <div class="card">
           <p class="hint">How nodes run the commands tasks send them (tests, builds, fixes). <b>Basic</b>: a command can only change files in its own job folder, sees a cleaned-up environment and has no special rights; the network stays open. <b>Strict</b>: basic, with the network off unless the step downloads packages, and a deny list for dangerous system calls. <b>Off</b>: commands run with the node's own rights, as before. Linux nodes only for now; Windows and macOS nodes run commands unsandboxed. A node can override this on its card. If a build breaks and you suspect the sandbox, set it to Off to compare.</p>

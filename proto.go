@@ -134,6 +134,8 @@ type Hello struct {
 	Peer              *PeerInfo    `json:"peer,omitempty"`           // where this node serves model files to other nodes
 	Sandbox           string       `json:"sandbox,omitempty"`        // mode exec jobs run in on this node (empty on nodes older than the sandbox)
 	SandboxLayers     []string     `json:"sandbox_layers,omitempty"` // what that mode enforces here, e.g. landlock-v3, netns, seccomp
+	FreedNote         string       `json:"freed_note,omitempty"`     // last automatic disk cleanup, e.g. "Freed 12.0 GB by removing X"
+	FreedAt           int64        `json:"freed_at,omitempty"`       // unix seconds of that cleanup
 }
 
 // PeerInfo is a node's model-sharing endpoint: the port and the fingerprint
@@ -338,14 +340,24 @@ type ModelPush struct {
 	// controller falls back to its normal route.
 	Peers     []PeerSource `json:"peers,omitempty"`
 	PeerToken string       `json:"peer_token,omitempty"`
+	Reclaim   *Reclaim     `json:"reclaim,omitempty"`
+}
+
+// Reclaim lets a node free disk space for an incoming model by deleting stored
+// models the controller can copy back. Nil or Enabled false: never delete.
+type Reclaim struct {
+	Enabled bool     `json:"enabled"`
+	Names   []string `json:"names"`             // tier 1: stored models the controller holds a ready copy of
+	Direct  []string `json:"direct,omitempty"` // tier 2: stored models the node can re-download from Hugging Face; used only after tier 1
 }
 
 // ModelLoad starts llama-server with a model. Zero values mean llama.cpp defaults.
 // ModelFetch asks a node to download a model straight from Hugging Face.
 type ModelFetch struct {
-	Name  string           `json:"name"`
-	Files []ModelFetchFile `json:"files"`
-	Token string           `json:"token,omitempty"` // Hugging Face token, only for gated models
+	Name    string           `json:"name"`
+	Files   []ModelFetchFile `json:"files"`
+	Token   string           `json:"token,omitempty"` // Hugging Face token, only for gated models
+	Reclaim *Reclaim         `json:"reclaim,omitempty"`
 }
 
 type ModelFetchFile struct {
