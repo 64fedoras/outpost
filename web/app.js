@@ -958,7 +958,7 @@ function renderComposer(t) {
   const box = $('tm-text');
   const modes = {
     awaiting_answers: ['Or answer in your own words…', 'Your reply goes to the planner with the questions above.'],
-    planning: ['Steer the planner, e.g. "use SQLite, keep it to one file"…', 'The planner gets your note when its current answer is in, and revises it.'],
+    planning: ['Steer the planner, e.g. "use SQLite, keep it to one file"…', 'Sent after the planner\'s current answer. Use Send now to interrupt it instead.'],
     awaiting_approval: ['Ask for changes to the plan…', 'The planner revises the plan; nothing runs until you approve.'],
     running: ['Steer the work, e.g. "use SQLite, not JSON files"…', 'Notes apply to subtasks that start from now on, reviews and test fixes.'],
     paused_cap: ['Steer the work…', 'Notes apply to the rest of this request.'],
@@ -969,7 +969,21 @@ function renderComposer(t) {
   const [ph, hint] = modes[t.status] || ['Ask for a follow-up change…', 'Builds on this project\'s files: the planner plans only what changes.'];
   if (box.placeholder !== ph) box.placeholder = ph;
   setHTML('tm-hint', esc(hint));
+  // Notes sent while the planner is answering wait here until it takes them.
+  const q = t.queued || [];
+  $('tm-queue').classList.toggle('hidden', !q.length);
+  setHTML('tm-queue', q.length ? `<div class="queue-head"><span>${q.length === 1 ? 'Queued · goes in after the current answer' : q.length + ' queued · go in after the current answer'}</span><button type="button" class="link-btn" data-q="now" title="Stop the planner's current answer, drop it, and plan again with ${q.length === 1 ? 'this note' : 'these notes'}">Send now</button></div>` +
+    q.map((n) => `<div class="queue-item"><span class="queue-text">${esc(n.text)}${(n.images || []).length ? ` <i>🖼 ${n.images.length}</i>` : ''}</span><button type="button" class="icon-btn" data-q="rm" data-id="${esc(n.id)}" aria-label="Remove this queued note" title="Remove">✕</button></div>`).join('') : '');
 }
+$('tm-queue').addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-q]');
+  if (!b || !pageArg) return;
+  try {
+    if (b.dataset.q === 'now') await post(`/api/tasks/${pageArg}/send-now`);
+    else await api(`/api/tasks/${pageArg}/queued/${encodeURIComponent(b.dataset.id)}`, { method: 'DELETE' });
+  } catch (err) { toast(err.message, 4000); }
+  pollTask(); refresh();
+});
 
 async function sendTaskMessage() {
   const box = $('tm-text'), text = box.value.trim();
