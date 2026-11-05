@@ -138,8 +138,10 @@
     <main class="page-plain">
     <!-- NODES -->
     <section data-page="nodes" class="hidden">
-      <div class="section-head"><h2>Nodes</h2><span class="sub u2" id="node-count"></span><span class="spacer"></span><button id="btn-add" class="primary">Add node</button></div>
-      <div id="nodes" class="grid"></div>
+      <div class="section-head"><h2>Nodes</h2><span class="sub u2" id="node-count"></span><span class="spacer"></span>
+        <div class="nv-toggle" role="group" aria-label="Node view"><button data-act="node-view" data-node-view="grid">Grid</button><button data-act="node-view" data-node-view="list">List</button><button data-act="node-view" data-node-view="detail">Detailed list</button></div>
+        <button id="btn-add" class="primary">Add node</button></div>
+      <div id="nodes"></div>
       <div class="section-head"><h2>Recent jobs</h2><span class="sub u2">every model call and command sent to a node</span></div>
       <div id="jobs"></div>
     </section>
@@ -149,11 +151,11 @@
       <div class="section-head"><h2>Model library</h2><span class="sub u2" id="models-disk"></span></div>
       <p class="hint">Each model is either <b>downloaded by each node</b> straight from Hugging Face when you load it (uses no controller space; nodes need internet), or <b>stored on the controller</b> once and copied to nodes over your network.</p>
       <div id="models-list"></div>
-      <div class="section-head"><h2>Suggested coding models</h2></div>
-      <p class="hint">Ranked by what fits your nodes. Badges are estimates (weights plus a rough KV cache at the suggested context size).</p>
-      <div class="catalog" id="suggested"></div>
-      <div class="section-head"><h2>Recommended for your machines</h2></div>
-      <div class="catalog" id="catalog"></div>
+      <div class="section-head"><h2>Discover models</h2></div>
+      <p class="hint">Suggested coding models for your nodes come first. Sizes and fits are estimates (weights plus a rough KV cache at the suggested context size); hover the fit text to see each node, or pick a node in "Add and load on…".</p>
+      <div class="cat-tools"><input id="cat-search" placeholder="Search the catalog…" autocomplete="off" aria-label="Search the catalog">
+        <button class="chip" data-act="cat-filter" data-cat-filter="all">All</button><button class="chip" data-act="cat-filter" data-cat-filter="fits">Fits my nodes</button><button class="chip" data-act="cat-filter" data-cat-filter="vram">Fits in VRAM</button><button class="chip" data-act="cat-filter" data-cat-filter="vision">Vision</button></div>
+      <div id="catalog"></div>
       <div class="section-head"><h2>Any model from Hugging Face</h2></div>
       <div class="card">
         <div class="btns u3">

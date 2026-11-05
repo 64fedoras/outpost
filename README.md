@@ -200,15 +200,27 @@ can check detection without joining.
    - **Store on controller:** downloaded once to the controller and copied to nodes over your
      network. Uses controller space; nodes need no internet.
    You can switch later: **Free controller space** or **Store on controller** on the library row.
-   Every model (suggested, library and Hugging Face file lists) shows a badge per node: **fits in VRAM**,
+   Library rows and Hugging Face file lists show a badge per node: **fits in VRAM**,
    **split VRAM + RAM (slower)**, **runs on CPU** (node without a GPU) or **does not fit**. It is an
    estimate: the weights plus a rough KV cache at the suggested context size, not read from the file.
-   **Suggested coding models** ranks the built-in coding models by what fits your nodes. On a ready model,
+   **Discover models** lists the built-in models as compact rows, the ones suggested for your nodes first,
+   with a search box and filters (**Fits my nodes**, **Fits in VRAM**, **Vision**). Each row says how many
+   online nodes it fits (hover for each node); the per-node detail is in the **Add and load on…** picker,
+   and the **▾** next to it has **Add · nodes download** and **Store on controller**. On a ready model,
    **Load on N nodes it fits** loads it on every online node where it fits fully in VRAM (this replaces
    whatever those nodes had loaded). **Load on…** opens a node picker (fit per node, and which model it
    would replace). A built-in model that is not in the library yet has **Add and load on…**, which adds it
    (nodes download it) and loads it in one step. A **Recommended** tag shows which node a model is the pick for.
-2. **Nodes** (sidebar): each online node card shows **Recommended**: the best coding model that fits that
+2. **Nodes** (sidebar): a summary row on top (online, models loaded, jobs, total speed, free VRAM,
+   nodes that need attention), then three views, picked top right and remembered in this browser:
+   **Grid** shows a card per node with CPU, RAM and VRAM gauges, speed, problems with a fix button
+   (failed load, model error, paused, no Vulkan, low disk under 10 GB, update available) and the model with
+   Change/Unload; nodes that need attention come first, and a memory pool (a node and the helpers lending
+   it memory) sits in one dashed frame with **Unload pool**. **List** shows two-line rows grouped into
+   Needs attention, Healthy and Offline. **Detailed list** shows a short list on the left and the selected
+   node's full card on the right (every control: idle unload, benchmark, stored models, tools, exec and
+   sandbox, Restart, Rename, Remove, Run) plus its recent jobs. **Details** on a card or row opens it there.
+   The full card shows **Recommended**: the best coding model that fits that
    node (fully in VRAM first, then VRAM plus RAM, then RAM; skipped if the node's disk is too small, or
    if no llama.cpp build exists for it), with the reason and a one-click **Load**. A node running the
    CPU build (for example a Linux node with a GPU but no Vulkan driver) is sized as a CPU machine.
