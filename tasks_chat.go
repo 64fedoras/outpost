@@ -116,6 +116,30 @@ func (t *Task) steeringText() string {
 	return b.String()
 }
 
+// takePlanNotes returns and clears the notes sent while the planner was answering.
+func (t *Task) takePlanNotes() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	n := t.PlanNotes
+	t.PlanNotes = nil
+	return n
+}
+
+// foldNotesPrompt continues a planner conversation: its own answer so far, then
+// what the user added while it was writing. It is one user turn so that every
+// planner (Claude, OpenRouter, a node's model) takes it the same way.
+func foldNotesPrompt(answer string, notes []string) string {
+	var b strings.Builder
+	b.WriteString("\n\n---\nYour answer to the request above, written before the user's new note arrived:\n")
+	b.WriteString(answer)
+	b.WriteString("\n\nThe user then added:\n")
+	for _, n := range notes {
+		fmt.Fprintf(&b, "User: %s\n", n)
+	}
+	b.WriteString("\nAnswer again with only the JSON object (a plan, or questions if you must), keeping what still fits and changing what the note affects. Where the note conflicts with your answer, follow the note.")
+	return b.String()
+}
+
 // plannerPrompt is the user turn for planning the current round: the project
 // so far (for follow-ups), earlier requests, and this round's conversation.
 func (c *Controller) plannerPrompt(t *Task, budget int, want []string) string {
@@ -223,6 +247,9 @@ func (c *Controller) handleTaskMessage(w http.ResponseWriter, r *http.Request) {
 	text := strings.TrimSpace(req.Text)
 	t.mu.Lock()
 	status, planner, orModel := t.Status, t.Planner, t.ORModel
+	if status == "paused_cap" && t.PausedFrom == "planning" {
+		status = "planning" // the planner resumes with the note once the cap is raised
+	}
 	t.mu.Unlock()
 	var imgNames []string
 	if len(req.Images) > 0 {
@@ -248,7 +275,16 @@ func (c *Controller) handleTaskMessage(w http.ResponseWriter, r *http.Request) {
 	case "awaiting_answers":
 		t.addMsg(TaskMessage{Role: "user", Kind: "answers", Text: text, Images: imgNames})
 		c.replan(t, "Planning with your answers.")
-	case "planning", "awaiting_approval":
+	case "planning":
+		// The planner is mid-request. Let it finish; planTask then gives it the note
+		// in the same conversation, so nothing it has written is thrown away.
+		t.mu.Lock()
+		t.PlanNotes = append(t.PlanNotes, text)
+		t.addMsgLocked(TaskMessage{Role: "user", Kind: "text", Text: text, Images: imgNames})
+		t.addMsgLocked(TaskMessage{Role: "event", Kind: "event", Text: "Got it. The planner gets your note as soon as its current answer is in; nothing it has done is thrown away."})
+		t.mu.Unlock()
+		t.logf("info", "Note for the planner: %s", firstLine(text, 200))
+	case "awaiting_approval":
 		t.addMsg(TaskMessage{Role: "user", Kind: "text", Text: text, Images: imgNames})
 		c.replan(t, "Revising the plan.")
 	case "running", "testing", "building", "fixing", "paused_cap":
