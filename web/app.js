@@ -1296,11 +1296,191 @@ function benchLine(n, loaded, ready) {
   return `<div class="sub wrap u15" title="Benchmark when the model loaded, then a rolling average of real subtasks">${txt}${rerun}</div>`;
 }
 
+// Nodes page views: Grid (cards), List (grouped two-line rows) and Detailed list
+// (short list on the left, the selected node's full card on the right).
+const NODE_VIEWS = ['grid', 'list', 'detail'];
+let nodeView = 'grid', nodeSel = null;
+try { const v = localStorage.getItem('outpost.nodeView'); if (NODE_VIEWS.includes(v)) nodeView = v; } catch (e) { /* storage blocked */ }
+function setNodeView(v) {
+  if (!NODE_VIEWS.includes(v)) return;
+  nodeView = v;
+  try { localStorage.setItem('outpost.nodeView', v); } catch (e) { /* storage blocked */ }
+  renderNodes();
+}
+
+// nodeFacts gathers what the list views show for one node.
+function nodeFacts(n) {
+  const h = n.hello || {}, hb = n.online ? n.heartbeat : null;
+  const loaded = hb && hb.loaded_model, ready = hb && hb.inference_ready;
+  const g = (h.gpus || [])[0];
+  const vram = g && hb && hb.vram_used_bytes && g.vram_bytes ? 100 * hb.vram_used_bytes[0] / g.vram_bytes : null;
+  const b = n.bench && loaded && n.bench.model === loaded ? n.bench : null;
+  const issues = [];
+  const o = state.ops && state.ops[n.id];
+  if (!n.online) issues.push({ lvl: 'off', short: 'Offline', text: n.last_seen ? `Last seen ${ago(n.last_seen)}.` : 'Never connected.' });
+  else {
+    if (o && o.state === 'failed' && (Date.now() - new Date(o.updated)) < 3600000) issues.push({ lvl: 'bad', short: 'Failed', text: o.error || 'The last model operation failed.', act: 'load', fix: 'Load model…' });
+    else if (hb && hb.llama_error && !ready) issues.push({ lvl: 'bad', short: 'Model error', text: hb.llama_error, act: 'load', fix: 'Load model…' });
+    if (hb && hb.paused) issues.push({ lvl: 'warn', short: 'Paused', text: 'Paused on the node. It takes no new work until someone chooses Accept new work in its tray icon.' });
+    if (h.os === 'linux' && (h.gpus || []).some((x) => x.vendor !== 'apple') && !h.vulkan_available) issues.push({ lvl: 'warn', short: 'No Vulkan', text: 'GPU found, but no Vulkan driver, so models run on CPU.' });
+    if (h.models_free_bytes && h.models_free_bytes < 10 * 1024 ** 3) issues.push({ lvl: 'warn', short: 'Low disk', text: `${bytes(h.models_free_bytes)} free for models. The next model copy may need a cleanup.`, act: 'clean', fix: 'Clean up…' });
+    if (n.update_to) issues.push({ lvl: 'info', short: 'Update', text: `Runs v${h.agent_version || '?'}; v${n.update_to} is available.`, act: 'node-update', fix: 'Update' });
+  }
+  const worst = ['bad', 'warn', 'info', 'off'].find((l) => issues.some((i) => i.lvl === l)) || '';
+  let model;
+  if (n.lending_to) model = `<span class="muted">Lending memory to <b class="nv-ink">${esc(n.lending_to)}</b></span>`;
+  else if (!n.online) model = '<span class="muted">—</span>';
+  else if (!loaded) model = opActive(n) ? '<span class="muted">Setting up a model…</span>' : '<span class="muted">No model loaded</span>';
+  else model = `<b>${esc(loaded)}</b> <span class="muted">· ${hb.idle_unloaded ? 'idle, unloaded' : ready ? (hb.inference_busy ? 'working' : 'ready') : 'starting'}</span>`;
+  const dot = !n.online ? '' : worst === 'bad' ? 'bad' : worst === 'warn' ? 'warn' : ready ? 'on' : (loaded || n.lending_to) ? 'busy' : 'idle';
+  return {
+    h, hb, loaded, ready, issues, worst, model, dot,
+    cpu: hb ? hb.cpu_pct : 0, ram: hb && hb.ram_total_bytes ? 100 * hb.ram_used_bytes / hb.ram_total_bytes : 0, vram,
+    tps: b && n.online && !n.lending_to ? b.tok_per_s : null,
+  };
+}
+const nvTps = (f, big) => f.tps == null ? '<span class="muted">—</span>' : big ? `<span class="nv-tps">${f.tps.toFixed(1)}</span><span class="nv-tpsu">tok/s</span>` : `<span class="nv-spd">${f.tps.toFixed(1)} tok/s</span>`;
+const nvChips = (f) => f.issues.map((i) => `<span class="nv-chip nv-${i.lvl}" title="${esc(i.text)}">${esc(i.short)}</span>`).join(' ');
+
+function nodeRow(n) {
+  const f = nodeFacts(n), h = f.h;
+  const fixIssue = f.issues.find((i) => i.act);
+  const first = f.issues.find((i) => i.lvl !== 'off');
+  const sub = first ? `${nvChips(f)} ${esc(first.text)}` : opActive(n) ? opView(n).replace(/<[^>]+>/g, ' ').trim() : n.online
+    ? `${n.running_jobs}/${n.max_jobs} jobs${n.pool_names && n.pool_names.length ? ' · pooled with ' + n.pool_names.map(esc).join(', ') : ''} · exec ${n.exec_enabled ? (n.sandbox ? 'on, sandbox ' + n.sandbox : 'on') : 'off'}` : '';
+  const action = fixIssue ? `<button class="small primary" data-act="${fixIssue.act}" data-id="${n.id}">${esc(fixIssue.fix)}</button>`
+    : n.online && !n.lending_to ? `<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>` : '';
+  return `<div class="nv-row nv-s-${f.worst}">
+    <div class="nv-c1"><span class="dot ${f.dot}"></span><div class="nv-min"><b>${esc(nodeName(n))}</b><div class="sub nv-sub">${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}${n.addr ? ' · ' + esc(n.addr.split(':')[0]) : ''}</div></div></div>
+    <div class="nv-min"><div class="nv-ell">${f.model}</div><div class="sub nv-sub nv-wrap">${sub}</div></div>
+    <div>${n.online ? `<div class="nv-bars"><span>CPU</span>${bar(f.cpu)}<span>RAM</span>${bar(f.ram)}${f.vram != null ? `<span>VRAM</span>${bar(f.vram)}` : ''}</div>` : `<span class="sub">${n.last_seen ? 'Last seen ' + ago(n.last_seen) : 'Never connected'}</span>`}</div>
+    <div class="r">${nvTps(f, true)}</div>
+    <div class="nv-acts">${action}<button class="small" data-act="node-detail" data-id="${n.id}" title="Open in the detailed list">Details</button></div>
+  </div>`;
+}
+
+function nodeListView(nodes) {
+  const groups = [
+    ['Needs attention', nodes.filter((n) => { const w = nodeFacts(n).worst; return w === 'bad' || w === 'warn'; })],
+    ['Healthy', nodes.filter((n) => { const w = nodeFacts(n).worst; return n.online && w !== 'bad' && w !== 'warn'; })],
+    ['Offline', nodes.filter((n) => !n.online)],
+  ];
+  return groups.filter((g) => g[1].length).map(([t, ns]) => `<div class="nv-grp">${t} · ${ns.length}</div><div class="nv-box">${ns.map(nodeRow).join('')}</div>`).join('');
+}
+
+function nodeDetailView(nodes) {
+  const rank = { bad: 0, warn: 1, info: 2, '': 3, off: 4 };
+  const sorted = [...nodes].sort((a, b) => rank[nodeFacts(a).worst] - rank[nodeFacts(b).worst]);
+  if (!nodeSel || !nodes.some((n) => n.id === nodeSel)) nodeSel = sorted[0].id;
+  const sel = nodeById(nodeSel);
+  const list = sorted.map((n) => {
+    const f = nodeFacts(n);
+    return `<button class="nv-item nv-s-${f.worst}${n.id === nodeSel ? ' on' : ''}" data-act="node-select" data-id="${n.id}">
+      <span class="dot ${f.dot}"></span><span class="nv-min nv-grow"><b>${esc(nodeName(n))}</b><span class="sub nv-sub nv-ell">${n.lending_to ? 'Lending to ' + esc(n.lending_to) : f.loaded ? esc(f.loaded) : !n.online ? 'Offline' : 'No model'}</span></span>
+      <span class="nv-right">${nvTps(f)}<span>${nvChips(f)}</span></span></button>`;
+  }).join('');
+  const jobs = (state.jobs || []).filter((j) => j.node_id === sel.id || (!j.node_id && j.node_name === nodeName(sel))).slice(0, 6);
+  return `<div class="nv-split"><div class="nv-list">${list}</div>
+    <div class="nv-pane">${nodeCard(sel)}
+      <div class="section-head"><h2>Recent jobs on ${esc(nodeName(sel))}</h2></div>
+      ${jobs.length ? `<div class="table-wrap"><table><tbody>${jobs.map((j) => `<tr class="click" data-act="open-job" data-id="${j.id}"><td>${pill(j.status)}</td><td class="cmd">${esc(j.command)}</td><td>${ago(j.created)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No recent jobs on this node.</div>'}
+    </div></div>`;
+}
+
+// Grid view: cluster summary strip, then gauge cards. Nodes that share memory
+// (a pool: the main node and its helpers) sit together in one frame.
+function ring(pct, label, sub) {
+  const p = Math.max(0, Math.min(100, Math.round(pct || 0))), r = 22, c = 2 * Math.PI * r;
+  return `<div class="ring"><svg width="58" height="58" viewBox="0 0 58 58" aria-hidden="true"><circle class="ring-bg" cx="29" cy="29" r="${r}"/>
+    ${p ? `<circle class="ring-fg${p > 85 ? ' hot' : ''}" cx="29" cy="29" r="${r}" stroke-dasharray="${(c * p / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 29 29)"/>` : ''}
+    <text x="29" y="33" text-anchor="middle">${p}%</text></svg><div class="sub">${label}</div><div class="sub ring-s">${sub}</div></div>`;
+}
+const ringNone = (label) => `<div class="ring ring-off"><svg width="58" height="58" viewBox="0 0 58 58" aria-hidden="true"><circle class="ring-bg dashed" cx="29" cy="29" r="22"/></svg><div class="sub">${label}</div></div>`;
+function nodeStatus(n, f) {
+  if (!n.online) return ['Offline', 'off'];
+  if (f.worst === 'bad') return ['Failed', 'bad'];
+  if (f.issues.some((i) => i.short === 'Paused')) return ['Paused', 'warn'];
+  if (n.lending_to) return ['Lending memory', 'busy'];
+  if (opActive(n)) return ['Setting up', 'busy'];
+  if (!f.loaded) return ['No model', 'idle'];
+  if (f.hb.idle_unloaded) return ['Idle, unloaded', 'idle'];
+  if (!f.ready) return ['Starting', 'busy'];
+  return f.hb.inference_busy ? ['Working', 'on'] : ['Ready', 'on'];
+}
+function gaugeCard(n) {
+  const f = nodeFacts(n), h = f.h, hb = f.hb, cpu = h.cpu || {};
+  const [st, cls] = nodeStatus(n, f);
+  const gpus = h.gpus || [];
+  const g = gpus[0];
+  const ramTot = hb && hb.ram_total_bytes;
+  const notes = f.issues.filter((i) => i.lvl !== 'off').map((i) => `<div class="note ${i.lvl === 'info' ? '' : i.lvl} nv-note"><span class="nv-grow">${esc(i.text)}</span>${i.act ? `<button class="small" data-act="${i.act}" data-id="${n.id}">${esc(i.fix)}</button>` : ''}</div>`).join('');
+  const btns = n.online && !n.lending_to ? `<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>${f.loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : '';
+  return `<div class="card gc nv-s-${f.worst}">
+    <div class="node-top"><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span><span class="nv-pill nv-p-${cls}"><i></i>${st}</span>
+      <button class="small" data-act="node-detail" data-id="${n.id}" title="All details and controls for this node">Details</button></div>
+    <div class="sub nv-ell">${esc(cpu.model || 'CPU')} · ${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}</div>
+    <div class="gc-rings">
+      ${ring(f.cpu, 'CPU', `${cpu.cores || '?'}C/${cpu.threads || '?'}T`)}
+      ${ring(f.ram, 'RAM', ramTot ? bytes(ramTot) : '—')}
+      ${g ? ring(f.vram || 0, g.vendor === 'apple' ? 'GPU' : 'VRAM', bytes(g.vram_bytes)) : ringNone('no GPU')}
+      <div class="ring gc-speed"><div>${nvTps(f, true)}</div><div class="sub">${n.online ? `${n.running_jobs}/${n.max_jobs} jobs` : n.last_seen ? 'seen ' + ago(n.last_seen) : 'never connected'}</div></div>
+    </div>
+    ${notes}${opActive(n) ? opView(n) : ''}
+    <div class="gc-model"><span class="nv-grow nv-ell">${f.model}</span>${btns}</div>
+  </div>`;
+}
+function clusterSummary(nodes) {
+  const on = nodes.filter((n) => n.online);
+  const facts = on.map((n) => [n, nodeFacts(n)]);
+  const loaded = facts.filter(([n, f]) => f.loaded && !n.lending_to).length;
+  const pooled = on.filter((n) => n.pool_names && n.pool_names.length).length;
+  const setting = on.filter(opActive).length;
+  const jobs = on.reduce((a, n) => a + (n.running_jobs || 0), 0), slots = on.reduce((a, n) => a + (n.max_jobs || 0), 0);
+  const speed = facts.reduce((a, [, f]) => a + (f.tps || 0), 0);
+  let vTot = 0, vUsed = 0, nG = 0;
+  on.forEach((n) => (((n.hello || {}).gpus) || []).forEach((g, i) => { if (g.vendor === 'apple') return; nG++; vTot += g.vram_bytes || 0; vUsed += (n.heartbeat && n.heartbeat.vram_used_bytes && n.heartbeat.vram_used_bytes[i]) || 0; }));
+  const att = nodes.map((n) => [n, nodeFacts(n)]).filter(([, f]) => f.worst === 'bad' || f.worst === 'warn');
+  const off = nodes.filter((n) => !n.online);
+  const tile = (k, v, s, cls = '') => `<div class="card kpi ${cls}"><div class="sub">${k}</div><div class="kpi-v">${v}</div><div class="sub nv-ell" title="${esc(s)}">${esc(s)}</div></div>`;
+  return `<div class="kpis">
+    ${tile('Online', `${on.length} / ${nodes.length}`, off.length ? off.map(nodeName).join(', ') + ' offline' : 'all online')}
+    ${tile('Models loaded', loaded, [pooled && pooled + ' pooled', setting && setting + ' setting up'].filter(Boolean).join(' · ') || ' ')}
+    ${tile('Jobs', `${jobs} / ${slots}`, 'running / slots')}
+    ${tile('Cluster speed', speed ? `${Math.round(speed)} tok/s` : '—', 'sum of loaded models')}
+    ${tile('Free VRAM', nG ? bytes(vTot - vUsed) : '—', nG ? `of ${bytes(vTot)} on ${nG} GPU${nG > 1 ? 's' : ''}` : 'no GPUs')}
+    ${tile('Needs attention', att.length, att.length ? att.map(([n, f]) => `${nodeName(n)}: ${f.issues.find((i) => i.lvl === 'bad' || i.lvl === 'warn').short.toLowerCase()}`).join(' · ') : 'nothing', att.length ? 'kpi-w' : '')}
+  </div>`;
+}
+function nodeGridView(nodes) {
+  const rank = { bad: 0, warn: 1, info: 2, '': 2, off: 4 };
+  const sorted = [...nodes].sort((a, b) => rank[nodeFacts(a).worst] - rank[nodeFacts(b).worst]);
+  const byName = (nm) => nodes.find((x) => nodeName(x) === nm);
+  const inPool = new Set(), pools = [];
+  nodes.forEach((n) => {
+    if (!n.pool_names || !n.pool_names.length) return;
+    const helpers = n.pool_names.map(byName).filter(Boolean);
+    [n, ...helpers].forEach((x) => inPool.add(x.id));
+    pools.push([n, helpers]);
+  });
+  const pool = ([n, helpers]) => {
+    const f = nodeFacts(n);
+    return `<div class="pool"><div class="pool-h"><span class="pool-ic">⇄</span><b>Memory pool</b>
+      <span class="sub nv-grow">${f.loaded ? esc(f.loaded) + ' · ' : ''}runs on <b class="nv-ink">${esc(nodeName(n))}</b>, ${helpers.map((x) => `<b class="nv-ink">${esc(nodeName(x))}</b>`).join(', ')} lend${helpers.length === 1 ? 's' : ''} memory</span>
+      ${nvTps(f)}${f.loaded ? `<button class="small" data-act="unload" data-id="${n.id}" title="Unload the model; the helpers get their memory back">Unload pool</button>` : ''}</div>
+      <div class="pool-cards">${[n, ...helpers].map(gaugeCard).join('')}</div></div>`;
+  };
+  const att = sorted.filter((n) => !inPool.has(n.id) && ['bad', 'warn'].includes(nodeFacts(n).worst));
+  const rest = sorted.filter((n) => !inPool.has(n.id) && !att.includes(n));
+  return `<div class="gc-grid">${att.map(gaugeCard).join('')}${pools.map(pool).join('')}${rest.map(gaugeCard).join('')}</div>`;
+}
+
 function renderNodes() {
   const nodes = state.nodes;
   const online = nodes.filter((n) => n.online).length;
   setHTML('node-count', nodes.length ? `${online} of ${nodes.length} online` : '');
-  setHTML('nodes', !nodes.length ? `<div class="empty u16">No nodes yet. Click <b>Add node</b> to get the install command.</div>` : nodes.map(nodeCard).join(''));
+  document.querySelectorAll('[data-node-view]').forEach((b) => b.classList.toggle('on', b.dataset.nodeView === nodeView));
+  if (!nodes.length) { setHTML('nodes', `<div class="empty u16">No nodes yet. Click <b>Add node</b> to get the install command.</div>`); return; }
+  setHTML('nodes', clusterSummary(nodes) + (nodeView === 'list' ? nodeListView(nodes) : nodeView === 'detail' ? nodeDetailView(nodes) : nodeGridView(nodes)));
 }
 
 function opView(n) {
@@ -1663,23 +1843,47 @@ function renderModels() {
         <td>${h.length ? h.map(esc).join(', ') : '<span class="muted">none</span>'}</td><td class="r"><div class="btns u24">${acts.join('')}</div></td></tr>`;
     }).join('')}</tbody></table></div>`);
   const have = {}; list.forEach((m) => { have[m.name] = m; });
-  const catCard = (c) => {
+  // Discover: one compact row per catalog model; suggested ones first. Per-node fit
+  // lives in the "Add and load on…" picker; the row says how many online nodes it fits.
+  const onlineN = state.nodes.filter((n) => n.online).length;
+  const catFits = (id) => ((models.catalog_fits || {})[id] || []).filter((f) => f.online);
+  const sugg = (models.suggested || []).map((sg) => sg.id);
+  const order = [...models.catalog].sort((a, b) => {
+    const ia = sugg.indexOf(a.id), ib = sugg.indexOf(b.id);
+    return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
+  });
+  const q = catQuery.trim().toLowerCase();
+  const shown = order.filter((c) => {
+    const fits = catFits(c.id);
+    if (catFilter === 'fits' && !fits.some((f) => f.fit !== 'no')) return false;
+    if (catFilter === 'vram' && !fits.some((f) => f.fit === 'vram')) return false;
+    if (catFilter === 'vision' && !c.mmproj) return false;
+    return !q || `${c.label} ${c.for} ${c.notes}`.toLowerCase().includes(q);
+  });
+  document.querySelectorAll('[data-cat-filter]').forEach((b) => b.classList.toggle('on', b.dataset.catFilter === catFilter));
+  const catRow = (c) => {
     const m = have[c.id];
-    const btn = m ? (m.status === 'downloading' ? `<button disabled>Downloading ${m.bytes_total ? Math.floor(100 * m.bytes_done / m.bytes_total) : 0}%</button>`
-        : m.status === 'failed' ? `<button data-act="model-retry" data-name="${c.id}">Retry</button>` : `<button disabled>In library · ${isDirect(m) ? 'nodes download' : 'on controller'}</button>`)
-      : `<button class="primary" data-act="pick-model" data-name="${c.id}" data-catalog="1" title="Adds it to the library (nodes download it) and loads it on the node you pick">Add and load on…</button>
-         <button data-act="catalog-add" data-id="${c.id}" data-storage="direct" title="Each node downloads it from Hugging Face when you load it; uses no controller space">Add · nodes download</button>
-         <button data-act="catalog-add" data-id="${c.id}" data-storage="controller" title="Download once to the controller (${bytes(c.bytes)}), then copy to nodes over your network">Store on controller</button>`;
-    return `<div class="card"><span class="for">${esc(c.for)}</span><h3>${esc(c.label)}${recFor(c.id)}${c.mmproj ? ' <span class="pill st-ready" title="Reads images">Vision</span>' : ''}</h3><p>${esc(c.notes)}</p><div class="btns">${btn}</div><span class="muted u25">${bytes(c.bytes)} · needs ~${c.min_ram_gb} GB RAM+VRAM</span>${fitBadges((models.catalog_fits || {})[c.id])}</div>`;
+    const fits = catFits(c.id), ok = fits.filter((f) => f.fit !== 'no'), vr = fits.filter((f) => f.fit === 'vram');
+    const fitTxt = !onlineN ? 'no nodes online' : `fits ${ok.length} of ${onlineN} online${vr.length ? ` · ${vr.length} in VRAM` : ''}`;
+    const fitTitle = fits.map((f) => `${f.name}: ${FIT_TEXT[f.fit]}`).join('\n');
+    const act = m ? (m.status === 'downloading' ? `<button class="small" disabled>Downloading ${m.bytes_total ? Math.floor(100 * m.bytes_done / m.bytes_total) : 0}%</button>`
+        : m.status === 'failed' ? `<button class="small" data-act="model-retry" data-name="${esc(c.id)}">Retry</button>`
+        : `<button class="small" data-act="pick-model" data-name="${esc(c.id)}" title="In the library (${isDirect(m) ? 'nodes download' : 'on the controller'})">Load on…</button>`)
+      : `<div class="split-btn"><button class="small primary" data-act="pick-model" data-name="${esc(c.id)}" data-catalog="1" title="Adds it to the library (nodes download it) and loads it on the node you pick">Add and load on…</button><details class="split-more"><summary class="small primary" aria-label="More ways to add">▾</summary><div class="split-menu">
+          <button data-act="catalog-add" data-id="${esc(c.id)}" data-storage="direct"><b>Add · nodes download</b><span class="sub">Each node fetches it from Hugging Face when you load it. Uses no controller space.</span></button>
+          <button data-act="catalog-add" data-id="${esc(c.id)}" data-storage="controller"><b>Store on controller</b><span class="sub">Download once (${bytes(c.bytes)}), then copy to nodes over your network.</span></button></div></details></div>`;
+    return `<div class="cat-row"><div class="nv-min"><b>${esc(c.label)}</b>${c.mmproj ? ' <span class="pill st-ready" title="Reads images">Vision</span>' : ''}${recFor(c.id)}${m ? ' <span class="pill st-pending">In library</span>' : ''}
+      <div class="sub nv-wrap">${esc(c.for)} · ${esc(c.notes)}</div></div>
+      <span class="sub" title="needs about ${c.min_ram_gb} GB RAM+VRAM">${bytes(c.bytes)}</span><span class="sub" title="${esc(fitTitle)}">${fitTxt}</span><div class="cat-act">${act}</div></div>`;
   };
-  setHTML('catalog', models.catalog.map(catCard).join(''));
-  const byId = {}; models.catalog.forEach((c) => { byId[c.id] = c; });
-  setHTML('suggested', (models.suggested || []).length ? models.suggested.map((sg) => byId[sg.id] && catCard(byId[sg.id])).join('') : '<div class="empty">No nodes are connected yet, so nothing can be sized.</div>');
+  setHTML('catalog', shown.length ? `<div class="cat-rows">${shown.map(catRow).join('')}</div>` : `<div class="empty">${onlineN || catFilter === 'all' || catFilter === 'vision' ? 'No models match.' : 'No nodes are online, so nothing can be sized.'}</div>`);
   const rts = models.runtimes || [];
   setHTML('runtimes', !rts.length ? `<div class="empty">None downloaded yet.</div>` :
     `<div class="table-wrap"><table><thead><tr><th>Build</th><th>For</th><th>Size</th><th>Downloaded</th></tr></thead><tbody>${rts.map((r) => `<tr><td>${esc(r.build)}</td><td>${esc(r.variant)}</td><td>${bytes(r.bytes)}</td><td>${ago(r.downloaded)}</td></tr>`).join('')}</tbody></table></div>`);
 }
 let hfRepo = '', hfGroups = [];
+let catFilter = 'all', catQuery = '';
+$('cat-search').addEventListener('input', (e) => { catQuery = e.target.value; renderModels(); });
 $('hf-list').onclick = async () => {
   setHTML('hf-files', '<span class="muted">Loading…</span>');
   try {
@@ -2201,6 +2405,10 @@ document.addEventListener('click', async (e) => {
         await post(`/api/nodes/${id}/restart`); toast('Restarting'); break;
       }
       case 'remove': removeNode(id); break;
+      case 'node-detail': nodeSel = id; setNodeView('detail'); return;
+      case 'node-select': nodeSel = id; renderNodes(); return;
+      case 'node-view': setNodeView(el.dataset.nodeView); return;
+      case 'cat-filter': catFilter = el.dataset.catFilter; renderModels(); return;
       case 'run': openRun(id); break;
       case 'catalog-add': await post('/api/models', { catalog_id: id, storage: el.dataset.storage }); toast(el.dataset.storage === 'direct' ? 'Added. Nodes download it when you load it.' : 'Downloading to the controller'); break;
       case 'model-load-fit': {
