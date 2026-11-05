@@ -2121,7 +2121,7 @@ async function loadOpenRouterModels() {
     $('set-or-model-state').textContent = `· ${r.models.length} models`;
   } catch (e) { $('set-or-model-state').textContent = '· ' + e.message; }
 }
-const NOTIFY_EVENTS = [['question', 'The planner asked a question'], ['plan', 'A plan is ready to approve'], ['done', 'A task finished'], ['failed', 'A task failed'], ['cap', 'The spending cap paused a task'], ['node_offline', 'A node has been offline for 5 minutes']];
+const NOTIFY_EVENTS = [['question', 'The planner asked a question'], ['plan', 'A plan is ready to approve'], ['done', 'A task finished'], ['failed', 'A task failed'], ['cap', 'The spending cap paused a task'], ['node_offline', 'A node has been offline for 5 minutes'], ['backup_failed', 'A nightly backup failed its check']];
 function loadNotifySettings() {
   setHTML('nf-events', NOTIFY_EVENTS.map(([id, label]) => `<label class="check"><input type="checkbox" data-nf="${id}" ${settings.notify_events[id] ? 'checked' : ''}> ${esc(label)}</label>`).join(''));
   $('nf-browser').checked = !!settings.notify_browser;

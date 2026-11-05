@@ -740,7 +740,7 @@ notification (once per distinct failure). Saving the schedule makes the first co
 ## Notifications
 
 **Settings → Notifications** sends a message when the planner asks a question, a plan is ready to approve,
-a task finishes or fails, the spending cap pauses a task, or a node has been offline for 5 minutes. Each
+a task finishes or fails, the spending cap pauses a task, a node has been offline for 5 minutes, or a nightly backup fails its check. Each
 event can be switched off. Every message links to the task (or the Nodes page).
 
 - **Browser:** desktop notifications while an Outpost tab is open (the browser asks permission when you save).
