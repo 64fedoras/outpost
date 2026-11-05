@@ -398,10 +398,21 @@ function claudeModelOptions(selected, short) {
   return list.map((m) => `<option value="${m.id}" ${m.id === selected ? 'selected' : ''} title="$${m.in} in / $${m.out} out per million tokens">${esc(short ? m.label.replace(/^Claude /, '') : m.label)}${short ? '' : ` ($${m.in} / $${m.out} per M tokens)`}</option>`).join('');
 }
 const STARTERS = [
-  ['A command-line tool', 'A Python command-line tool that renames photos in a folder by the date they were taken (EXIF), with a dry-run flag and unit tests.'],
-  ['A small web API', 'A small REST API in Go for a to-do list, stored in SQLite, with handler tests.'],
-  ['A log summariser', 'A script that reads an nginx access log and prints the top 10 paths, status codes and client IPs, with tests on a sample log.'],
+  ['Four small text tools', 'Four independent Python command-line tools in separate files: word count, find-duplicate-lines, CSV-to-JSON and JSON-to-CSV. Each is under 60 lines, with its own small unit test.'],
+  ['A tiny to-do web app', 'A to-do list app in four small independent parts: a Go REST API with in-memory storage, a plain HTML/JS page that calls it, a Go test file for the handlers, and a short README with curl examples.'],
+  ['A unit converter in 4 languages', 'The same small unit converter (length, weight, temperature) written separately in Python, Go, JavaScript and Bash, each as one file under 80 lines with a few built-in test cases.'],
+  ['A string utility library', 'A small Python package with four independent modules (slugify, truncate-with-ellipsis, case conversion, simple templating), each with its own pytest file.'],
+  ['A log summariser', 'Four small independent scripts that read a sample nginx access log: top paths, status code counts, top client IPs and requests per hour. Include the sample log and one test per script.'],
+  ['A mini static site', 'A tiny static website made of four independent pieces: index.html, about.html, one shared style.css and a small Python script that checks all internal links work.'],
+  ['Four classic algorithms', 'Four separate Python files, each with one algorithm and a few tests: binary search, merge sort, Dijkstra on a small graph, and an LRU cache.'],
+  ['A habit tracker page', 'A single-page habit tracker split into four files: index.html, style.css, app.js for adding and ticking habits in localStorage, and streak.js for the streak counting with a small Node test.'],
+  ['Small data cleaning scripts', 'Four independent Python scripts that each clean one aspect of a messy sample CSV: trim whitespace, normalise dates, remove duplicate rows and flag missing values. Include the sample file and a test each.'],
+  ['A flashcard quiz', 'A terminal flashcard quiz in four small parts: a JSON card loader, a quiz loop with random order, a score tracker that saves results, and a sample deck, each with a small test.'],
+  ['A simple bank ledger', 'A tiny ledger in Go split into four small files: account type with deposit and withdraw, transaction history, a text report formatter and a small CLI main, with one test file for the first three.'],
+  ['A markdown note toolkit', 'Four independent Python scripts working on a folder of markdown notes: list all headings, find broken links, count words per note and build a table of contents file. Include three sample notes and a test each.'],
 ];
+// The new-task screen shows a random few of these each time the page loads.
+const STARTERS_SHOWN = 3;
 let ntInit = false;
 let ntFiles = [];
 function renderNew() {
@@ -413,7 +424,9 @@ function renderNew() {
     $('nt-cap').value = state.default_cap_usd || 2;
     if (!settings) api('/api/settings').then((s) => { settings = s; setHTML('nt-model', claudeModelOptions(state.claude_model, true)); renderOptLine(); }).catch(() => {});
     setHTML('nt-model', claudeModelOptions(state.claude_model, true));
-    setHTML('nt-starters', STARTERS.map(([t, p], i) => `<button class="starter" data-act="starter" data-i="${i}"><b>${esc(t)}</b><span>${esc(p)}</span></button>`).join(''));
+    const order = STARTERS.map((_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+    setHTML('nt-starters', order.slice(0, STARTERS_SHOWN).map((i) => `<button class="starter" data-act="starter" data-i="${i}"><b>${esc(STARTERS[i][0])}</b><span>${esc(STARTERS[i][1])}</span></button>`).join(''));
   }
   const psel = $('nt-project'), pcur = psel.value || localStorage.getItem('nt-project') || '';
   setHTML(psel, `<option value="">No project</option>` + projects.map((p) => `<option value="${p.id}" ${p.id === pcur ? 'selected' : ''}>Project: ${esc(p.name)}</option>`).join(''));
