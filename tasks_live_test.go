@@ -305,3 +305,23 @@ func TestTaskEventsEndpoint(t *testing.T) {
 		t.Fatalf("missing task: %d", r2.StatusCode)
 	}
 }
+
+func TestLiveKeepsLastOutputUntilNextCall(t *testing.T) {
+	h := newLiveHub()
+	_, _, cancel := h.subscribe("t1") // a watching browser keeps the task entry
+	defer cancel()
+	a := h.begin("t1", "", "fix", "n1", false)
+	a.Write("first")
+	a.End()
+	snap, _, c2 := h.subscribe("t1")
+	defer c2()
+	if len(snap) != 2 || snap[0].T != "start" || snap[0].Text != "first" || snap[1].T != "end" {
+		t.Fatalf("snapshot after End = %+v, want start with text then end", snap)
+	}
+	b := h.begin("t1", "", "fix", "n1", false)
+	snap, _, c3 := h.subscribe("t1")
+	defer c3()
+	if len(snap) != 1 || snap[0].Call != b.callID {
+		t.Fatalf("snapshot with a new call = %+v, want only the running call", snap)
+	}
+}
