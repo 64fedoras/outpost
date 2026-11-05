@@ -343,6 +343,8 @@ fieldset.q[disabled] .opt span { opacity: .6; cursor: default; }
 .p-list li:first-child { border-top: 0; }
 .p-ico { color: var(--work); font-weight: 700; text-align: center; }
 .p-failed .p-ico { color: var(--bad); }
+.p-warn .p-ico { color: var(--warn); }
+.card-note.stall { color: var(--warn); margin: 8px 0 0; }
 .p-running .p-ico::before, .p-reviewing .p-ico::before, .p-written .p-ico::before { content: ''; display: inline-block; width: 9px; height: 9px; border: 2px solid var(--work); border-right-color: transparent; border-radius: 50%; animation: spin .9s linear infinite; }
 .p-pending .p-ico::before { content: ''; display: inline-block; width: 7px; height: 7px; border: 1.5px solid var(--idle); border-radius: 50%; }
 @keyframes spin { to { transform: rotate(360deg); } }
