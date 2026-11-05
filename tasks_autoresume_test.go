@@ -1,7 +1,9 @@
 package main
 
 import (
+	"net/http/httptest"
 	"os"
+	"runtime"
 	"path/filepath"
 	"testing"
 	"time"
@@ -34,10 +36,10 @@ func TestLoadTasksMarksAutoResume(t *testing.T) {
 		tk.saveLocked()
 	}
 	c.loadTasks()
-	if !c.tasks["local"].autoResume || c.tasks["local"].Status != "interrupted" {
+	if !c.tasks["local"].AutoResume || c.tasks["local"].Status != "interrupted" {
 		t.Errorf("local task should be interrupted and auto-resumable")
 	}
-	if c.tasks["cloud"].autoResume || c.tasks["cloud"].Status != "interrupted" {
+	if c.tasks["cloud"].AutoResume || c.tasks["cloud"].Status != "interrupted" {
 		t.Errorf("claude task must stay interrupted without auto-resume")
 	}
 }
@@ -47,12 +49,12 @@ func TestAutoResumeWaitsForNode(t *testing.T) {
 		pipelines: map[string]*pipeline{}, cooldown: map[string]time.Time{}, models: map[string]*ModelRec{}}
 	dir := filepath.Join(c.tasksDir(), "t1")
 	os.MkdirAll(dir, 0o755)
-	tk := &Task{ID: "t1", Planner: "node:n1", Status: "interrupted", autoResume: true, dir: dir}
+	tk := &Task{ID: "t1", Planner: "node:n1", Status: "interrupted", AutoResume: true, dir: dir}
 	c.tasks = map[string]*Task{"t1": tk}
 	// No node: times out, task stays interrupted, flag cleared.
 	c.autoResumeInterrupted(30*time.Millisecond, 5*time.Millisecond)
-	if tk.Status != "interrupted" || tk.autoResume {
-		t.Fatalf("expected interrupted and flag cleared, got %s %v", tk.Status, tk.autoResume)
+	if tk.Status != "interrupted" || tk.AutoResume {
+		t.Fatalf("expected interrupted and flag cleared, got %s %v", tk.Status, tk.AutoResume)
 	}
 }
 
@@ -63,11 +65,11 @@ func TestAutoResumeWhenNodeReady(t *testing.T) {
 	dir := filepath.Join(c.tasksDir(), "t1")
 	os.MkdirAll(dir, 0o755)
 	// No plan approved yet: resuming lands on awaiting_approval, no goroutines.
-	tk := &Task{ID: "t1", Planner: "node:n1", Status: "interrupted", autoResume: true, dir: dir, Plan: &Plan{}}
+	tk := &Task{ID: "t1", Planner: "node:n1", Status: "interrupted", AutoResume: true, dir: dir, Plan: &Plan{}}
 	c.tasks = map[string]*Task{"t1": tk}
 	c.autoResumeInterrupted(time.Second, 5*time.Millisecond)
-	if tk.Status != "awaiting_approval" || tk.autoResume {
-		t.Fatalf("got %s autoResume=%v", tk.Status, tk.autoResume)
+	if tk.Status != "awaiting_approval" || tk.AutoResume {
+		t.Fatalf("got %s AutoResume=%v", tk.Status, tk.AutoResume)
 	}
 }
 
@@ -77,7 +79,7 @@ func TestAutoResumeOffLeavesTask(t *testing.T) {
 		pipelines: map[string]*pipeline{}, cooldown: map[string]time.Time{}, models: map[string]*ModelRec{}}
 	dir := filepath.Join(c.tasksDir(), "t1")
 	os.MkdirAll(dir, 0o755)
-	tk := &Task{ID: "t1", Planner: "node:n1", Status: "interrupted", autoResume: true, dir: dir}
+	tk := &Task{ID: "t1", Planner: "node:n1", Status: "interrupted", AutoResume: true, dir: dir}
 	c.tasks = map[string]*Task{"t1": tk}
 	c.autoResumeInterrupted(time.Second, 5*time.Millisecond)
 	if tk.Status != "interrupted" {
@@ -99,5 +101,83 @@ func TestTryAgainResetsFailedSubtasks(t *testing.T) {
 	b := tk.Subtasks[1]
 	if b.Status != "pending" || b.Attempts != 0 || b.Error != "" || b.ReviewNote != "" {
 		t.Errorf("failed subtask not reset: %+v", b)
+	}
+}
+
+// A task waits for its own planner node, not just any ready node.
+func TestAutoResumeWaitsForPlannerNode(t *testing.T) {
+	c := &Controller{dataDir: t.TempDir(), conns: map[string]*nodeConn{"other": {}},
+		lastHB:    map[string]*Heartbeat{"other": {InferenceRdy: true, LoadedModel: "m"}},
+		pipelines: map[string]*pipeline{}, cooldown: map[string]time.Time{}, models: map[string]*ModelRec{},
+		resumeWake: make(chan struct{}, 1)}
+	dir := filepath.Join(c.tasksDir(), "t1")
+	os.MkdirAll(dir, 0o755)
+	tk := &Task{ID: "t1", Planner: "node:n1", Status: "interrupted", AutoResume: true, dir: dir, Plan: &Plan{}}
+	c.tasks = map[string]*Task{"t1": tk}
+	done := make(chan struct{})
+	go func() { c.autoResumeInterrupted(5*time.Second, time.Hour); close(done) }()
+	time.Sleep(50 * time.Millisecond)
+	tk.mu.Lock()
+	st := tk.Status
+	tk.mu.Unlock()
+	if st != "interrupted" {
+		t.Fatalf("resumed before its planner node was back: %s", st)
+	}
+	// The planner node's first heartbeat resumes it at once (the tick is an hour).
+	c.mu.Lock()
+	c.conns["n1"] = &nodeConn{}
+	c.lastHB["n1"] = &Heartbeat{InferenceRdy: true, LoadedModel: "m"}
+	c.mu.Unlock()
+	c.nudgeResume()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		buf := make([]byte, 1<<16)
+		t.Fatalf("heartbeat did not wake the resume loop: %s\n%s", tk.Status, buf[:runtime.Stack(buf, true)])
+	}
+	if tk.Status != "awaiting_approval" || tk.AutoResume {
+		t.Fatalf("got %s AutoResume=%v", tk.Status, tk.AutoResume)
+	}
+}
+
+// The flag is saved, so a second restart while waiting keeps waiting, and it
+// is dropped when the setting is off.
+func TestLoadTasksKeepsAutoResumeAcrossRestarts(t *testing.T) {
+	for _, off := range []bool{false, true} {
+		c := &Controller{dataDir: t.TempDir(), settings: Settings{AutoResumeOff: off}}
+		dir := filepath.Join(c.tasksDir(), "t1")
+		os.MkdirAll(dir, 0o755)
+		tk := &Task{ID: "t1", Planner: "node:n1", Status: "interrupted", PausedFrom: "running", AutoResume: true, dir: dir}
+		tk.saveLocked()
+		c.loadTasks()
+		if got := c.tasks["t1"].AutoResume; got == off {
+			t.Errorf("off=%v: AutoResume=%v", off, got)
+		}
+		if s := c.tasks["t1"].summaryLocked(); s.NeedsYou == !off {
+			t.Errorf("off=%v: NeedsYou=%v", off, s.NeedsYou)
+		}
+	}
+}
+
+func TestStopClearsAutoResume(t *testing.T) {
+	c := &Controller{dataDir: t.TempDir()}
+	dir := filepath.Join(c.tasksDir(), "t1")
+	os.MkdirAll(dir, 0o755)
+	tk := &Task{ID: "t1", Planner: "node:n1", Status: "interrupted", AutoResume: true, dir: dir}
+	c.tasks = map[string]*Task{"t1": tk}
+	r := httptest.NewRequest("POST", "/api/tasks/t1/cancel", nil)
+	r.SetPathValue("id", "t1")
+	w := httptest.NewRecorder()
+	c.handleCancelTask(w, r)
+	if w.Code != 200 || tk.Status != "cancelled" || tk.AutoResume {
+		t.Fatalf("code %d status %s AutoResume=%v", w.Code, tk.Status, tk.AutoResume)
+	}
+}
+
+func TestOrphanJobs(t *testing.T) {
+	jobs := map[string]*JobRec{"live": {Status: "running"}, "gone": {Status: "lost"}}
+	got := orphanJobsLocked(jobs, []string{"live", "gone", "unknown"})
+	if len(got) != 2 || got[0] != "gone" || got[1] != "unknown" {
+		t.Fatalf("got %v", got)
 	}
 }

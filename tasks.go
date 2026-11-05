@@ -136,6 +136,10 @@ type Task struct {
 	Seeded       bool            `json:"seeded,omitempty"`       // the repo started with files (project or attached zip)
 	Attachments  []Attachment    `json:"attachments,omitempty"`
 	Mockup       bool            `json:"mockup,omitempty"` // plan 2 or 3 design variants first (visual.go)
+	// AutoResume: interrupted by a restart and waiting to resume on its own
+	// (local planner only). Saved so a second restart keeps it, and shown in the
+	// UI as "Resuming" instead of the Resume card.
+	AutoResume bool `json:"auto_resume,omitempty"`
 
 	mu     sync.Mutex
 	dir    string
@@ -143,8 +147,7 @@ type Task struct {
 	cancel context.CancelFunc
 	resume chan struct{}
 
-	autoResume bool                   // interrupted by a restart and eligible to resume on its own (local planner only)
-	asks       map[string]chan string // agent questions waiting for an answer, by message id
+	asks map[string]chan string // agent questions waiting for an answer, by message id
 }
 
 func (c *Controller) tasksDir() string { return filepath.Join(c.dataDir, "tasks") }
@@ -219,12 +222,21 @@ func (c *Controller) loadTasks() {
 				}
 			}
 			msg := "The controller restarted while this task was active. Click Resume to continue where it stopped."
-			if autoResumeEligible(t) {
-				t.autoResume = true
+			t.AutoResume = autoResumeEligible(t) && !c.settings.AutoResumeOff
+			if t.AutoResume {
 				msg = "The controller restarted while this task was active. It resumes on its own once a node with a loaded model is back."
 			}
 			t.Events = append(t.Events, TaskEvent{Time: time.Now(), Level: "warn", Text: msg})
 			t.saveLocked()
+		case "interrupted":
+			// Interrupted by an earlier restart and still waiting: keep waiting
+			// only if it may resume on its own.
+			if t.AutoResume && (!autoResumeEligible(t) || c.settings.AutoResumeOff) {
+				t.AutoResume = false
+				t.saveLocked()
+			}
+		default:
+			t.AutoResume = false
 		}
 		for i := range t.Messages {
 			t.Messages[i].Pending = false // no agent is waiting after a restart
@@ -257,13 +269,16 @@ type taskSummary struct {
 	ProjectID   string     `json:"project_id,omitempty"`
 	Updated     time.Time  `json:"updated"`
 	Pinned      bool       `json:"pinned,omitempty"`
+	AutoResume  bool       `json:"auto_resume,omitempty"` // interrupted, resuming on its own once its node is back
 }
 
 func (t *Task) summaryLocked() taskSummary {
 	s := taskSummary{ID: t.ID, Title: t.Title, Status: t.Status, Planner: t.Planner, CostUSD: t.CostUSD, CapUSD: t.CapUSD,
-		ProjectID: t.ProjectID, Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created, Pinned: t.Pinned}
-	switch t.Status {
-	case "awaiting_answers", "awaiting_approval", "paused_cap", "interrupted":
+		ProjectID: t.ProjectID, Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created, Pinned: t.Pinned, AutoResume: t.AutoResume}
+	switch {
+	case t.Status == "interrupted" && t.AutoResume:
+		s.NeedsYou = false // resuming on its own
+	case t.Status == "awaiting_answers" || t.Status == "awaiting_approval" || t.Status == "paused_cap" || t.Status == "interrupted":
 		s.NeedsYou = true
 	default:
 		s.NeedsYou = t.hasPendingAsk()
@@ -702,6 +717,9 @@ func (c *Controller) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	t.mu.Lock()
 	cancel := t.cancel
 	active := t.Status != "done" && t.Status != "failed" && t.Status != "cancelled"
+	if active {
+		t.AutoResume = false // a task stopped while waiting to resume stays stopped
+	}
 	t.mu.Unlock()
 	if !active {
 		writeJSON(w, 409, map[string]string{"error": "task already finished"})
@@ -850,7 +868,7 @@ func (c *Controller) restartTask(t *Task, status, from, note string) {
 		}
 	}
 	t.PausedFrom = ""
-	t.autoResume = false
+	t.AutoResume = false
 	if status == "failed" && from == "running" {
 		// Try again: failed subtasks run again instead of staying failed.
 		if n := t.resetFailedSubtasksLocked(); n > 0 {
