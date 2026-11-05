@@ -468,11 +468,19 @@ func (n *Node) pushModel(mp ModelPush) {
 		n.opStatus(op, mp.Name, "done", total, total, "")
 		return
 	}
-	if free := diskFree(n.modelsDir()); free > 0 && uint64(total) > free {
-		fail("not enough disk space: need %s, have %s", humanBytes(total), humanBytes(int64(free)))
+	dir := filepath.Join(n.modelsDir(), mp.Name)
+	var have int64
+	for _, f := range mp.Files {
+		if st, err := os.Stat(filepath.Join(dir, f.Path)); err == nil {
+			have += st.Size()
+		} else if st, err := os.Stat(filepath.Join(dir, f.Path+".part")); err == nil {
+			have += st.Size()
+		}
+	}
+	if err := n.makeRoom(total-have, mp.Name, mp.Reclaim); err != nil {
+		fail("%v", err)
 		return
 	}
-	dir := filepath.Join(n.modelsDir(), mp.Name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		fail("%v", err)
 		return
@@ -511,6 +519,7 @@ func (n *Node) pushModel(mp ModelPush) {
 		return
 	}
 	n.markVerified(mp.Name, true) // just checked on arrival
+	n.touchModel(mp.Name)
 	log.Printf("model %s stored (%s)", mp.Name, humanBytes(total))
 	n.resendHello() // before "done": the controller checks the model list next
 	n.opStatus(op, mp.Name, "done", total, total, "")
@@ -668,6 +677,7 @@ func (l *llamaMgr) load(ml ModelLoad) {
 	}
 	l.stop()
 	l.touch()
+	l.n.touchModel(ml.Name)
 	files := make([]string, 0, len(m.Files))
 	ml.MMProj = ""
 	for _, f := range m.Files {
@@ -1291,8 +1301,8 @@ func (n *Node) fetchModel(mf ModelFetch) {
 			have += st.Size()
 		}
 	}
-	if free := diskFree(n.modelsDir()); free > 0 && uint64(total-have) > free {
-		fail("not enough disk space: need %s, have %s", humanBytes(total-have), humanBytes(int64(free)))
+	if err := n.makeRoom(total-have, mf.Name, mf.Reclaim); err != nil {
+		fail("%v", err)
 		return
 	}
 	n.opStatus(op, mf.Name, "downloading", 0, total, "")
@@ -1327,6 +1337,7 @@ func (n *Node) fetchModel(mf ModelFetch) {
 		return
 	}
 	n.markVerified(mf.Name, true)
+	n.touchModel(mf.Name)
 	log.Printf("model %s downloaded from Hugging Face (%s)", mf.Name, humanBytes(total))
 	n.resendHello() // before "done": the controller checks the model list next
 	n.opStatus(op, mf.Name, "done", total, total, "")

@@ -35,6 +35,7 @@ type Settings struct {
 	Instructions      string         `json:"instructions,omitempty"`        // standing rules copied into every new task (OUTPOST.md text)
 	PoolingEnabled    *bool          `json:"pooling_enabled,omitempty"`     // memory pooling (llama.cpp RPC); nil until decided, then off unless a pool already existed
 	PoolingNotice     bool           `json:"pooling_notice,omitempty"`      // pooling was switched on by the upgrade because a pool existed; shown once
+	AutoFreeOff       bool           `json:"auto_free_off,omitempty"`       // default is on: a node short of disk space deletes least recently used models the controller can copy back
 	GitHubUpdatesOff  bool           `json:"github_updates_off,omitempty"`  // default is on: check this repo's releases and download newer binaries
 	GitHubAutoInstall bool           `json:"github_auto_install,omitempty"` // also update idle nodes and the controller by itself
 	GitHubRepo        string         `json:"github_repo,omitempty"`         // owner/repo trusted for updates; empty = ghDefaultRepo
@@ -160,7 +161,7 @@ func (c *Controller) settingsView() map[string]any {
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
 		"auto_resume": !c.settings.AutoResumeOff, "best_of_n": normBestOf(c.settings.BestOfN),
 		"agent_mode": !c.settings.AgentOff, "web_search": c.settings.WebSearch, "web_allow_private": c.settings.WebAllowPrivate,
-		"pooling_enabled": c.poolingOnLocked(), "pooling_notice": c.settings.PoolingNotice,
+		"auto_free": !c.settings.AutoFreeOff, "pooling_enabled": c.poolingOnLocked(), "pooling_notice": c.settings.PoolingNotice,
 		"github_repo": c.ghRepoLocked(), "github_repo_default": ghDefaultRepo, "github_token_set": c.settings.GitHubTokenEnc != "",
 		"github_updates": !c.settings.GitHubUpdatesOff, "github_auto_install": c.settings.GitHubAutoInstall,
 		"sandbox":     effectiveSandbox(c.settings.Sandbox, ""),
@@ -201,6 +202,7 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		AgentMode       *bool   `json:"agent_mode"`
 		WebAllowPrivate *bool   `json:"web_allow_private"`
 		PoolingEnabled  *bool   `json:"pooling_enabled"`
+		AutoFree        *bool   `json:"auto_free"`
 		GitHubUpdates   *bool   `json:"github_updates"`
 		GitHubAuto      *bool   `json:"github_auto_install"`
 		GitHubRepo      *string `json:"github_repo"`
@@ -359,6 +361,9 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if ghTokEnc != nil {
 		c.settings.GitHubTokenEnc = *ghTokEnc
+	}
+	if req.AutoFree != nil {
+		c.settings.AutoFreeOff = !*req.AutoFree
 	}
 	if req.GitHubUpdates != nil {
 		c.settings.GitHubUpdatesOff = !*req.GitHubUpdates

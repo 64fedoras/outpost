@@ -581,6 +581,35 @@ func (c *Controller) waitNodeOp(ctx context.Context, nodeID, op, target string, 
 	return fmt.Errorf("timed out waiting for %s", op)
 }
 
+// reclaimFor says which models a node may delete to make room for target.
+// Tier 1 (Names): ones this controller holds a ready copy of. Tier 2 (Direct):
+// ones downloaded straight from Hugging Face, which the node can fetch again;
+// the node uses them only after tier 1. Models the controller does not know
+// are never offered. Disabled when the Settings option is off.
+func (c *Controller) reclaimFor(nodeID, target string) *Reclaim {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	rp := &Reclaim{Enabled: !c.settings.AutoFreeOff}
+	n := c.nodes[nodeID]
+	if !rp.Enabled || n == nil || n.Hello == nil {
+		return rp
+	}
+	for _, sm := range n.Hello.Models {
+		m := c.models[sm.Name]
+		if m == nil || sm.Name == target || len(m.Files) == 0 {
+			continue
+		}
+		if m.Storage == "direct" {
+			if m.Repo != "" && len(m.HFFiles) == len(m.Files) {
+				rp.Direct = append(rp.Direct, sm.Name)
+			}
+		} else if m.Status == "ready" {
+			rp.Names = append(rp.Names, sm.Name)
+		}
+	}
+	return rp
+}
+
 func (c *Controller) nodeHasModel(nodeID, name string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -715,7 +744,7 @@ func (c *Controller) loadPipeline(ctx context.Context, id string, ml ModelLoad) 
 			files[i] = ModelFetchFile{ModelFile: f, URL: hfURL(m.Repo, m.HFFiles[i])}
 		}
 		c.setNodeOp(id, OpStatus{Op: "model.fetch", Target: ml.Name, State: "downloading", BytesTotal: totalBytes(m.Files)})
-		if err := nc.send("model.fetch", ModelFetch{Name: ml.Name, Files: files, Token: c.hfToken()}); err != nil {
+		if err := nc.send("model.fetch", ModelFetch{Name: ml.Name, Files: files, Token: c.hfToken(), Reclaim: c.reclaimFor(id, ml.Name)}); err != nil {
 			return err
 		}
 		if err := c.waitNodeOp(ctx, id, "model.fetch", ml.Name, 24*time.Hour); err != nil {
@@ -724,7 +753,7 @@ func (c *Controller) loadPipeline(ctx context.Context, id string, ml ModelLoad) 
 	}
 	if !c.nodeHasModel(id, ml.Name) && m.Storage != "direct" {
 		c.setNodeOp(id, OpStatus{Op: "model.push", Target: ml.Name, State: "downloading", BytesTotal: totalBytes(m.Files)})
-		if err := nc.send("model.push", ModelPush{Name: ml.Name, Files: m.Files}); err != nil {
+		if err := nc.send("model.push", ModelPush{Name: ml.Name, Files: m.Files, Reclaim: c.reclaimFor(id, ml.Name)}); err != nil {
 			return err
 		}
 		if err := c.waitNodeOp(ctx, id, "model.push", ml.Name, 24*time.Hour); err != nil {
