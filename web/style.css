@@ -616,3 +616,8 @@ details.live summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .leave-modal { width: min(460px, 100%); }
 .leave-modal .modal-foot { justify-content: flex-end; }
 .draft-note { font-size: 12px; color: var(--muted); padding: 0 2px 4px; }
+.ctx-slider { display: flex; align-items: center; gap: 12px; }
+.ctx-slider input[type=range] { flex: 1; min-width: 0; padding: 0; accent-color: var(--accent); }
+.ctx-slider input[type=number] { width: 110px; flex: none; }
+.ctx-ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 2px; padding-right: 122px; }
+.hint.warn-text { color: var(--warn); }
