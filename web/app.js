@@ -6,6 +6,20 @@ let ctxTaskId = null, ctxReturn = null, renamingId = null; // sidebar task menu 
 let stateTimer = null, jobTimer = null, taskTimer = null, openJobId = null, loadNodeId = null, runNodeId = null;
 
 // ---------- helpers ----------
+// errorBody shows a short, readable summary of an error and keeps the raw
+// text (which can be kilobytes of escaped code) behind a Details disclosure.
+function errorBody(text) {
+  text = String(text || '');
+  let summary = '';
+  if (/failed to parse tool call|tool calls? (were|was) cut off/i.test(text)) {
+    summary = "The model's output was cut off mid-file, so its file write could not be read. Outpost retried automatically; try again, or use a model with more output room.";
+  } else if (text.length > 300 || text.includes('\n')) {
+    summary = text.split('\n')[0].slice(0, 160).replace(/\s+\S*$/, '') + '…';
+  }
+  if (!summary) return `<p>${esc(text)}</p>`;
+  return `<p>${esc(summary)}</p><details class="err-details"><summary>Details</summary><pre class="err-raw">${esc(text)}</pre></details>`;
+}
+
 async function api(path, opts = {}) {
   const r = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, ...opts });
   let body = null;
@@ -760,7 +774,7 @@ function msgItem(t, m, liveQuestions, livePlan) {
     case 'plan': return { key, cls: 'card-row', html: planCard(t, m, livePlan) };
     case 'result': return { key, cls: 'card-row', html: resultCard(t, m) };
     case 'shots': case 'mockup': return { key, cls: 'card-row', html: shotsCard(t, m, msgs_lastMockup(t) === m.id) };
-    case 'error': return { key, cls: 'card-row', html: `<div class="card-msg bad"><div class="card-head">Something went wrong</div><p>${esc(m.text)}</p>${t.status === 'failed' && m.round === (t.round || 1) ? '<div class="card-actions"><button class="primary" data-act="task-resume">Try again</button><span class="hint">or send a message to change course</span></div>' : ''}</div>` };
+    case 'error': return { key, cls: 'card-row', html: `<div class="card-msg bad"><div class="card-head">Something went wrong</div>${errorBody(m.text)}${t.status === 'failed' && m.round === (t.round || 1) ? '<div class="card-actions"><button class="primary" data-act="task-resume">Try again</button><span class="hint">or send a message to change course</span></div>' : ''}</div>` };
     default: return { key, cls: 'from-planner', html: `<div class="said">${esc(m.text)}</div>` };
   }
 }

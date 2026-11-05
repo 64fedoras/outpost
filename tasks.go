@@ -2281,6 +2281,8 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 				changed, agentDone = ch, true
 			case errors.Is(err, errAgentUnsupported):
 				t.logf("warn", "The planner cannot use tools here; fixing with a single request instead.")
+			case errors.Is(err, errAgentToolParse):
+				t.logf("warn", "The model's tool calls kept getting cut off; fixing with a single request instead.")
 			case isNodeProblem(err) && c.waitPlannerBack(ctx, t, err, &plannerRetries):
 				round--
 				continue

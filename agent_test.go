@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -567,5 +568,60 @@ func TestLlamaChatStreamsReasoning(t *testing.T) {
 	}
 	if live != "checking the file<<<OK>>>" || out.Text != "<<<OK>>>" {
 		t.Fatalf("live %q text %q", live, out.Text)
+	}
+}
+
+const parseErrText = `llama-server 500 Internal Server Error: Failed to parse tool call arguments as JSON: [json.exception.parse_error.101] parse error at line 1, column 6307: syntax error while parsing value - invalid string: missing closing quote`
+
+func TestAgentRetriesCutOffToolCall(t *testing.T) {
+	tk := agentTask(t, nil)
+	c := &Controller{}
+	a := c.newAgent(tk, "", "Fix", "sys", "go", "", []agentTool{toolWriteFile, toolAppendFile})
+	n := 0
+	var lastMsgs []agentMsg
+	a.step = func(ctx context.Context, req llmRequest) (*llmResponse, error) {
+		n++
+		lastMsgs = req.Msgs
+		switch n {
+		case 1:
+			return nil, fmt.Errorf("%s", parseErrText)
+		case 2:
+			return &llmResponse{Calls: []toolCall{call("a", "write_file", `{"path":"x.py","content":"a = 1"}`)}}, nil
+		case 3:
+			return &llmResponse{Calls: []toolCall{call("b", "append_file", `{"path":"x.py","content":"b = 2\n"}`)}}, nil
+		}
+		return &llmResponse{Text: "done"}, nil
+	}
+	if err := a.loop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(filepath.Join(tk.repoDir(), "x.py"))
+	if string(got) != "a = 1\nb = 2\n" {
+		t.Fatalf("file = %q", got)
+	}
+	found := false
+	for _, m := range lastMsgs {
+		found = found || (m.Role == "user" && strings.Contains(m.Text, "cut off"))
+	}
+	if !found {
+		t.Error("the model was not told its call was cut off")
+	}
+}
+
+func TestAgentGivesUpOnRepeatedCutOff(t *testing.T) {
+	tk := agentTask(t, nil)
+	c := &Controller{}
+	a := c.newAgent(tk, "", "Fix", "sys", "go", "", []agentTool{toolWriteFile})
+	n := 0
+	a.step = func(ctx context.Context, req llmRequest) (*llmResponse, error) {
+		n++
+		return nil, fmt.Errorf("%s", parseErrText)
+	}
+	err := a.loop(context.Background())
+	if !errors.Is(err, errAgentToolParse) || n != maxToolParseRetries+1 {
+		t.Fatalf("err=%v steps=%d", err, n)
+	}
+	if toolsUnsupported(fmt.Errorf("%s", parseErrText)) || !toolCallParseError(fmt.Errorf("%s", parseErrText)) {
+		t.Error("misclassified the parse error")
 	}
 }
