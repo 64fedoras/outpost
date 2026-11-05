@@ -284,6 +284,8 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/tasks/{id}/replan", c.auth(c.handleReplanTask))
 	mux.HandleFunc("POST /api/tasks/{id}/messages", c.auth(c.handleTaskMessage))
 	mux.HandleFunc("POST /api/tasks/{id}/messages/{msg}/edit", c.auth(c.handleEditMessage))
+	mux.HandleFunc("POST /api/tasks/{id}/send-now", c.auth(c.handleSendNow))
+	mux.HandleFunc("DELETE /api/tasks/{id}/queued/{note}", c.auth(c.handleRemoveQueued))
 	mux.HandleFunc("POST /api/tasks/{id}/answers", c.auth(c.handleTaskAnswers))
 	mux.HandleFunc("POST /api/tasks/{id}/agent-answer", c.auth(c.handleAgentAnswer))
 	mux.HandleFunc("POST /api/tasks/{id}/cancel", c.auth(c.handleCancelTask))
