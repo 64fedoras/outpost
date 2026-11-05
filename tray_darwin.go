@@ -46,13 +46,14 @@ func startNodeProcess(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	logf, err := openNodeLog(dataDir)
+	logf, err := openNodeConsoleLog(dataDir)
 	if err != nil {
 		return err
 	}
 	defer logf.Close()
 	cmd := exec.Command(self, "node", "--data", dataDir)
-	cmd.Stdout, cmd.Stderr = logf, logf
+	cmd.Stdout, cmd.Stderr = logf, logf // crashes only; the node writes node.log itself and rotates it
+	cmd.Env = append(os.Environ(), "OUTPOST_LOG_FILE="+nodeLogPath(dataDir))
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return err

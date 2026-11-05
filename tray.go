@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -401,11 +402,13 @@ func trayIconBytes(st trayState) []byte {
 // nodeLogPath is where a node started by the tray writes its log.
 func nodeLogPath(dataDir string) string { return filepath.Join(dataDir, "node.log") }
 
-// openNodeLog opens the log for appending, starting over past 10 MB.
-func openNodeLog(dataDir string) (*os.File, error) {
-	p := nodeLogPath(dataDir)
-	if fi, err := os.Stat(p); err == nil && fi.Size() > 10<<20 {
-		_ = os.Rename(p, p+".old")
-	}
-	return os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+// consoleLogPath is where a node started by a tray or LaunchAgent sends its
+// raw output (crash traces); its normal log goes to node.log, which it rotates.
+func consoleLogPath(logPath string) string {
+	return strings.TrimSuffix(logPath, ".log") + "-console.log"
+}
+
+// openNodeConsoleLog starts node-console.log afresh for a new node process.
+func openNodeConsoleLog(dataDir string) (*os.File, error) {
+	return os.OpenFile(consoleLogPath(nodeLogPath(dataDir)), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 }

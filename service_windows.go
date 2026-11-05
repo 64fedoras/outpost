@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -39,13 +40,17 @@ func runService(args []string) error {
 	if ok, _ := svc.IsWindowsService(); !ok {
 		return errors.New("`outpost service` is started by Windows; to install it run `outpost install node` from an Administrator PowerShell")
 	}
-	if lf, err := openNodeLog(*data); err == nil {
+	if lf, err := openRotating(nodeLogPath(*data), logMaxBytes); err == nil {
 		log.SetOutput(lf)
+		serviceLog = lf
 	}
 	return svc.Run(serviceName, &nodeService{data: *data})
 }
 
 type nodeService struct{ data string }
+
+// serviceLog is the service's rotating node.log, shared with the child's output.
+var serviceLog *rotatingFile
 
 func (s *nodeService) Execute(_ []string, req <-chan svc.ChangeRequest, st chan<- svc.Status) (bool, uint32) {
 	st <- svc.Status{State: svc.StartPending}
@@ -77,7 +82,13 @@ func (s *nodeService) Execute(_ []string, req <-chan svc.ChangeRequest, st chan<
 
 func (s *nodeService) loop(stop <-chan struct{}) {
 	agentDir := filepath.Join(s.data, "agent")
-	logf, _ := openNodeLog(s.data)
+	// The child's output comes back through a pipe and goes into the
+	// service's own rotating node.log, so only one process writes that file
+	// (Windows cannot rename a file another process holds open).
+	var logf io.Writer = io.Discard
+	if serviceLog != nil {
+		logf = serviceLog
+	}
 	for {
 		path, _ := os.Executable()
 		if c, ok := newestCopy(agentDir); ok {
@@ -86,7 +97,7 @@ func (s *nodeService) loop(stop <-chan struct{}) {
 		log.Printf("service: starting %s node", path)
 		cmd := exec.Command(path, "node", "--data", s.data)
 		cmd.Stdout, cmd.Stderr = logf, logf
-		cmd.Env = append(os.Environ(), "OUTPOST_CHILD=1", "OUTPOST_SERVICE=1")
+		cmd.Env = append(os.Environ(), "OUTPOST_CHILD=1", "OUTPOST_SERVICE=1", "OUTPOST_LOG_FILE=")
 		cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNoWindow}
 		job := newKillOnCloseJob()
 		if err := cmd.Start(); err != nil {

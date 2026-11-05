@@ -149,16 +149,8 @@ func (c *Controller) handleSetTLS(w http.ResponseWriter, r *http.Request) {
 	c.cert, c.fingerprint = cert, newFP
 	c.mu.Unlock()
 	b, _ := json.Marshal(missed)
-	_ = os.WriteFile(c.pendingRepinPath(), b, 0o600)
+	_ = writeFileAtomic(c.pendingRepinPath(), b, 0o600)
 	writeJSON(w, 200, c.tlsView())
-}
-
-func writeFileAtomic(path string, b []byte, mode os.FileMode) error {
-	tmp := path + ".new"
-	if err := os.WriteFile(tmp, b, mode); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }
 
 // clearRepin drops a node from the needs-re-pin list once it is connected again.
@@ -178,7 +170,7 @@ func (c *Controller) clearRepin(nodeID string) {
 	}
 	if len(keep) != len(ids) {
 		nb, _ := json.Marshal(keep)
-		_ = os.WriteFile(c.pendingRepinPath(), nb, 0o600)
+		_ = writeFileAtomic(c.pendingRepinPath(), nb, 0o600)
 	}
 }
 

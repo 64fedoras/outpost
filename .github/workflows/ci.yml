@@ -37,3 +37,28 @@ jobs:
             echo "check $f"
             node --check "$f"
           done
+
+  race:
+    # The race detector needs cgo; the runner has gcc. Catches data races the plain tests miss.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - name: Go test with the race detector
+        run: CGO_ENABLED=1 go test -race ./...
+
+  vulncheck:
+    # Reports known vulnerabilities in the Go standard library and the vendored modules
+    # that Outpost actually calls. Informational for now: a new advisory against the Go
+    # version in go.mod must not block unrelated pull requests. Read its log on each PR.
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...

@@ -247,7 +247,7 @@ func (n *Node) installRuntime(ri RuntimeInstall) {
 	}
 	rec := runtimeRecord{RuntimeInfo: RuntimeInfo{Build: ri.Build, Variant: ri.Variant}, ServerPath: server}
 	b, _ := json.MarshalIndent(rec, "", "  ")
-	if err := os.WriteFile(filepath.Join(n.llamaDir(), "current.json"), b, 0o644); err != nil {
+	if err := writeFileAtomic(filepath.Join(n.llamaDir(), "current.json"), b, 0o644); err != nil {
 		fail("%v", err)
 		return
 	}
@@ -1161,7 +1161,7 @@ func (n *Node) saveAutoload(ml *ModelLoad) {
 	}
 	_ = os.MkdirAll(n.llamaDir(), 0o755)
 	b, _ := json.Marshal(ml)
-	_ = os.WriteFile(n.autoloadPath(), b, 0o644)
+	_ = writeFileAtomic(n.autoloadPath(), b, 0o644)
 }
 
 func (n *Node) autoload() {
@@ -1310,7 +1310,7 @@ func (n *Node) fetchModel(mf ModelFetch) {
 	var before int64
 	files := make([]ModelFile, 0, len(mf.Files))
 	for _, f := range mf.Files {
-		if !validName(f.Path) || !strings.HasPrefix(f.URL, hfBase+"/") {
+		if !validName(f.Path) || !strings.HasPrefix(f.URL, hfBase()+"/") {
 			fail("bad file %q", f.Path)
 			return
 		}

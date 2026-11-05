@@ -34,7 +34,7 @@ func (n *Node) markVerified(name string, set bool) {
 		delete(m, name)
 	}
 	b, _ := json.Marshal(m)
-	_ = os.WriteFile(n.verifiedPath(), b, 0o644)
+	_ = writeFileAtomic(n.verifiedPath(), b, 0o644)
 }
 
 // verifyModel hashes the files of one model unless this version already did.

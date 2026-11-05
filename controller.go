@@ -138,6 +138,7 @@ type Controller struct {
 	jobBlobs  map[string]map[string]string // job -> input path -> file on the controller, for nodes to download
 	peerBad   map[string]time.Time         // nodes skipped as model sources until then (served data failing its hash)
 	tasks     map[string]*Task
+	recovered recoveredNotes      // damaged state files found at start-up (recovered.go)
 	projects  map[string]*Project // see projects.go
 	// resumeWake wakes autoResumeInterrupted on node heartbeats (nudgeResume).
 	resumeWake chan struct{}
@@ -214,6 +215,7 @@ func runController(args []string) error {
 		files.ServeHTTP(w, r)
 	}))
 	mux.HandleFunc("GET /licenses", handleLicenses)
+	mux.HandleFunc("GET /healthz", c.handleHealth)
 	mux.HandleFunc("POST /api/login", c.handleLogin)
 	mux.HandleFunc("GET /api/setup", c.handleSetupStatus)
 	mux.HandleFunc("POST /api/setup", c.handleSetup)
@@ -229,6 +231,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/apitokens", c.authSession(c.handleNewAPIToken))
 	mux.HandleFunc("DELETE /api/apitokens/{id}", c.authSession(c.handleRevokeAPIToken))
 	mux.HandleFunc("GET /api/state", c.auth(c.handleState))
+	mux.HandleFunc("POST /api/recovered/dismiss", c.auth(c.handleDismissRecovered))
 	mux.HandleFunc("POST /api/tokens", c.auth(c.handleNewToken))
 	mux.HandleFunc("GET /api/tokens/{id}", c.auth(c.handleTokenStatus))
 	mux.HandleFunc("POST /api/nodes/{id}/settings", c.auth(c.handleNodeSettings))
@@ -329,7 +332,14 @@ func runController(args []string) error {
 	if c.needsSetup() {
 		log.Printf("no admin password yet: open the web UI to choose one (first-run setup allowed from: %s)", describeSetupAllow(c.setupAllow))
 	}
-	return srv.ListenAndServeTLS("", "")
+	done := make(chan struct{})
+	go c.handleSignals(srv, done)
+	err = srv.ListenAndServeTLS("", "")
+	if errors.Is(err, http.ErrServerClosed) {
+		<-done
+		return nil
+	}
+	return err
 }
 
 func logRequests(h http.Handler) http.Handler {
@@ -350,16 +360,18 @@ func logRequests(h http.Handler) http.Handler {
 func (c *Controller) nodesPath() string { return filepath.Join(c.dataDir, "nodes.json") }
 
 func (c *Controller) loadNodes() error {
-	b, err := os.ReadFile(c.nodesPath())
-	if errors.Is(err, os.ErrNotExist) {
+	_, err := os.Stat(c.nodesPath())
+	_, berr := os.Stat(c.nodesPath() + ".bak")
+	if errors.Is(err, os.ErrNotExist) && berr != nil {
 		return nil
 	}
-	if err != nil {
-		return err
-	}
 	var list []*NodeRec
-	if err := json.Unmarshal(b, &list); err != nil {
+	usedBak, err := readWithBackup(c.nodesPath(), func(b []byte) error { list = nil; return json.Unmarshal(b, &list) })
+	if err != nil {
 		return fmt.Errorf("nodes.json: %w", err)
+	}
+	if usedBak {
+		c.noteRecovered("nodes.json was damaged; loaded the previous copy")
 	}
 	for _, n := range list {
 		c.nodes[n.ID] = n
@@ -374,10 +386,7 @@ func (c *Controller) saveNodesLocked() {
 		list = append(list, n)
 	}
 	b, _ := json.MarshalIndent(list, "", "  ")
-	tmp := c.nodesPath() + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err == nil {
-		_ = os.Rename(tmp, c.nodesPath())
-	}
+	_ = writeFileAtomicBackup(c.nodesPath(), b, 0o600)
 }
 
 func hashSecret(salt, secret string) string {
@@ -499,6 +508,7 @@ func (c *Controller) handleState(w http.ResponseWriter, r *http.Request) {
 		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
 		"pooling_enabled":  c.poolingOnLocked(),
 		"github_updates":   c.ghViewLocked(),
+		"recovered":        c.recoveredList(),
 	})
 }
 
