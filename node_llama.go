@@ -874,6 +874,12 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 		body["tools"] = spec.Tools
 	}
 	b, _ := json.Marshal(body)
+	// The watchdog cancels this request (and restarts llama-server) if the
+	// server goes quiet and stops answering its health check.
+	outer := ctx
+	ctx, cancelReq := context.WithCancel(ctx)
+	defer cancelReq()
+	dog := l.startWatchdog(ctx, cancelReq)
 	req, err := http.NewRequestWithContext(ctx, "POST", l.baseURL()+"/v1/chat/completions", bytes.NewReader(b))
 	if err != nil {
 		return nil, errf("bad_request", false, "%v", err)
@@ -882,6 +888,9 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 	start := time.Now()
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		if dog.hung() {
+			return nil, dog.err()
+		}
 		if ctx.Err() != nil {
 			return nil, nil // cancelled or timed out; caller sets status
 		}
@@ -900,6 +909,7 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
 	for sc.Scan() {
+		dog.alive()
 		line := sc.Text()
 		if !strings.HasPrefix(line, "data: ") {
 			continue
@@ -962,10 +972,13 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 			out.PromptTokens, out.OutputTokens = chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens
 		}
 	}
+	if dog.hung() {
+		return nil, dog.err()
+	}
 	if err := sc.Err(); err != nil && ctx.Err() == nil {
 		return nil, errf("inference_failed", true, "stream: %v", err)
 	}
-	if ctx.Err() != nil {
+	if outer.Err() != nil || ctx.Err() != nil {
 		return nil, nil
 	}
 	out.Text = text.String()

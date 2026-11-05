@@ -55,21 +55,105 @@ func (n *Node) isPaused() bool {
 	return n.paused
 }
 
-// setPaused stops or allows new work. It is remembered across restarts.
-func (n *Node) setPaused(p bool) {
+// setPaused stops or allows new work from the tray icon. It is remembered across restarts.
+func (n *Node) setPaused(p bool) { n.setPausedBy(p, "tray", time.Time{}) }
+
+// pauseFile is what <data>/paused holds. Older nodes wrote a line of text;
+// any content that is not this JSON reads as "paused from the tray, no end".
+type pauseFile struct {
+	By    string    `json:"by"`              // tray | web
+	Until time.Time `json:"until,omitempty"` // resume on its own after this (zero: until someone resumes)
+}
+
+// setPausedBy stops or allows new work. by says where it was set (tray or
+// web); until, when set, resumes the node on its own at that time.
+func (n *Node) setPausedBy(p bool, by string, until time.Time) {
 	n.mu.Lock()
-	changed := n.paused != p
+	changed := n.paused != p || n.pausedBy != by || !n.pausedUntil.Equal(until)
 	n.paused = p
+	if p {
+		n.pausedBy, n.pausedUntil = by, until
+	} else {
+		n.pausedBy, n.pausedUntil = "", time.Time{}
+	}
 	n.mu.Unlock()
 	if p {
-		_ = os.WriteFile(pausedPath(n.dataDir), []byte("paused from the tray icon\n"), 0o600)
+		b, _ := json.Marshal(pauseFile{By: by, Until: until})
+		_ = os.WriteFile(pausedPath(n.dataDir), b, 0o600)
 	} else {
 		_ = os.Remove(pausedPath(n.dataDir))
 	}
 	if changed {
-		log.Printf("new work %s from the tray icon", map[bool]string{true: "paused", false: "resumed"}[p])
+		where := map[string]string{"tray": "from the tray icon", "web": "from the web UI"}[by]
+		if where == "" {
+			where = "by " + by
+		}
+		switch {
+		case !p:
+			log.Printf("new work resumed %s", where)
+		case until.IsZero():
+			log.Printf("new work paused %s", where)
+		default:
+			log.Printf("new work paused %s until %s", where, until.Local().Format("Jan 2 15:04"))
+		}
 		n.pushHeartbeat()
 		n.resendHello()
+	}
+}
+
+// loadPaused restores the pause state at start-up.
+func (n *Node) loadPaused() {
+	b, err := os.ReadFile(pausedPath(n.dataDir))
+	if err != nil {
+		return
+	}
+	pf := pauseFile{By: "tray"}
+	if json.Unmarshal(b, &pf) != nil || pf.By == "" {
+		pf = pauseFile{By: "tray"}
+	}
+	n.paused, n.pausedBy, n.pausedUntil = true, pf.By, pf.Until
+}
+
+// pauseInfo is the pause state for the heartbeat.
+func (n *Node) pauseInfo() (bool, string, *time.Time) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if !n.paused {
+		return false, "", nil
+	}
+	if n.pausedUntil.IsZero() {
+		return true, n.pausedBy, nil
+	}
+	u := n.pausedUntil
+	return true, n.pausedBy, &u
+}
+
+// pauseTimer resumes a node whose timed pause has run out.
+func (n *Node) pauseTimer() {
+	for {
+		time.Sleep(15 * time.Second)
+		n.mu.Lock()
+		due := n.paused && !n.pausedUntil.IsZero() && time.Now().After(n.pausedUntil)
+		n.mu.Unlock()
+		if due {
+			n.setPausedBy(false, "timer", time.Time{})
+		}
+	}
+}
+
+// applyPause handles "node.pause" from the controller (the web UI's Pause menu).
+func (n *Node) applyPause(pr NodePause) {
+	var until time.Time
+	if pr.Minutes > 0 {
+		until = time.Now().Add(time.Duration(pr.Minutes) * time.Minute)
+	}
+	switch pr.Mode {
+	case "resume":
+		n.setPausedBy(false, "web", time.Time{})
+	case "now":
+		n.pauseNowBy("web", until)
+	default: // "drain": running work finishes
+		n.setPausedBy(true, "web", until)
 	}
 }
 
@@ -77,8 +161,10 @@ func (n *Node) setPaused(p bool) {
 // reported to the controller as retryable "busy", so the controller treats it like
 // a node that stopped being available (a subtask goes back in the queue for
 // another node) rather than as a task the user cancelled.
-func (n *Node) pauseNow() {
-	n.setPaused(true)
+func (n *Node) pauseNow() { n.pauseNowBy("tray", time.Time{}) }
+
+func (n *Node) pauseNowBy(by string, until time.Time) {
+	n.setPausedBy(true, by, until)
 	n.mu.Lock()
 	if n.stoppedJobs == nil {
 		n.stoppedJobs = map[string]bool{}
@@ -90,7 +176,7 @@ func (n *Node) pauseNow() {
 	}
 	n.mu.Unlock()
 	if len(cancels) > 0 {
-		log.Printf("pause now from the tray icon: cancelling %d running job(s)", len(cancels))
+		log.Printf("pause now: cancelling %d running job(s); the controller gives them to other nodes", len(cancels))
 	}
 	for _, c := range cancels {
 		c()
@@ -105,7 +191,7 @@ func (n *Node) markStoppedByPause(res *JobResult) {
 	delete(n.stoppedJobs, res.JobID)
 	n.mu.Unlock()
 	if stopped && res.Status == "cancelled" {
-		res.Status, res.Error = "failed", errf("busy", true, "node was paused from its tray icon; the work goes to another node")
+		res.Status, res.Error = "failed", errf("busy", true, "node was paused; the work goes to another node")
 	}
 }
 

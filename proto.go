@@ -130,6 +130,7 @@ type Hello struct {
 	LoadedModel       string       `json:"loaded_model"`
 	RollbackTo        string       `json:"rollback_to,omitempty"` // previous installed Outpost version
 	Paused            bool         `json:"paused,omitempty"`
+	Features          []string     `json:"features,omitempty"` // newer messages this node understands (nodeFeatures)
 	Tools             []ToolInfo   `json:"tools,omitempty"`          // developer tools found, rescanned hourly
 	Shell             string       `json:"shell,omitempty"`          // sh | powershell | cmd: what exec jobs run in
 	Peer              *PeerInfo    `json:"peer,omitempty"`           // where this node serves model files to other nodes
@@ -195,7 +196,9 @@ type Heartbeat struct {
 	ModelsBytes   int64    `json:"models_bytes"`
 	LlamaError    string   `json:"llama_error,omitempty"`
 	RPCEndpoint   string   `json:"rpc_endpoint,omitempty"`  // set while lending memory
-	Paused        bool     `json:"paused,omitempty"`        // no new work (set from the node's tray icon)
+	Paused        bool       `json:"paused,omitempty"`       // no new work (set from the tray icon or the web UI)
+	PausedBy      string     `json:"paused_by,omitempty"`    // tray | web
+	PausedUntil   *time.Time `json:"paused_until,omitempty"` // a timed pause ends on its own then
 	IdleUnloaded  bool     `json:"idle_unloaded,omitempty"` // LoadedModel was stopped for idleness; the next request loads it again
 }
 
@@ -441,3 +444,13 @@ type InferenceOutput struct {
 	Model        string         `json:"model"`
 	ToolCalls    []WireToolCall `json:"tool_calls,omitempty"`
 }
+
+// NodePause is "node.pause": the web UI's Pause menu on a node card.
+type NodePause struct {
+	Mode    string `json:"mode"`              // drain (running work finishes) | now (running work moves to other nodes) | resume
+	Minutes int    `json:"minutes,omitempty"` // a timed pause; 0 means until resumed
+}
+
+// nodeFeatures lists the controller-to-node messages added after 0.8.0, so the
+// controller can tell an older node apart instead of waiting for no answer.
+var nodeFeatures = []string{"node.ask", "node.pause"}

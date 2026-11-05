@@ -267,6 +267,9 @@ func (c *Controller) downloadModel(ctx context.Context, m *ModelRec) {
 		c.saveModelLocked(m)
 		c.mu.Unlock()
 		log.Printf("model %s download failed: %v", m.Name, err)
+		if ctx.Err() == nil {
+			go c.deliverNotification("model_failed", "Model download failed", fmt.Sprintf("%s could not be downloaded to the controller: %v. Retry on the Models page.", m.Name, err), "")
+		}
 	}
 	token := c.hfToken()
 	client := &http.Client{}
@@ -564,8 +567,30 @@ type nodeOpView struct {
 
 func (c *Controller) setNodeOp(nodeID string, st OpStatus) {
 	c.mu.Lock()
-	c.nodeOps[nodeID] = &nodeOpView{OpStatus: st, Updated: time.Now()}
+	c.recordNodeOpLocked(nodeID, st)
 	c.mu.Unlock()
+}
+
+// recordNodeOpLocked stores a node's operation state and notifies when a model
+// download or load first fails.
+func (c *Controller) recordNodeOpLocked(nodeID string, st OpStatus) {
+	prev := c.nodeOps[nodeID]
+	c.nodeOps[nodeID] = &nodeOpView{OpStatus: st, Updated: time.Now()}
+	if st.State != "failed" || !(st.Op == "model.load" || st.Op == "model.push" || st.Op == "runtime") {
+		return
+	}
+	if prev != nil && prev.State == "failed" && prev.Op == st.Op && prev.Target == st.Target {
+		return
+	}
+	name := nodeID
+	if n := c.nodes[nodeID]; n != nil {
+		name = displayName(n)
+	}
+	verb := map[string]string{"model.load": "Loading", "model.push": "Copying", "runtime": "Installing llama.cpp"}[st.Op]
+	if verb == "" {
+		verb = "Getting"
+	}
+	go c.deliverNotification("model_failed", "Model failed", fmt.Sprintf("%s %s on %s failed: %s", verb, st.Target, name, firstNonEmpty(st.Error, "no reason given")), "")
 }
 
 // waitNodeOp waits until the node reports a final state for op/target.

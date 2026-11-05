@@ -143,6 +143,8 @@ type Controller struct {
 	asks       askWaiters               // node.ask requests waiting for their answer (node_ask.go)
 	check      clusterCheck             // the last Check cluster run (clustercheck.go)
 	lastBackup *backupCheck             // the newest scheduled backup, read back after writing
+	storage    storageState             // disk use and clean-up (storage.go)
+	rollout    *rolloutState            // the last one-node-first update (rollout.go)
 	clockSkew  map[string]time.Duration // node clock minus controller clock, from heartbeats
 	projects   map[string]*Project      // see projects.go
 	// resumeWake wakes autoResumeInterrupted on node heartbeats (nudgeResume).
@@ -239,6 +241,8 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/state", c.auth(c.handleState))
 	mux.HandleFunc("POST /api/recovered/dismiss", c.auth(c.handleDismissRecovered))
 	mux.HandleFunc("POST /api/diagnostics", c.authSession(c.handleDiagnostics))
+	mux.HandleFunc("GET /api/storage", c.auth(c.handleStorage))
+	mux.HandleFunc("POST /api/storage", c.authSession(c.handleStorageSettings))
 	mux.HandleFunc("GET /api/nodes/{id}/logs", c.auth(c.handleNodeLogs))
 	mux.HandleFunc("GET /api/cluster/check", c.auth(c.handleGetClusterCheck))
 	mux.HandleFunc("POST /api/cluster/check", c.auth(c.handleStartClusterCheck))
@@ -260,6 +264,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/controller/rollback", c.auth(c.handleRollbackController))
 	mux.HandleFunc("POST /api/nodes/{id}/rollback", c.auth(c.handleRollbackNode))
 	mux.HandleFunc("POST /api/nodes/{id}/restart", c.auth(c.handleRestartNode))
+	mux.HandleFunc("POST /api/nodes/{id}/pause", c.auth(c.handlePauseNode))
 	mux.HandleFunc("GET /v1/releases/{platform}", c.handleServeRelease)
 	mux.HandleFunc("GET /v1/runtime/{variant}", c.handleServeRuntime)
 	c.toolchainRoutes(mux)
@@ -331,6 +336,8 @@ func runController(args []string) error {
 	go c.offlineSweeper()
 	go c.poolKeeper()
 	go c.backupLoop()
+	go c.storageLoop()
+	go c.digestLoop()
 	go c.ghLoop()
 	go c.benchLoop()
 	go c.catalogShapeLoop()
@@ -519,6 +526,8 @@ func (c *Controller) handleState(w http.ResponseWriter, r *http.Request) {
 		"pooling_enabled":  c.poolingOnLocked(),
 		"github_updates":   c.ghViewLocked(),
 		"recovered":        c.recoveredList(),
+		"disk_warning":     c.diskWarning(),
+		"rollout":          c.rollout,
 	})
 }
 
@@ -1050,7 +1059,7 @@ func (c *Controller) handleNodeMessage(nodeID string, env *Envelope) {
 	case "node.op_status":
 		var st OpStatus
 		if json.Unmarshal(env.Body, &st) == nil {
-			c.nodeOps[nodeID] = &nodeOpView{OpStatus: st, Updated: time.Now()}
+			c.recordNodeOpLocked(nodeID, st)
 		}
 	case "node.update_status":
 		var us UpdateStatus
@@ -1060,6 +1069,13 @@ func (c *Controller) handleNodeMessage(nodeID string, env *Envelope) {
 			c.updates[nodeID] = &us
 			if prev == nil || prev.State != us.State {
 				log.Printf("node %s update %s: %s %s", nodeID, us.Version, us.State, us.Error)
+				if us.State == "failed" {
+					name := nodeID
+					if n := c.nodes[nodeID]; n != nil {
+						name = displayName(n)
+					}
+					go c.deliverNotification("update_failed", "Update failed", fmt.Sprintf("%s could not switch to v%s: %s", name, us.Version, firstNonEmpty(us.Error, "no reason given")), "")
+				}
 			}
 		}
 	case "ws.closed":

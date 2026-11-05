@@ -28,6 +28,20 @@ func diskFree(path string) uint64 {
 	return free
 }
 
+// diskTotal is the size of the volume holding path.
+func diskTotal(path string) uint64 {
+	p, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return 0
+	}
+	var free, total, totalFree uint64
+	r, _, _ := procGetDiskFreeSpaceExW.Call(uintptr(unsafe.Pointer(p)), uintptr(unsafe.Pointer(&free)), uintptr(unsafe.Pointer(&total)), uintptr(unsafe.Pointer(&totalFree)))
+	if r == 0 {
+		return 0
+	}
+	return total
+}
+
 type memoryStatusEx struct {
 	Length               uint32
 	MemoryLoad           uint32

@@ -189,15 +189,13 @@ func (c *Controller) handleUpdateAll(w http.ResponseWriter, r *http.Request) {
 	}
 	c.mu.Unlock()
 	sort.Strings(ids)
-	started, skipped := 0, map[string]string{}
-	for _, id := range ids {
-		if err := c.startNodeUpdate(id); err != nil {
-			skipped[id] = err.Error()
-		} else {
-			started++
-		}
+	// One node first; the rest follow once it passes a quick check (rollout.go).
+	canary, err := c.startRollout(ids)
+	if err != nil {
+		writeJSON(w, 409, map[string]string{"error": err.Error()})
+		return
 	}
-	writeJSON(w, 200, map[string]any{"started": started, "skipped": skipped})
+	writeJSON(w, 200, map[string]any{"started": 1, "canary": c.nodeLabel(canary), "waiting": len(ids) - 1})
 }
 
 // handleUpdateController installs the release for the controller's own
@@ -332,6 +330,57 @@ func (c *Controller) handleRestartNode(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("node %s: restart requested", id)
 	if err := nc.send("node.restart", struct{}{}); err != nil {
+		writeJSON(w, 502, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// nodeHas reports whether a node said it understands a newer message.
+func (c *Controller) nodeHasLocked(id, feature string) bool {
+	n := c.nodes[id]
+	if n == nil || n.Hello == nil {
+		return false
+	}
+	for _, f := range n.Hello.Features {
+		if f == feature {
+			return true
+		}
+	}
+	return false
+}
+
+// handlePauseNode is the Pause menu on a node card. POST /api/nodes/{id}/pause
+// {"mode":"drain|now|resume","minutes":60}
+func (c *Controller) handlePauseNode(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req NodePause
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "bad request"})
+		return
+	}
+	if req.Mode != "drain" && req.Mode != "now" && req.Mode != "resume" {
+		writeJSON(w, 400, map[string]string{"error": "mode must be drain, now or resume"})
+		return
+	}
+	if req.Minutes < 0 || req.Minutes > 7*24*60 {
+		writeJSON(w, 400, map[string]string{"error": "minutes must be between 0 and a week"})
+		return
+	}
+	c.mu.Lock()
+	nc := c.conns[id]
+	has := c.nodeHasLocked(id, "node.pause")
+	c.mu.Unlock()
+	switch {
+	case nc == nil:
+		writeJSON(w, 409, map[string]string{"error": "node is offline"})
+		return
+	case !has:
+		writeJSON(w, 409, map[string]string{"error": "this node runs an older Outpost that can only be paused from its tray icon; update it first"})
+		return
+	}
+	log.Printf("node %s: pause %s (%d min) from the web UI", id, req.Mode, req.Minutes)
+	if err := nc.send("node.pause", req); err != nil {
 		writeJSON(w, 502, map[string]string{"error": err.Error()})
 		return
 	}
