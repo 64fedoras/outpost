@@ -709,3 +709,5 @@ details.live summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .split-menu button:hover { background: var(--tint); }
 .split-menu .sub { margin: 0; white-space: normal; }
 @media (max-width: 760px) { .cat-row { grid-template-columns: minmax(0, 1fr) auto; } .cat-row > span { display: none; } }
+.recovered-list { margin: 4px 0 8px 18px; padding: 0; }
+.recovered-banner { margin: 0; border-radius: 0; }

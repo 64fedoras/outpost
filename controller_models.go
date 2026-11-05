@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -138,7 +139,7 @@ func (c *Controller) saveModelLocked(m *ModelRec) {
 	dir := filepath.Join(c.modelsStoreDir(), m.Name)
 	_ = os.MkdirAll(dir, 0o755)
 	b, _ := json.MarshalIndent(m, "", "  ")
-	_ = os.WriteFile(filepath.Join(dir, "model.json"), b, 0o644)
+	_ = writeFileAtomic(filepath.Join(dir, "model.json"), b, 0o644)
 }
 
 var splitPartRe = regexp.MustCompile(`-\d{5}-of-\d{5}$`)
@@ -159,7 +160,16 @@ func modelNameFromFile(file string) string {
 }
 
 // hfBase is Hugging Face's address (a variable so tests can use a local stand-in).
-var hfBase = "https://huggingface.co"
+var hfBaseV atomic.Value // string; read through hfBase()
+
+func hfBase() string {
+	if v, ok := hfBaseV.Load().(string); ok && v != "" {
+		return v
+	}
+	return "https://huggingface.co"
+}
+
+func setHFBase(u string) { hfBaseV.Store(u) }
 
 var hfRepoRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
@@ -318,7 +328,7 @@ func hfURL(repo, file string) string {
 	for i := range parts {
 		parts[i] = url.PathEscape(parts[i])
 	}
-	return hfBase + "/" + repo + "/resolve/main/" + strings.Join(parts, "/") + "?download=true"
+	return hfBase() + "/" + repo + "/resolve/main/" + strings.Join(parts, "/") + "?download=true"
 }
 
 // downloadResumable downloads url to dst (via dst.part) and returns its SHA-256.
@@ -480,7 +490,7 @@ func (c *Controller) handleHFFiles(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "enter a repo like owner/name"})
 		return
 	}
-	req, _ := http.NewRequestWithContext(r.Context(), "GET", hfBase+"/api/models/"+repo+"/tree/main?recursive=true", nil)
+	req, _ := http.NewRequestWithContext(r.Context(), "GET", hfBase()+"/api/models/"+repo+"/tree/main?recursive=true", nil)
 	if t := c.hfToken(); t != "" {
 		req.Header.Set("Authorization", "Bearer "+t)
 	}
@@ -901,7 +911,7 @@ type hfTreeEntry struct {
 }
 
 func hfTree(ctx context.Context, repo, token string) ([]hfTreeEntry, error) {
-	req, _ := http.NewRequestWithContext(ctx, "GET", hfBase+"/api/models/"+repo+"/tree/main?recursive=true", nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", hfBase()+"/api/models/"+repo+"/tree/main?recursive=true", nil)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

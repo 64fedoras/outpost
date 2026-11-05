@@ -247,7 +247,7 @@ func (c *Controller) ensureRuntimeBuild(ctx context.Context, variant, wantBuild 
 	}
 	rec := &RuntimeRec{Variant: variant, Build: build, Archive: name, SHA256: sum, Bytes: size, Downloaded: time.Now()}
 	b, _ := json.MarshalIndent(rec, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, "runtime.json"), b, 0o644); err != nil {
+	if err := writeFileAtomic(filepath.Join(dir, "runtime.json"), b, 0o644); err != nil {
 		return nil, err
 	}
 	// Drop older archives for this variant.

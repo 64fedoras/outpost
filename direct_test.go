@@ -43,9 +43,9 @@ func fakeHF(t *testing.T, content []byte, corrupt bool) *httptest.Server {
 }
 
 func useHF(t *testing.T, srv *httptest.Server) {
-	old := hfBase
-	hfBase = srv.URL
-	t.Cleanup(func() { hfBase = old })
+	old := hfBase()
+	setHFBase(srv.URL)
+	t.Cleanup(func() { setHFBase(old) })
 }
 
 func TestResolveDirectModel(t *testing.T) {

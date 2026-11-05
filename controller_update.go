@@ -94,7 +94,7 @@ func (c *Controller) installRelease(src, fileName string) (*Release, error) {
 	_ = os.Chmod(dst, 0o755)
 	rel := &Release{Platform: platform, Version: version, SHA256: sum, Bytes: size, Uploaded: time.Now(), FileName: fileName}
 	b, _ := json.MarshalIndent(rel, "", "  ")
-	_ = os.WriteFile(filepath.Join(filepath.Dir(dst), "release.json"), b, 0o600)
+	_ = writeFileAtomic(filepath.Join(filepath.Dir(dst), "release.json"), b, 0o600)
 	c.mu.Lock()
 	c.releases[platform] = rel
 	c.mu.Unlock()
@@ -218,7 +218,9 @@ func (c *Controller) handleUpdateController(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, 200, map[string]string{"version": rel.Version})
 	go func() {
 		time.Sleep(500 * time.Millisecond)
+		c.prepareRestart("update installed")
 		relaunch(c.agentDir(), os.Args[1:])
+		controllerClosing.Store(false)
 		log.Printf("controller restart failed; still running %s", Version)
 	}()
 }
@@ -255,9 +257,9 @@ func (c *Controller) loadSessions() {
 // saveSessionsLocked must be called with c.mu held.
 func (c *Controller) saveSessionsLocked() {
 	b, _ := json.Marshal(c.sessions)
-	_ = os.WriteFile(c.sessionsPath(), b, 0o600)
+	_ = writeFileAtomic(c.sessionsPath(), b, 0o600)
 	mb, _ := json.Marshal(c.sessMeta)
-	_ = os.WriteFile(c.sessionsPath()+".meta", mb, 0o600)
+	_ = writeFileAtomic(c.sessionsPath()+".meta", mb, 0o600)
 }
 
 func (c *Controller) handleRollbackNode(w http.ResponseWriter, r *http.Request) {
@@ -310,6 +312,7 @@ func (c *Controller) handleRollbackController(w http.ResponseWriter, r *http.Req
 	writeJSON(w, 200, map[string]string{"version": to})
 	go func() {
 		time.Sleep(500 * time.Millisecond)
+		c.prepareRestart("rollback")
 		restartInto(target.path, os.Args[1:])
 		log.Printf("controller rollback restart failed; still running %s", Version)
 	}()

@@ -444,7 +444,9 @@ func (c *Controller) autoInstall() {
 		log.Printf("auto-install: controller: %v", err)
 		return
 	}
+	c.prepareRestart("update installed")
 	relaunch(c.agentDir(), os.Args[1:])
+	controllerClosing.Store(false) // still running: the restart did not happen
 	log.Printf("auto-install: controller restart failed; still running %s", Version)
 }
 

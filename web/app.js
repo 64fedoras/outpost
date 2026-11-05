@@ -118,6 +118,21 @@ function openSide() { $('side').classList.add('open'); $('scrim').classList.remo
 function closeSide() { $('side').classList.remove('open'); $('scrim').classList.add('hidden'); }
 $('side-open').onclick = openSide; $('task-menu').onclick = openSide; $('side-close').onclick = closeSide; $('scrim').onclick = closeSide;
 
+// Damaged state files found when the controller started (recovered.go).
+function renderRecovered() {
+  const notes = (state && state.recovered) || [];
+  $('recovered-banner').classList.toggle('hidden', !notes.length);
+  setHTML('recovered-banner', notes.length ? `<b>${notes.length === 1 ? 'A saved file was damaged' : notes.length + ' saved files were damaged'} when the controller started.</b>
+    <ul class="recovered-list">${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
+    <button class="small" id="recovered-dismiss">Dismiss</button>` : '');
+}
+$('recovered-banner').addEventListener('click', async (e) => {
+  if (e.target.id !== 'recovered-dismiss') return;
+  await post('/api/recovered/dismiss').catch(() => {});
+  if (state) state.recovered = [];
+  renderRecovered();
+});
+
 // ---------- polling ----------
 let failures = 0;
 async function refresh() {
@@ -134,6 +149,7 @@ async function refresh() {
     api('/api/projects').then((p) => { projects = p; }).catch(() => {}),
   ]);
   $('hdr-meta').textContent = `v${state.version}`;
+  renderRecovered();
   $('hdr-meta').title = state.advertise;
   $('src-link').href = `https://github.com/64fedoras/outpost/tree/v${state.version}`; // AGPL section 13: source of the running version
   $('ctl-info').textContent = `Controller ${state.advertise} · ${state.platform} · certificate SHA-256 ${state.fingerprint}`;

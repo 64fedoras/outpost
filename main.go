@@ -55,6 +55,7 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+	logToFileFromEnv()
 	var err error
 	switch os.Args[1] {
 	case "controller":

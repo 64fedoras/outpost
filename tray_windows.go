@@ -49,7 +49,7 @@ func trayDetachConsole(dataDir string) {
 	if n != 1 {
 		return
 	}
-	if f, err := os.OpenFile(filepath.Join(dataDir, "tray.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
+	if f, err := openRotating(filepath.Join(dataDir, "tray.log"), logMaxBytes); err == nil {
 		log.SetOutput(f)
 	}
 	if hwnd, _, _ := procGetConsoleWindow.Call(); hwnd != 0 {
@@ -65,13 +65,14 @@ func startNodeProcess(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	logf, err := openNodeLog(dataDir)
+	logf, err := openNodeConsoleLog(dataDir)
 	if err != nil {
 		return err
 	}
 	defer logf.Close()
 	cmd := exec.Command(self, "node", "--data", dataDir)
-	cmd.Stdout, cmd.Stderr = logf, logf
+	cmd.Stdout, cmd.Stderr = logf, logf // crashes only; the node writes node.log itself and rotates it
+	cmd.Env = append(os.Environ(), "OUTPOST_LOG_FILE="+nodeLogPath(dataDir))
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNoWindow | syscall.CREATE_NEW_PROCESS_GROUP}
 	if err := cmd.Start(); err != nil {
 		return err
