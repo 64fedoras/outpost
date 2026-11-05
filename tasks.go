@@ -149,6 +149,7 @@ type Task struct {
 	resume chan struct{}
 
 	asks map[string]chan string // agent questions waiting for an answer, by message id
+	act  []ActStep              // what the test-and-fix phase is doing now (tasks_activity.go), memory only
 }
 
 func (c *Controller) tasksDir() string { return filepath.Join(c.dataDir, "tasks") }
@@ -491,6 +492,7 @@ type taskDetail struct {
 	ClaudeKeySet  bool       `json:"claude_key_set"`
 	WorkersOnline int        `json:"workers_online"`
 	ExecNodes     int        `json:"exec_nodes"`
+	Activity      *actDetail `json:"activity,omitempty"`
 }
 
 type repoFile struct {
@@ -532,7 +534,7 @@ func (c *Controller) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	var copyT Task
 	_ = json.Unmarshal(b, &copyT)
 	writeJSON(w, 200, taskDetail{Task: &copyT, Files: listRepo(t.repoDir()), PlannerLabel: c.plannerLabel(planner, model, orModel),
-		ClaudeKeySet: c.anthropicKey() != "", WorkersOnline: workers, ExecNodes: execs})
+		ClaudeKeySet: c.anthropicKey() != "", WorkersOnline: workers, ExecNodes: execs, Activity: c.activityFor(t)})
 }
 
 func (c *Controller) handleTaskFile(w http.ResponseWriter, r *http.Request) {
@@ -2156,7 +2158,8 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		return
 	}
 	var history []string
-	nodeRetries := 0
+	nodeRetries, plannerRetries := 0, 0
+	t.actClear()
 	for round := 0; ; round++ {
 		if ctx.Err() != nil {
 			return
@@ -2184,6 +2187,7 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		}
 		node := execs[round%len(execs)]
 		t.setStatus("testing")
+		t.actBegin(fmt.Sprintf("Running the tests: %s", firstLine(cmd, 100)), node)
 		t.logf("info", "Running tests on %s: %s", c.nodeLabel(node), cmd)
 		inputs, srcs, skipped := repoJobInputs(t.repoDir())
 		if len(skipped) > 0 {
@@ -2201,6 +2205,7 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 			// The node stopped (paused from its tray, went offline): run the same
 			// round again, on another node if one is free, without using up a fix round.
 			nodeRetries++
+			t.actEnd("warn", fmt.Sprintf("%s stopped during the tests; running them again", c.nodeLabel(node)))
 			t.logf("warn", "%s stopped running the tests (%v); trying again.", c.nodeLabel(node), err)
 			c.coolDown(node, 15*time.Second)
 			round--
@@ -2216,7 +2221,9 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		switch {
 		case err != nil && status == "timed_out":
 			output = "The test command timed out after 10 minutes."
+			t.actEnd("bad", "The tests timed out after 10 minutes")
 		case err != nil:
+			t.actEnd("bad", "Could not run the tests: "+firstLine(err.Error(), 120))
 			t.logf("warn", "Could not run the tests: %v", err)
 			t.mu.Lock()
 			t.TestStatus = "skipped"
@@ -2226,6 +2233,11 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		default:
 			output = strings.TrimSpace(out.StdoutTail + "\n" + out.StderrTail)
 			passed = out.ExitCode == 0
+			st := "ok"
+			if !passed {
+				st = "bad"
+			}
+			t.actEnd(st, fmt.Sprintf("Ran the tests on %s: %s", c.nodeLabel(node), testSummary(output, out.ExitCode)))
 		}
 		if len(output) > 12000 {
 			output = "…" + output[len(output)-12000:]
@@ -2257,6 +2269,7 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		}
 		t.logf("warn", "Tests failed; fix round %d of %d.", round+1, maxFixRounds)
 		t.setStatus("fixing")
+		t.actBegin(fmt.Sprintf("Fix round %d of %d: the planner is reading the failures", round+1, maxFixRounds), "")
 		var changed []string
 		agentDone := false
 		if c.agentEnabled() {
@@ -2268,6 +2281,9 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 				changed, agentDone = ch, true
 			case errors.Is(err, errAgentUnsupported):
 				t.logf("warn", "The planner cannot use tools here; fixing with a single request instead.")
+			case isNodeProblem(err) && c.waitPlannerBack(ctx, t, err, &plannerRetries):
+				round--
+				continue
 			default:
 				c.failTask(t, err)
 				return
@@ -2293,6 +2309,10 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 				repoSnapshotFirst(t.repoDir(), budget-len(shown)-earlier.Len()-4000, output)) + t.steeringText()
 			resp, err := c.plannerCall(ctx, t, llmRequest{System: fixSystem, User: user, MaxTokens: 16000, Temperature: 0.2, Label: fmt.Sprintf("Fix round %d", round+1)})
 			if err != nil {
+				if isNodeProblem(err) && c.waitPlannerBack(ctx, t, err, &plannerRetries) {
+					round--
+					continue
+				}
 				c.failTask(t, err)
 				return
 			}
@@ -2310,6 +2330,7 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 			t.mu.Lock()
 			t.TestStatus = "failing"
 			t.mu.Unlock()
+			t.actEnd("bad", fmt.Sprintf("Fix round %d: the planner proposed no change", round+1))
 			t.logf("warn", "The planner did not propose a fix. The result is available with the failing tests.")
 			c.finishTask(t)
 			return
@@ -2318,11 +2339,50 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		t.FixRounds++
 		t.mu.Unlock()
 		history = append(history, fmt.Sprintf("round %d changed %s", round+1, strings.Join(changed, ", ")))
+		t.actEnd("ok", fmt.Sprintf("Fix round %d changed %s", round+1, strings.Join(changed, ", ")))
 		t.logf("info", "Fix round %d changed: %s", round+1, strings.Join(changed, ", "))
 	}
 }
 
+// waitPlannerBack handles a local planner node that stopped mid-fix (restarted,
+// updated, paused). It waits for the node to be ready again and says so on the
+// activity card, so the caller can run the same round again without using one
+// up. It returns false when the planner is a cloud one, retries ran out, the
+// node did not return within 10 minutes, or the task was stopped.
+func (c *Controller) waitPlannerBack(ctx context.Context, t *Task, cause error, retries *int) bool {
+	t.mu.Lock()
+	planner := t.Planner
+	t.mu.Unlock()
+	if !strings.HasPrefix(planner, "node:") || *retries >= 3 {
+		return false
+	}
+	*retries++
+	node := strings.TrimPrefix(planner, "node:")
+	name := c.nodeLabel(node)
+	t.actEnd("warn", fmt.Sprintf("%s stopped while fixing (%s)", name, firstLine(cause.Error(), 80)))
+	t.actBegin(fmt.Sprintf("Waiting for %s to come back with its model loaded, then repeating this fix round", name), node)
+	t.logf("warn", "%s stopped while fixing (%v). Waiting for it to come back, then trying the round again.", name, cause)
+	c.coolDown(node, 5*time.Second)
+	deadline := time.Now().Add(10 * time.Minute)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(2 * time.Second):
+		}
+		for _, id := range c.workerNodes() {
+			if id == node {
+				t.actEnd("ok", name+" is back")
+				t.logf("info", "%s is back; repeating the fix round.", name)
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (c *Controller) finishTask(t *Task) {
+	t.actClear()
 	zp := filepath.Join(t.dir, "result.zip")
 	os.Remove(zp)
 	if err := zipDir(t.repoDir(), zp); err != nil {
