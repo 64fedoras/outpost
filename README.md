@@ -563,6 +563,9 @@ routine code writing runs on your nodes. Every Claude call is metered live on th
 
 ### OpenRouter
 
+**Planner: Auto** (New task → Change options, or Settings → Default planner) plans on the ready node
+with the biggest loaded model and records that node on the task. It needs at least one node with a model ready.
+
 OpenRouter works as a second cloud planner and does the same jobs as Claude (planning, writing
 subtasks the nodes could not finish, fixing failing tests).
 

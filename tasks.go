@@ -344,6 +344,14 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	if req.Planner == "" {
 		req.Planner = set.DefaultPlanner
 	}
+	if req.Planner == "auto" {
+		p, err := c.autoPlanner()
+		if err != nil {
+			writeJSON(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		req.Planner = p
+	}
 	if req.ClaudeModel == "" {
 		req.ClaudeModel = set.ClaudeModel
 	}
@@ -405,6 +413,16 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 }
 
 // isCloudPlanner reports whether a planner is billed per call (and so has a cap).
+// autoPlanner picks the planner for "Auto": the ready node with the biggest
+// loaded model (the same order workers use), so the choice is stored on the
+// task as a concrete node.
+func (c *Controller) autoPlanner() (string, error) {
+	if w := c.workerNodes(); len(w) > 0 {
+		return "node:" + w[0], nil
+	}
+	return "", errors.New("Auto found no node with a model ready; load a model on a node or pick another planner")
+}
+
 func isCloudPlanner(p string) bool { return p == "claude" || p == "openrouter" }
 
 // checkPlanner checks a planner can be used; orModel is the OpenRouter model

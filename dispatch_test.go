@@ -39,3 +39,21 @@ func TestRepoSnapshotFirst(t *testing.T) {
 		t.Fatal("a_big.py should be omitted")
 	}
 }
+
+// "Auto" plans on the strongest ready node and errors when none is ready.
+func TestAutoPlanner(t *testing.T) {
+	hb := func(model string) *Heartbeat { return &Heartbeat{InferenceRdy: true, LoadedModel: model} }
+	c := &Controller{
+		conns:  map[string]*nodeConn{"a": {}, "b": {}},
+		lastHB: map[string]*Heartbeat{"a": hb("small"), "b": hb("big")},
+		models: map[string]*ModelRec{"small": {Files: []ModelFile{{Bytes: 1 << 30}}}, "big": {Files: []ModelFile{{Bytes: 9 << 30}}}},
+		nodes:  map[string]*NodeRec{},
+	}
+	if p, err := c.autoPlanner(); err != nil || p != "node:b" {
+		t.Fatalf("got %q, %v", p, err)
+	}
+	c.lastHB = map[string]*Heartbeat{}
+	if _, err := c.autoPlanner(); err == nil {
+		t.Fatal("want an error with no ready node")
+	}
+}
