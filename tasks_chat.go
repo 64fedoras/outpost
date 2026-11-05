@@ -248,7 +248,12 @@ func (c *Controller) handleTaskMessage(w http.ResponseWriter, r *http.Request) {
 	case "awaiting_answers":
 		t.addMsg(TaskMessage{Role: "user", Kind: "answers", Text: text, Images: imgNames})
 		c.replan(t, "Planning with your answers.")
-	case "planning", "awaiting_approval":
+	case "planning":
+		// The planner is mid-request: stop that request and plan again with the note.
+		t.addMsg(TaskMessage{Role: "user", Kind: "text", Text: text, Images: imgNames})
+		t.addMsg(TaskMessage{Role: "event", Kind: "event", Text: "Got it. Stopped the current planning pass and restarted it with your note."})
+		c.replan(t, "Planning again with your note.")
+	case "awaiting_approval":
 		t.addMsg(TaskMessage{Role: "user", Kind: "text", Text: text, Images: imgNames})
 		c.replan(t, "Revising the plan.")
 	case "running", "testing", "building", "fixing", "paused_cap":

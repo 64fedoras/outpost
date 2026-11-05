@@ -1294,6 +1294,10 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 				continue
 			}
 			t.mu.Lock()
+			if ctx.Err() != nil { // the user steered meanwhile; a newer planning run owns the task
+				t.mu.Unlock()
+				return
+			}
 			t.Asked = true
 			t.Status = "awaiting_answers"
 			t.addMsgLocked(TaskMessage{Role: "assistant", Kind: "questions", Questions: qs, Text: strings.TrimSpace(ask.Note)})
@@ -1326,6 +1330,10 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 		return
 	}
 	t.mu.Lock()
+	if ctx.Err() != nil { // the user steered meanwhile; a newer planning run owns the task
+		t.mu.Unlock()
+		return
+	}
 	t.Plan = plan
 	if t.Title == "" {
 		t.Title = plan.Title

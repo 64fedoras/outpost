@@ -1,5 +1,5 @@
 # Stub of the Claude Messages API for testing Outpost's planner, cost meter and cap.
-import json, re, sys
+import json, re, sys, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PLAN = {
@@ -47,6 +47,9 @@ class H(BaseHTTPRequestHandler):
         system = body["system"][0]["text"]
         user = body["messages"][0]["content"]
         if "planner for Outpost" in system:
+            # "slow plan" in the request makes the first planning pass take 20 s, so a note can be sent mid-plan
+            if "slow plan" in user and "sqlite" not in user.lower():
+                time.sleep(20)
             if "ask me first" in user and "already asked your questions" not in user and "User: Language" not in user and "answered" not in user.lower() and "→" not in user:
                 text = json.dumps({"questions": [
                     {"id": "q1", "question": "Which language should it use?", "options": ["Python", "Go"]},
