@@ -75,7 +75,7 @@ func (c *Controller) autoResumeInterrupted(wait, tick time.Duration) {
 			case off:
 				// the setting is off: leave it for the Resume button
 			case ready[node]:
-				c.restartTask(t, status, from, "Resumed automatically after the restart.")
+				c.restartTask(t, status, from, "The controller restarted, so this task resumed automatically; finished subtasks were kept.")
 			default:
 				t.logf("warn", "Node %s did not come back with a loaded model within %d minutes. Click Resume when it is ready.", c.nodeLabel(node), int(wait/time.Minute))
 			}

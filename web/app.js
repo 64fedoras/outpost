@@ -703,6 +703,7 @@ function renderTask(t) {
   $('tm-stop').classList.toggle('hidden', !(WORKING.includes(t.status) || resuming(t)));
   $('tv-delete').classList.toggle('hidden', ACTIVE.includes(t.status));
   renderThreadItems(threadItems(t));
+  tickElapsed();
   renderComposer(t);
   if (!$('modal-activity').classList.contains('hidden')) renderActivity(t);
   if (!$('modal-files').classList.contains('hidden')) renderFiles(t);
@@ -730,7 +731,8 @@ function threadItems(t) {
     if (approvedHere) { items.push({ key: 'progress-' + round, cls: 'card-row', html: progressCard(t) }); progressPlaced = true; }
   });
   if (started && !progressPlaced) items.push({ key: 'progress-' + round, cls: 'card-row', html: progressCard(t) });
-  // Planner and other calls that belong to no subtask.
+  // Planner and other calls that belong to no subtask come after the tests and fixes card.
+  if (t.activity && ['testing', 'fixing', 'building'].includes(t.status)) items.push({ key: 'activity', cls: 'card-row', html: activityCard(t) });
   const loose = liveFor((c) => !c.sub);
   if (loose.length) items.push({ key: 'live-loose', cls: 'card-row', html: `<div class="card-msg quiet"><div class="card-head">${loose.map(([, c]) => esc(c.node ? `Writing on ${c.node}` : 'Working')).join(' · ')}</div>${loose.map(([id, c]) => livePane(c, id)).join('')}</div>` });
   const tail = statusCard(t);
@@ -924,7 +926,8 @@ function progressCard(t) {
     return `<li class="p-${x.status}"><span class="p-ico" aria-hidden="true">${ST_ICON[x.status] || ''}</span><span class="p-title">${esc(s.title)}</span><span class="p-who">${who}</span>${lives}</li>`;
   }).join('');
   let phase = '';
-  if (t.status === 'testing') phase = 'Running the tests…';
+  if (t.activity) phase = '';   // the "Tests and fixes" card below says it in more detail
+  else if (t.status === 'testing') phase = 'Running the tests…';
   else if (t.status === 'building') phase = 'Building…';
   else if (t.status === 'fixing') phase = `Tests failed; fixing (round ${t.fix_rounds + 1} of 3). The fixer reads, edits and re-runs on its own.`;
   else if (t.status === 'running' && !t.workers_online) phase = 'Waiting for a node with a model ready. Load one on the Nodes page.';
@@ -933,6 +936,27 @@ function progressCard(t) {
   return `<div class="card-msg progress"><div class="card-head">${head}</div><div class="strip" role="img" aria-label="${done} of ${specs.length} subtasks done">${strip}</div>
     <ul class="p-list">${rows}</ul>${phase ? `<p class="card-note">${esc(phase)}</p>` : ''}</div>`;
 }
+
+// "Tests and fixes": what the test-and-fix phase is doing right now and what it did, newest last.
+// Elapsed times tick every second from the server's clock (see tickElapsed), so they stay right between polls.
+const fmtDur = (sec) => { sec = Math.max(0, Math.round(sec)); return sec < 60 ? `${sec}s` : sec < 3600 ? `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s` : `${Math.floor(sec / 3600)}h ${String(Math.floor(sec / 60) % 60).padStart(2, '0')}m`; };
+const ACT_CLS = { running: 'p-running', ok: 'p-done', bad: 'p-failed', warn: 'p-warn' };
+const ACT_ICO = { ok: '✓', bad: '✕', warn: '!' };
+function activityCard(t) {
+  const a = t.activity, skew = Date.now() - new Date(a.server_time).getTime();
+  const rows = (a.steps || []).map((x) => {
+    const start = new Date(x.start).getTime() + skew;
+    const dur = x.status === 'running' ? `<span data-since="${start}"></span>` : fmtDur((new Date(x.end).getTime() - new Date(x.start).getTime()) / 1000);
+    return `<li class="${ACT_CLS[x.status] || 'p-done'}"><span class="p-ico" aria-hidden="true">${ACT_ICO[x.status] || ''}</span><span class="p-title">${esc(x.text)}</span><span class="p-who">${dur}</span></li>`;
+  }).join('');
+  const round = t.status === 'fixing' || t.fix_rounds ? ` · fix round ${Math.min(a.round, a.max_rounds)} of ${a.max_rounds}` : '';
+  return `<div class="card-msg progress activity"><div class="card-head">Tests and fixes${round}</div>
+    <ul class="p-list">${rows}</ul>${a.stall ? `<p class="card-note stall">⚠ ${esc(a.stall)}</p>` : ''}</div>`;
+}
+function tickElapsed() {
+  document.querySelectorAll('[data-since]').forEach((el) => { el.textContent = fmtDur((Date.now() - Number(el.dataset.since)) / 1000); });
+}
+setInterval(tickElapsed, 1000);
 
 // Build outputs: one link each, plus zips. Sizes use the same bytes() as the file browser.
 function artifactsBlock(t) {
