@@ -26,6 +26,18 @@ type ModelShape struct {
 	FullBytesPerToken int64  `json:"full_bytes_per_token"` // layers that cache every token
 	SWABytesPerToken  int64  `json:"swa_bytes_per_token"`  // sliding-window layers
 	SWAWindow         int    `json:"swa_window,omitempty"` // tokens a sliding-window layer keeps
+	// ActiveFrac is the share of the weights one generated token reads: below 1
+	// for mixture-of-experts models, which only use some experts per token.
+	// 0 means unknown (treated as 1).
+	ActiveFrac float64 `json:"active_frac,omitempty"`
+}
+
+// activeBytes is how many bytes of a model file of the given size one token reads.
+func (s *ModelShape) activeBytes(fileBytes int64) int64 {
+	if s == nil || s.ActiveFrac <= 0 || s.ActiveFrac >= 1 {
+		return fileBytes
+	}
+	return int64(float64(fileBytes) * s.ActiveFrac)
 }
 
 // kvBytes estimates the KV cache for ctx tokens.
@@ -151,20 +163,42 @@ func (g *ggufReader) scalar(t uint32, keepStr bool) (int64, string) {
 // readGGUFMeta reads the metadata of a GGUF file (versions 2 and 3) and stops
 // before the tensor table, so only the header is read.
 func readGGUFMeta(r io.Reader) (map[string]ggufValue, error) {
+	meta, _, err := readGGUFHeader(r, false)
+	return meta, err
+}
+
+// ggufTensor is one entry of the tensor table.
+type ggufTensor struct {
+	name  string
+	bytes int64
+}
+
+// ggufBlock is (elements per block, bytes per block) for each ggml tensor type.
+var ggufBlock = map[uint32][2]int64{
+	0: {1, 4}, 1: {1, 2}, 2: {32, 18}, 3: {32, 20}, 6: {32, 22}, 7: {32, 24}, 8: {32, 34}, 9: {32, 36},
+	10: {256, 84}, 11: {256, 110}, 12: {256, 144}, 13: {256, 176}, 14: {256, 210}, 15: {256, 292},
+	16: {256, 66}, 17: {256, 74}, 18: {256, 98}, 19: {256, 50}, 20: {32, 18}, 21: {256, 110}, 22: {256, 82},
+	23: {256, 136}, 24: {1, 1}, 25: {1, 2}, 26: {1, 4}, 27: {1, 8}, 28: {1, 8}, 29: {256, 56}, 30: {1, 2},
+}
+
+// readGGUFHeader reads the metadata and, when wantTensors is set, the tensor
+// table that follows it (names and sizes only). The tensor table is nil when a
+// tensor has a type this code does not know.
+func readGGUFHeader(r io.Reader, wantTensors bool) (map[string]ggufValue, []ggufTensor, error) {
 	g := &ggufReader{r: bufio.NewReaderSize(r, 1<<16)}
 	if g.u32() != 0x46554747 { // "GGUF"
 		if g.err != nil {
-			return nil, g.err
+			return nil, nil, g.err
 		}
-		return nil, errors.New("not a GGUF file")
+		return nil, nil, errors.New("not a GGUF file")
 	}
 	if v := g.u32(); v < 2 && g.err == nil {
-		return nil, fmt.Errorf("gguf version %d is not supported", v)
+		return nil, nil, fmt.Errorf("gguf version %d is not supported", v)
 	}
-	g.u64() // tensor count
+	ntensors := g.u64()
 	n := g.u64()
 	if n > 1<<16 {
-		return nil, fmt.Errorf("gguf: %d metadata keys", n)
+		return nil, nil, fmt.Errorf("gguf: %d metadata keys", n)
 	}
 	out := map[string]ggufValue{}
 	for i := uint64(0); i < n && g.err == nil; i++ {
@@ -190,9 +224,71 @@ func readGGUFMeta(r io.Reader) (map[string]ggufValue, error) {
 		out[key] = ggufValue{num: x, str: s, isN: t != ggufString}
 	}
 	if g.err != nil {
-		return nil, fmt.Errorf("gguf header: %w", g.err)
+		return nil, nil, fmt.Errorf("gguf header: %w", g.err)
 	}
-	return out, nil
+	if !wantTensors || ntensors > 1<<20 {
+		return out, nil, nil
+	}
+	var tensors []ggufTensor
+	known := true
+	for i := uint64(0); i < ntensors && g.err == nil; i++ {
+		name := g.str(true)
+		nd := g.u32()
+		if nd > 8 {
+			return out, nil, nil
+		}
+		elems := int64(1)
+		for d := uint32(0); d < nd; d++ {
+			elems *= int64(g.u64())
+		}
+		typ := g.u32()
+		g.u64() // data offset
+		blk, ok := ggufBlock[typ]
+		if !ok {
+			known = false
+			continue
+		}
+		tensors = append(tensors, ggufTensor{name: name, bytes: elems / blk[0] * blk[1]})
+	}
+	if g.err != nil || !known {
+		return out, nil, nil // the metadata alone is still useful
+	}
+	return out, tensors, nil
+}
+
+// activeFracFromTensors is the share of the weights that one token reads. Expert
+// tensors (ffn_*_exps) count only for the experts used per token; the token
+// embedding is a table lookup, so it only counts when it doubles as the output
+// layer. Returns 0 when it cannot be worked out.
+func activeFracFromTensors(meta map[string]ggufValue, tensors []ggufTensor) float64 {
+	arch := meta["general.architecture"].str
+	nExp, nUsed := meta[arch+".expert_count"].num, meta[arch+".expert_used_count"].num
+	var total, active float64
+	hasOutput := false
+	for _, t := range tensors {
+		if t.name == "output.weight" {
+			hasOutput = true
+		}
+	}
+	for _, t := range tensors {
+		b := float64(t.bytes)
+		total += b
+		switch {
+		case strings.Contains(t.name, "_exps."):
+			if nExp > 0 && nUsed > 0 && nUsed < nExp {
+				active += b * float64(nUsed) / float64(nExp)
+			} else {
+				active += b
+			}
+		case t.name == "token_embd.weight" && hasOutput:
+		default:
+			active += b
+		}
+	}
+	if total <= 0 {
+		return 0
+	}
+	return active / total
 }
 
 // shapeFromMeta works out the per-token KV cache size. Per-layer head counts
@@ -260,11 +356,18 @@ func shapeFromMeta(meta map[string]ggufValue) (*ModelShape, error) {
 }
 
 func readGGUFShape(r io.Reader) (*ModelShape, error) {
-	meta, err := readGGUFMeta(io.LimitReader(r, 256<<20))
+	meta, tensors, err := readGGUFHeader(io.LimitReader(r, 256<<20), true)
 	if err != nil {
 		return nil, err
 	}
-	return shapeFromMeta(meta)
+	s, err := shapeFromMeta(meta)
+	if err != nil {
+		return nil, err
+	}
+	if tensors != nil {
+		s.ActiveFrac = activeFracFromTensors(meta, tensors)
+	}
+	return s, nil
 }
 
 // mainModelFile is the first file of a model that is not a vision projector
@@ -301,6 +404,11 @@ func (c *Controller) readModelShape(ctx context.Context, m *ModelRec) (*ModelSha
 	if repo == "" || hf == "" {
 		return nil, errors.New("no model file to read")
 	}
+	return c.readShapeFromHF(ctx, repo, hf)
+}
+
+// readShapeFromHF streams just the header of a file on Hugging Face.
+func (c *Controller) readShapeFromHF(ctx context.Context, repo, hf string) (*ModelShape, error) {
 	req, _ := http.NewRequestWithContext(ctx, "GET", hfURL(repo, hf), nil)
 	if t := c.hfToken(); t != "" {
 		req.Header.Set("Authorization", "Bearer "+t)
@@ -319,7 +427,7 @@ func (c *Controller) readModelShape(ctx context.Context, m *ModelRec) (*ModelSha
 // fillModelShape reads and saves a ready model's shape if it is not known yet.
 func (c *Controller) fillModelShape(m *ModelRec) {
 	c.mu.Lock()
-	skip := m.Shape != nil || m.Status != "ready" || !strings.HasSuffix(strings.ToLower(mainModelFile(m.HFFiles)), ".gguf")
+	skip := (m.Shape != nil && m.Shape.ActiveFrac > 0) || m.Status != "ready" || !strings.HasSuffix(strings.ToLower(mainModelFile(m.HFFiles)), ".gguf")
 	c.mu.Unlock()
 	if skip {
 		return

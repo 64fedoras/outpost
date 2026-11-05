@@ -87,6 +87,7 @@ td.cmd { font-family: var(--mono); font-size: 12.5px; max-width: 420px; overflow
 .table-wrap { overflow-x: auto; border-radius: var(--radius); }
 
 .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; display: inline-block; }
+.st-warn { color: var(--warn, #d9822b); }
 .st-succeeded, .st-done, .st-passed, .st-ready, .st-online { color: var(--good); }
 .st-failed, .st-lost, .st-failing, .st-offline { color: var(--bad); }
 .st-running, .st-reviewing, .st-written, .st-dispatched, .st-planning, .st-testing, .st-fixing, .st-downloading, .st-installing, .st-loading, .st-restarting, .st-sent { color: var(--accent); }
@@ -624,3 +625,4 @@ details.live summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 
 .err-details { margin: 6px 0; } .err-details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .err-raw { max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 11px; margin: 6px 0 0; }
+.speed-low { color: var(--warn); }

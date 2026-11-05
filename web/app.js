@@ -1302,7 +1302,9 @@ function recRow(n, loaded) {
   const where = rec.in_library ? '' : ' · adds to library';
   return `<div class="rec-row"><span class="pill st-ready">Recommended</span> <b>${esc(rec.label)}</b>
     <button class="small primary" data-act="load-rec" data-id="${n.id}" data-name="${esc(rec.name)}" data-lib="${rec.in_library ? 1 : 0}">${loaded ? 'Switch to this' : 'Load'}</button>
-    <div class="sub wrap u18">${esc(rec.reason)} · ${bytes(rec.bytes)}${where}</div></div>`;
+    ${rec.est_tok_s ? `<span class="pill ${rec.speed_low ? 'st-warn' : 'st-ready'}">~${rec.est_tok_s < 10 ? rec.est_tok_s.toFixed(1) : Math.round(rec.est_tok_s)} tok/s</span>` : ''}
+    <div class="sub wrap u18">${esc(rec.reason)} · ${bytes(rec.bytes)}${where}</div>
+    ${rec.speed_note ? `<div class="sub wrap u18${rec.speed_low ? ' speed-low' : ''}">${esc(rec.speed_note)}</div>` : ''}</div>`;
 }
 function nodeCard(n) {
   const h = n.hello || {}, hb = n.online ? n.heartbeat : null, cpu = h.cpu || {};
