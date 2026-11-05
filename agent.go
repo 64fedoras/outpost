@@ -610,6 +610,9 @@ func (a *agentRun) loop(ctx context.Context) error {
 			break
 		}
 		compactMsgs(a.msgs, a.budget)
+		if a.subtask == "" {
+			a.t.actBeginQ(fmt.Sprintf("%s: the planner is working out the next step (%d tool calls so far)", a.label, a.Calls), "", true)
+		}
 		start := time.Now()
 		resp, err := a.step(ctx, llmRequest{System: a.system, Msgs: a.msgs, Tools: a.tools, MaxTokens: a.maxOut, Temperature: 0.2, Label: a.label})
 		a.active += time.Since(start)
@@ -631,8 +634,10 @@ func (a *agentRun) loop(ctx context.Context) error {
 			}
 			a.Calls++
 			a.t.logf("info", "%s: %s %s", a.label, call.Name, firstLine(call.Args, 140))
+			a.noteCall(call, "")
 			t0 := time.Now()
 			out := a.execute(ctx, call)
+			a.noteCall(call, out)
 			if call.Name != "ask_user" { // waiting for the user is free
 				a.active += time.Since(t0)
 			}
@@ -835,3 +840,51 @@ func (c *Controller) dependencyReports(t *Task, spec PlanSubtask) string {
 const plannerInvestigateHelp = `
 
 Investigate subtasks: when the request needs digging before code can be written (find the cause of a bug, understand unfamiliar code, check what a tool or library does here), you may add up to two subtasks with "kind": "investigate" and "files": []. An investigator reads the project, searches and runs commands, and writes a short report; it changes no files. Make the subtasks that need its findings depend on it with depends_on, and they will receive the report. For ordinary subtasks leave "kind" out.`
+
+// noteCall puts a fixer tool call on the activity card: before it runs (out is
+// "") as the running step, after it as a finished one. Investigate subtasks
+// have their own rows and are not shown here.
+func (a *agentRun) noteCall(call toolCall, out string) {
+	if a.subtask != "" || a.t == nil {
+		return
+	}
+	var args map[string]any
+	_ = json.Unmarshal([]byte(call.Args), &args)
+	s := func(k string) string { v, _ := args[k].(string); return strings.TrimSpace(v) }
+	var doing, did, node string
+	switch call.Name {
+	case "read_file":
+		doing, did = "reading "+s("path"), "read "+s("path")
+	case "list_files":
+		doing, did = "listing the project files", "listed the project files"
+	case "search":
+		doing, did = "searching for "+firstLine(s("pattern"), 60), "searched for "+firstLine(s("pattern"), 60)
+	case "write_file":
+		doing, did = "editing "+s("path"), "edited "+s("path")
+	case "run":
+		doing, did = "running "+firstLine(s("command"), 80), "ran "+firstLine(s("command"), 80)
+	case "ask_user":
+		doing, did = "waiting for your answer", "asked you a question"
+	default:
+		return
+	}
+	_ = node
+	if out == "" {
+		a.t.actBegin(fmt.Sprintf("%s: %s", a.label, doing), "")
+		return
+	}
+	st := "ok"
+	if strings.HasPrefix(out, "error") {
+		st = "bad"
+		did += " (" + firstLine(out, 80) + ")"
+	} else if call.Name == "run" {
+		var code int
+		if n, _ := fmt.Sscanf(out, "exit code %d", &code); n == 1 {
+			did += ": " + testSummary(strings.TrimPrefix(out, fmt.Sprintf("exit code %d\n", code)), code)
+			if code != 0 {
+				st = "bad"
+			}
+		}
+	}
+	a.t.actEnd(st, strings.ToUpper(did[:1])+did[1:])
+}

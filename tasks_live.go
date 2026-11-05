@@ -33,6 +33,7 @@ type liveCall struct {
 	tok                  int
 	est                  bool
 	first                time.Time
+	lastOut              time.Time // last text or start, for stall detection
 }
 
 func (lc *liveCall) tps() float64 {
@@ -111,7 +112,7 @@ func (h *liveHub) begin(taskID, sub, label, node string, est bool) *liveHandle {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	lt := h.taskLocked(taskID)
-	lc := &liveCall{id: newID("call"), sub: sub, label: label, node: node, est: est}
+	lc := &liveCall{id: newID("call"), sub: sub, label: label, node: node, est: est, lastOut: time.Now()}
 	delete(lt.last, sub)
 	lt.calls[lc.id] = lc
 	lt.order = append(lt.order, lc.id)
@@ -133,6 +134,7 @@ func (lh *liveHandle) with(fn func(lt *liveTask, lc *liveCall)) {
 }
 
 func (h *liveHub) addText(lt *liveTask, lc *liveCall, text string, tokens int) {
+	lc.lastOut = time.Now()
 	if lc.first.IsZero() {
 		lc.first = time.Now()
 	}
@@ -313,4 +315,22 @@ func (c *Controller) handleTaskEvents(w http.ResponseWriter, r *http.Request) {
 			fl.Flush()
 		}
 	}
+}
+
+// idleFor is how long the task's quietest running model call has gone without
+// output; 0 when no call is running.
+func (h *liveHub) idleFor(taskID string) time.Duration {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	lt := h.tasks[taskID]
+	if lt == nil {
+		return 0
+	}
+	var idle time.Duration
+	for _, lc := range lt.calls {
+		if d := time.Since(lc.lastOut); d > idle {
+			idle = d
+		}
+	}
+	return idle
 }
