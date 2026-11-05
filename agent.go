@@ -200,6 +200,28 @@ func toolsUnsupported(err error) bool {
 	return strings.Contains(s, "jinja") || (strings.Contains(s, "tool") && (strings.Contains(s, "support") || strings.Contains(s, "400")))
 }
 
+// errAgentToolParse means the model kept producing tool calls whose JSON was
+// cut off or malformed, even after retries. Callers fall back to a plain
+// request that asks for file blocks instead of tool calls.
+var errAgentToolParse = errors.New("the model's tool calls were cut off or malformed")
+
+// maxToolParseRetries is how many times a step is repeated, with a note to the
+// model, after llama-server rejects a tool call's JSON.
+const maxToolParseRetries = 2
+
+// toolCallParseError recognises llama-server's 500 when the model's tool call
+// arguments are not valid JSON. That almost always means the output hit the
+// token limit in the middle of a long write_file.
+func toolCallParseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "failed to parse tool call") || (strings.Contains(s, "parse_error") && strings.Contains(s, "tool"))
+}
+
+const toolParseNote = "Your last tool call could not be read: its JSON was cut off or badly escaped, so nothing was done. Keep each tool call short. For a long file, call write_file with only the first part (about 60 lines), then add the rest with append_file in several calls. Avoid long single-line strings. Try again now."
+
 // ---------- tools ----------
 
 func objSchema(required []string, props map[string]any) map[string]any {
@@ -219,6 +241,8 @@ var (
 		objSchema([]string{"pattern"}, map[string]any{"pattern": str("regular expression or plain text"), "dir": str("limit to this directory (optional)")})}
 	toolWriteFile = agentTool{"write_file", "Create or replace a project file with its complete new content.",
 		objSchema([]string{"path", "content"}, map[string]any{"path": str("path relative to the project root"), "content": str("the complete file content")})}
+	toolAppendFile = agentTool{"append_file", "Add text to the end of a project file (created if missing). Use it to write a long file in several short calls: write_file the first part, then append_file the rest in order.",
+		objSchema([]string{"path", "content"}, map[string]any{"path": str("path relative to the project root"), "content": str("the text to add after the existing content")})}
 	toolRun = agentTool{"run", "Run a shell command on a build node with a fresh copy of the project, and return its exit code and output. Nothing persists between runs, so chain steps with && (for example the setup command, then the tests).",
 		objSchema([]string{"command"}, map[string]any{"command": str("the command line")})}
 	toolAskUser = agentTool{"ask_user", "Ask the person who started this task a question when you cannot continue without a decision. Work on other parts continues while you wait.",
@@ -240,12 +264,13 @@ type agentRun struct {
 	budget  int    // characters of conversation kept
 	maxOut  int
 
-	msgs    []agentMsg
-	Written []string
-	Calls   int
-	Summary string
-	Stopped string // "" when the model finished by itself, else why it was stopped
-	active  time.Duration
+	parseFails int // tool calls llama-server could not parse so far
+	msgs       []agentMsg
+	Written    []string
+	Calls      int
+	Summary    string
+	Stopped    string // "" when the model finished by itself, else why it was stopped
+	active     time.Duration
 }
 
 // execute dispatches one tool call and returns the text the model sees.
@@ -285,11 +310,21 @@ func (a *agentRun) execute(ctx context.Context, call toolCall) string {
 		return listFilesText(repo, strings.Trim(strings.TrimPrefix(s("dir"), "./"), "/"))
 	case "search":
 		return searchText(repo, s("pattern"), strings.Trim(strings.TrimPrefix(s("dir"), "./"), "/"))
-	case "write_file":
+	case "write_file", "append_file":
 		p := strings.TrimPrefix(strings.TrimSpace(s("path")), "./")
 		content := s("content")
 		if p == "" {
 			return "error: path is required"
+		}
+		if call.Name == "append_file" {
+			if sp, err := safeJoin(repo, p); err == nil {
+				if old, err := os.ReadFile(sp); err == nil {
+					if len(old) > 0 && old[len(old)-1] != '\n' && !strings.HasPrefix(content, "\n") {
+						old = append(old, '\n')
+					}
+					content = string(old) + content
+				}
+			}
 		}
 		if len(content) > maxRepoFileSize {
 			return "error: file too large"
@@ -613,6 +648,15 @@ func (a *agentRun) loop(ctx context.Context) error {
 		start := time.Now()
 		resp, err := a.step(ctx, llmRequest{System: a.system, Msgs: a.msgs, Tools: a.tools, MaxTokens: a.maxOut, Temperature: 0.2, Label: a.label})
 		a.active += time.Since(start)
+		if toolCallParseError(err) {
+			a.parseFails++
+			a.t.logf("warn", "%s: the model's tool call was cut off (%d of %d tries).", a.label, a.parseFails, maxToolParseRetries+1)
+			if a.parseFails > maxToolParseRetries {
+				return fmt.Errorf("%w: %v", errAgentToolParse, err)
+			}
+			a.msgs = append(a.msgs, agentMsg{Role: "user", Text: toolParseNote})
+			continue
+		}
 		if err != nil {
 			if a.Calls == 0 && toolsUnsupported(err) {
 				return errAgentUnsupported
@@ -684,7 +728,7 @@ func (c *Controller) newAgent(t *Task, node, label, system, user, subtask string
 	}
 	if local != "" { // a local model has a small window: shorter answers, results and history
 		ctxTokens := c.nodeCtx(local)
-		a.maxOut = 2048
+		a.maxOut = 4096 // a whole small file must fit in one write_file call
 		if a.maxOut > ctxTokens/3 {
 			a.maxOut = ctxTokens / 3
 		}
@@ -710,7 +754,7 @@ func (c *Controller) agentEnabled() bool {
 
 const agentFixSystem = `You are the lead engineer integrating code written by several small models. The project's tests fail. Find the cause and fix it, working like a developer at a terminal.
 
-You have tools: list_files, read_file and search to look around, write_file to change a file (always the complete new content), run to execute a command on a build node (each run starts from a fresh copy of the project, so chain setup and tests with &&), and ask_user only if a decision is truly the user's. You have at most 30 tool calls and 20 minutes.
+You have tools: list_files, read_file and search to look around, write_file to change a file (always the complete new content; for a long file write the first part, then add the rest with append_file in short calls), run to execute a command on a build node (each run starts from a fresh copy of the project, so chain setup and tests with &&), and ask_user only if a decision is truly the user's. You have at most 30 tool calls and 20 minutes.
 
 Method: read the failing test and the file its error points at, make the smallest change that fixes the cause, then run the tests again to check. The tests describe the intended behaviour: fix the code to match them, and change a test only when the test itself is clearly wrong. If earlier fix rounds are listed and the tests still failed, their approach did not work; look for a different cause.
 
@@ -734,7 +778,7 @@ func (c *Controller) agentFix(ctx context.Context, t *Task, plan *Plan, cmd, out
 	}
 	b.WriteString("\nProject files:\n" + clipText(listFilesText(t.repoDir(), ""), 6000))
 	b.WriteString(t.steeringText())
-	tools := []agentTool{toolListFiles, toolReadFile, toolSearch, toolWriteFile, toolRun, toolAskUser}
+	tools := []agentTool{toolListFiles, toolReadFile, toolSearch, toolWriteFile, toolAppendFile, toolRun, toolAskUser}
 	a := c.newAgent(t, "", fmt.Sprintf("Fix round %d", round+1), agentFixSystem+c.toolsPrompt(), b.String(), "", tools)
 	if err := a.loop(ctx); err != nil {
 		return nil, err
