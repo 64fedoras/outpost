@@ -174,7 +174,7 @@ func (c *Controller) settingsView() map[string]any {
 		"github_updates": !c.settings.GitHubUpdatesOff, "github_auto_install": c.settings.GitHubAutoInstall,
 		"sandbox":     effectiveSandbox(c.settings.Sandbox, ""),
 		"idle_unload": c.settings.IdleUnload, "idle_unload_effective": formatIdleDuration(idleUnloadFor(c.settings.IdleUnload, "")),
-		"instructions": c.settings.Instructions, "backup_enabled": c.settings.BackupEnabled, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
+		"instructions": c.settings.Instructions, "backup_enabled": c.settings.BackupEnabled, "last_backup": c.lastBackup, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
 	for k, x := range c.notifyView() {
 		v[k] = x

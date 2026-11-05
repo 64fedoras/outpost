@@ -130,6 +130,13 @@ node starts when you log in and restarts if it stops, with the binary in `~/.out
 `outpost uninstall node` removes it. A menu bar item (see *Tray icon* below) is installed with it and starts at login.
 *Untested on a real Mac.* Running `outpost node --join <token>` in a terminal still works.
 
+**Check cluster.** Once nodes are added, **Check cluster** on the Nodes page tests every online node in one go:
+a 16-token call to its loaded model, an `echo` command (if commands are on), a connection from the controller to
+its file-sharing port, free disk on the models folder (warns under 10 GB), its clock against the controller's
+(warns past 30 s) and its version. Each problem comes with a sentence on what it breaks and, where there is one,
+a command to fix it (for example opening the firewall port or turning on time sync). Offline nodes are listed but
+not tested. The check changes nothing and only the last run is kept, in memory.
+
 ### Tray icon (desktop machines)
 
 Desktop nodes get a tent icon in the system tray (notification area): **green** while taking work,
@@ -725,7 +732,10 @@ sudo outpost install controller --advertise https://IP:8443 --restore outpost-ba
 (add `--force` to overwrite an existing controller's data; set `OUTPOST_BACKUP_PASSPHRASE` to skip the
 prompt). Nodes reconnect on their own because the node keys and certificate come back unchanged.
 *Nightly backup* writes a copy to a folder on the controller (for example an NFS mount) about every
-24 hours and keeps the last 7. Its passphrase is stored encrypted with `secret.key`.
+24 hours and keeps the last 7. Its passphrase is stored encrypted with `secret.key`. Each copy is read back
+right after it is written (decrypted and unpacked in memory, nothing restored), and the Backup card says
+"read back and verified (N files)" or why it failed. A failed or unreadable copy also sends a *Backup failed*
+notification (once per distinct failure). Saving the schedule makes the first copy straight away.
 
 ## Notifications
 
@@ -767,6 +777,17 @@ until you dismiss it.
 **Stopping and updating.** A stop from systemd (or Ctrl+C), an update and a rollback first save every task, then the
 controller exits. Tasks that were running resume when it is back (local planners on their own, Claude and OpenRouter
 tasks with Resume, as before).
+
+**Reading a node's log from the browser.** *Logs* on a node's card (Nodes → Detailed list) shows the end of
+that node's Outpost log, its llama-server output or its tray log, and follows new lines while it is open. It
+works on every platform, including Linux nodes whose log otherwise only goes to journald. Nodes older than
+this feature cannot answer; update them first.
+
+**Diagnostics for a bug report.** *Settings → Security and backup → Download diagnostics* builds one zip in your
+browser: `summary.txt` (versions, nodes, uptime), the controller's recent log, settings, nodes and models
+(every key, token, password, hash and URL replaced by `(removed)`), the event log of the 20 newest tasks and,
+if ticked, the node, llama-server and tray logs of every online node. Task prompts are left out unless you tick
+that box. Nothing is sent anywhere.
 
 **Uptime monitors.** `GET /healthz` needs no login and returns `{"ok":true,"nodes_online":N,"tasks_active":M}`
 (503 while the controller is shutting down). It shows counts only: no names, versions or addresses.

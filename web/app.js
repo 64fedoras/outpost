@@ -1574,6 +1574,7 @@ function nodeCard(n) {
       ${sandboxPicker(n)}
       <span class="u20"></span>
       <button class="small" data-act="restart" data-id="${n.id}" ${n.online && !n.restarting ? '' : 'disabled'} title="Restart the Outpost service on this node">${n.restarting ? 'Restarting…' : 'Restart'}</button>
+      <button class="small" data-act="logs" data-id="${n.id}" ${n.online ? '' : 'disabled'} title="Show this node's recent log">Logs</button>
       <button class="small" data-act="rename" data-id="${n.id}">Rename</button>
       <button class="small danger" data-act="remove" data-id="${n.id}">Remove</button>
       <button class="small" data-act="run" data-id="${n.id}" ${n.online && n.exec_enabled ? '' : 'disabled'} title="${n.exec_enabled ? '' : 'Enable exec first'}">Run…</button>
@@ -2172,6 +2173,11 @@ async function loadSecurity() {
     if (settings) {
       $('bk-on').checked = !!settings.backup_enabled; $('bk-dir').value = settings.backup_dir || '';
       $('bk-pass-state').textContent = settings.has_backup_pass ? '· saved' : '· not set';
+      const lb = settings.last_backup, el = $('bk-last');
+      el.classList.toggle('hidden', !lb);
+      if (lb) setHTML('bk-last', lb.verified
+        ? `Last nightly copy <code>${esc(lb.file)}</code>, ${ago(lb.at)}: read back and verified (${lb.files} files).`
+        : `<b class="st-failed">${lb.file ? `Last nightly copy <code>${esc(lb.file)}</code>` : 'The nightly backup'} failed ${ago(lb.at)}:</b> ${esc(lb.error)}. Check the folder and passphrase.`);
     }
   } catch (e) {}
 }
@@ -2366,7 +2372,12 @@ async function pollJob() {
 
 // ---------- modals + delegated events ----------
 function open(id) { $(id).classList.remove('hidden'); }
-function close(id) { $(id).classList.add('hidden'); if (id === 'modal-job') { clearTimeout(jobTimer); openJobId = null; } }
+function close(id) {
+  $(id).classList.add('hidden');
+  if (id === 'modal-job') { clearTimeout(jobTimer); openJobId = null; }
+  if (id === 'modal-logs') { clearTimeout(logsTimer); logsNodeId = null; }
+  if (id === 'modal-check') clearTimeout(checkTimer);
+}
 document.querySelectorAll('.overlay').forEach((ov) => {
   ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(ov.id); });
   ov.querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => close(ov.id); });
@@ -2413,6 +2424,7 @@ document.addEventListener('click', async (e) => {
       case 'rm-node-model': if (confirm(`Delete ${el.dataset.name} from this node's disk?`)) { await api(`/api/nodes/${id}/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); toast('Deleting'); } break;
       case 'clean': openClean(id); break;
       case 'rename': renameNode(id); break;
+      case 'logs': openLogs(id); break;
       case 'idle': setNodeIdle(id); break;
       case 'restart': {
         const n = nodeById(id);
@@ -2523,3 +2535,86 @@ function imageAttach(pre, getPlanner, warnEl) {
 const ntImg = imageAttach('nt', () => $('nt-planner').value, $('nt-img-warn'));
 const tmImg = imageAttach('tm', () => taskDetail && taskDetail.planner, $('tm-img-warn'));
 const ntDraft = Drafts.bind($('nt-prompt'), $('nt-draft')), tmDraft = Drafts.bind($('tm-text'), $('tm-draft'));
+
+// ---- Check cluster (clustercheck.go) ----
+let checkTimer = null;
+const CHECK_COLS = [['model', 'Model call'], ['command', 'Command'], ['port', 'File port'], ['disk', 'Disk'], ['clock', 'Clock'], ['version', 'Version']];
+const CHECK_ICON = { ok: '✓', warn: '!', fail: '✗', skip: '–', pending: '·', running: '…' };
+function renderCheck(ck) {
+  const rows = ck.rows || [];
+  if (!rows.length) { setHTML('check-body', '<p class="muted">No nodes yet.</p>'); setHTML('check-notes', ''); return; }
+  const cell = (st) => {
+    if (!st) return '<td></td>';
+    const cls = { ok: 'done', warn: 'warn', fail: 'failed', skip: 'pending', pending: 'pending', running: 'running' }[st.state] || 'pending';
+    return `<td class="ck-cell st-${cls}"><span class="ck-icon" aria-hidden="true">${CHECK_ICON[st.state] || ''}</span> ${esc(st.text || (st.state === 'running' ? 'checking' : st.state === 'pending' ? 'waiting' : ''))}<span class="sr-only"> (${esc(st.state)})</span></td>`;
+  };
+  setHTML('check-body', `<div class="ck-wrap"><table class="ck-table"><thead><tr><th>Node</th>${CHECK_COLS.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody>${rows.map((r) =>
+    r.online ? `<tr><td><b>${esc(r.name)}</b></td>${CHECK_COLS.map(([k]) => cell(r.steps[k])).join('')}</tr>`
+      : `<tr class="muted"><td><b>${esc(r.name)}</b></td><td colspan="${CHECK_COLS.length}">${esc(r.offline || 'offline')}: not checked</td></tr>`).join('')}</tbody></table></div>`);
+  const notes = rows.flatMap((r) => r.notes || []);
+  setHTML('check-notes', notes.length ? notes.map((n) => `<div class="note ${n.level === 'bad' ? 'bad' : 'warn'} u6">${esc(n.text)}${n.fix ? `<div class="codebox u4"><span>${esc(n.fix)}</span><button data-copytext="${esc(n.fix)}">Copy</button></div>` : ''}</div>`).join('')
+    : (ck.running ? '' : '<div class="note good u6">Everything checked is working.</div>'));
+  $('check-when').textContent = ck.running ? 'Checking…' : ck.ended ? `Checked ${ago(ck.ended)}` : '';
+  $('check-again').disabled = !!ck.running;
+}
+async function pollCheck() {
+  clearTimeout(checkTimer);
+  if ($('modal-check').classList.contains('hidden')) return;
+  try { const ck = await api('/api/cluster/check'); renderCheck(ck); if (ck.running) checkTimer = setTimeout(pollCheck, 1000); } catch (e) { toast(e.message); }
+}
+async function startCheck() {
+  try { renderCheck(await post('/api/cluster/check')); } catch (e) { toast(e.message); }
+  pollCheck();
+}
+$('btn-check').onclick = async () => {
+  open('modal-check');
+  let ck = null;
+  try { ck = await api('/api/cluster/check'); } catch (e) {}
+  // Show the last run if it is recent or still going; otherwise start a new one.
+  if (ck && (ck.running || (ck.ended && Date.now() - new Date(ck.ended) < 5 * 60e3))) { renderCheck(ck); pollCheck(); } else startCheck();
+};
+$('check-again').onclick = startCheck;
+$('modal-check').addEventListener('click', (e) => { const b = e.target.closest('[data-copytext]'); if (b) { copyText(b.dataset.copytext); toast('Copied'); } });
+
+// ---- Node logs (node_ask.go) ----
+let logsTimer = null, logsNodeId = null;
+function openLogs(id) {
+  logsNodeId = id;
+  $('logs-node').textContent = nodeName(nodeById(id));
+  $('logs-out').textContent = 'Loading…';
+  open('modal-logs'); fetchLogs(true);
+}
+async function fetchLogs(scrollEnd) {
+  clearTimeout(logsTimer);
+  const id = logsNodeId;
+  if (!id) return;
+  const out = $('logs-out'), atBottom = scrollEnd || out.scrollTop + out.clientHeight >= out.scrollHeight - 20;
+  try {
+    const r = await api(`/api/nodes/${id}/logs?source=${$('logs-src').value}&lines=${$('logs-lines').value}`);
+    if (id !== logsNodeId) return;
+    $('logs-note').textContent = r.note || ''; $('logs-note').classList.toggle('hidden', !r.note);
+    if (out.textContent !== (r.text || '')) { out.textContent = r.text || ''; if (atBottom) out.scrollTop = out.scrollHeight; }
+  } catch (e) {
+    if (id !== logsNodeId) return;
+    $('logs-note').textContent = e.message; $('logs-note').classList.remove('hidden');
+  }
+  if ($('logs-follow').checked && logsNodeId === id) logsTimer = setTimeout(() => fetchLogs(false), 2000);
+}
+$('logs-src').onchange = () => fetchLogs(true);
+$('logs-lines').onchange = () => fetchLogs(true);
+$('logs-follow').onchange = () => fetchLogs(false);
+$('logs-copy').onclick = () => { copyText($('logs-out').textContent); toast('Copied'); };
+
+// ---- Diagnostics (diagnostics.go) ----
+$('dg-download').onclick = async () => {
+  const b = $('dg-download'); b.disabled = true; toast('Collecting diagnostics…', 8000);
+  try {
+    const r = await fetch('/api/diagnostics', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_logs: $('dg-node').checked, tray_logs: $('dg-tray').checked, prompts: $('dg-prompts').checked }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(await r.blob());
+    a.download = (r.headers.get('Content-Disposition') || '').split('filename=')[1]?.replace(/"/g, '') || 'outpost-diagnostics.zip'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10e3);
+    toast('Diagnostics downloaded');
+  } catch (e) { toast(e.message); } finally { b.disabled = false; }
+};
