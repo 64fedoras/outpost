@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -285,6 +286,55 @@ func restoreBackup(r io.Reader, dir, pass string) (int, error) {
 	return n, nil
 }
 
+// verifyBackup decrypts and reads a whole backup without writing anything,
+// returning how many files it holds. A wrong passphrase, a cut-off file or a
+// damaged chunk fails the same way a restore would.
+func verifyBackup(path, pass string) (int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	dr, err := newBackupReader(f, pass)
+	if err != nil {
+		return 0, err
+	}
+	gz, err := gzip.NewReader(dr)
+	if err != nil {
+		return 0, errBadBackup
+	}
+	tr := tar.NewReader(gz)
+	n := 0
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return n, errBadBackup
+		}
+		if _, err := io.Copy(io.Discard, tr); err != nil {
+			return n, errBadBackup
+		}
+		if h.Typeflag == tar.TypeReg {
+			n++
+		}
+	}
+	if _, err := io.Copy(io.Discard, dr); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+// backupCheck is the result of checking the newest scheduled backup.
+type backupCheck struct {
+	File     string    `json:"file"`
+	At       time.Time `json:"at"`
+	Files    int       `json:"files"`
+	Verified bool      `json:"verified"`
+	Error    string    `json:"error,omitempty"`
+}
+
 // runRestore is `outpost install controller --restore FILE`.
 func runRestore(file, dir string, force bool) error {
 	if _, err := os.Stat(filepath.Join(dir, "admin.json")); err == nil && !force {
@@ -375,6 +425,9 @@ func (c *Controller) handleBackupSchedule(w http.ResponseWriter, r *http.Request
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
+	if req.Enabled {
+		go c.scheduledBackup() // the first copy now (if none is recent), not up to an hour later
+	}
 	writeJSON(w, 200, c.settingsView())
 }
 
@@ -391,6 +444,14 @@ func (c *Controller) runScheduledBackup() error {
 	sort.Strings(files)
 	if len(files) > 0 {
 		if st, err := os.Stat(files[len(files)-1]); err == nil && time.Since(st.ModTime()) < 23*time.Hour {
+			c.mu.Lock()
+			known := c.lastBackup != nil && c.lastBackup.Verified
+			c.mu.Unlock()
+			if !known { // after a restart: check the newest copy once, so Settings can say it is good
+				if pass, err := c.decrypt(enc); err == nil && pass != "" {
+					c.checkBackup(files[len(files)-1], pass)
+				}
+			}
 			return nil
 		}
 	}
@@ -404,6 +465,9 @@ func (c *Controller) runScheduledBackup() error {
 		return err
 	}
 	err = writeBackup(f, c.dataDir, pass, false)
+	if err == nil {
+		err = f.Sync()
+	}
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -420,14 +484,55 @@ func (c *Controller) runScheduledBackup() error {
 		files = files[1:]
 	}
 	log.Printf("backup: wrote %s", path)
+	c.checkBackup(path, pass)
 	return nil
+}
+
+// checkBackup reads back a backup just written and records the result for
+// Settings; a failure is also sent as a notification.
+func (c *Controller) checkBackup(path, pass string) {
+	n, err := verifyBackup(path, pass)
+	bc := &backupCheck{File: filepath.Base(path), At: time.Now(), Files: n, Verified: err == nil}
+	if err != nil {
+		bc.Error = "could not be read back: " + err.Error()
+		log.Printf("backup: %s failed its check: %v", path, err)
+	} else {
+		log.Printf("backup: %s verified (%d files)", path, n)
+	}
+	c.recordBackup(bc)
+}
+
+// recordBackup keeps the result for Settings and sends a notification when a
+// backup fails, once per distinct failure (the loop retries every hour).
+func (c *Controller) recordBackup(bc *backupCheck) {
+	c.mu.Lock()
+	prev := c.lastBackup
+	c.lastBackup = bc
+	c.mu.Unlock()
+	if bc.Error != "" && (prev == nil || prev.Error != bc.Error) {
+		what := "The nightly backup"
+		if bc.File != "" {
+			what = bc.File
+		}
+		go c.deliverNotification("backup_failed", "Backup failed", what+": "+bc.Error, "")
+	}
+}
+
+// backupMu keeps the hourly loop and a schedule change from writing at once.
+var backupMu sync.Mutex
+
+func (c *Controller) scheduledBackup() {
+	backupMu.Lock()
+	defer backupMu.Unlock()
+	if err := c.runScheduledBackup(); err != nil {
+		log.Printf("backup: %v", err)
+		c.recordBackup(&backupCheck{At: time.Now(), Error: err.Error()})
+	}
 }
 
 func (c *Controller) backupLoop() {
 	for {
-		if err := c.runScheduledBackup(); err != nil {
-			log.Printf("backup: %v", err)
-		}
+		c.scheduledBackup()
 		time.Sleep(time.Hour)
 	}
 }

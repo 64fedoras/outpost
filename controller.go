@@ -12,6 +12,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -127,19 +128,23 @@ type Controller struct {
 	ghState    ghUpdateState
 	updates    map[string]*UpdateStatus
 
-	settings  Settings
-	nt        notifier
-	waiters   map[string]chan *JobResult
-	models    map[string]*ModelRec
-	runtimes  map[string]*RuntimeRec
-	rtCache   *runtimeCache
-	nodeOps   map[string]*nodeOpView
-	pipelines map[string]*pipeline         // model setups in progress; cancel stops one
-	jobBlobs  map[string]map[string]string // job -> input path -> file on the controller, for nodes to download
-	peerBad   map[string]time.Time         // nodes skipped as model sources until then (served data failing its hash)
-	tasks     map[string]*Task
-	recovered recoveredNotes      // damaged state files found at start-up (recovered.go)
-	projects  map[string]*Project // see projects.go
+	settings   Settings
+	nt         notifier
+	waiters    map[string]chan *JobResult
+	models     map[string]*ModelRec
+	runtimes   map[string]*RuntimeRec
+	rtCache    *runtimeCache
+	nodeOps    map[string]*nodeOpView
+	pipelines  map[string]*pipeline         // model setups in progress; cancel stops one
+	jobBlobs   map[string]map[string]string // job -> input path -> file on the controller, for nodes to download
+	peerBad    map[string]time.Time         // nodes skipped as model sources until then (served data failing its hash)
+	tasks      map[string]*Task
+	recovered  recoveredNotes           // damaged state files found at start-up (recovered.go)
+	asks       askWaiters               // node.ask requests waiting for their answer (node_ask.go)
+	check      clusterCheck             // the last Check cluster run (clustercheck.go)
+	lastBackup *backupCheck             // the newest scheduled backup, read back after writing
+	clockSkew  map[string]time.Duration // node clock minus controller clock, from heartbeats
+	projects   map[string]*Project      // see projects.go
 	// resumeWake wakes autoResumeInterrupted on node heartbeats (nudgeResume).
 	resumeWake chan struct{}
 	reserved   map[string]bool
@@ -160,6 +165,7 @@ func runController(args []string) error {
 	if err := os.MkdirAll(*data, 0o700); err != nil {
 		return err
 	}
+	log.SetOutput(io.MultiWriter(log.Writer(), ctlLog)) // keep the log's end for Download diagnostics
 	cert, fp, err := loadOrCreateCert(*data)
 	if err != nil {
 		return fmt.Errorf("tls: %w", err)
@@ -232,6 +238,10 @@ func runController(args []string) error {
 	mux.HandleFunc("DELETE /api/apitokens/{id}", c.authSession(c.handleRevokeAPIToken))
 	mux.HandleFunc("GET /api/state", c.auth(c.handleState))
 	mux.HandleFunc("POST /api/recovered/dismiss", c.auth(c.handleDismissRecovered))
+	mux.HandleFunc("POST /api/diagnostics", c.authSession(c.handleDiagnostics))
+	mux.HandleFunc("GET /api/nodes/{id}/logs", c.auth(c.handleNodeLogs))
+	mux.HandleFunc("GET /api/cluster/check", c.auth(c.handleGetClusterCheck))
+	mux.HandleFunc("POST /api/cluster/check", c.auth(c.handleStartClusterCheck))
 	mux.HandleFunc("POST /api/tokens", c.auth(c.handleNewToken))
 	mux.HandleFunc("GET /api/tokens/{id}", c.auth(c.handleTokenStatus))
 	mux.HandleFunc("POST /api/nodes/{id}/settings", c.auth(c.handleNodeSettings))
@@ -959,6 +969,8 @@ func (c *Controller) handleNodeMessage(nodeID string, env *Envelope) {
 	defer c.mu.Unlock()
 	c.lastSeen[nodeID] = time.Now()
 	switch env.Type {
+	case "node.answer":
+		c.deliverAnswer(env.Body)
 	case "node.repin_ack":
 		var a struct {
 			Fingerprint string `json:"fingerprint"`
@@ -970,6 +982,12 @@ func (c *Controller) handleNodeMessage(nodeID string, env *Envelope) {
 		var hb Heartbeat
 		if json.Unmarshal(env.Body, &hb) == nil {
 			c.lastHB[nodeID] = &hb
+			if !env.TS.IsZero() {
+				if c.clockSkew == nil {
+					c.clockSkew = map[string]time.Duration{}
+				}
+				c.clockSkew[nodeID] = env.TS.Sub(time.Now())
+			}
 			c.nudgeResume()
 			if hb.RPCEndpoint != "" && !c.poolingOnLocked() {
 				// A node is still lending (it resumed after a restart) while pooling is off.

@@ -141,6 +141,7 @@
     <section data-page="nodes" class="hidden">
       <div class="section-head"><h2>Nodes</h2><span class="sub u2" id="node-count"></span><span class="spacer"></span>
         <div class="nv-toggle" role="group" aria-label="Node view"><button data-act="node-view" data-node-view="grid">Grid</button><button data-act="node-view" data-node-view="list">List</button><button data-act="node-view" data-node-view="detail">Detailed list</button></div>
+        <button id="btn-check" title="Run a short model call, a command and a connection test on every online node">Check cluster</button>
         <button id="btn-add" class="primary">Add node</button></div>
       <div id="nodes"></div>
       <div class="section-head"><h2>Recent jobs</h2><span class="sub u2">every model call and command sent to a node</span></div>
@@ -365,6 +366,15 @@
           <label for="bk-dir">Folder (full path, e.g. an NFS mount)</label><input id="bk-dir" placeholder="/mnt/nas/outpost-backups">
           <label for="bk-sched-pass">Passphrase for scheduled backups <span class="muted" id="bk-pass-state"></span></label><input id="bk-sched-pass" type="password" autocomplete="new-password" placeholder="leave blank to keep the saved one">
           <div class="modal-foot"><button id="bk-sched-save">Save schedule</button></div>
+          <p class="hint hidden" id="bk-last"></p>
+        </div>
+        <div class="section-head"><h2>Diagnostics</h2></div>
+        <div class="card">
+          <p class="hint">One zip to attach to a bug report: the controller's recent log, versions, node hardware and state, and the event logs of the 20 newest tasks. Keys, tokens, passwords and URLs are removed from the settings in it. Nothing is sent anywhere; the file downloads to this browser.</p>
+          <label class="check"><input type="checkbox" id="dg-node" checked> Include node and llama-server logs from online nodes</label>
+          <label class="check"><input type="checkbox" id="dg-tray" checked> Include tray logs</label>
+          <label class="check"><input type="checkbox" id="dg-prompts"> Include task prompts (they may describe private code)</label>
+          <div class="modal-foot"><button class="primary" id="dg-download">Download diagnostics</button></div>
         </div>
         </section>
         </div>
@@ -447,6 +457,32 @@
     <p class="hint">Loading replaces any model the node has loaded. Need to pool memory or change context size? Use Load model… on the node's card.</p>
     <div id="pick-list"></div>
     <div class="error-msg hidden" id="pick-err"></div>
+    <div class="modal-foot"><button data-close>Close</button></div>
+  </div>
+</div>
+
+<div id="modal-check" class="overlay hidden">
+  <div class="modal wide">
+    <h3>Check cluster</h3>
+    <p class="hint">A 16-token model call, an <code>echo</code> command and a connection to the file-sharing port on every online node, plus disk space, clock and version. Nothing is changed.</p>
+    <div id="check-body"></div>
+    <div id="check-notes"></div>
+    <div class="modal-foot"><span class="sub" id="check-when"></span><span class="spacer"></span><button id="check-again">Run again</button><button data-close>Close</button></div>
+  </div>
+</div>
+
+<div id="modal-logs" class="overlay hidden">
+  <div class="modal wide">
+    <h3>Logs on <span id="logs-node"></span></h3>
+    <div class="btns logs-bar">
+      <select id="logs-src" aria-label="Which log"><option value="node">Outpost node</option><option value="llama">llama-server</option><option value="tray">Tray icon</option></select>
+      <select id="logs-lines" aria-label="Lines"><option>200</option><option selected>500</option><option>2000</option></select>
+      <label class="check"><input type="checkbox" id="logs-follow" checked> Follow</label>
+      <span class="spacer"></span>
+      <button id="logs-copy">Copy</button>
+    </div>
+    <p class="hint hidden" id="logs-note"></p>
+    <pre class="out logs-out" id="logs-out"></pre>
     <div class="modal-foot"><button data-close>Close</button></div>
   </div>
 </div>

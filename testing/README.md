@@ -55,3 +55,5 @@ WebSocket that executes the Chromium job locally. They use a headless Chromium f
 - Real Claude API cost figures.
 
 - Windows experimental job-object limits (`OUTPOST_EXPERIMENTAL_WINDOWS_SANDBOX=1`): run `go test -run 'Job|Windows' .` on a real Windows machine and check a cancelled exec job leaves no child processes (Task Manager).
+- Check cluster on the real nodes: a firewall that blocks the file-sharing port (the note's `ufw` / `New-NetFirewallRule` command), a node with a wrong clock, a Windows node's `echo` through PowerShell, and a node still on an older version (its Logs button says to update it).
+- Node logs and Download diagnostics against Windows and macOS nodes (tray log path), and a nightly backup to an NFS folder that fills up or goes away mid-write (the Backup card and the *Backup failed* notification).
