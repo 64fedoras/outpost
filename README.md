@@ -200,7 +200,13 @@ can check detection without joining.
    node (fully in VRAM first, then VRAM plus RAM, then RAM; skipped if the node's disk is too small, or
    if no llama.cpp build exists for it), with the reason and a one-click **Load**. A node running the
    CPU build (for example a Linux node with a GPU but no Vulkan driver) is sized as a CPU machine.
-   Otherwise click **Load model** on a node. Outpost installs llama.cpp on the node (Vulkan for
+   Otherwise click **Load model** on a node. **Context size** is a slider (powers of two from 2K up to the
+   model's trained context, or 128K when that is not known) with a box beside it for an exact number. Under it,
+   the dialog shows the context cache that size needs and the total with the weights, and turns amber when that
+   is more than the GPU memory, more than the node can hold, or past the trained context. The controller reads
+   the model's GGUF header (layers, KV heads, head size, sliding window) when the model is added, from its own
+   copy or by streaming only the header from Hugging Face, so the figure assumes llama.cpp's default 16-bit cache;
+   until the header is read it falls back to the rough estimate above. Outpost installs llama.cpp on the node (Vulkan for
    GPUs, CPU otherwise), gets the model onto the node, and starts it. Downloads resume if
    interrupted and are checked against Hugging Face's SHA-256. Progress shows on the card. The node
    reloads the same model by itself after a reboot or update.

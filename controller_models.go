@@ -91,6 +91,7 @@ type ModelRec struct {
 	Added      time.Time   `json:"added"`
 	Tier       string      `json:"tier,omitempty"`       // small | medium | large; empty = guessed from the name
 	TierGuess  string      `json:"tier_guess,omitempty"` // filled in for the UI
+	Shape      *ModelShape `json:"shape,omitempty"`      // from the GGUF header, for the context-size estimate
 	cancel     context.CancelFunc
 }
 
@@ -126,6 +127,9 @@ func (c *Controller) loadModels() {
 		}
 		m.Vision = m.hasVision()
 		c.models[m.Name] = &m
+		if m.Status == "ready" && m.Shape == nil {
+			go c.fillModelShape(&m) // models added before the header was read
+		}
 	}
 }
 
@@ -306,6 +310,7 @@ func (c *Controller) downloadModel(ctx context.Context, m *ModelRec) {
 	c.saveModelLocked(m)
 	c.mu.Unlock()
 	log.Printf("model %s downloaded (%s)", m.Name, humanBytes(total))
+	c.fillModelShape(m)
 }
 
 func hfURL(repo, file string) string {
@@ -923,6 +928,7 @@ func (c *Controller) resolveModel(ctx context.Context, m *ModelRec) {
 		m.Status, m.Error = "failed", err.Error()
 	} else {
 		m.Files, m.BytesTotal, m.BytesDone, m.Status = files, total, 0, "ready"
+		go c.fillModelShape(m)
 	}
 	c.saveModelLocked(m)
 }

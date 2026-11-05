@@ -402,7 +402,7 @@
     <div class="row2">
       <div><label for="load-ctx-range">Context size (tokens)</label>
         <div class="ctx-slider"><input id="load-ctx-range" type="range" min="0" max="6" step="1" aria-label="Context size"><input id="load-ctx" type="number" min="512" step="1024" aria-label="Exact context size in tokens"></div>
-        <div class="ctx-ticks" aria-hidden="true"><span>2K</span><span>128K</span></div></div>
+        <div class="ctx-ticks" aria-hidden="true"><span>2K</span><span id="load-ctx-max">128K</span></div></div>
       <div><label for="load-ngl">GPU layers</label><select id="load-ngl"><option value="">Automatic (fit to VRAM)</option><option value="all">All on GPU</option><option value="0">CPU only</option></select></div>
     </div>
     <p id="load-ctx-hint" class="hint hidden"></p>
