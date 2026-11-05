@@ -7,6 +7,10 @@ You describe a programming task; a planner (Claude, or a local model on one of y
 into small subtasks; you approve the plan; your nodes write the pieces in parallel; Outpost runs the
 tests, fixes failures, and gives you a zip to download.
 
+![Outpost web UI: a task mid-run, with ten subtasks being written in parallel across four nodes](docs/images/ui-task.png)
+
+*A task in progress: the approved plan, and subtasks being written in parallel on different nodes.*
+
 ## At a glance
 
 1. Install the controller on one machine and open its web UI ([Install](#install-starts-at-boot)).
