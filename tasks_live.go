@@ -50,6 +50,11 @@ type liveTask struct {
 	calls map[string]*liveCall
 	order []string
 	subs  map[chan liveEvent]struct{}
+	// last is the most recent finished call per slot (subtask id, or "" for
+	// planner and other calls), so a new browser still sees the output of the
+	// call that just ended until the next one starts. Bounded: one buffer
+	// (liveBufBytes) per slot, in memory only, dropped with the task's hub entry.
+	last map[string]*liveCall
 }
 
 type liveHub struct {
@@ -68,7 +73,7 @@ var taskLive = newLiveHub()
 func (h *liveHub) taskLocked(id string) *liveTask {
 	lt := h.tasks[id]
 	if lt == nil {
-		lt = &liveTask{calls: map[string]*liveCall{}, subs: map[chan liveEvent]struct{}{}}
+		lt = &liveTask{calls: map[string]*liveCall{}, subs: map[chan liveEvent]struct{}{}, last: map[string]*liveCall{}}
 		h.tasks[id] = lt
 	}
 	return lt
@@ -107,6 +112,7 @@ func (h *liveHub) begin(taskID, sub, label, node string, est bool) *liveHandle {
 	defer h.mu.Unlock()
 	lt := h.taskLocked(taskID)
 	lc := &liveCall{id: newID("call"), sub: sub, label: label, node: node, est: est}
+	delete(lt.last, sub)
 	lt.calls[lc.id] = lc
 	lt.order = append(lt.order, lc.id)
 	h.broadcastLocked(lt, liveEvent{T: "start", Call: lc.id, Sub: sub, Label: label, Node: node, Est: est})
@@ -155,7 +161,8 @@ func (lh *liveHandle) Reset() {
 	})
 }
 
-// End removes the call; its text is not kept.
+// End removes the call. Its text is kept as the slot's last output until the
+// next call in that slot starts.
 func (lh *liveHandle) End() {
 	if lh == nil {
 		return
@@ -166,6 +173,9 @@ func (lh *liveHandle) End() {
 	lt := h.tasks[lh.task]
 	if lt == nil {
 		return
+	}
+	if lc := lt.calls[lh.callID]; lc != nil && len(lc.buf) > 0 {
+		lt.last[lc.sub] = lc
 	}
 	delete(lt.calls, lh.callID)
 	for i, id := range lt.order {
@@ -228,6 +238,12 @@ func (h *liveHub) subscribe(taskID string) ([]liveEvent, chan liveEvent, func())
 		lc := lt.calls[id]
 		snap = append(snap, liveEvent{T: "start", Call: lc.id, Sub: lc.sub, Label: lc.label, Node: lc.node,
 			Text: string(lc.buf), Tok: lc.tok, TPS: lc.tps(), Est: lc.est})
+	}
+	// finished calls whose slot has no running call: start then end, so the
+	// browser files them as the slot's last output
+	for _, lc := range lt.last {
+		snap = append(snap, liveEvent{T: "start", Call: lc.id, Sub: lc.sub, Label: lc.label, Node: lc.node,
+			Text: string(lc.buf), Tok: lc.tok, Est: lc.est}, liveEvent{T: "end", Call: lc.id})
 	}
 	ch := make(chan liveEvent, 512)
 	lt.subs[ch] = struct{}{}

@@ -558,6 +558,7 @@ async function pollTask() {
   if (id !== pageArg) return;
   await loadRounds();
   if (id !== pageArg) return;
+  if (!ACTIVE.includes(taskDetail.status)) liveLast = {};   // nothing more to show once the task has ended
   renderTask(taskDetail);
   // With the live stream open, "changed" events trigger refreshes; polling is only the fallback.
   const live = liveES && liveES.readyState === 1;
@@ -565,29 +566,29 @@ async function pollTask() {
 }
 
 // ---------- live output (server-sent events) ----------
-let liveES = null, liveCalls = {}, liveKick = null;
+let liveES = null, liveCalls = {}, liveLast = {}, liveKick = null;   // liveLast: slot -> last finished call, shown until the next one starts
 const liveExpanded = new Set();   // subtask ids whose live pane the user expanded (panes start collapsed)
 function liveClose() {
   if (liveES) liveES.close();
-  liveES = null; liveCalls = {}; clearTimeout(liveKick);
+  liveES = null; liveCalls = {}; liveLast = {}; clearTimeout(liveKick);
 }
 function liveOpen(id) {
   if (!window.EventSource) return;
   const es = liveES = new EventSource(`/api/tasks/${id}/events`);
   // After the controller restarts the stream reconnects: reload the task at
   // once instead of waiting for the slow fallback poll.
-  es.onopen = () => { if (page === 'task' && pageArg === id) { liveCalls = {}; clearTimeout(liveKick); liveKick = setTimeout(pollTask, 50); } };
+  es.onopen = () => { if (page === 'task' && pageArg === id) { liveCalls = {}; liveLast = {}; clearTimeout(liveKick); liveKick = setTimeout(pollTask, 50); } };
   // A stream the browser gave up on (an error status while the controller
   // was starting) is opened again.
   es.onerror = () => {
     if (es.readyState !== 2) return;
-    setTimeout(() => { if (liveES === es && page === 'task' && pageArg === id) { liveCalls = {}; liveOpen(id); } }, 2000);
+    setTimeout(() => { if (liveES === es && page === 'task' && pageArg === id) { liveCalls = {}; liveLast = {}; liveOpen(id); } }, 2000);
   };
   liveES.onmessage = (e) => {
     let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
-    if (ev.t === 'start') liveCalls[ev.call] = { sub: ev.sub || '', label: ev.label, node: ev.node, text: ev.text || '', tok: ev.tok || 0, tps: ev.tps || 0, est: !!ev.est };
+    if (ev.t === 'start') { delete liveLast[ev.sub || '']; liveCalls[ev.call] = { sub: ev.sub || '', label: ev.label, node: ev.node, text: ev.text || '', tok: ev.tok || 0, tps: ev.tps || 0, est: !!ev.est }; }
     else if (ev.t === 'reset' && liveCalls[ev.call]) Object.assign(liveCalls[ev.call], { text: '', tok: 0, tps: 0 });
-    else if (ev.t === 'end') delete liveCalls[ev.call];
+    else if (ev.t === 'end') { const c = liveCalls[ev.call]; if (c && c.text) liveLast[c.sub] = Object.assign({ done: true }, c); delete liveCalls[ev.call]; }
     else if (ev.t === 'delta' && liveCalls[ev.call]) {
       const c = liveCalls[ev.call];
       c.text = (c.text + ev.text).slice(-LIVE_MAX); c.tok = ev.tok; c.tps = ev.tps;
@@ -606,9 +607,15 @@ function setLiveText(pre, c) {
   pre.textContent = c.text;
   if (stick) pre.scrollTop = pre.scrollHeight;
 }
+// Running calls plus the last finished call of any slot that has none running.
+function liveFor(match) {
+  const out = Object.entries(liveCalls).filter(([, c]) => match(c));
+  for (const [slot, c] of Object.entries(liveLast)) if (match(c) && !out.some(([, r]) => r.sub === slot)) out.push(['last:' + slot, c]);
+  return out;
+}
 function livePane(c, id) {
-  const open = liveExpanded.has(c.sub || id);
-  return `<details class="live" data-sub="${esc(c.sub || id)}" ${open ? 'open' : ''}><summary>live output${c.node ? ` · ${esc(c.node)}${/ review /.test(c.label || '') ? ' checking' : ''}` : ''} <span class="live-rate">${esc(liveRate(c))}</span></summary><pre class="live-text" data-live="${esc(id)}">${esc(c.text)}</pre></details>`;
+  const open = liveExpanded.has(c.sub || '~');
+  return `<details class="live" data-sub="${esc(c.sub || '~')}" ${open ? 'open' : ''}><summary>live output${c.node ? ` · ${esc(c.node)}${/ review /.test(c.label || '') ? ' checking' : ''}` : ''} <span class="live-rate">${c.done ? 'finished' : esc(liveRate(c))}</span></summary><pre class="live-text" data-live="${esc(id)}">${esc(c.text)}</pre></details>`;
 }
 document.addEventListener('toggle', (e) => {
   const d = e.target;
@@ -634,7 +641,13 @@ function renderThreadItems(items) {
   for (const it of items) {
     let el = th._items[it.key];
     if (!el) { el = document.createElement('div'); th._items[it.key] = el; grew = true; }
-    if (el._h !== it.html) { el.className = 'item ' + it.cls; el.innerHTML = it.html; el._h = it.html; grew = true; }
+    if (el._h !== it.html) {
+      // keep each live pane's scroll position across the rebuild (bottom stays pinned)
+      const pos = {};
+      el.querySelectorAll('.live-text').forEach((p) => { const k = p.closest('.live')?.dataset.sub; if (k) pos[k] = { top: p.scrollTop, stick: p.scrollHeight - p.scrollTop - p.clientHeight < 24 }; });
+      el.className = 'item ' + it.cls; el.innerHTML = it.html; el._h = it.html; grew = true;
+      el.querySelectorAll('.live-text').forEach((p) => { const o = pos[p.closest('.live')?.dataset.sub]; if (o) p.scrollTop = o.stick ? p.scrollHeight : o.top; });
+    }
     const want = prev ? prev.nextSibling : th.firstChild;
     if (want !== el) th.insertBefore(el, want);
     prev = el;
@@ -704,7 +717,7 @@ function threadItems(t) {
   });
   if (started && !progressPlaced) items.push({ key: 'progress-' + round, cls: 'card-row', html: progressCard(t) });
   // Planner and other calls that belong to no subtask.
-  const loose = Object.entries(liveCalls).filter(([, c]) => !c.sub);
+  const loose = liveFor((c) => !c.sub);
   if (loose.length) items.push({ key: 'live-loose', cls: 'card-row', html: `<div class="card-msg quiet"><div class="card-head">${loose.map(([, c]) => esc(c.node ? `Writing on ${c.node}` : 'Working')).join(' · ')}</div>${loose.map(([id, c]) => livePane(c, id)).join('')}</div>` });
   const tail = statusCard(t);
   if (tail) items.push(tail);
@@ -893,7 +906,7 @@ function progressCard(t) {
     else if (x.status === 'done') who = `${x.by_planner ? 'written by the planner' : esc(x.node_name || '')}${x.reviewer ? ` · checked by ${esc(x.reviewer)}${x.review_fixed ? ', who fixed it' : ''}` : ''}${x.best_of ? ` · best of several: ${esc(x.best_of)}` : ''}`;
     else if (x.status === 'failed') who = esc(x.error || 'failed');
     else who = s.depends_on && s.depends_on.length ? `waits for ${s.depends_on.map(esc).join(', ')}` : 'waiting for a free node';
-    const lives = Object.entries(liveCalls).filter(([, c]) => c.sub === s.id).map(([id, c]) => livePane(c, id)).join('');
+    const lives = liveFor((c) => c.sub === s.id).map(([id, c]) => livePane(c, id)).join('');
     return `<li class="p-${x.status}"><span class="p-ico" aria-hidden="true">${ST_ICON[x.status] || ''}</span><span class="p-title">${esc(s.title)}</span><span class="p-who">${who}</span>${lives}</li>`;
   }).join('');
   let phase = '';
