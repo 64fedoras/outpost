@@ -406,9 +406,12 @@
     <select id="load-model"></select>
     <div id="load-fit" class="note hidden"></div>
     <div class="row2">
-      <div><label for="load-ctx">Context size (tokens)</label><input id="load-ctx" type="number" min="512" step="1024"></div>
+      <div><label for="load-ctx-range">Context size (tokens)</label>
+        <div class="ctx-slider"><input id="load-ctx-range" type="range" min="0" max="6" step="1" aria-label="Context size"><input id="load-ctx" type="number" min="512" step="1024" aria-label="Exact context size in tokens"></div>
+        <div class="ctx-ticks" aria-hidden="true"><span>2K</span><span id="load-ctx-max">128K</span></div></div>
       <div><label for="load-ngl">GPU layers</label><select id="load-ngl"><option value="">Automatic (fit to VRAM)</option><option value="all">All on GPU</option><option value="0">CPU only</option></select></div>
     </div>
+    <p id="load-ctx-hint" class="hint hidden"></p>
     <details id="load-pool-wrap" class="hidden u6"><summary class="hint">Pool memory from other nodes (for models too big for this one)</summary>
       <p class="hint u8">Helpers lend their RAM and VRAM over your network with llama.cpp's RPC mode; this node runs the model. Helpers stop their own model while lending, and only this node's address can connect to them. Expect slower generation over a home network: best for models that would not fit otherwise. Trusted networks only: pooling traffic is neither encrypted nor authenticated beyond that IP check.</p>
       <div id="load-pool"></div>
