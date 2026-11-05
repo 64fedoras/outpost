@@ -127,6 +127,7 @@
             <span class="composer-hint" id="tm-hint"></span>
             <span class="spacer"></span>
             <span class="composer-hint hidden" id="tm-img-warn"></span>
+            <button class="small danger hidden" id="tm-stop" title="Stop this task; files written so far are kept">Stop</button>
             <button class="send" id="tm-send">Send</button>
           </div>
         </div>
@@ -224,7 +225,7 @@
             <div><label for="set-cap">Default spending cap per task (USD)</label><input id="set-cap" type="number" min="0.05" step="0.25"></div>
           </div>
           <label for="set-planner">Default planner</label><select id="set-planner"></select>
-          <label class="check"><input type="checkbox" id="set-autoresume"> Resume interrupted tasks on their own after a restart (local planner only; waits up to 10 minutes for a node)</label>
+          <label class="check"><input type="checkbox" id="set-autoresume"> Resume interrupted tasks on their own after a restart (local planner only; starts as soon as the task's node is back, waits up to 10 minutes)</label>
           <label for="set-bestofn">Best of N on local nodes</label>
           <select id="set-bestofn"><option value="hard">Hard subtasks (default)</option><option value="all">All subtasks</option><option value="off">Off</option></select>
           <p class="hint">When a subtask starts and two or more other nodes are idle with nothing waiting for them, up to two of them also write it. Copies that fail a quick syntax check are dropped and a judge node picks the best of the rest. Spare copies give up their node as soon as other work needs it. Local nodes only, so no Claude cost.</p>

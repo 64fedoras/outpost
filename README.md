@@ -443,11 +443,17 @@ private key is stored encrypted with `secret.key`. With a `github.com` URL and a
 access, *open PR* also opens a pull request from that branch to the repository's default branch.
 Nothing is pulled after the first clone, so edits made on the remote afterwards are not seen.
 
-**After a restart,** a task that was running on a local-model planner resumes by itself once a node
-with a loaded model reconnects (it waits up to 10 minutes; otherwise press Resume). Finished
-subtasks are kept. Tasks planned with Claude or OpenRouter, and tasks stopped at the spending cap,
-always wait for your Resume click so a restart never spends money. Turn this off under
-Settings → Defaults.
+**After a restart** (a controller update, for example), a task that was running on a local-model
+planner resumes by itself the moment its planner node reconnects with its model loaded; there is
+nothing to press. Nodes retry the controller every second for the first minute after losing it,
+so this usually takes a second or two after the controller is back. Meanwhile the task shows
+*Resuming* with a Stop button (in the header and next to Send), and an open task page reloads by
+itself when the controller returns. Finished subtasks are kept. Work a node was still doing for
+the old controller is cancelled when it reconnects, since nobody is waiting for that result, so
+the resumed task does not queue behind it. If the node does not come back within 10 minutes, the
+task waits for your Resume click. Tasks planned with Claude or OpenRouter, and tasks stopped at the
+spending cap, always wait for your Resume click so a restart never spends money. Turn automatic
+resuming off under Settings → Defaults.
 
 ## Nodes working together
 

@@ -132,3 +132,16 @@ func inlineFile(path string, data []byte) FileEntry {
 	sum := sha256.Sum256(data)
 	return FileEntry{Path: path, SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(data)), Mode: "0644", InlineB64: base64.StdEncoding.EncodeToString(data)}
 }
+
+// orphanJobsLocked lists the jobs a reconnecting node reports as running
+// that the controller does not track as running: after a controller restart
+// nobody waits for their result. Caller holds c.mu.
+func orphanJobsLocked(jobs map[string]*JobRec, running []string) []string {
+	var out []string
+	for _, id := range running {
+		if j := jobs[id]; j == nil || (j.Status != "dispatched" && j.Status != "running") {
+			out = append(out, id)
+		}
+	}
+	return out
+}
