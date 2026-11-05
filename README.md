@@ -279,8 +279,10 @@ Each task is a conversation:
    (the last 64 KB per call) and is gone when the call ends.
    You can **steer while it works**: a message like "keep the output sorted" goes to every subtask,
    review and test fix that starts after it. You can also steer **while the plan is being made**
-   (any planner: Claude, OpenRouter, a node, or Auto): the planner stops its current pass and
-   starts over with your note, and the thread says so. Nothing from the stopped pass is kept.
+   (any planner: Claude, OpenRouter, a node, or Auto). The planner is not interrupted: when its
+   current answer is in, it gets that answer back with your note in the same conversation and
+   revises it, so nothing it has done is thrown away. Notes sent while it waits at the spending
+   cap reach it the same way once the cap is raised.
 5. **The result card** lists the files, the test outcome, and a **Download .zip** button. If the
    plan has a **build command** (for example `sh build.sh`) and **artifact patterns** (for example
    `dist/*`), the build runs on an exec node after the tests pass and its outputs appear on the card.

@@ -917,7 +917,7 @@ function renderComposer(t) {
   const box = $('tm-text');
   const modes = {
     awaiting_answers: ['Or answer in your own words…', 'Your reply goes to the planner with the questions above.'],
-    planning: ['Steer the planner, e.g. "use SQLite, keep it to one file"…', 'The planner stops what it is doing and starts over with your note.'],
+    planning: ['Steer the planner, e.g. "use SQLite, keep it to one file"…', 'The planner gets your note when its current answer is in, and revises it.'],
     awaiting_approval: ['Ask for changes to the plan…', 'The planner revises the plan; nothing runs until you approve.'],
     running: ['Steer the work, e.g. "use SQLite, not JSON files"…', 'Notes apply to subtasks that start from now on, reviews and test fixes.'],
     paused_cap: ['Steer the work…', 'Notes apply to the rest of this request.'],

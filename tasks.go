@@ -128,6 +128,7 @@ type Task struct {
 	Ended        *time.Time      `json:"ended,omitempty"`
 	Messages     []TaskMessage   `json:"messages"`
 	Round        int             `json:"round"`                  // 1 for the first request, +1 per follow-up
+	PlanNotes    []string        `json:"plan_notes,omitempty"`   // notes sent while the planner is answering, not yet given to it
 	Steering     []string        `json:"steering,omitempty"`     // notes the user sent while this round ran
 	Asked        bool            `json:"asked,omitempty"`        // the planner already asked questions this round
 	Touched      []string        `json:"touched,omitempty"`      // files written this round
@@ -1229,6 +1230,7 @@ This project is large, so you see an index (each file's path, size and top-level
 func (c *Controller) planTask(ctx context.Context, t *Task) {
 	t.mu.Lock()
 	mayAsk := !t.Asked
+	t.PlanNotes = nil // every note so far is already in the round's messages, so in this prompt
 	t.mu.Unlock()
 	budget := c.plannerBudget(t)
 	user := c.plannerPrompt(t, budget, nil)
@@ -1268,6 +1270,14 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 			c.failTask(t, err)
 			return
 		}
+		if notes := t.takePlanNotes(); len(notes) > 0 {
+			// The user added to the request while this answer was being written.
+			// Keep the answer and give the planner the note in the same conversation.
+			user += foldNotesPrompt(resp.Text, notes)
+			t.logf("info", "Giving the planner your note (%d) with its answer so far.", len(notes))
+			attempt-- // not a failed attempt
+			continue
+		}
 		raw := []byte(extractJSON(resp.Text))
 		var need struct {
 			NeedFiles []string `json:"need_files"`
@@ -1296,6 +1306,11 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 			t.mu.Lock()
 			if ctx.Err() != nil { // the user steered meanwhile; a newer planning run owns the task
 				t.mu.Unlock()
+				return
+			}
+			if len(t.PlanNotes) > 0 { // a note arrived after the last check: plan again with it
+				t.mu.Unlock()
+				c.replan(t, "Planning again with your note.")
 				return
 			}
 			t.Asked = true
@@ -1332,6 +1347,11 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 	t.mu.Lock()
 	if ctx.Err() != nil { // the user steered meanwhile; a newer planning run owns the task
 		t.mu.Unlock()
+		return
+	}
+	if len(t.PlanNotes) > 0 { // a note arrived after the last check: plan again with it
+		t.mu.Unlock()
+		c.replan(t, "Planning again with your note.")
 		return
 	}
 	t.Plan = plan
