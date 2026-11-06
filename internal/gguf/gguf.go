@@ -1,26 +1,20 @@
-package main
+package gguf
 
 import (
 	"bufio"
-	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math"
-	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
-// ModelShape is what the KV cache size depends on, read from a GGUF file's
+// Shape is what the KV cache size depends on, read from a GGUF file's
 // header. KV cache bytes for n tokens (f16 cache, llama.cpp's default) are
 // about FullBytesPerToken*n + SWABytesPerToken*min(n, SWAWindow).
-type ModelShape struct {
+type Shape struct {
 	Arch              string `json:"arch"`
 	Layers            int    `json:"layers"`
 	TrainCtx          int    `json:"train_ctx,omitempty"`  // context length the model was trained for
@@ -37,10 +31,10 @@ type ModelShape struct {
 	ExpertBytes int64 `json:"expert_bytes,omitempty"`
 }
 
-// expertBytesOf is how much of a model file llama.cpp moves to system RAM when
+// ExpertBytesOf is how much of a model file llama.cpp moves to system RAM when
 // experts are offloaded: all of them ("all") or those of the first n layers.
 // layers is the model's block count; mode is "all" or a layer count.
-func (s *ModelShape) expertBytesOf(mode string) int64 {
+func (s *Shape) ExpertBytesOf(mode string) int64 {
 	if s == nil || s.ExpertBytes <= 0 || mode == "" {
 		return 0
 	}
@@ -57,9 +51,9 @@ func (s *ModelShape) expertBytesOf(mode string) int64 {
 	return s.ExpertBytes * int64(n) / int64(s.Layers)
 }
 
-// needsHeaderRefresh is true when a saved shape predates the fields added since
+// NeedsHeaderRefresh is true when a saved shape predates the fields added since
 // (active share, expert size), so the header should be read again.
-func (s *ModelShape) needsHeaderRefresh() bool {
+func (s *Shape) NeedsHeaderRefresh() bool {
 	if s == nil || s.ActiveFrac <= 0 {
 		return true
 	}
@@ -77,25 +71,22 @@ func expertBytesFromTensors(tensors []ggufTensor) int64 {
 	return n
 }
 
-// activeBytes is how many bytes of a model file of the given size one token reads.
-func (s *ModelShape) activeBytes(fileBytes int64) int64 {
+// ActiveBytes is how many bytes of a model file of the given size one token reads.
+func (s *Shape) ActiveBytes(fileBytes int64) int64 {
 	if s == nil || s.ActiveFrac <= 0 || s.ActiveFrac >= 1 {
 		return fileBytes
 	}
 	return int64(float64(fileBytes) * s.ActiveFrac)
 }
 
-// kvBytes estimates the KV cache for ctx tokens.
-func (s *ModelShape) kvBytes(ctx int) int64 {
+// KVBytes estimates the KV cache for ctx tokens.
+func (s *Shape) KVBytes(ctx int) int64 {
 	swa := ctx
 	if s.SWAWindow > 0 && swa > s.SWAWindow {
 		swa = s.SWAWindow
 	}
 	return s.FullBytesPerToken*int64(ctx) + s.SWABytesPerToken*int64(swa)
 }
-
-// modelShapeTimeout bounds reading a header from Hugging Face.
-const modelShapeTimeout = 2 * time.Minute
 
 const (
 	ggufU8 = iota
@@ -342,7 +333,7 @@ func activeFracFromTensors(meta map[string]ggufValue, tensors []ggufTensor) floa
 // full_attention_interval cache every Nth layer. Sliding-window layers come
 // from sliding_window_pattern when the file has it; otherwise every layer is
 // counted as full attention, which over-estimates.
-func shapeFromMeta(meta map[string]ggufValue) (*ModelShape, error) {
+func shapeFromMeta(meta map[string]ggufValue) (*Shape, error) {
 	arch := meta["general.architecture"].str
 	if arch == "" {
 		return nil, errors.New("gguf: no general.architecture")
@@ -367,7 +358,7 @@ func shapeFromMeta(meta map[string]ggufValue) (*ModelShape, error) {
 	keyLen, valLen := k("attention.key_length").num, k("attention.value_length").num
 	interval := int(k("full_attention_interval").num)
 	pattern := k("attention.sliding_window_pattern").nums
-	s := &ModelShape{Arch: arch, Layers: layers, TrainCtx: int(k("context_length").num), SWAWindow: int(k("attention.sliding_window").num)}
+	s := &Shape{Arch: arch, Layers: layers, TrainCtx: int(k("context_length").num), SWAWindow: int(k("attention.sliding_window").num)}
 	for i := 0; i < layers; i++ {
 		h := at(heads, i, 0)
 		kv := at(kvHeads, i, h)
@@ -400,7 +391,7 @@ func shapeFromMeta(meta map[string]ggufValue) (*ModelShape, error) {
 	return s, nil
 }
 
-func readGGUFShape(r io.Reader) (*ModelShape, error) {
+func ReadShape(r io.Reader) (*Shape, error) {
 	meta, tensors, err := readGGUFHeader(io.LimitReader(r, 256<<20), true)
 	if err != nil {
 		return nil, err
@@ -417,78 +408,3 @@ func readGGUFShape(r io.Reader) (*ModelShape, error) {
 }
 
 // mainModelFile is the first file of a model that is not a vision projector
-// (for split models, part 1 holds the metadata).
-func mainModelFile(files []string) string {
-	for _, f := range files {
-		if !isMMProj(f) {
-			return f
-		}
-	}
-	return ""
-}
-
-// readModelShape reads the model's GGUF header from the controller's copy, or
-// streams just the header from Hugging Face for a direct model.
-func (c *Controller) readModelShape(ctx context.Context, m *ModelRec) (*ModelShape, error) {
-	c.mu.Lock()
-	storage, repo, hf := m.Storage, m.Repo, mainModelFile(m.HFFiles)
-	var local string
-	for _, f := range m.Files {
-		if !isMMProj(f.Path) {
-			local = filepath.Join(c.modelsStoreDir(), m.Name, f.Path)
-			break
-		}
-	}
-	c.mu.Unlock()
-	if storage == "controller" && local != "" {
-		f, err := os.Open(local)
-		if err == nil {
-			defer f.Close()
-			return readGGUFShape(f)
-		}
-	}
-	if repo == "" || hf == "" {
-		return nil, errors.New("no model file to read")
-	}
-	return c.readShapeFromHF(ctx, repo, hf)
-}
-
-// readShapeFromHF streams just the header of a file on Hugging Face.
-func (c *Controller) readShapeFromHF(ctx context.Context, repo, hf string) (*ModelShape, error) {
-	req, _ := http.NewRequestWithContext(ctx, "GET", hfURL(repo, hf), nil)
-	if t := c.hfToken(); t != "" {
-		req.Header.Set("Authorization", "Bearer "+t)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close() // closing early stops the download after the header
-	if resp.StatusCode != 200 && resp.StatusCode != 206 {
-		return nil, fmt.Errorf("Hugging Face: %s", resp.Status)
-	}
-	return readGGUFShape(resp.Body)
-}
-
-// fillModelShape reads and saves a ready model's shape if it is not known yet.
-func (c *Controller) fillModelShape(m *ModelRec) {
-	c.mu.Lock()
-	skip := (m.Shape != nil && !m.Shape.needsHeaderRefresh()) || m.Status != "ready" || !strings.HasSuffix(strings.ToLower(mainModelFile(m.HFFiles)), ".gguf")
-	c.mu.Unlock()
-	if skip {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), modelShapeTimeout)
-	defer cancel()
-	s, err := c.readModelShape(ctx, m)
-	if err != nil {
-		log.Printf("model %s: could not read the GGUF header for the context estimate: %v", m.Name, err)
-		return
-	}
-	c.mu.Lock()
-	if c.models[m.Name] == m {
-		m.Shape = s
-		c.saveModelLocked(m)
-	}
-	c.mu.Unlock()
-}

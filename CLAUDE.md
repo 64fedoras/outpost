@@ -63,7 +63,7 @@ although it is imported directly; harmless.
    `OUTPOST_BUILD_INFO|<version>|` string (`buildInfo` in `proto.go`, regex in `update.go`), so `Version`
    must stay a plain string constant.
 
-## Code map (all in package main, repo root)
+## Code map (package main in the repo root, plus `transfer/` and `internal/` packages compiled into the same binary)
 | Area | Files |
 | --- | --- |
 | Entry, flags, TLS | `main.go` (usage, data dirs, self-signed cert, fingerprint pinning `pinnedTLS`), `proto.go` (wire types, `Version`) |
@@ -74,6 +74,7 @@ although it is imported directly; harmless.
 | Tray | `tray.go` (loop), `tray_linux.go` (StatusNotifierItem/DBusMenu), `tray_windows.go` (Win32), `tray_icon.go` (icons drawn in code), `tray_other.go` |
 | Install, update, restart | `install*.go` (systemd on Linux; Windows Run key and autostart), `update.go`, `relaunch_unix.go`, `relaunch_windows.go`, `nodelock_*.go`, `sys_*.go` |
 | Web UI | `web/index.html`, `web/app.js`, `web/style.css` (vanilla JS single-page app, embedded with `go:embed web`, dark mode, sidebar shell, mobile drawer) |
+| Packages | `internal/gguf` (GGUF header parser and `Shape`, used by the controller as `ModelShape`; `gguf_controller.go` reads headers from the model store or Hugging Face), `transfer/` (peer file server) |
 | Bundled | `bundled/linux-amd64/libgomp.so.1.gz` (+ licence): needed by llama.cpp's Linux builds, missing on minimal installs |
 | Test builds | `e2e_hook.go` (build tag `e2e`: `OUTPOST_TEST_HF` redirects Hugging Face); `OUTPOST_ANTHROPIC_URL` and `OUTPOST_GITHUB_API` redirect the Claude and GitHub APIs |
 
