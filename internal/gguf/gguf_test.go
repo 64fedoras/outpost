@@ -1,9 +1,8 @@
-package main
+package gguf
 
 import (
 	"bytes"
 	"encoding/binary"
-	"strings"
 	"testing"
 )
 
@@ -88,7 +87,7 @@ func TestGGUFShapeDense(t *testing.T) {
 	g.u32("qwen2.embedding_length", 3584)
 	g.u32("qwen2.attention.head_count", 28)
 	g.u32("qwen2.attention.head_count_kv", 4)
-	s, err := readGGUFShape(bytes.NewReader(g.bytes()))
+	s, err := ReadShape(bytes.NewReader(g.bytes()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +95,7 @@ func TestGGUFShapeDense(t *testing.T) {
 	if s.FullBytesPerToken != 57344 || s.TrainCtx != 32768 || s.Layers != 28 {
 		t.Fatalf("%+v", s)
 	}
-	if got := s.kvBytes(32768); got != 57344*32768 {
+	if got := s.KVBytes(32768); got != 57344*32768 {
 		t.Fatalf("kv %d", got)
 	}
 }
@@ -112,7 +111,7 @@ func TestGGUFShapeHybridAndSWA(t *testing.T) {
 	g.u32("qwen3next.attention.key_length", 256)
 	g.u32("qwen3next.attention.value_length", 256)
 	g.u32("qwen3next.full_attention_interval", 4)
-	s, err := readGGUFShape(bytes.NewReader(g.bytes()))
+	s, err := ReadShape(bytes.NewReader(g.bytes()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +126,7 @@ func TestGGUFShapeHybridAndSWA(t *testing.T) {
 	g.u32("lfm2.embedding_length", 1024)
 	g.u32("lfm2.attention.head_count", 16)
 	g.arrU32("lfm2.attention.head_count_kv", []uint32{0, 8, 0, 8})
-	s, err = readGGUFShape(bytes.NewReader(g.bytes()))
+	s, err = ReadShape(bytes.NewReader(g.bytes()))
 	if err != nil || s.FullBytesPerToken != 2*8*128*2 {
 		t.Fatalf("per-layer %+v %v", s, err)
 	}
@@ -142,21 +141,21 @@ func TestGGUFShapeHybridAndSWA(t *testing.T) {
 	g.u32("gemma3.attention.key_length", 128)
 	g.u32("gemma3.attention.sliding_window", 1024)
 	g.arrBool("gemma3.attention.sliding_window_pattern", []bool{true, true, true, false})
-	s, err = readGGUFShape(bytes.NewReader(g.bytes()))
+	s, err = ReadShape(bytes.NewReader(g.bytes()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	per := int64(4 * 256 * 2)
-	if s.FullBytesPerToken != per || s.SWABytesPerToken != 3*per || s.kvBytes(8192) != per*8192+3*per*1024 {
+	if s.FullBytesPerToken != per || s.SWABytesPerToken != 3*per || s.KVBytes(8192) != per*8192+3*per*1024 {
 		t.Fatalf("swa %+v", s)
 	}
 }
 
 func TestGGUFRejectsOtherFiles(t *testing.T) {
-	if _, err := readGGUFShape(bytes.NewReader([]byte("PK\x03\x04 not a model"))); err == nil {
+	if _, err := ReadShape(bytes.NewReader([]byte("PK\x03\x04 not a model"))); err == nil {
 		t.Fatal("expected an error")
 	}
-	if _, err := readGGUFShape(bytes.NewReader([]byte("GGUF\x03\x00"))); err == nil {
+	if _, err := ReadShape(bytes.NewReader([]byte("GGUF\x03\x00"))); err == nil {
 		t.Fatal("expected an error for a truncated header")
 	}
 }
@@ -175,7 +174,7 @@ func TestGGUFActiveFraction(t *testing.T) {
 	g.tensor("output.weight", 12, 256*1000)     // 144000 read
 	g.tensor("blk.0.attn_q.weight", 12, 256*1000)
 	g.tensor("blk.0.ffn_down_exps.weight", 12, 256*16000) // 2304000 bytes, 8/128 read = 144000
-	s, err := readGGUFShape(bytes.NewReader(g.bytes()))
+	s, err := ReadShape(bytes.NewReader(g.bytes()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,14 +183,14 @@ func TestGGUFActiveFraction(t *testing.T) {
 	if s.ActiveFrac < want-1e-9 || s.ActiveFrac > want+1e-9 {
 		t.Errorf("ActiveFrac = %v, want %v", s.ActiveFrac, want)
 	}
-	if got := s.activeBytes(1000); got != 157 {
-		t.Errorf("activeBytes(1000) = %d", got)
+	if got := s.ActiveBytes(1000); got != 157 {
+		t.Errorf("ActiveBytes(1000) = %d", got)
 	}
 	if s.ExpertBytes != 2304000 {
 		t.Errorf("ExpertBytes = %d", s.ExpertBytes)
 	}
-	if s.needsHeaderRefresh() || !(&ModelShape{ActiveFrac: 0.2}).needsHeaderRefresh() {
-		t.Error("needsHeaderRefresh")
+	if s.NeedsHeaderRefresh() || !(&Shape{ActiveFrac: 0.2}).NeedsHeaderRefresh() {
+		t.Error("NeedsHeaderRefresh")
 	}
 	// An unknown tensor type leaves the fraction unknown but keeps the KV shape.
 	g2 := &ggufBuilder{}
@@ -200,38 +199,20 @@ func TestGGUFActiveFraction(t *testing.T) {
 	g2.u32("qwen3moe.embedding_length", 256)
 	g2.u32("qwen3moe.attention.head_count", 4)
 	g2.tensor("blk.0.x.weight", 9999, 10)
-	s2, err := readGGUFShape(bytes.NewReader(g2.bytes()))
+	s2, err := ReadShape(bytes.NewReader(g2.bytes()))
 	if err != nil || s2.ActiveFrac != 0 || s2.FullBytesPerToken == 0 {
 		t.Errorf("unknown type: %+v %v", s2, err)
 	}
 }
 
 func TestExpertBytesOf(t *testing.T) {
-	s := &ModelShape{Layers: 40, ExpertBytes: 4000}
+	s := &Shape{Layers: 40, ExpertBytes: 4000}
 	for mode, want := range map[string]int64{"": 0, "all": 4000, "10": 1000, "40": 4000, "99": 4000, "0": 0, "x": 0} {
-		if got := s.expertBytesOf(mode); got != want {
-			t.Errorf("expertBytesOf(%q) = %d, want %d", mode, got, want)
+		if got := s.ExpertBytesOf(mode); got != want {
+			t.Errorf("ExpertBytesOf(%q) = %d, want %d", mode, got, want)
 		}
 	}
-	if (&ModelShape{Layers: 4}).expertBytesOf("all") != 0 || (*ModelShape)(nil).expertBytesOf("all") != 0 {
+	if (&Shape{Layers: 4}).ExpertBytesOf("all") != 0 || (*Shape)(nil).ExpertBytesOf("all") != 0 {
 		t.Error("dense or unknown model moves nothing")
-	}
-}
-
-func TestCPUMoeArgs(t *testing.T) {
-	join := func(ml ModelLoad) string { return strings.Join(servingArgs(ml), " ") }
-	if got := join(ModelLoad{CPUMoe: "all"}); got != "--cpu-moe" {
-		t.Errorf("all: %q", got)
-	}
-	if got := join(ModelLoad{CPUMoe: "20"}); got != "--n-cpu-moe 20" {
-		t.Errorf("n: %q", got)
-	}
-	if got := join(ModelLoad{CPUMoe: "all", ExtraArgs: []string{"--n-cpu-moe", "5"}}); got != "" {
-		t.Errorf("extra args win: %q", got)
-	}
-	for v, ok := range map[string]bool{"": true, "all": true, "1": true, "999": true, "0": false, "1000": false, "-3": false, "some": false} {
-		if validCPUMoe(v) != ok {
-			t.Errorf("validCPUMoe(%q) != %v", v, ok)
-		}
 	}
 }

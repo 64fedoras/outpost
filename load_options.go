@@ -62,7 +62,7 @@ func (c *Controller) loadOptionsFor(id string, maxRecommended int) ([]LoadOption
 		o.OnNode = onNode[o.Name]
 		o.Need = estimateModelBytes(o.Bytes, o.Ctx)
 		if o.shape != nil && o.Ctx > 0 { // real KV size from the GGUF header
-			o.Need = o.Bytes + o.shape.kvBytes(o.Ctx) + fitOverheadBytes
+			o.Need = o.Bytes + o.shape.KVBytes(o.Ctx) + fitOverheadBytes
 		}
 		o.Fit = fitNo
 		if buildOK {
