@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -140,19 +141,52 @@ func readUint(p string) uint64 {
 	return v
 }
 
-// linuxGPUs finds discrete GPUs through /sys/class/drm. AMD exposes VRAM and
-// busy % there, which is all v0 needs; names come from lspci when present.
-func linuxGPUs() []GPUInfo {
-	out := []GPUInfo{}
+// linuxGPUDevices lists the sysfs device dirs of usable GPUs, biggest VRAM
+// first, so index 0 is the discrete card even when an integrated GPU (for
+// example the 2 GB carve-out on a Ryzen desktop CPU) is card0. When a GPU with
+// 4 GB or more exists, smaller ones are dropped as integrated.
+func linuxGPUDevices() []string {
+	type dv struct {
+		dir  string
+		vram uint64
+	}
+	var all []dv
 	cards, _ := filepath.Glob("/sys/class/drm/card[0-9]*")
 	for _, card := range cards {
 		if strings.Contains(filepath.Base(card), "-") {
 			continue // connector entries like card0-DP-1
 		}
 		dev := filepath.Join(card, "device")
-		vendor := readUint(filepath.Join(dev, "vendor"))
+		switch readUint(filepath.Join(dev, "vendor")) {
+		case 0x1002, 0x10de, 0x8086:
+		default:
+			continue
+		}
+		vram := readUint(filepath.Join(dev, "mem_info_vram_total"))
+		if readUint(filepath.Join(dev, "vendor")) != 0x10de && vram < 1<<30 {
+			continue // integrated or virtual display adapter
+		}
+		all = append(all, dv{dev, vram})
+	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].vram > all[j].vram })
+	big := len(all) > 0 && all[0].vram >= 4<<30
+	out := []string{}
+	for _, d := range all {
+		if big && d.vram < 4<<30 {
+			continue
+		}
+		out = append(out, d.dir)
+	}
+	return out
+}
+
+// linuxGPUs finds discrete GPUs through /sys/class/drm. AMD exposes VRAM and
+// busy % there, which is all v0 needs; names come from lspci when present.
+func linuxGPUs() []GPUInfo {
+	out := []GPUInfo{}
+	for _, dev := range linuxGPUDevices() {
 		g := GPUInfo{}
-		switch vendor {
+		switch readUint(filepath.Join(dev, "vendor")) {
 		case 0x1002:
 			g.Vendor, g.Backend = "amd", "rocm"
 			if _, err := os.Stat("/opt/rocm"); err != nil {
@@ -162,13 +196,8 @@ func linuxGPUs() []GPUInfo {
 			g.Vendor, g.Backend = "nvidia", "cuda"
 		case 0x8086:
 			g.Vendor, g.Backend = "intel", "vulkan"
-		default:
-			continue
 		}
 		g.VRAMBytes = readUint(filepath.Join(dev, "mem_info_vram_total"))
-		if g.Vendor != "nvidia" && g.VRAMBytes < 1<<30 {
-			continue // integrated or virtual display adapter
-		}
 		g.Name = gpuName(dev)
 		out = append(out, g)
 	}
@@ -201,12 +230,7 @@ type statSampler struct {
 func newStatSampler() *statSampler {
 	s := &statSampler{}
 	if runtime.GOOS == "linux" {
-		cards, _ := filepath.Glob("/sys/class/drm/card[0-9]*/device/mem_info_vram_total")
-		for _, p := range cards {
-			if readUint(p) >= 1<<30 {
-				s.gpuDevices = append(s.gpuDevices, filepath.Dir(p))
-			}
-		}
+		s.gpuDevices = linuxGPUDevices()
 	}
 	s.sample() // first sample primes CPU % (and GPU counters on Windows)
 	return s
