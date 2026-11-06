@@ -47,7 +47,9 @@ type Plan struct {
 	BuildCommand string        `json:"build_command,omitempty"` // runs after the tests pass
 	Artifacts    []string      `json:"artifacts,omitempty"`     // glob patterns (relative to the project root) of files the build produces
 	Subtasks     []PlanSubtask `json:"subtasks"`
-	Note         string        `json:"note,omitempty"` // a sentence or two to the user, shown with the plan
+	Delete       []string      `json:"delete,omitempty"` // files to remove this round (fileops.go)
+	Rename       []PlanRename  `json:"rename,omitempty"` // files to move this round
+	Note         string        `json:"note,omitempty"`   // a sentence or two to the user, shown with the plan
 	// Visual checks (visual.go): what to screenshot after the work.
 	PreviewPage    string `json:"preview_page,omitempty"`    // HTML file to render
 	PreviewCommand string `json:"preview_command,omitempty"` // starts the app (Linux and macOS nodes)
@@ -82,6 +84,8 @@ type SubtaskState struct {
 	AgentCalls int        `json:"agent_calls,omitempty"`  // tool calls so far in agent mode
 	Waiting    bool       `json:"waiting,omitempty"`      // the agent asked the user something
 	BestOf     string     `json:"best_of,omitempty"`      // best-of-N: which node's copy won and why
+	Prefer     string     `json:"prefer,omitempty"`       // Redo: "strongest", "planner" or a node id (tasks_redo.go)
+	RedoNote   string     `json:"redo_note,omitempty"`    // Redo: the user's note, added to the instructions
 	Started    *time.Time `json:"started,omitempty"`
 	Ended      *time.Time `json:"ended,omitempty"`
 }
@@ -137,7 +141,9 @@ type Task struct {
 	ProjectID    string          `json:"project_id,omitempty"`   // "" = unfiled; see projects.go
 	Seeded       bool            `json:"seeded,omitempty"`       // the repo started with files (project or attached zip)
 	Attachments  []Attachment    `json:"attachments,omitempty"`
-	Mockup       bool            `json:"mockup,omitempty"` // plan 2 or 3 design variants first (visual.go)
+	Mockup       bool            `json:"mockup,omitempty"`         // plan 2 or 3 design variants first (visual.go)
+	MaxFix       int             `json:"max_fix_rounds,omitempty"` // fix rounds after failing tests; 0 = maxFixRounds
+	TestMinutes  int             `json:"test_minutes,omitempty"`   // time limit for one test run; 0 = testTimeout
 	// AutoResume: interrupted by a restart and waiting to resume on its own
 	// (local planner only). Saved so a second restart keeps it, and shown in the
 	// UI as "Resuming" instead of the Resume card.
@@ -453,7 +459,7 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	var t *Task
 	review := req.Review == nil || *req.Review
 	t = &Task{ProjectID: req.Project, ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, ORModel: req.ORModel, Review: review,
-		Instructions: set.Instructions, Mockup: req.Mockup, CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1}
+		Instructions: joinInstructions(set.Instructions, projectInstructions(proj)), Mockup: req.Mockup, MaxFix: clampFixRounds(req.FixRounds), TestMinutes: clampTestMinutes(req.TestMinutes), CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1}
 	t.dir = filepath.Join(c.tasksDir(), t.ID)
 	if proj != nil {
 		t.repo = proj.repoDir()
@@ -1111,7 +1117,7 @@ func (c *Controller) nodeCall(ctx context.Context, t *Task, nodeID string, req l
 		}
 	}
 	spec := InferenceSpec{Messages: []ChatMessage{{Role: "system", Content: req.System}, user},
-		Params: InferenceParams{Temperature: &temp, MaxTokens: req.MaxTokens}}
+		Params: InferenceParams{Temperature: &temp, MaxTokens: req.MaxTokens, JSONSchema: req.JSONSchema}}
 	if len(req.Msgs) > 0 {
 		spec.Messages = append([]ChatMessage{{Role: "system", Content: req.System}}, openAIMessages(req.Msgs)...)
 		spec.Tools = toolDefs(req.Tools)
@@ -1297,6 +1303,7 @@ Each worker sees only: the project summary, the list of all subtasks, its own in
 - Tag every subtask with a difficulty: "easy" (boilerplate, config, README, simple data files), "normal", or "hard" (tricky logic, algorithms, or code that many other files depend on). Hard subtasks go to the strongest model, so use the tag sparingly.
 - If the project produces something to ship (a binary, a package, a bundle), give a build_command that builds it from the project root (for example "sh build.sh") and artifacts, the glob patterns of the files it produces (for example ["dist/*"]; one * matches within a directory, there is no **). The build runs after the tests pass. Leave both empty for a project that is only source code.
 - Use at most 12 subtasks.
+- To remove files, list them in "delete"; to move or rename a file, add {"from": "old/path", "to": "new/path"} to "rename" (its content moves with it; a subtask may then change the file at its new path). Do not write a subtask that empties or stubs out a file to "remove" it. Leave both lists empty when nothing is removed or moved.
 - If the project has a web page, set preview_page to its HTML file (for example "index.html") so it can be screenshotted and checked. For a server app that needs running first, set preview_command (starts it, e.g. "python3 app.py") and preview_url (where it listens, e.g. "http://127.0.0.1:8000"). Leave them empty otherwise.
 
 Follow-up requests on an existing project include its current files. Plan only the files to add or change; a subtask that changes an existing file lists it, and its worker gets the file's current content and outputs the complete new version. Keep the summary describing the whole project, and keep test_command running the whole test suite, and keep build_command and artifacts unless the build changes.
@@ -1306,7 +1313,7 @@ Questions: if the request leaves open a choice that would change the design (lan
 Use at most 4 questions with 2 to 4 short options each; the user can also type their own answer.
 
 Otherwise answer with only a JSON object, no other text:
-{"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "preview_page": "", "preview_command": "", "preview_url": "", "build_command": "", "artifacts": [], "note": "one or two sentences to the user: the approach and any assumption you made", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "difficulty": "normal", "instructions": "precise instructions"}]}`
+{"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "preview_page": "", "preview_command": "", "preview_url": "", "build_command": "", "artifacts": [], "delete": [], "rename": [], "note": "one or two sentences to the user: the approach and any assumption you made", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "difficulty": "normal", "instructions": "precise instructions"}]}`
 
 // plannerIndexHelp is added to the planner's instructions when the project is
 // too large to paste in, so it sees an index instead.
@@ -1351,6 +1358,12 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 		}
 		if attempt > 0 {
 			req.User += "\n\nYour previous answer could not be used: " + lastErr.Error() + ". Answer again with only the JSON object."
+			if parseFailed(lastErr) && !t.cloudPlanner() {
+				// A local model wrote something that is not JSON: this time llama-server
+				// holds it to the plan's shape (idea 8, only as a retry).
+				req.JSONSchema = planSchema
+				t.logf("info", "Asking the planner again with the answer held to the plan's JSON shape.")
+			}
 		}
 		resp, err := c.plannerCall(ctx, t, req)
 		if err != nil {
@@ -1415,7 +1428,7 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 		}
 		p := &Plan{}
 		if err := json.Unmarshal(raw, p); err != nil {
-			lastErr = fmt.Errorf("not valid JSON (%v)", err)
+			lastErr = &parseError{fmt.Errorf("not valid JSON (%v)", err)}
 			continue
 		}
 		mergeSharedFiles(p)
@@ -1571,7 +1584,7 @@ func mergeSharedFiles(p *Plan) {
 }
 
 func validatePlan(p *Plan) error {
-	if len(p.Subtasks) == 0 {
+	if len(p.Subtasks) == 0 && len(p.Delete) == 0 && len(p.Rename) == 0 {
 		return errors.New("the plan has no subtasks")
 	}
 	if len(p.Subtasks) > maxSubtasks {
@@ -1609,6 +1622,9 @@ func validatePlan(p *Plan) error {
 			}
 			owner[f] = s.ID
 		}
+	}
+	if err := validateFileOps(p, owner); err != nil {
+		return err
 	}
 	var pats []string
 	for _, a := range p.Artifacts {
@@ -1683,10 +1699,22 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 		c.failTask(t, errors.New("no plan"))
 		return
 	}
+	if err := c.applyFileOps(t, plan); err != nil {
+		c.failTask(t, err)
+		return
+	}
 	specs := map[string]PlanSubtask{}
 	for _, s := range plan.Subtasks {
 		specs[s.ID] = s
 	}
+	t.mu.Lock()
+	for _, st := range t.Subtasks {
+		if sp, ok := specs[st.ID]; ok && st.RedoNote != "" && st.Status == "pending" {
+			sp.Instructions += "\n\nNote from the user for this redo: " + st.RedoNote
+			specs[st.ID] = sp
+		}
+	}
+	t.mu.Unlock()
 	type doneMsg struct {
 		id  string
 		err error
@@ -1760,11 +1788,28 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 			if _, ok := readySince[id]; !ok {
 				readySince[id] = time.Now()
 			}
+			t.mu.Lock()
+			prefer := state[id].Prefer
+			t.mu.Unlock()
+			if prefer == "planner" {
+				placed++
+				delete(readySince, id)
+				running++
+				c.redoByPlanner(ctx, t, specs[id], state[id], func(err error) { done <- doneMsg{id, err} })
+				continue
+			}
 			free := c.freeScores(scores, "")
 			if len(free) == 0 {
 				break
 			}
-			node := chooseNode(normDifficulty(specs[id].Difficulty), free, scores, time.Since(readySince[id]))
+			diff := normDifficulty(specs[id].Difficulty)
+			if prefer == "strongest" {
+				diff = "hard"
+			}
+			node := chooseNode(diff, free, scores, time.Since(readySince[id]))
+			if prefer != "" && prefer != "strongest" {
+				node = c.preferredNode(t, state[id], free, time.Since(readySince[id]))
+			}
 			if node == "" || !c.tryReserve(node) {
 				continue // a hard subtask waiting for the strongest model, or the node was just taken
 			}
@@ -2261,7 +2306,7 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 		if len(skipped) > 0 {
 			t.logf("warn", "Not sent to the test node (over the 2 GiB limit): %s", strings.Join(skipped, ", "))
 		}
-		out, res, err := c.runExecJobFiles(ctx, node, c.execArgv(node, plan.SetupCommand, plan.TestCommand), inputs, srcs, nil, t.Title+" · tests", testTimeout)
+		out, res, err := c.runExecJobFiles(ctx, node, c.execArgv(node, plan.SetupCommand, plan.TestCommand), inputs, srcs, nil, t.Title+" · tests", t.testLimit())
 		status := ""
 		if res != nil {
 			status = res.Status
@@ -2327,17 +2372,17 @@ func (c *Controller) testAndFix(ctx context.Context, t *Task) {
 			c.finishTask(t)
 			return
 		}
-		if round >= maxFixRounds {
+		if round >= t.fixLimit() {
 			t.mu.Lock()
 			t.TestStatus = "failing"
 			t.mu.Unlock()
-			t.logf("warn", "Tests still fail after %d fix rounds. The result is available, with the last test output.", maxFixRounds)
+			t.logf("warn", "Tests still fail after %d fix rounds. The result is available, with the last test output.", t.fixLimit())
 			c.finishTask(t)
 			return
 		}
-		t.logf("warn", "Tests failed; fix round %d of %d.", round+1, maxFixRounds)
+		t.logf("warn", "Tests failed; fix round %d of %d.", round+1, t.fixLimit())
 		t.setStatus("fixing")
-		t.actBegin(fmt.Sprintf("Fix round %d of %d: the planner is reading the failures", round+1, maxFixRounds), "")
+		t.actBegin(fmt.Sprintf("Fix round %d of %d: the planner is reading the failures", round+1, t.fixLimit()), "")
 		var changed []string
 		agentDone := false
 		if c.agentEnabled() {
@@ -2466,11 +2511,18 @@ func (c *Controller) finishTask(t *Task) {
 	}
 	t.mu.Unlock()
 	t.setStatus("done")
+	stats := c.roundStats(t)
 	t.mu.Lock()
 	cost := t.CostUSD
-	t.addMsgLocked(TaskMessage{Role: "assistant", Kind: "result", Text: resultText(t), Files: sortedCopy(t.Touched)})
+	t.addMsgLocked(TaskMessage{Role: "assistant", Kind: "result", Text: resultText(t), Files: sortedCopy(t.Touched), Stats: stats})
 	t.mu.Unlock()
 	c.notifyTask(t, "done", "Finished. Download the result from the task page.")
+	t.mu.Lock()
+	learn := t.ProjectID != "" && t.TestStatus == "failing"
+	t.mu.Unlock()
+	if learn {
+		go c.suggestFromFailure(t)
+	}
 	t.logf("info", "Finished. Cloud model cost: %s. Download the result from this page.", fmtUSD(cost))
 }
 

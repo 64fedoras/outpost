@@ -130,7 +130,7 @@ type Hello struct {
 	LoadedModel       string       `json:"loaded_model"`
 	RollbackTo        string       `json:"rollback_to,omitempty"` // previous installed Outpost version
 	Paused            bool         `json:"paused,omitempty"`
-	Features          []string     `json:"features,omitempty"` // newer messages this node understands (nodeFeatures)
+	Features          []string     `json:"features,omitempty"`       // newer messages this node understands (nodeFeatures)
 	Tools             []ToolInfo   `json:"tools,omitempty"`          // developer tools found, rescanned hourly
 	Shell             string       `json:"shell,omitempty"`          // sh | powershell | cmd: what exec jobs run in
 	Peer              *PeerInfo    `json:"peer,omitempty"`           // where this node serves model files to other nodes
@@ -182,24 +182,24 @@ type Welcome struct {
 }
 
 type Heartbeat struct {
-	CPUPct        float64  `json:"cpu_pct"`
-	RAMUsedBytes  uint64   `json:"ram_used_bytes"`
-	RAMTotalBytes uint64   `json:"ram_total_bytes"`
-	SwapUsedBytes uint64   `json:"swap_used_bytes"`
-	GPUUtilPct    []int    `json:"gpu_util_pct"`
-	VRAMUsedBytes []uint64 `json:"vram_used_bytes"`
-	RunningJobs   []string `json:"running_jobs"`
-	Workspaces    int      `json:"workspaces"`
-	LoadedModel   string   `json:"loaded_model"`
-	InferenceRdy  bool     `json:"inference_ready"`
-	InferenceBusy int      `json:"inference_busy"`
-	ModelsBytes   int64    `json:"models_bytes"`
-	LlamaError    string   `json:"llama_error,omitempty"`
-	RPCEndpoint   string   `json:"rpc_endpoint,omitempty"`  // set while lending memory
-	Paused        bool       `json:"paused,omitempty"`       // no new work (set from the tray icon or the web UI)
-	PausedBy      string     `json:"paused_by,omitempty"`    // tray | web
-	PausedUntil   *time.Time `json:"paused_until,omitempty"` // a timed pause ends on its own then
-	IdleUnloaded  bool     `json:"idle_unloaded,omitempty"` // LoadedModel was stopped for idleness; the next request loads it again
+	CPUPct        float64    `json:"cpu_pct"`
+	RAMUsedBytes  uint64     `json:"ram_used_bytes"`
+	RAMTotalBytes uint64     `json:"ram_total_bytes"`
+	SwapUsedBytes uint64     `json:"swap_used_bytes"`
+	GPUUtilPct    []int      `json:"gpu_util_pct"`
+	VRAMUsedBytes []uint64   `json:"vram_used_bytes"`
+	RunningJobs   []string   `json:"running_jobs"`
+	Workspaces    int        `json:"workspaces"`
+	LoadedModel   string     `json:"loaded_model"`
+	InferenceRdy  bool       `json:"inference_ready"`
+	InferenceBusy int        `json:"inference_busy"`
+	ModelsBytes   int64      `json:"models_bytes"`
+	LlamaError    string     `json:"llama_error,omitempty"`
+	RPCEndpoint   string     `json:"rpc_endpoint,omitempty"`  // set while lending memory
+	Paused        bool       `json:"paused,omitempty"`        // no new work (set from the tray icon or the web UI)
+	PausedBy      string     `json:"paused_by,omitempty"`     // tray | web
+	PausedUntil   *time.Time `json:"paused_until,omitempty"`  // a timed pause ends on its own then
+	IdleUnloaded  bool       `json:"idle_unloaded,omitempty"` // LoadedModel was stopped for idleness; the next request loads it again
 }
 
 // ---- jobs ----
@@ -351,7 +351,7 @@ type ModelPush struct {
 // models the controller can copy back. Nil or Enabled false: never delete.
 type Reclaim struct {
 	Enabled bool     `json:"enabled"`
-	Names   []string `json:"names"`             // tier 1: stored models the controller holds a ready copy of
+	Names   []string `json:"names"`            // tier 1: stored models the controller holds a ready copy of
 	Direct  []string `json:"direct,omitempty"` // tier 2: stored models the node can re-download from Hugging Face; used only after tier 1
 }
 
@@ -433,6 +433,10 @@ type InferenceParams struct {
 	Temperature *float64 `json:"temperature,omitempty"`
 	MaxTokens   int      `json:"max_tokens,omitempty"`
 	Stop        []string `json:"stop,omitempty"`
+	// JSONSchema, when set, makes llama-server constrain the answer to JSON of
+	// this shape (response_format json_schema). Used only for a retry after a
+	// local model's answer could not be parsed.
+	JSONSchema json.RawMessage `json:"json_schema,omitempty"`
 }
 
 type InferenceOutput struct {

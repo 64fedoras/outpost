@@ -176,7 +176,7 @@ func (c *Controller) handleTaskChanges(w http.ResponseWriter, r *http.Request) {
 	out := []fileChange{}
 	for _, p := range paths {
 		fc := fileChange{Path: p, Status: m.Files[p]}
-		if fc.Status == "modified" {
+		if fc.Status == "modified" || fc.Status == "deleted" {
 			fc.Before, _ = readCapped(filepath.Join(dir, "orig", filepath.FromSlash(p)))
 		}
 		if cur, err := safeJoin(t.repoDir(), p); err == nil {
