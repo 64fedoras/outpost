@@ -349,6 +349,7 @@
             <label class="chip-input">keep for <input id="set-img-days" type="number" min="0" max="3650" aria-label="Days to keep pictures"> days</label>
             <label class="chip-input">at most <input id="set-img-gb" type="number" min="0" max="100000" aria-label="Gigabytes of pictures"> GB</label>
           </div>
+          <label class="check"><input type="checkbox" id="set-img-api"> Allow the image API (<code>POST /v1/images/generations</code>) for API tokens with full or picture access</label>
           <div class="hint" id="set-img-used"></div>
           <div class="modal-foot"><button class="primary" id="set-img-save">Save</button></div>
         </div>
@@ -455,6 +456,7 @@
           <p class="hint u3" id="agent-hint"></p>
           <div class="btns u3"><input id="tok-name" placeholder="Token name, e.g. nightly script" autocomplete="off"><button id="tok-create">Create token</button></div>
           <label class="toggle u3"><input type="checkbox" id="tok-chat"> <span>Chat only: works with the OpenAI-compatible API (<code>/v1/chat/completions</code>, <code>/v1/models</code>) and nothing else. Use this for editors and chat apps.</span></label>
+          <label class="toggle u3"><input type="checkbox" id="tok-img"> <span>Chat and pictures: like chat only, and also allows <code>/v1/images/generations</code> while the image API is switched on (Settings, Pictures).</span></label>
           <div class="note hidden u6" id="tok-new"></div>
         </div>
         <div class="section-head"><h2>HTTPS certificate</h2></div>

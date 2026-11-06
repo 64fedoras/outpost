@@ -25,6 +25,7 @@ func (c *Controller) openAIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/models", c.authAPI(c.handleV1Models))
 	mux.HandleFunc("GET /v1/models/{id...}", c.authAPI(c.handleV1Model))
 	mux.HandleFunc("POST /v1/chat/completions", c.authAPI(c.handleV1Chat))
+	c.openAIImageRoutes(mux)
 }
 
 // oaiError writes an error in the OpenAI shape.
@@ -84,6 +85,11 @@ func (c *Controller) handleV1Models(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Unix()
 	for _, id := range c.v1ModelIDs() {
 		data = append(data, map[string]any{"id": id, "object": "model", "created": now, "owned_by": "outpost"})
+	}
+	if c.imageAPIOn() {
+		for i := range imageCatalog {
+			data = append(data, map[string]any{"id": imageCatalog[i].ID, "object": "model", "created": now, "owned_by": "outpost", "capabilities": []string{"image"}})
+		}
 	}
 	writeJSON(w, 200, map[string]any{"object": "list", "data": data})
 }

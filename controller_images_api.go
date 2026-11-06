@@ -139,7 +139,7 @@ func (c *Controller) handleImageSettings(w http.ResponseWriter, r *http.Request)
 	set := c.gens.settings
 	c.gens.mu.Unlock()
 	used := dirBytes(c.genDir())
-	writeJSON(w, 200, map[string]any{"retention_days": set.RetentionDays, "max_gb": set.MaxGB, "used_bytes": used})
+	writeJSON(w, 200, map[string]any{"retention_days": set.RetentionDays, "max_gb": set.MaxGB, "api_enabled": set.APIEnabled, "used_bytes": used})
 }
 
 func (c *Controller) handleListGens(w http.ResponseWriter, r *http.Request) {

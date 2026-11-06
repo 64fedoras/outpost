@@ -172,11 +172,12 @@ async function imgLoadSettings() {
   try { imgSet = await api('/api/images/settings'); } catch (e) { return; }
   if (document.activeElement !== $('set-img-days')) $('set-img-days').value = imgSet.retention_days;
   if (document.activeElement !== $('set-img-gb')) $('set-img-gb').value = imgSet.max_gb;
+  if (document.activeElement !== $('set-img-api')) $('set-img-api').checked = !!imgSet.api_enabled;
   $('set-img-used').textContent = `Using ${bytes(imgSet.used_bytes)} now.`;
 }
 $('set-img-save').onclick = async () => {
   try {
-    imgSet = await post('/api/images/settings', { retention_days: +$('set-img-days').value || 0, max_gb: +$('set-img-gb').value || 0 });
+    imgSet = await post('/api/images/settings', { retention_days: +$('set-img-days').value || 0, max_gb: +$('set-img-gb').value || 0, api_enabled: $('set-img-api').checked });
     toast('Picture limits saved'); imgLoadSettings();
   } catch (e) { toast(e.message); }
 };
