@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -64,6 +65,37 @@ var aptPackage = map[string]string{
 	"libcrypto.so.3": "libssl3", "libstdc++.so.6": "libstdc++6", "libgcc_s.so.1": "libgcc-s1",
 }
 
+// glibcTooOldMarker starts the message for a build that needs a newer glibc
+// than this machine has. The controller looks for it to try an older release.
+const glibcTooOldMarker = "glibc too old"
+
+var glibcNeedRe = regexp.MustCompile("version `GLIBC_([0-9.]+)' not found")
+
+// glibcTooOld turns the loader's "version `GLIBC_2.38' not found" into a plain
+// message. It returns "" when the output is not that error.
+func glibcTooOld(out, have string) string {
+	m := glibcNeedRe.FindStringSubmatch(out)
+	if m == nil {
+		return ""
+	}
+	if have == "" {
+		have = "an older version"
+	}
+	return fmt.Sprintf("%s: this build needs glibc %s or newer, this machine has glibc %s", glibcTooOldMarker, m[1], have)
+}
+
+// localGlibc returns this machine's glibc version ("2.35"), or "" if unknown.
+func localGlibc() string {
+	if runtime.GOOS != "linux" {
+		return ""
+	}
+	f := strings.Fields(cmdOut("getconf", "GNU_LIBC_VERSION"))
+	if len(f) == 2 && f[0] == "glibc" {
+		return f[1]
+	}
+	return ""
+}
+
 // checkLlamaRuns runs llama-server --version, supplying bundled libraries the
 // system is missing. It returns "" on success or a message saying what to do.
 func checkLlamaRuns(server string) string {
@@ -77,6 +109,9 @@ func checkLlamaRuns(server string) string {
 		cancel()
 		if err == nil || bytes.Contains(out, []byte("version:")) {
 			return ""
+		}
+		if msg := glibcTooOld(string(out), localGlibc()); msg != "" {
+			return msg
 		}
 		m := missingLibRe.FindSubmatch(out)
 		if m == nil {

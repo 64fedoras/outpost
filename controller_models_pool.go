@@ -31,20 +31,46 @@ func (c *Controller) installRuntimeOn(ctx context.Context, id, build string) err
 	if variant == "" {
 		return fmt.Errorf("no llama.cpp build for %s/%s", hello.OS, hello.Arch)
 	}
-	c.setNodeOp(id, OpStatus{Op: "runtime", Target: variant, State: "preparing"})
-	rt, err := c.ensureRuntimeBuild(ctx, variant, build)
-	if err != nil {
-		return fmt.Errorf("llama.cpp: %w", err)
+	// Nodes with an older glibc cannot run the newest llama.cpp builds. When the
+	// node says so, try older releases (newest first) until one runs, and remember
+	// the one that worked so later loads do not retry the newer ones.
+	explicit := build != ""
+	if !explicit {
+		build = c.runtimeCeiling(id, variant)
 	}
-	if hello.Runtime == nil || hello.Runtime.Build != rt.Build || hello.Runtime.Variant != variant {
+	for attempt := 0; ; attempt++ {
+		c.setNodeOp(id, OpStatus{Op: "runtime", Target: variant, State: "preparing"})
+		rt, err := c.ensureRuntimeBuild(ctx, variant, build)
+		if err != nil {
+			return fmt.Errorf("llama.cpp: %w", err)
+		}
+		if hello.Runtime != nil && hello.Runtime.Build == rt.Build && hello.Runtime.Variant == variant {
+			return nil
+		}
 		if err := nc.send("runtime.install", RuntimeInstall{Build: rt.Build, Variant: variant, Archive: rt.Archive, SHA256: rt.SHA256, Bytes: rt.Bytes}); err != nil {
 			return err
 		}
-		if err := c.waitNodeOp(ctx, id, "runtime", variant, 30*time.Minute); err != nil {
+		err = c.waitNodeOp(ctx, id, "runtime", variant, 30*time.Minute)
+		if err == nil {
+			if attempt > 0 {
+				c.setRuntimeCeiling(id, variant, rt.Build)
+			}
+			return nil
+		}
+		if explicit || attempt >= 8 || !strings.HasPrefix(err.Error(), glibcTooOldMarker) {
 			return fmt.Errorf("installing llama.cpp on %s: %w", c.nodeLabel(id), err)
 		}
+		rels, relErr := c.latestReleases(ctx, false)
+		next := ""
+		if relErr == nil {
+			next = olderBuild(rels, variant, rt.Build)
+		}
+		if next == "" {
+			return fmt.Errorf("installing llama.cpp on %s: %w. No older llama.cpp release in the recent list runs here; this machine needs a newer OS or a llama.cpp built from source", c.nodeLabel(id), err)
+		}
+		log.Printf("%s: llama.cpp %s does not run (%v); trying %s", c.nodeLabel(id), rt.Build, err, next)
+		build = next
 	}
-	return nil
 }
 
 // poolBuild picks one llama.cpp build that all pool members can run.
