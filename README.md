@@ -259,6 +259,12 @@ can check detection without joining.
    **Context cache** shrinks the context memory: 8-bit uses about half (answers are nearly identical), 4-bit about a
    quarter (a small loss in quality), so a longer context fits; the estimate follows the choice. It needs flash
    attention, which llama.cpp turns on by itself where it can (**Advanced → Flash attention** forces it on or off).
+   **Experts in system RAM** appears for mixture-of-experts models (the controller reads the expert sizes from the
+   model file): *All experts* passes `--cpu-moe` to llama.cpp, *First layers only* passes `--n-cpu-moe N`. The
+   attention weights and the context cache stay on the GPU, so a model larger than the VRAM can run much faster than
+   with a plain spill; the hint and **Largest that fits** count the experts against RAM instead of VRAM. If the extra
+   arguments already contain `--cpu-moe` or `--n-cpu-moe`, those win. Needs a llama.cpp build new enough to know the
+   flags; untested on real hardware.
    **Calls at once** (2 to 4) lets a big node run that many model calls in parallel, for example writing one subtask
    while reviewing another. Each call keeps the full context size, so the cache needs that many times the memory;
    the estimate includes it, and the dispatcher gives the node that many calls. **Advanced → Draft model** loads a

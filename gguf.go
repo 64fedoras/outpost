@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -30,6 +31,50 @@ type ModelShape struct {
 	// for mixture-of-experts models, which only use some experts per token.
 	// 0 means unknown (treated as 1).
 	ActiveFrac float64 `json:"active_frac,omitempty"`
+	// ExpertBytes is the size of the expert tensors (ffn_*_exps), which llama.cpp
+	// can keep in system RAM (--cpu-moe, --n-cpu-moe) while the rest stays on the
+	// GPU. 0 for dense models and when unknown.
+	ExpertBytes int64 `json:"expert_bytes,omitempty"`
+}
+
+// expertBytesOf is how much of a model file llama.cpp moves to system RAM when
+// experts are offloaded: all of them ("all") or those of the first n layers.
+// layers is the model's block count; mode is "all" or a layer count.
+func (s *ModelShape) expertBytesOf(mode string) int64 {
+	if s == nil || s.ExpertBytes <= 0 || mode == "" {
+		return 0
+	}
+	if mode == "all" || s.Layers <= 0 {
+		return s.ExpertBytes
+	}
+	n, err := strconv.Atoi(mode)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	if n >= s.Layers {
+		return s.ExpertBytes
+	}
+	return s.ExpertBytes * int64(n) / int64(s.Layers)
+}
+
+// needsHeaderRefresh is true when a saved shape predates the fields added since
+// (active share, expert size), so the header should be read again.
+func (s *ModelShape) needsHeaderRefresh() bool {
+	if s == nil || s.ActiveFrac <= 0 {
+		return true
+	}
+	return s.ActiveFrac < 1 && s.ExpertBytes == 0
+}
+
+// expertBytesFromTensors adds up the expert tensors.
+func expertBytesFromTensors(tensors []ggufTensor) int64 {
+	var n int64
+	for _, t := range tensors {
+		if strings.Contains(t.name, "_exps.") {
+			n += t.bytes
+		}
+	}
+	return n
 }
 
 // activeBytes is how many bytes of a model file of the given size one token reads.
@@ -366,6 +411,7 @@ func readGGUFShape(r io.Reader) (*ModelShape, error) {
 	}
 	if tensors != nil {
 		s.ActiveFrac = activeFracFromTensors(meta, tensors)
+		s.ExpertBytes = expertBytesFromTensors(tensors)
 	}
 	return s, nil
 }
@@ -427,7 +473,7 @@ func (c *Controller) readShapeFromHF(ctx context.Context, repo, hf string) (*Mod
 // fillModelShape reads and saves a ready model's shape if it is not known yet.
 func (c *Controller) fillModelShape(m *ModelRec) {
 	c.mu.Lock()
-	skip := (m.Shape != nil && m.Shape.ActiveFrac > 0) || m.Status != "ready" || !strings.HasSuffix(strings.ToLower(mainModelFile(m.HFFiles)), ".gguf")
+	skip := (m.Shape != nil && !m.Shape.needsHeaderRefresh()) || m.Status != "ready" || !strings.HasSuffix(strings.ToLower(mainModelFile(m.HFFiles)), ".gguf")
 	c.mu.Unlock()
 	if skip {
 		return
