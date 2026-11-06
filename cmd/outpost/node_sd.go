@@ -184,6 +184,21 @@ func (m *sdMgr) running() bool {
 	return m.cmd != nil || m.testURL != ""
 }
 
+// newSDCmd builds the sd-server command: its own process group, so stop() can kill
+// the whole group. setProcGroup also sets a Cancel function on Unix, which Go only
+// accepts on a command made with CommandContext; this one is stopped by stop() instead
+// (killProcGroup), so Cancel is cleared. Without that, Start fails with "command with a
+// non-nil Cancel was not created with CommandContext".
+func newSDCmd(server string, args []string) *exec.Cmd {
+	cmd := exec.Command(server, args...)
+	cmd.Dir = filepath.Dir(server)
+	cmd.Env = llamaEnv(filepath.Dir(server))
+	cmd.WaitDelay = 5 * time.Second
+	setProcGroup(cmd)
+	cmd.Cancel = nil
+	return cmd
+}
+
 func (m *sdMgr) stop() {
 	m.mu.Lock()
 	cmd, exited := m.cmd, m.exited
@@ -238,13 +253,9 @@ func (m *sdMgr) ensure(ctx context.Context, spec GenSpec, modelDir string) error
 		return err
 	}
 	args := sdServerArgs(spec, modelDir, port)
-	cmd := exec.Command(rt.ServerPath, args...)
-	cmd.Dir = filepath.Dir(rt.ServerPath)
-	cmd.Env = llamaEnv(filepath.Dir(rt.ServerPath))
+	cmd := newSDCmd(rt.ServerPath, args)
 	tail := &tailBuf{}
 	cmd.Stdout, cmd.Stderr = tail, tail
-	cmd.WaitDelay = 5 * time.Second
-	setProcGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
