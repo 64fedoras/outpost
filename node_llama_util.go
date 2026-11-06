@@ -201,7 +201,7 @@ func (n *Node) fetchModel(mf ModelFetch) {
 		files = append(files, ModelFile{Path: f.Path, SHA256: sum, Bytes: f.Bytes})
 	}
 	b, _ := json.MarshalIndent(modelManifest{Name: mf.Name, Files: files}, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), b, 0o644); err != nil {
+	if err := writeFileAtomic(filepath.Join(dir, "manifest.json"), b, 0o644); err != nil {
 		fail("%v", err)
 		return
 	}

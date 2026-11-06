@@ -329,7 +329,7 @@ func prepareRollback(agentDir, version string) (agentCopy, error) {
 			}
 		}
 	}
-	if err := os.WriteFile(pinPath(agentDir), []byte(version+"\n"), 0o644); err != nil {
+	if err := writeFileAtomic(pinPath(agentDir), []byte(version+"\n"), 0o644); err != nil {
 		return agentCopy{}, err
 	}
 	return *target, nil
