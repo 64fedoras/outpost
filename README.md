@@ -157,7 +157,7 @@ Desktop nodes get a tent icon in the system tray (notification area): **green** 
   Paused is amber, and the node card in the web UI says who paused it. Pausing survives
   restarts. Pausing does **not** unload the model, and pools keep lending.
 
-  The same pause is on each node card in the web UI (**Nodes → Detailed list → Pause…**): finish current
+  The same pause is on each node card in the web UI (**Nodes → List → click a node → Pause…**): finish current
   work then pause, pause now (running work moves to other nodes), or pause for 1 or 8 hours, after which the
   node takes work again on its own. **Resume** on the card ends any pause, including one set from the tray.
   Nodes older than this feature can only be paused from their tray icon; the web UI says to update them.
@@ -231,9 +231,11 @@ can check detection without joining.
    (failed load, model error, paused, no Vulkan, low disk under 10 GB, update available) and the model with
    Change/Unload; nodes that need attention come first, and a memory pool (a node and the helpers lending
    it memory) sits in one dashed frame with **Unload pool**. **List** shows two-line rows grouped into
-   Needs attention, Healthy and Offline. **Detailed list** shows a short list on the left and the selected
-   node's full card on the right (every control: idle unload, benchmark, stored models, tools, exec and
-   sandbox, Restart, Rename, Remove, Run) plus its recent jobs. **Details** on a card or row opens it there.
+   Needs attention, Healthy and Offline; click a row (or **Details**) and the node's full card opens right
+   below it (every control: idle unload, benchmark, stored models, tools, exec and sandbox, Pause, Restart,
+   Logs, Rename, Remove, Run). An optional **Detailed list** view (a short list on the left, the full card
+   and recent jobs on the right) is off by default; turn it on in **Settings → Application → Appearance**
+   (kept in this browser only). **Details** on a Grid card opens the node in the List view.
    The full card shows **Recommended**: the best coding model that fits that
    node (fully in VRAM first, then VRAM plus RAM, then RAM; skipped if the node's disk is too small, or
    if no llama.cpp build exists for it), with the reason and a one-click **Load**. A node running the
@@ -702,7 +704,7 @@ gigabit or faster is best. Use it for models that would not fit otherwise, not f
 
 ## Labels, working hours and Wake-on-LAN
 
-**Labels.** On a node's card (Nodes → Detailed list) click *edit* next to Labels and type tags such as
+**Labels.** On a node's card (Nodes → List, click the node) click *edit* next to Labels and type tags such as
 `gpu, fast, office`. The Nodes page then shows a filter row with one button per label. A task can ask for
 a label (Change options → *nodes*), and a project can set one for all its tasks: writing, peer review and
 best-of-N judging then use only nodes with that label. The planner node and the nodes that run tests are
@@ -977,7 +979,7 @@ for 3 minutes and llama-server's health check then fails twice, the call is stop
 restarted, and the subtask goes back in the queue for another node. A model that is merely slow (a long
 prompt on a CPU) keeps answering its health check and is left alone.
 
-**Reading a node's log from the browser.** *Logs* on a node's card (Nodes → Detailed list) shows the end of
+**Reading a node's log from the browser.** *Logs* on a node's card (Nodes → List, click the node) shows the end of
 that node's Outpost log, its llama-server output or its tray log, and follows new lines while it is open. It
 works on every platform, including Linux nodes whose log otherwise only goes to journald. Nodes older than
 this feature cannot answer; update them first.

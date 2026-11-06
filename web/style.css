@@ -676,7 +676,10 @@ details.live summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .nv-grp { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .7px; color: var(--muted); font-weight: 600; }
 .nv-box, .nv-list { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .nv-row { display: grid; grid-template-columns: 220px minmax(0, 1fr) 200px 92px 230px; gap: 16px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); }
-.nv-row:last-child { border-bottom: 0; }
+.nv-row { cursor: pointer; } .nv-row:hover { background: var(--tint); } .nv-row.open { border-bottom: 0; background: var(--tint); }
+.nv-exp { padding: 4px 14px 14px; background: var(--tint); border-bottom: 1px solid var(--line); cursor: default; }
+.nv-exp > .card { margin: 0; }
+.nv-box > :last-child { border-bottom: 0; }
 .nv-c1 { display: flex; gap: 10px; align-items: center; min-width: 0; }
 .nv-bars { display: grid; grid-template-columns: 34px 1fr; gap: 3px 6px; align-items: center; font-size: 10.5px; color: var(--muted); }
 .nv-bars .bar { height: 5px; }
