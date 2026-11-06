@@ -123,7 +123,7 @@ type genStore struct {
 	hf       map[string]hfCacheEntry
 	sdRel    runtimeCache
 	prepStub func(ctx context.Context, nodeID string, d *ImageModelDef) error // tests: stands in for the runtime install and model download
-	argsStub func(d *ImageModelDef) []GenArg                                    // tests: stands in for the Hugging Face file lookup
+	argsStub func(d *ImageModelDef) []GenArg                                  // tests: stands in for the Hugging Face file lookup
 }
 
 type hfCacheEntry struct {

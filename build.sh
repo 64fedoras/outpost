@@ -27,7 +27,7 @@ command -v go >/dev/null 2>&1 || die "Go is not installed or not on PATH. Instal
 need=$(sed -n 's/^go \([0-9][0-9.]*\).*/\1/p' go.mod | head -n 1)
 have=$(go version | sed -n 's/^go version go\([0-9][0-9.]*\).*/\1/p')
 [ -n "$have" ] || die "cannot read the Go version from: $(go version)"
-# Compare numerically, component by component (1.24.7 vs 1.24 vs 1.9).
+# Compare numerically, component by component (1.26.10 vs 1.26 vs 1.9).
 older() { # older A B: true when version A < version B
   awk -v a="$1" -v b="$2" 'BEGIN{n=split(a,x,".");m=split(b,y,".");if(m>n)n=m
     for(i=1;i<=n;i++){p=x[i]+0;q=y[i]+0;if(p<q)exit 0;if(p>q)exit 1}exit 1}'
