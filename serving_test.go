@@ -155,7 +155,7 @@ func TestLlamaChatProgressAndSchemaFallback(t *testing.T) {
 	l.cmd, l.ready, l.port, l.model = &exec.Cmd{}, true, port, "m"
 	var progs []promptProgress
 	spec := InferenceSpec{Messages: []ChatMessage{{Role: "user", Content: "plan"}}, Params: InferenceParams{JSONSchema: planSchema}}
-	out, e := l.chatP(context.Background(), spec, func(string) {}, func(p promptProgress) { progs = append(progs, p) })
+	out, e := l.chatP(context.Background(), spec, func(bool, string) {}, func(p promptProgress) { progs = append(progs, p) })
 	if e != nil {
 		t.Fatal(e)
 	}

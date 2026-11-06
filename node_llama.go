@@ -898,7 +898,7 @@ func (l *llamaMgr) waitReady(timeout time.Duration) error {
 // chat runs one OpenAI-style chat completion against llama-server, streaming
 // tokens through emit. It returns the final text and usage.
 func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(string)) (*InferenceOutput, *ErrInfo) {
-	return l.chatP(ctx, spec, emit, nil)
+	return l.chatP(ctx, spec, func(_ bool, s string) { emit(s) }, nil)
 }
 
 // promptProgress is llama-server's report while it reads the prompt
@@ -911,7 +911,8 @@ type promptProgress struct {
 }
 
 // chatP is chat with an optional prompt-progress callback.
-func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(string), prog func(promptProgress)) (*InferenceOutput, *ErrInfo) {
+// emit gets reasoning (thinking models) with reasoning true, the answer with false.
+func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reasoning bool, text string), prog func(promptProgress)) (*InferenceOutput, *ErrInfo) {
 	if e := l.wake(spec.Model); e != nil {
 		return nil, e
 	}
@@ -1040,14 +1041,14 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(stri
 		}
 		for _, c := range chunk.Choices {
 			if c.Delta.Reasoning != nil && *c.Delta.Reasoning != "" {
-				emit(*c.Delta.Reasoning)
+				emit(true, *c.Delta.Reasoning)
 			}
 			if c.Delta.Content != nil && *c.Delta.Content != "" {
 				if firstTok.IsZero() {
 					firstTok = time.Now()
 				}
 				text.WriteString(*c.Delta.Content)
-				emit(*c.Delta.Content)
+				emit(false, *c.Delta.Content)
 			}
 			for _, tc := range c.Delta.ToolCalls { // arrives in pieces, keyed by index
 				for len(calls) <= tc.Index {
@@ -1101,9 +1102,16 @@ func (n *Node) runInference(ctx context.Context, jd JobDispatch, res *JobResult)
 		return
 	}
 	sw := newStreamer(n, jd.JobID, spec.Stream)
-	w := sw.writer("tokens")
+	w, rw := sw.writer("tokens"), sw.writer("reasoning")
 	pw := sw.writer("progress")
-	out, e := n.llama.chatP(ctx, spec, func(s string) { _, _ = w.Write([]byte(s)); sw.token() }, func(p promptProgress) {
+	out, e := n.llama.chatP(ctx, spec, func(reasoning bool, s string) {
+		if reasoning {
+			_, _ = rw.Write([]byte(s))
+		} else {
+			_, _ = w.Write([]byte(s))
+		}
+		sw.token()
+	}, func(p promptProgress) {
 		// "processed total cached ms" per report; the controller reads the last line
 		fmt.Fprintf(pw, "%d %d %d %d\n", p.Processed, p.Total, p.Cache, p.TimeMs)
 	})
