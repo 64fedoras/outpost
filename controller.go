@@ -147,6 +147,8 @@ type Controller struct {
 	rollout    *rolloutState            // the last one-node-first update (rollout.go)
 	clockSkew  map[string]time.Duration // node clock minus controller clock, from heartbeats
 	projects   map[string]*Project      // see projects.go
+	chats      map[string]*Chat         // chat.go, guarded by chatMu
+	chatMu     sync.Mutex
 	// resumeWake wakes autoResumeInterrupted on node heartbeats (nudgeResume).
 	resumeWake chan struct{}
 	reserved   map[string]int // calls holding a node (see slotsLocked)
@@ -190,6 +192,7 @@ func runController(args []string) error {
 	c.loadModels()
 	c.loadRuntimes()
 	c.loadProjects()
+	c.loadChats()
 	c.loadTasks()
 	go c.autoResumeInterrupted(autoResumeWait, time.Second)
 	c.advertise = *advertise
@@ -293,6 +296,8 @@ func runController(args []string) error {
 	mux.HandleFunc("DELETE /api/nodes/{id}/models/{name}", c.auth(c.handleRemoveNodeModel))
 	mux.HandleFunc("POST /api/nodes/{id}/models/cleanup", c.auth(c.handleCleanupNodeModels))
 	c.projectRoutes(mux)
+	c.chatRoutes(mux)
+	c.openAIRoutes(mux)
 	mux.HandleFunc("GET /api/tasks", c.auth(c.handleListTasks))
 	mux.HandleFunc("POST /api/tasks", c.auth(c.handleCreateTask))
 	mux.HandleFunc("GET /api/tasks/{id}", c.auth(c.handleGetTask))

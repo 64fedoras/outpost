@@ -36,6 +36,8 @@ type apiToken struct {
 	Hash     string    `json:"hash"`
 	Created  time.Time `json:"created"`
 	LastUsed time.Time `json:"last_used,omitempty"`
+	// Scope "chat" limits the token to the OpenAI-compatible /v1 API; "" is full access.
+	Scope string `json:"scope,omitempty"`
 }
 
 func clientIP(r *http.Request) string {
@@ -138,7 +140,7 @@ func (c *Controller) authWith(h http.HandlerFunc, allowToken bool) http.HandlerF
 			}
 		}
 		if !ok && allowToken {
-			if i := c.bearerAPIToken(r); i >= 0 {
+			if i := c.bearerAPIToken(r); i >= 0 && c.apiTokens[i].Scope == "" {
 				ok = true
 				if time.Since(c.apiTokens[i].LastUsed) > time.Minute {
 					c.apiTokens[i].LastUsed = time.Now()
@@ -263,16 +265,20 @@ func (c *Controller) handleListAPITokens(w http.ResponseWriter, r *http.Request)
 	c.mu.Lock()
 	out := []map[string]any{}
 	for _, t := range c.apiTokens {
-		out = append(out, map[string]any{"id": t.ID, "name": t.Name, "created": t.Created, "last_used": t.LastUsed})
+		out = append(out, map[string]any{"id": t.ID, "name": t.Name, "created": t.Created, "last_used": t.LastUsed, "scope": t.Scope})
 	}
 	c.mu.Unlock()
 	writeJSON(w, 200, out)
 }
 
 func (c *Controller) handleNewAPIToken(w http.ResponseWriter, r *http.Request) {
-	var req struct{ Name string }
+	var req struct{ Name, Scope string }
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	name := strings.TrimSpace(req.Name)
+	if req.Scope != "" && req.Scope != "chat" {
+		writeJSON(w, 400, map[string]string{"error": "scope must be empty (full access) or chat"})
+		return
+	}
 	if name == "" || len(name) > 60 {
 		writeJSON(w, 400, map[string]string{"error": "give the token a name (up to 60 characters)"})
 		return
@@ -284,7 +290,7 @@ func (c *Controller) handleNewAPIToken(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "too many tokens; revoke some first"})
 		return
 	}
-	t := apiToken{ID: randHex(6), Name: name, Hash: hashAPIToken(secret), Created: time.Now()}
+	t := apiToken{ID: randHex(6), Name: name, Hash: hashAPIToken(secret), Created: time.Now(), Scope: req.Scope}
 	c.apiTokens = append(c.apiTokens, t)
 	c.saveAPITokensLocked()
 	c.mu.Unlock()

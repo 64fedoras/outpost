@@ -89,16 +89,16 @@ $('setup-form').onsubmit = async (e) => {
 };
 $('btn-logout').onclick = async () => { await post('/api/logout').catch(() => {}); showLogin(); };
 
-const PAGES = ['new', 'task', 'projects', 'nodes', 'models', 'updates', 'settings'];
+const PAGES = ['new', 'task', 'chat', 'projects', 'nodes', 'models', 'updates', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
   ntDraft.flush(); tmDraft.flush();
   const m = location.hash.match(/^#\/(\w+)(?:\/([\w-]+))?/) || [];
   page = m[1] === 'tasks' && m[2] ? 'task' : PAGES.includes(m[1]) ? m[1] : 'new';
-  pageArg = page === 'task' ? m[2] : null;
+  pageArg = page === 'task' || page === 'chat' ? m[2] || null : null;
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
   document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === page));
-  document.querySelector('.page-plain').classList.toggle('hidden', !['projects', 'nodes', 'models', 'updates', 'settings'].includes(page));
+  document.querySelector('.page-plain').classList.toggle('hidden', !['chat', 'projects', 'nodes', 'models', 'updates', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task' }[page] || page[0].toUpperCase() + page.slice(1));
   document.body.classList.toggle('on-task', page === 'task');
   closeSide();
@@ -107,6 +107,7 @@ function route() {
   if (page === 'task') { taskDetail = null; threadReset(); tmDraft.restore('task:' + pageArg); autoGrow($('tm-text')); liveOpen(pageArg); pollTask(); }
   if (page === 'new') { ntDraft.restore('new'); setTimeout(() => $('nt-prompt').focus(), 0); }
   if (page === 'settings') loadSettings();
+  if (page === 'chat') chatOpen(pageArg);
   renderSideTasks();
   if (state) refresh();
 }
@@ -164,6 +165,7 @@ async function refresh() {
   renderSideCluster();
   if (page === 'new') renderNew();
   if (page === 'projects') renderProjects();
+  if (page === 'chat' && document.activeElement !== $('chat-node')) fillChatNodes();
   if (page === 'nodes') { renderNodes(); renderJobs(); }
   if (page === 'models') renderModels();
   if (page === 'updates') renderUpdates();
@@ -586,6 +588,113 @@ async function projectAction(act, el) {
   }
 }
 
+// ---------- chat (chat.go) ----------
+let chatES = null, chatCur = null, chatLive = {};
+async function chatOpen(id) {
+  chatCur = null; chatLive = {};
+  await chatList();
+  fillChatNodes();
+  if (id) await chatLoad(id); else { setHTML('chat-msgs', '<p class="muted chat-empty">Start a new chat below.</p>'); chatButtons(); }
+  setTimeout(() => $('chat-text').focus(), 0);
+}
+async function chatList() {
+  let list = [];
+  try { list = await api('/api/chats'); } catch (e) { /* offline */ }
+  setHTML('chat-list', list.length ? list.map((c) => `<a href="#/chat/${esc(c.id)}" class="${c.id === pageArg ? 'active' : ''}">${c.busy ? '<span class="dot st-running" aria-label="answering"></span>' : ''}${esc(c.title)}</a>`).join('')
+    : '<p class="muted u6">No chats yet.</p>');
+}
+// Model choice: Automatic (the strongest free node) or a node with a model ready.
+function fillChatNodes() {
+  const cur = $('chat-node').value || (chatCur && chatCur.node) || 'auto';
+  const nodes = (state ? state.nodes : []).filter((n) => n.online && n.heartbeat && n.heartbeat.loaded_model);
+  setHTML('chat-node', `<option value="auto">Automatic (strongest free node)</option>${nodes.map((n) => `<option value="${esc(n.id)}">${esc(n.heartbeat.loaded_model)} on ${esc(nodeName(n))}</option>`).join('')}`);
+  $('chat-node').value = [...$('chat-node').options].some((o) => o.value === cur) ? cur : 'auto';
+}
+async function chatLoad(id) {
+  try { chatCur = await api('/api/chats/' + id); } catch (e) { setHTML('chat-msgs', `<p class="error-msg">${esc(e.message)}</p>`); return; }
+  if (pageArg !== id) return;
+  $('chat-node').value = [...$('chat-node').options].some((o) => o.value === chatCur.node) ? chatCur.node : 'auto';
+  chatRender();
+  if (!chatES && window.EventSource) {
+    chatES = new EventSource(`/api/chats/${id}/events`);
+    chatES.onmessage = (e) => {
+      let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
+      if (ev.t === 'start') chatLive[ev.call] = { text: ev.text || '', node: ev.node, tps: ev.tps || 0, read: ev.read || 0, total: ev.total || 0, left: ev.left || 0 };
+      else if (ev.t === 'end') delete chatLive[ev.call];
+      else if (ev.t === 'progress' && chatLive[ev.call]) Object.assign(chatLive[ev.call], { read: ev.read, total: ev.total, left: ev.left });
+      else if (ev.t === 'delta' && chatLive[ev.call]) {
+        const c = chatLive[ev.call];
+        if (!ev.reason) c.text += ev.text;
+        c.tps = ev.tps;
+      } else if (ev.t === 'changed') { chatLoadSoon(id); return; }
+      chatRenderLive();
+    };
+  }
+}
+let chatKick = null;
+function chatLoadSoon(id) { clearTimeout(chatKick); chatKick = setTimeout(() => { if (page === 'chat' && pageArg === id) { chatLoad(id); chatList(); } }, 150); }
+function chatButtons() {
+  const busy = chatCur && chatCur.busy;
+  $('chat-stop').classList.toggle('hidden', !busy);
+  $('chat-send').disabled = !!busy;
+  $('chat-totask').classList.toggle('hidden', !(chatCur && chatCur.messages.some((m) => m.role === 'assistant' && m.text)));
+}
+function chatBubble(m) {
+  if (m.role === 'user') return `<div class="bubble-row"><div class="bubble">${esc(m.text)}</div></div>`;
+  const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`].filter(Boolean).join(' · ');
+  if (m.error) return `<div class="chat-answer error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>`;
+  return `<div class="chat-answer"><div class="chat-text">${esc(m.text)}</div>${meta ? `<div class="sub">${meta}</div>` : ''}</div>`;
+}
+function chatRender() {
+  if (!chatCur) return;
+  const box = $('chat-msgs'), stick = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  setHTML('chat-msgs', chatCur.messages.map(chatBubble).join('') + '<div id="chat-live"></div>');
+  chatRenderLive();
+  chatButtons();
+  if (stick) box.scrollTop = box.scrollHeight;
+}
+function chatRenderLive() {
+  const el = $('chat-live');
+  if (!el || !chatCur) return;
+  const calls = Object.values(chatLive);
+  if (!calls.length) { el.innerHTML = chatCur.busy === 'waiting' ? '<p class="muted">Waiting for a free node…</p>' : ''; return; }
+  const c = calls[0];
+  const rate = liveRate(Object.assign({}, c, { text: c.text }));
+  setHTML('chat-live', `<div class="chat-answer"><div class="chat-text">${esc(c.text) || '<span class="muted">…</span>'}</div><div class="sub">${esc(c.node || '')}${rate ? ' · ' + esc(rate) : ''}</div></div>`);
+  const box = $('chat-msgs');
+  if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) box.scrollTop = box.scrollHeight;
+}
+async function chatSend() {
+  const text = $('chat-text').value.trim();
+  if (!text) return;
+  $('chat-send').disabled = true;
+  try {
+    if (!chatCur) {
+      const r = await post('/api/chats', { text, node: $('chat-node').value });
+      $('chat-text').value = '';
+      location.hash = '#/chat/' + r.id;
+      return;
+    }
+    await post(`/api/chats/${chatCur.id}/messages`, { text, node: $('chat-node').value });
+    $('chat-text').value = '';
+    await chatLoad(chatCur.id);
+  } catch (e) { toast(e.message); }
+  chatButtons();
+}
+$('chat-send').onclick = chatSend;
+$('chat-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); chatSend(); } });
+$('chat-new').onclick = () => { if (location.hash === '#/chat') chatOpen(null); else location.hash = '#/chat'; };
+$('chat-stop').onclick = async () => { if (chatCur) { try { await post(`/api/chats/${chatCur.id}/stop`, {}); } catch (e) { toast(e.message); } } };
+// Make this a task: the conversation becomes the new task's request.
+$('chat-totask').onclick = () => {
+  if (!chatCur) return;
+  const lines = chatCur.messages.filter((m) => m.text).map((m) => `${m.role === 'user' ? 'Me' : 'Assistant'}: ${m.text}`);
+  $('nt-prompt').value = 'Build this, based on the conversation below.\n\n' + lines.join('\n\n');
+  try { ntDraft.flush && ntDraft.flush(); } catch (e) { /* draft store optional */ }
+  location.hash = '#/new';
+  setTimeout(() => { $('nt-prompt').value = 'Build this, based on the conversation below.\n\n' + lines.join('\n\n'); autoGrow($('nt-prompt')); }, 50);
+};
+
 // ---------- task thread ----------
 async function pollTask() {
   clearTimeout(taskTimer);
@@ -617,6 +726,7 @@ let liveES = null, liveCalls = {}, liveLast = {}, liveKick = null;   // liveLast
 const liveExpanded = new Set();   // subtask ids whose live pane the user expanded (panes start collapsed)
 function liveClose() {
   if (liveES) liveES.close();
+  if (chatES) { chatES.close(); chatES = null; }
   liveES = null; liveCalls = {}; liveLast = {}; clearTimeout(liveKick);
 }
 function liveOpen(id) {
@@ -2362,7 +2472,7 @@ async function loadSecurity() {
     const lk = settings ? settings.locked_ips || [] : [];
     $('sec-lock').textContent = settings ? `${settings.login_failures} failed sign-in${settings.login_failures === 1 ? '' : 's'} in the last 15 minutes.` + (lk.length ? ` Locked out: ${lk.join(', ')}.` : '') + ' After 10 failures an address is blocked for 15 minutes.' : '';
     setHTML('sessions-list', ss.map((s) => `<div class="rowline"><span>${esc(s.ip || 'unknown')} · ${esc((s.ua || '').slice(0, 60))} <span class="muted">· signed in ${ago(s.created)}</span>${s.current ? ' ' + pill('done', 'this browser') : ''}</span>${s.current ? '' : `<button class="danger" data-sess="${esc(s.id)}">Sign out</button>`}</div>`).join('') || '<p class="muted">None</p>');
-    setHTML('tokens-list', tk.map((t) => `<div class="rowline"><span>${esc(t.name)} <span class="muted">· created ${ago(t.created)}${t.last_used && !t.last_used.startsWith('0001') ? ' · last used ' + ago(t.last_used) : ' · never used'}</span></span><button class="danger" data-tok="${esc(t.id)}">Revoke</button></div>`).join('') || '<p class="muted">No tokens yet.</p>');
+    setHTML('tokens-list', tk.map((t) => `<div class="rowline"><span>${esc(t.name)}${t.scope === 'chat' ? ' ' + pill('ready', 'chat only') : ''} <span class="muted">· created ${ago(t.created)}${t.last_used && !t.last_used.startsWith('0001') ? ' · last used ' + ago(t.last_used) : ' · never used'}</span></span><button class="danger" data-tok="${esc(t.id)}">Revoke</button></div>`).join('') || '<p class="muted">No tokens yet.</p>');
     let info = `Fingerprint <code>${esc(tl.fingerprint)}</code>`;
     if (tl.subject) info += `<br>${tl.self_signed ? 'Self-signed' : 'Issued by ' + esc(tl.issuer)} for ${esc(tl.subject)}; expires ${new Date(tl.expires).toLocaleDateString()}.`;
     if ((tl.needs_repin || []).length) info += `<br><b>Offline during the change, run <code>outpost repin --fingerprint ${esc(tl.fingerprint)}</code> on: ${tl.needs_repin.map(esc).join(', ')}</b>`;
@@ -2384,8 +2494,10 @@ $('sess-all').onclick = async () => { if (confirm('Sign out every browser, inclu
 $('tok-create').onclick = async () => {
   const name = $('tok-name').value.trim(); if (!name) return;
   try {
-    const t = await post('/api/apitokens', { name }); $('tok-name').value = '';
-    const n = $('tok-new'); n.classList.remove('hidden'); n.innerHTML = `Copy this now, it is shown only once:<div class="codebox"><span id="tok-val">${esc(t.token)}</span><button id="tok-copy">Copy</button></div>`;
+    const chat = $('tok-chat').checked;
+    const t = await post('/api/apitokens', { name, scope: chat ? 'chat' : '' }); $('tok-name').value = ''; $('tok-chat').checked = false;
+    const n = $('tok-new'); n.classList.remove('hidden');
+    setHTML('tok-new', `Copy this now, it is shown only once:<div class="codebox"><span id="tok-val">${esc(t.token)}</span><button id="tok-copy">Copy</button></div>${chat ? `<p class="hint u6">In your editor or chat app use the OpenAI provider with base URL <code>${esc(location.origin)}/v1</code>, this token as the API key, and model <code>auto</code> (or a model name from <code>/v1/models</code>). The controller's certificate is self-signed unless you replaced it, so the app may need to trust it.</p>` : ''}`);
     $('tok-copy').onclick = async () => { try { await navigator.clipboard.writeText(t.token); toast('Copied'); } catch (e) { toast('Select the token and press Ctrl+C'); } };
     loadSecurity();
   } catch (e) { toast(e.message); }
