@@ -332,6 +332,9 @@ type sdJobStatus struct {
 		Images []struct {
 			B64 string `json:"b64_json"`
 		} `json:"images"`
+		// a clip (vid_gen): the whole video file in one field
+		OutputFormat string `json:"output_format"`
+		B64          string `json:"b64_json"`
 	} `json:"result"`
 	Error *struct {
 		Code    string `json:"code"`
@@ -369,6 +372,14 @@ func sdRequestBody(spec GenSpec) map[string]any {
 	if spec.Sampler != "" {
 		sp["sample_method"] = spec.Sampler
 	}
+	if spec.Kind == genVideo {
+		return map[string]any{
+			"prompt": spec.Prompt, "negative_prompt": spec.Negative,
+			"width": spec.Width, "height": spec.Height, "seed": spec.Seed,
+			"video_frames": spec.Frames, "fps": spec.FPS,
+			"sample_params": sp, "output_format": "webm",
+		}
+	}
 	body := map[string]any{
 		"prompt": spec.Prompt, "negative_prompt": spec.Negative,
 		"width": spec.Width, "height": spec.Height, "seed": spec.Seed, "batch_count": 1,
@@ -387,8 +398,8 @@ func (n *Node) runGenerate(ctx context.Context, jd JobDispatch, res *JobResult, 
 		res.Status, res.Error = "failed", errf("bad_request", false, "%v", err)
 		return
 	}
-	if spec.Kind != genImage {
-		res.Status, res.Error = "failed", errf("bad_request", false, "this node version only makes images")
+	if spec.Kind != genImage && spec.Kind != genVideo {
+		res.Status, res.Error = "failed", errf("bad_request", false, "this node version cannot make a %q", spec.Kind)
 		return
 	}
 	if !strings.HasPrefix(spec.Dir, "img-") || !validName(spec.Dir) {
@@ -443,7 +454,7 @@ func (n *Node) runGenerate(ctx context.Context, jd JobDispatch, res *JobResult, 
 		res.Status, res.Error = "failed", errf("load_failed", true, "%v", err)
 		return
 	}
-	img, e := n.sd.generate(ctx, jd.JobID, n, spec)
+	img, ext, e := n.sd.generateExt(ctx, jd.JobID, n, spec)
 	switch {
 	case ctx.Err() != nil:
 		res.Status = ctxStatus(ctx)
@@ -452,11 +463,11 @@ func (n *Node) runGenerate(ctx context.Context, jd JobDispatch, res *JobResult, 
 		res.Status, res.Error = "failed", e
 		return
 	}
-	if err := os.WriteFile(filepath.Join(dir, "out.png"), img, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "out."+ext), img, 0o600); err != nil {
 		res.Status, res.Error = "failed", errf("disk_full", true, "%v", err)
 		return
 	}
-	out := GenOutput{Seed: spec.Seed, Seconds: time.Since(started).Seconds(), Format: "png"}
+	out := GenOutput{Seed: spec.Seed, Seconds: time.Since(started).Seconds(), Format: ext}
 	n.sd.mu.Lock()
 	if n.sd.tail != nil {
 		out.ComputeBytes = peakCompute(n.sd.tail.String())
@@ -482,24 +493,48 @@ func (m *sdMgr) loadedKey() string {
 // generate submits one image job to sd-server, reports the step to the controller
 // and returns the PNG bytes.
 func (m *sdMgr) generate(ctx context.Context, jobID string, n *Node, spec GenSpec) ([]byte, *ErrInfo) {
+	b, _, e := m.generateExt(ctx, jobID, n, spec)
+	return b, e
+}
+
+// generateExt is generate that also says which file type the result is (png, or
+// webm, avi or webp for a clip).
+func (m *sdMgr) generateExt(ctx context.Context, jobID string, n *Node, spec GenSpec) ([]byte, string, *ErrInfo) {
 	client := &http.Client{Timeout: 30 * time.Second}
-	body, _ := json.Marshal(sdRequestBody(spec))
-	req, _ := http.NewRequestWithContext(ctx, "POST", m.baseURL()+"/sdcpp/v1/img_gen", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, errf("gen_failed", true, "sd-server: %v", err)
+	endpoint, ext := "/sdcpp/v1/img_gen", "png"
+	if spec.Kind == genVideo {
+		endpoint, ext = "/sdcpp/v1/vid_gen", "webm"
 	}
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	resp.Body.Close()
+	submit := func(body map[string]any) (*http.Response, []byte, error) {
+		raw, _ := json.Marshal(body)
+		req, _ := http.NewRequestWithContext(ctx, "POST", m.baseURL()+endpoint, bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, nil, err
+		}
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		return resp, b, nil
+	}
+	reqBody := sdRequestBody(spec)
+	resp, b, err := submit(reqBody)
+	if err == nil && resp.StatusCode == 400 && spec.Kind == genVideo {
+		// A build without WebM support refuses the default container; AVI is always there.
+		reqBody["output_format"], ext = "avi", "avi"
+		resp, b, err = submit(reqBody)
+	}
+	if err != nil {
+		return nil, "", errf("gen_failed", true, "sd-server: %v", err)
+	}
 	if resp.StatusCode != 202 && resp.StatusCode != 200 {
-		return nil, errf("gen_failed", resp.StatusCode >= 500, "sd-server refused the job (%s): %s", resp.Status, strings.TrimSpace(string(b)))
+		return nil, "", errf("gen_failed", resp.StatusCode >= 500, "sd-server refused the job (%s): %s", resp.Status, strings.TrimSpace(string(b)))
 	}
 	var sub struct {
 		ID string `json:"id"`
 	}
 	if json.Unmarshal(b, &sub) != nil || sub.ID == "" {
-		return nil, errf("gen_failed", true, "sd-server gave no job id")
+		return nil, "", errf("gen_failed", true, "sd-server gave no job id")
 	}
 	seq, lastStep := 0, -1
 	cancel := func() {
@@ -512,7 +547,7 @@ func (m *sdMgr) generate(ctx context.Context, jobID string, n *Node, spec GenSpe
 		select {
 		case <-ctx.Done():
 			cancel()
-			return nil, errf("cancelled", false, "cancelled")
+			return nil, "", errf("cancelled", false, "cancelled")
 		case <-time.After(500 * time.Millisecond):
 		}
 		r, _ := http.NewRequestWithContext(ctx, "GET", m.baseURL()+"/sdcpp/v1/jobs/"+sub.ID, nil)
@@ -521,33 +556,46 @@ func (m *sdMgr) generate(ctx context.Context, jobID string, n *Node, spec GenSpe
 			if ctx.Err() != nil {
 				continue
 			}
-			return nil, errf("gen_failed", true, "sd-server: %v", err)
+			return nil, "", errf("gen_failed", true, "sd-server: %v", err)
 		}
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, sdMaxResponse))
 		resp.Body.Close()
 		if resp.StatusCode != 200 {
-			return nil, errf("gen_failed", true, "sd-server job status %s", resp.Status)
+			return nil, "", errf("gen_failed", true, "sd-server job status %s", resp.Status)
 		}
 		var st sdJobStatus
 		if json.Unmarshal(raw, &st) != nil {
-			return nil, errf("gen_failed", true, "unreadable answer from sd-server")
+			return nil, "", errf("gen_failed", true, "unreadable answer from sd-server")
 		}
 		switch st.Status {
 		case "completed":
+			if spec.Kind == genVideo {
+				if st.Result == nil || st.Result.B64 == "" {
+					return nil, "", errf("gen_failed", true, "sd-server returned no video")
+				}
+				vid, err := base64.StdEncoding.DecodeString(st.Result.B64)
+				if err != nil || len(vid) == 0 {
+					return nil, "", errf("gen_failed", true, "sd-server returned an unreadable video")
+				}
+				if f := st.Result.OutputFormat; f != "" {
+					ext = genExt(genVideo, f)
+				}
+				return vid, ext, nil
+			}
 			if st.Result == nil || len(st.Result.Images) == 0 {
-				return nil, errf("gen_failed", true, "sd-server returned no image")
+				return nil, "", errf("gen_failed", true, "sd-server returned no image")
 			}
 			img, err := base64.StdEncoding.DecodeString(st.Result.Images[0].B64)
 			if err != nil || len(img) == 0 {
-				return nil, errf("gen_failed", true, "sd-server returned an unreadable image")
+				return nil, "", errf("gen_failed", true, "sd-server returned an unreadable image")
 			}
-			return img, nil
+			return img, ext, nil
 		case "failed", "cancelled":
 			msg := st.Status
 			if st.Error != nil {
 				msg = st.Error.Message
 			}
-			return nil, errf("gen_failed", false, "%s", msg)
+			return nil, "", errf("gen_failed", false, "%s", msg)
 		}
 		if st.Preview != nil && st.Preview.Total > 0 && st.Preview.Step != lastStep {
 			lastStep = st.Preview.Step
@@ -564,20 +612,26 @@ func (m *sdMgr) idle() bool {
 	return m.busy == 0 && m.testURL == ""
 }
 
-// collectGenerated lists the picture a generate job wrote. Up to sdInlineMax it
+// collectGenerated lists the picture or clip a generate job wrote. Up to sdInlineMax it
 // travels inside the result (no peer server needed); bigger files use the blob route.
 func (n *Node) collectGenerated(dir, jobID string) ([]FileEntry, *ErrInfo) {
-	p := filepath.Join(dir, "out.png")
-	st, err := os.Stat(p)
-	if err != nil {
-		return nil, errf("collect_failed", true, "no picture was written")
+	var name string
+	var st os.FileInfo
+	for ext := range genExts {
+		if fi, err := os.Stat(filepath.Join(dir, "out."+ext)); err == nil {
+			name, st = "out."+ext, fi
+			break
+		}
+	}
+	if st == nil {
+		return nil, errf("collect_failed", true, "no result was written")
 	}
 	if st.Size() <= sdInlineMax {
-		data, err := os.ReadFile(p)
+		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			return nil, errf("collect_failed", true, "%v", err)
 		}
-		return []FileEntry{inlineFile("out.png", data)}, nil
+		return []FileEntry{inlineFile(name, data)}, nil
 	}
-	return n.collectFiles(dir, jobID, []string{"out.png"})
+	return n.collectFiles(dir, jobID, []string{name})
 }

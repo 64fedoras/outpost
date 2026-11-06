@@ -1,6 +1,10 @@
 // New image page and the Pictures card in Settings. Loaded after app.js (uses its helpers).
 // No inline styles anywhere (the CSP forbids them): sizes and progress use the w0..w100 classes.
-let imgModels = null, imgGens = [], imgTimer = null, imgBusyNow = false, imgSet = null;
+let imgModels = null, imgGens = [], imgTimer = null, imgBusyNow = false, imgSet = null, imgKind = 'image';
+const imgSizes = { image: [['512x512', '512 × 512'], ['768x768', '768 × 768'], ['1024x1024', '1024 × 1024'], ['1024x768', '1024 × 768 wide'], ['768x1024', '768 × 1024 tall']],
+  video: [['832x480', '832 × 480 wide'], ['480x832', '480 × 832 tall'], ['640x360', '640 × 360 small']] };
+const imgCounts = { image: [[1, '1 picture'], [2, '2 pictures'], [4, '4 pictures'], [8, '8 pictures']], video: [[1, '1 clip'], [2, '2 clips']] };
+const imgIsVideo = (g) => g.kind === 'video';
 
 function imgRoute(p) {
   clearTimeout(imgTimer);
@@ -33,19 +37,19 @@ function imgRender() {
   if (!imgModels) return;
   // Model picker: keep the choice across refreshes.
   const sel = $('img-model'), cur = sel.value;
-  const opts = imgModels.map((m) => {
+  const opts = imgModels.filter((m) => m.kind === imgKind).map((m) => {
     const ready = m.nodes.some((n) => n.has_model);
     return `<option value="${esc(m.id)}">${esc(m.label)}${ready ? '' : ' · not downloaded'}</option>`;
   }).join('');
   setHTML(sel, opts);
-  if (cur && imgModels.some((m) => m.id === cur)) sel.value = cur;
+  if (cur && imgModels.some((m) => m.id === cur && m.kind === imgKind)) sel.value = cur;
   const m = imgSel();
 
   const nodes = (m ? m.nodes : []).filter((n) => n.online);
   const can = nodes.filter((n) => n.can_run).length;
-  $('img-sub').textContent = !m ? '' : can ? `${can} of ${nodes.length} online node${nodes.length === 1 ? '' : 's'} can draw with ${m.label} right now.`
+  $('img-sub').textContent = !m ? '' : can ? `${can} of ${nodes.length} online node${nodes.length === 1 ? '' : 's'} can ${imgKind === 'video' ? 'film' : 'draw'} with ${m.label} right now.`
     : nodes.length ? `No online node can draw with ${m.label} yet. Download it to a node below.` : 'No node is online.';
-  $('img-optline').textContent = m ? `${m.label} · default ${m.steps} steps${m.cfg ? ', cfg ' + m.cfg : ''}` : '';
+  $('img-optline').textContent = m ? `${m.label} · default ${m.steps} steps${m.cfg ? ', cfg ' + m.cfg : ''}${imgKind === 'video' ? ' · clips take minutes' : ''}` : '';
   $('img-neg').classList.toggle('hidden', !(m && m.negative));
 
   // Licence gate.
@@ -59,16 +63,19 @@ function imgRender() {
   setHTML('img-busy', busy.length ? `<div class="section-head"><h2>Now generating</h2></div>` + busy.map((g) => {
     const its = g.items || [], done = its.filter((i) => i.status === 'done').length;
     const run = its.find((i) => i.status === 'running'), prep = its.find((i) => i.status === 'preparing');
-    const where = run ? `${esc(run.node_name || 'a node')} · step ${run.step || 0} of ${run.steps || '?'}` : prep ? `Getting ${esc(prep.node_name || 'a node')} ready (download or load)…` : 'Waiting for a free node…';
+    const secs = run && run.started ? Math.max(0, Math.round((Date.now() - new Date(run.started)) / 1000)) : 0;
+    const where = run ? (imgIsVideo(g) ? `${esc(run.node_name || 'a node')} · working for ${Math.floor(secs / 60)}m ${secs % 60}s (a clip takes minutes)` : `${esc(run.node_name || 'a node')} · step ${run.step || 0} of ${run.steps || '?'}`) : prep ? `Getting ${esc(prep.node_name || 'a node')} ready (download or load)…` : 'Waiting for a free node…';
     return `<div class="card gen-card"><div class="rowline"><b class="gen-prompt">${esc(g.prompt)}</b><span class="spacer"></span><button type="button" class="small" data-act="cancel" data-id="${esc(g.id)}">Stop</button></div>
-      <div class="sub">${esc(g.label)} · ${g.width}×${g.height} · ${done} of ${its.length} done · ${where}</div>${bar(imgGenPct(g), 'good')}</div>`;
+      <div class="sub">${esc(g.label)} · ${g.width}×${g.height}${imgIsVideo(g) ? ' · ' + g.frames + ' frames' : ''} · ${done} of ${its.length} done · ${where}</div>${imgIsVideo(g) ? '' : bar(imgGenPct(g), 'good')}</div>`;
   }).join('') : '');
 
   // Finished generations: newest three big, the rest as a compact grid.
   const fin = imgGens.filter((g) => !(g.status === 'queued' || g.status === 'running'));
   setHTML('img-results', fin.length ? `<div class="section-head"><h2>Results</h2></div>` + fin.slice(0, 3).map(imgCard).join('') : '');
   setHTML('img-earlier', fin.length > 3 ? `<div class="section-head"><h2>Earlier images</h2></div><div class="gen-grid small">` + fin.slice(3).map((g) =>
-    (g.items || []).filter((i) => i.status === 'done').map((i) => `<a class="gen-shot" href="/api/images/${esc(g.id)}/files/${i.index}" target="_blank" rel="noopener" title="${esc(g.prompt)}"><img src="/api/images/${esc(g.id)}/files/${i.index}" alt="${esc(g.prompt)}" loading="lazy"></a>`).join('')).join('') + '</div>' : '');
+    (g.items || []).filter((i) => i.status === 'done').map((i) => imgIsVideo(g)
+      ? `<a class="gen-shot" href="/api/images/${esc(g.id)}/files/${i.index}" target="_blank" rel="noopener" title="${esc(g.prompt)}"><video src="/api/images/${esc(g.id)}/files/${i.index}#t=0.1" muted preload="metadata"></video></a>`
+      : `<a class="gen-shot" href="/api/images/${esc(g.id)}/files/${i.index}" target="_blank" rel="noopener" title="${esc(g.prompt)}"><img src="/api/images/${esc(g.id)}/files/${i.index}" alt="${esc(g.prompt)}" loading="lazy"></a>`).join('')).join('') + '</div>' : '');
 
   imgModelsCard();
 }
@@ -76,14 +83,16 @@ function imgRender() {
 function imgCard(g) {
   const its = g.items || [];
   const shots = its.map((i) => {
+    if (i.status === 'done' && imgIsVideo(g)) return `<figure class="gen-shot"><video src="/api/images/${esc(g.id)}/files/${i.index}" controls loop muted preload="metadata"></video>
+      <figcaption><span>seed ${i.seed}${i.seconds ? ' · made in ' + Math.round(i.seconds / 6) / 10 + ' min' : ''}</span><a href="/api/images/${esc(g.id)}/files/${i.index}?download=1" download>Download</a></figcaption></figure>`;
     if (i.status === 'done') return `<figure class="gen-shot"><a href="/api/images/${esc(g.id)}/files/${i.index}" target="_blank" rel="noopener"><img src="/api/images/${esc(g.id)}/files/${i.index}" alt="${esc(g.prompt)}" loading="lazy"></a>
       <figcaption><span>seed ${i.seed}${i.seconds ? ' · ' + Math.round(i.seconds) + 's' : ''}</span><a href="/api/images/${esc(g.id)}/files/${i.index}?download=1" download>Download</a></figcaption></figure>`;
     return `<figure class="gen-shot wait"><div class="gen-fail">${i.status === 'failed' ? esc(i.error || 'failed') : esc(i.status)}</div></figure>`;
   }).join('');
   const failed = its.some((i) => i.status === 'failed' || i.status === 'cancelled');
   return `<div class="card gen-card"><div class="rowline"><b class="gen-prompt">${esc(g.prompt)}</b></div>
-    <div class="sub">${esc(g.label)} · ${g.width}×${g.height} · ${g.steps} steps · ${ago(g.created)}${g.source && g.source !== 'web' ? ' · ' + esc(g.source) : ''}</div>
-    <div class="gen-grid">${shots}</div>
+    <div class="sub">${esc(g.label)} · ${g.width}×${g.height}${imgIsVideo(g) ? ' · ' + g.frames + ' frames at ' + g.fps + ' fps' : ''} · ${g.steps} steps · ${ago(g.created)}${g.source && g.source !== 'web' ? ' · ' + esc(g.source) : ''}</div>
+    <div class="gen-grid${imgIsVideo(g) ? ' clips' : ''}">${shots}</div>
     <div class="card-actions">
       <button type="button" class="small" data-act="again" data-id="${esc(g.id)}" title="Same settings, new random seeds">Variations</button>
       <button type="button" class="small" data-act="reuse" data-id="${esc(g.id)}" title="Put this prompt and these settings back in the box">Use prompt</button>
@@ -108,7 +117,7 @@ function imgModelsCard() {
       const pct = o.bytes_total ? 100 * o.bytes_done / o.bytes_total : 0;
       return `<div class="prog"><span>${esc(n.name)}: ${esc(o.state)}${o.bytes_total ? ` ${bytes(o.bytes_done)} of ${bytes(o.bytes_total)}` : '…'}</span>${bar(pct, 'good')}</div>`;
     }).join('');
-    return `<div class="card gen-model"><div class="rowline"><b>${esc(m.label)}</b> <span class="pill ${m.restricted ? 'st-warn' : 'st-pending'}" title="${m.restricted ? 'Limits how you may use the pictures' : 'Open licence'}">${esc(m.license)}</span>
+    return `<div class="card gen-model"><div class="rowline"><b>${esc(m.label)}</b> ${m.kind === 'video' ? '<span class="pill st-running">video</span>' : ''}<span class="pill ${m.restricted ? 'st-warn' : 'st-pending'}" title="${m.restricted ? 'Limits how you may use the pictures' : 'Open licence'}">${esc(m.license)}</span>
         <span class="spacer"></span><span class="sub">${bytes(m.bytes)}</span></div>
       <div class="sub">${esc(m.about)}</div>
       <div class="sub">${fitTxt}${have.length ? ' · downloaded on ' + have.map((n) => esc(n.name)).join(', ') : ''}</div>${progress}
@@ -129,11 +138,12 @@ document.addEventListener('click', async (e) => {
       case 'retry': await post(`/api/images/${id}/retry`); break;
       case 'keep': await post(`/api/images/${id}/keep`, { keep: !!b.dataset.keep }); break;
       case 'del': if (!confirm('Delete these pictures?')) return; await api(`/api/images/${id}`, { method: 'DELETE' }); break;
-      case 'again': if (g) { await post('/api/images', { model: g.model, prompt: g.prompt, negative: g.negative, width: g.width, height: g.height, steps: g.steps, cfg: g.cfg, sampler: g.sampler, count: g.count }); toast('Queued'); } break;
+      case 'again': if (g) { await post('/api/images', { model: g.model, prompt: g.prompt, negative: g.negative, width: g.width, height: g.height, steps: g.steps, cfg: g.cfg, sampler: g.sampler, count: g.count, frames: g.frames, fps: g.fps }); toast('Queued'); } break;
       case 'reuse': if (g) {
         $('img-prompt').value = g.prompt; $('img-neg').value = g.negative || '';
+        imgSetKind(g.kind === 'video' ? 'video' : 'image');
         if (imgModels.some((m) => m.id === g.model)) $('img-model').value = g.model;
-        $('img-size').value = g.width + 'x' + g.height; $('img-prompt').focus();
+        $('img-size').value = g.width + 'x' + g.height; if (g.frames) $('img-len').value = String(g.frames); $('img-prompt').focus();
       } break;
       case 'install': {
         const node = document.querySelector(`[data-nodesel="${id}"]`).value;
@@ -156,6 +166,7 @@ $('img-go').onclick = async () => {
   if (!prompt) { $('img-prompt').focus(); return; }
   const [w, h] = $('img-size').value.split('x').map(Number);
   const body = { model: $('img-model').value, prompt, negative: $('img-neg').value.trim(), width: w, height: h, count: +$('img-count').value };
+  if (imgKind === 'video') { body.frames = +$('img-len').value; const m = imgSel(); if (m && m.fps) body.fps = m.fps; }
   if ($('img-steps').value) body.steps = +$('img-steps').value;
   if ($('img-cfg').value) body.cfg = +$('img-cfg').value;
   if ($('img-seed').value) body.seed = +$('img-seed').value;
@@ -181,3 +192,22 @@ $('set-img-save').onclick = async () => {
     toast('Picture limits saved'); imgLoadSettings();
   } catch (e) { toast(e.message); }
 };
+
+// Image | Video: the model, size, count and length lists follow the choice.
+function imgSetKind(k) {
+  imgKind = k;
+  $('img-k-image').classList.toggle('on', k === 'image'); $('img-k-image').setAttribute('aria-pressed', k === 'image' ? 'true' : 'false');
+  $('img-k-video').classList.toggle('on', k === 'video'); $('img-k-video').setAttribute('aria-pressed', k === 'video' ? 'true' : 'false');
+  $('img-size').innerHTML = imgSizes[k].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  $('img-size').value = k === 'video' ? '832x480' : '1024x1024';
+  $('img-count').innerHTML = imgCounts[k].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  $('img-count')._h = $('img-size')._h = undefined;
+  $('img-len').classList.toggle('hidden', k !== 'video');
+  $('img-title').textContent = k === 'video' ? 'What should the cluster film?' : 'What should the cluster draw?';
+  $('img-prompt').placeholder = k === 'video' ? 'Describe the clip. For example: waves rolling onto a beach at sunrise, slow camera pan.' : 'Describe the picture. For example: a lighthouse on a cliff at dusk, oil painting.';
+  $('img-model').value = '';
+  imgRender();
+}
+$('img-k-image').onclick = () => imgSetKind('image');
+$('img-k-video').onclick = () => imgSetKind('video');
+imgSetKind('image');
