@@ -84,7 +84,7 @@ var imageCatalog = []ImageModelDef{
 		License: "Apache-2.0", LicenseURL: "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
 		Files: []ImageFileDef{
 			{Flag: "--diffusion-model", Repo: "leejet/FLUX.1-schnell-gguf", Match: "q8_0.gguf", Bytes: 12_700 << 20},
-			{Flag: "--vae", Repo: "black-forest-labs/FLUX.1-schnell", Match: "ae.safetensors", Bytes: 335 << 20, Aux: true},
+			{Flag: "--vae", Repo: "Comfy-Org/z_image_turbo", Match: "ae.safetensors", Bytes: 335 << 20, Aux: true}, // the same FLUX autoencoder, from a repository that needs no licence click
 			{Flag: "--clip_l", Repo: "comfyanonymous/flux_text_encoders", Match: "clip_l.safetensors", Bytes: 246 << 20, Aux: true},
 			{Flag: "--t5xxl", Repo: "comfyanonymous/flux_text_encoders", Match: "t5xxl_fp16.safetensors", Bytes: 9_800 << 20, Aux: true},
 		},
