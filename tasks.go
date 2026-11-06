@@ -148,6 +148,12 @@ type Task struct {
 	// (local planner only). Saved so a second restart keeps it, and shown in the
 	// UI as "Resuming" instead of the Resume card.
 	AutoResume bool `json:"auto_resume,omitempty"`
+	// NodeLabel limits workers and reviewers to nodes with this label (labels.go).
+	NodeLabel string `json:"node_label,omitempty"`
+	// Unattended: a schedule started it, so the planner asks nothing and the
+	// plan is approved on its own (templates.go). Template is the saved task.
+	Unattended bool   `json:"unattended,omitempty"`
+	Template   string `json:"template,omitempty"`
 
 	saveTimer *time.Timer // pending delayed save (saveSoonLocked)
 	mu        sync.Mutex
@@ -417,10 +423,25 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": msg})
 		return
 	}
+	t, code, err := c.createTask(req, files, createOpts{})
+	if err != nil {
+		writeJSON(w, code, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]string{"id": t.ID})
+}
+
+// createOpts are how a task was started when not by hand.
+type createOpts struct {
+	Unattended bool   // a schedule started it: no questions, the plan is approved on its own
+	Template   string // the saved task it came from
+}
+
+// createTask starts a task from a request; the int is the HTTP status for an error.
+func (c *Controller) createTask(req createReq, files []attachedFile, opt createOpts) (*Task, int, error) {
 	proj := c.getProject(req.Project)
 	if req.Project != "" && proj == nil {
-		writeJSON(w, 404, map[string]string{"error": "no such project"})
-		return
+		return nil, 404, errors.New("no such project")
 	}
 	c.mu.Lock()
 	set := c.settings
@@ -434,8 +455,7 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	if req.Planner == "auto" {
 		p, err := c.autoPlanner()
 		if err != nil {
-			writeJSON(w, 409, map[string]string{"error": err.Error()})
-			return
+			return nil, 409, err
 		}
 		req.Planner = p
 	}
@@ -452,27 +472,28 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		req.CapUSD = set.DefaultCapUSD
 	}
 	if err := c.checkPlanner(req.Planner, req.ORModel); err != nil {
-		writeJSON(w, 409, map[string]string{"error": err.Error()})
-		return
+		return nil, 409, err
+	}
+	if opt.Unattended && isCloudPlanner(req.Planner) {
+		return nil, 409, errors.New("a scheduled task must use a planner on your nodes, not a paid cloud planner")
 	}
 	var imgNames []string
 	var t *Task
 	review := req.Review == nil || *req.Review
 	t = &Task{ProjectID: req.Project, ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, ORModel: req.ORModel, Review: review,
-		Instructions: joinInstructions(set.Instructions, projectInstructions(proj)), Mockup: req.Mockup, MaxFix: clampFixRounds(req.FixRounds), TestMinutes: clampTestMinutes(req.TestMinutes), CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1}
+		Instructions: joinInstructions(set.Instructions, projectInstructions(proj)), Mockup: req.Mockup, MaxFix: clampFixRounds(req.FixRounds), TestMinutes: clampTestMinutes(req.TestMinutes), CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1,
+		NodeLabel: normLabel(req.NodeLabel), Unattended: opt.Unattended, Template: opt.Template}
 	t.dir = filepath.Join(c.tasksDir(), t.ID)
 	if proj != nil {
 		t.repo = proj.repoDir()
 		t.Seeded = len(listRepo(t.repo)) > 0
 	}
 	if err := os.MkdirAll(t.repoDir(), 0o755); err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
-		return
+		return nil, 500, err
 	}
 	if err := c.applyAttachments(t, files); err != nil {
 		os.RemoveAll(t.dir)
-		writeJSON(w, 400, map[string]string{"error": err.Error()})
-		return
+		return nil, 400, err
 	}
 	if len(req.Images) > 0 {
 		imgs, err := decodeImages(req.Images)
@@ -484,8 +505,7 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 		if err != nil {
 			os.RemoveAll(t.dir)
-			writeJSON(w, 400, map[string]string{"error": err.Error()})
-			return
+			return nil, 400, err
 		}
 	}
 	t.Events = append(t.Events, TaskEvent{Time: time.Now(), Level: "info", Text: "Task created; planning with " + c.plannerLabel(t.Planner, t.ClaudeModel, t.ORModel) + "."})
@@ -496,7 +516,7 @@ func (c *Controller) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	c.tasks[t.ID] = t
 	c.mu.Unlock()
 	c.startTask(t, c.planTask)
-	writeJSON(w, 200, map[string]string{"id": t.ID})
+	return t, 200, nil
 }
 
 // isCloudPlanner reports whether a planner is billed per call (and so has a cap).
@@ -1149,9 +1169,13 @@ func (c *Controller) workerNodes() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var out []string
+	now := time.Now()
 	for id := range c.conns {
 		hb := c.lastHB[id]
 		if hb == nil || hb.Paused || !hb.InferenceRdy || hb.LoadedModel == "" || c.pipelines[id] != nil {
+			continue
+		}
+		if n := c.nodes[id]; n != nil && !n.Hours.open(now) {
 			continue
 		}
 		if until, ok := c.cooldown[id]; ok && time.Now().Before(until) {
@@ -1229,7 +1253,7 @@ func (c *Controller) execNodes() []string {
 		if hb := c.lastHB[id]; hb != nil && hb.Paused {
 			continue
 		}
-		if n := c.nodes[id]; n != nil && n.ExecEnabled {
+		if n := c.nodes[id]; n != nil && n.ExecEnabled && n.Hours.open(time.Now()) {
 			out = append(out, id)
 		}
 	}
@@ -1327,7 +1351,7 @@ This project is large, so you see an index (each file's path, size and top-level
 
 func (c *Controller) planTask(ctx context.Context, t *Task) {
 	t.mu.Lock()
-	mayAsk := !t.Asked
+	mayAsk := !t.Asked && !t.Unattended
 	t.flushQueuedLocked() // notes still waiting (Send now, a re-plan) join the round's messages, so they are in this prompt
 	t.mu.Unlock()
 	budget := c.plannerBudget(t)
@@ -1357,7 +1381,9 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 		if c.agentEnabled() {
 			req.System += plannerInvestigateHelp
 		}
-		if !mayAsk {
+		if t.Unattended {
+			req.User += "\n\nNobody is watching this task (it was started by a schedule), so do not ask questions; produce the plan, using sensible defaults for anything still open."
+		} else if !mayAsk {
 			req.User += "\n\nYou have already asked your questions for this request. Do not ask again; produce the plan, using sensible defaults for anything still open."
 		}
 		if attempt > 0 {
@@ -1489,6 +1515,16 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 	t.Status = "awaiting_approval"
 	cp := *plan
 	t.addMsgLocked(TaskMessage{Role: "assistant", Kind: "plan", Plan: &cp, Text: strings.TrimSpace(plan.Note)})
+	if t.Unattended && t.Round == 1 {
+		now := time.Now()
+		t.Approved = &now
+		t.Status = "running"
+		t.addMsgLocked(TaskMessage{Role: "event", Kind: "event", Text: "Approved on its own: this task was started by a schedule."})
+		t.mu.Unlock()
+		t.logf("info", "Plan ready: %d subtasks; approved on its own (scheduled).", len(plan.Subtasks))
+		c.startTask(t, c.execTask)
+		return
+	}
 	t.mu.Unlock()
 	c.notifyTask(t, "plan", fmt.Sprintf("Plan ready with %d subtasks. Review it and approve to start.", len(plan.Subtasks)))
 	t.logf("info", "Plan ready: %d subtasks. Review it and approve to start.", len(plan.Subtasks))
@@ -1774,10 +1810,15 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 			c.failTask(t, errors.New("remaining subtasks depend on subtasks that failed"))
 			return
 		}
-		workers := c.workerNodes()
+		workers := c.taskWorkers(t)
 		if len(workers) == 0 && len(ready) > 0 && running == 0 && !waitingLogged {
-			t.logf("warn", "Waiting for a node with a loaded model. Load one on the Nodes tab.")
+			if t.NodeLabel != "" {
+				t.logf("warn", "Waiting for a node labelled %q with a loaded model.", t.NodeLabel)
+			} else {
+				t.logf("warn", "Waiting for a node with a loaded model. Load one on the Nodes tab.")
+			}
 			waitingLogged = true
+			c.wakeForWork(t.NodeLabel)
 		}
 		// Hard subtasks choose first, so they get the strongest free node.
 		rank := map[string]int{"hard": 0, "normal": 1, "easy": 2}
@@ -2555,7 +2596,7 @@ func (c *Controller) reviewSubtask(ctx context.Context, t *Task, spec PlanSubtas
 	deadline := time.Now().Add(2 * time.Minute)
 	for reviewer == "" {
 		others := 0
-		workers := c.workerNodes()
+		workers := c.taskWorkers(t)
 		for _, w := range workers {
 			if w != writer {
 				others++

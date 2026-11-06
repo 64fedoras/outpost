@@ -528,6 +528,7 @@ func (n *Node) hello() Hello {
 	startMemBandwidth(hw.RAMBytes, n.resendHello)
 	h.LoadedModel, _, _, _ = n.llama.status()
 	h.Peer = n.peerInfo()
+	h.MACs = wakeMACs()
 	return h
 }
 

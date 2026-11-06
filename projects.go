@@ -51,6 +51,7 @@ type Project struct {
 	TestCommand string `json:"test_command,omitempty"`
 	FixRounds   int    `json:"fix_rounds,omitempty"`   // fix rounds after failing tests; 0 = default (3)
 	TestMinutes int    `json:"test_minutes,omitempty"` // time limit for one test run; 0 = default (10)
+	NodeLabel   string `json:"node_label,omitempty"`   // tasks run only on nodes with this label; "" = any node
 	// Instructions are this project's standing rules, added after the ones in
 	// Settings for every task started in the project.
 	Instructions string `json:"instructions,omitempty"`
@@ -131,6 +132,9 @@ func (p *Project) applyDefaults(req createReq) createReq {
 	if req.TestMinutes == 0 {
 		req.TestMinutes = p.TestMinutes
 	}
+	if req.NodeLabel == "" {
+		req.NodeLabel = p.NodeLabel
+	}
 	return req
 }
 
@@ -190,6 +194,7 @@ type projectView struct {
 	TestCommand string              `json:"test_command"`
 	FixRounds   int                 `json:"fix_rounds"`
 	TestMinutes int                 `json:"test_minutes"`
+	NodeLabel   string              `json:"node_label"`
 	Instr       string              `json:"instructions"`
 	Suggest     []ProjectSuggestion `json:"suggestions"`
 	GitURL      string              `json:"git_url"`
@@ -223,7 +228,7 @@ func (c *Controller) projectViews() []projectView {
 	for _, p := range ps {
 		p.mu.Lock()
 		out = append(out, projectView{ID: p.ID, Name: p.Name, Created: p.Created, Planner: p.Planner, Review: p.Review,
-			TestCommand: p.TestCommand, FixRounds: p.FixRounds, TestMinutes: p.TestMinutes, Instr: p.Instructions, Suggest: append([]ProjectSuggestion(nil), p.Suggestions...), GitURL: p.GitURL, GitBranch: p.GitBranch, GitBase: p.GitBase, GitUser: p.GitUser,
+			TestCommand: p.TestCommand, FixRounds: p.FixRounds, TestMinutes: p.TestMinutes, NodeLabel: p.NodeLabel, Instr: p.Instructions, Suggest: append([]ProjectSuggestion(nil), p.Suggestions...), GitURL: p.GitURL, GitBranch: p.GitBranch, GitBase: p.GitBase, GitUser: p.GitUser,
 			GitToken: p.GitTokenEnc != "", GitKey: p.GitKeyEnc != "", GitPush: p.GitPush, GitPR: p.GitPR,
 			LastPush: p.LastPush, LastPR: p.LastPR, Tasks: counts[p.ID]})
 		p.mu.Unlock()
@@ -249,6 +254,7 @@ type projectReq struct {
 	TestCommand *string `json:"test_command"`
 	FixRounds   *int    `json:"fix_rounds"`
 	TestMinutes *int    `json:"test_minutes"`
+	NodeLabel   *string `json:"node_label"`
 	Instr       *string `json:"instructions"`
 	GitURL      string  `json:"git_url"`
 	GitBranch   *string `json:"git_branch"`
@@ -281,6 +287,9 @@ func (c *Controller) applyProjectReq(p *Project, req projectReq) error {
 	}
 	if req.TestMinutes != nil {
 		p.TestMinutes = clampTestMinutes(*req.TestMinutes)
+	}
+	if req.NodeLabel != nil {
+		p.NodeLabel = normLabel(*req.NodeLabel)
 	}
 	if req.Instr != nil {
 		p.Instructions = clipInstructions(*req.Instr)

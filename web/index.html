@@ -85,7 +85,7 @@
             <button class="send" id="nt-go" aria-label="Start planning">Plan it</button>
           </div>
         </div>
-        <div class="optline"><span id="nt-optline"></span><button type="button" class="link-btn" id="nt-opt-toggle" aria-expanded="false" aria-controls="nt-opts">Change options</button></div>
+        <div class="optline"><span id="nt-optline"></span><button type="button" class="link-btn" id="nt-opt-toggle" aria-expanded="false" aria-controls="nt-opts">Change options</button><button type="button" class="link-btn" id="nt-save-tpl" title="Keep this request and its options to start again with one click, or on a schedule">Save for later</button></div>
         <div class="card opts hidden" id="nt-opts">
           <div class="opts-grid">
             <select id="nt-planner" class="opt-field" aria-label="Planner"></select>
@@ -95,11 +95,13 @@
             <label class="toggle" title="Plan 2 or 3 design variants of the page first, rendered side by side, and build the real code from the one you pick. Needs a node with exec and Chromium."><input type="checkbox" id="nt-mockup"> mockups first</label>
             <label class="chip-input" title="How many times the planner tries to fix failing tests before giving you the result">fix rounds <select id="nt-fix" aria-label="Fix rounds"><option value="0">default</option><option>1</option><option>2</option><option>3</option><option>5</option><option>8</option></select></label>
             <label class="chip-input" title="How long one test run may take">test limit <select id="nt-testmin" aria-label="Test time limit"><option value="0">default</option><option value="5">5 min</option><option value="10">10 min</option><option value="30">30 min</option><option value="60">60 min</option></select></label>
+            <label class="chip-input hidden" id="nt-label-wrap" title="Only nodes with this label write and review the code (labels are set on the Nodes page)">nodes <select id="nt-label" aria-label="Nodes with label"></select></label>
           </div>
         </div>
         <div class="error-msg hidden" id="nt-img-warn"></div>
         <div class="error-msg hidden" id="nt-err"></div>
         <div class="starters" id="nt-starters"></div>
+        <div id="nt-saved"></div>
         <div id="home-setup"></div>
       </div>
     </section>
@@ -293,6 +295,11 @@
           <input id="set-idle" type="text" placeholder="1hr" autocomplete="off" spellcheck="false">
           <div class="hint" id="set-idle-now"></div>
           <div class="modal-foot"><button class="primary" id="set-idle-save">Save</button></div>
+        </div>
+        <div class="section-head"><h2>Wake sleeping nodes</h2></div>
+        <div class="card">
+          <label class="toggle"><input type="checkbox" id="set-wake"> <span>Wake offline nodes with Wake-on-LAN when a task is waiting for a worker</span></label>
+          <p class="hint">Only nodes inside their working hours, with the task's label if it has one, and at most once every 10 minutes per node. A node card's <b>Wake</b> button sends the packet by hand. Wake-on-LAN must be turned on in the machine's firmware and network settings, and the controller must be on the same network (the packet is a broadcast and does not cross routers).</p>
         </div>
         <div class="section-head"><h2>Free disk space</h2></div>
         <div class="card">
@@ -542,6 +549,31 @@
     <label for="redo-node">Who writes it</label><select id="redo-node"></select>
     <label for="redo-note">Note for this try (optional)</label><textarea id="redo-note" rows="3" placeholder="e.g. Use argparse, not click."></textarea>
     <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="redo-go">Redo</button></div>
+  </div>
+</div>
+
+<div id="modal-hours" class="overlay hidden">
+  <div class="modal">
+    <h3>Working hours for <span id="hours-node"></span></h3>
+    <p class="hint">Outside these hours the node takes no new work (a call already running finishes) and stops its model soon after, freeing the memory. Times are the controller's clock. An end time earlier than the start means the hours run past midnight.</p>
+    <div class="hours-days" id="hours-days"></div>
+    <div class="btns u3"><label class="chip-input">from <input type="time" id="hours-from" value="22:00"></label><label class="chip-input">to <input type="time" id="hours-to" value="07:00"></label></div>
+    <div class="error-msg hidden" id="hours-err"></div>
+    <div class="modal-foot"><button class="danger" id="hours-clear">Work any time</button><span class="spacer"></span><button data-close>Cancel</button><button class="primary" id="hours-go">Save</button></div>
+  </div>
+</div>
+
+<div id="modal-sched" class="overlay hidden">
+  <div class="modal">
+    <h3>Schedule <span id="sched-name"></span></h3>
+    <p class="hint">A scheduled run starts on its own: the planner asks no questions and the plan is approved without you. It must plan on a node (never Claude or OpenRouter), so a schedule never spends money. A run is skipped while the previous one is still going, and you get the usual Finished or Failed notification.</p>
+    <div class="btns u3">
+      <label class="chip-input">runs <select id="sched-every"><option value="">never</option><option value="daily">every day</option><option value="weekly">every week</option></select></label>
+      <label class="chip-input" id="sched-day-wrap">on <select id="sched-day"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select></label>
+      <label class="chip-input">at <input type="time" id="sched-at" value="02:00"></label>
+    </div>
+    <div class="error-msg hidden" id="sched-err"></div>
+    <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="sched-go">Save</button></div>
   </div>
 </div>
 
