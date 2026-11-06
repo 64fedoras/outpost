@@ -9,7 +9,7 @@ still an open decision. What that means in practice:
 
 - **Windows** shows a SmartScreen warning ("Windows protected your PC") for an unsigned exe that was
   downloaded from the internet. Choose **More info → Run anyway**, or right-click the file →
-  Properties → **Unblock**. Defender may also flag it (see the Defender note under Install in the [user guide](USER-GUIDE.md)).
+  Properties → **Unblock**. Defender may also flag it (see the Defender note under Install in [Installing and first run](install.md)).
 - **macOS** Gatekeeper blocks an unsigned binary that came from a browser. Clear the quarantine flag
   with `xattr -d com.apple.quarantine outpost-darwin-arm64` or right-click → Open.
 - **Anyone can rebuild Outpost**, so a binary is only as trustworthy as where you got it. Download from
