@@ -1659,9 +1659,15 @@ function benchLine(n, loaded, ready) {
 // (short list on the left, the selected node's full card on the right).
 const NODE_VIEWS = ['grid', 'list', 'detail'];
 let nodeView = 'grid', nodeSel = null, nodeLabel = '';
+const nodeOpen = new Set(); // nodes expanded under their List row
+// The Detailed list is optional (Settings → Application); kept in this browser only.
+let showDetailed = false;
+try { showDetailed = localStorage.getItem('outpost.detailedList') === '1'; } catch (e) { /* storage blocked */ }
 try { const v = localStorage.getItem('outpost.nodeView'); if (NODE_VIEWS.includes(v)) nodeView = v; } catch (e) { /* storage blocked */ }
+if (nodeView === 'detail' && !showDetailed) nodeView = 'list';
 function setNodeView(v) {
   if (!NODE_VIEWS.includes(v)) return;
+  if (v === 'detail' && !showDetailed) v = 'list';
   nodeView = v;
   try { localStorage.setItem('outpost.nodeView', v); } catch (e) { /* storage blocked */ }
   renderNodes();
@@ -1710,13 +1716,14 @@ function nodeRow(n) {
     ? `${n.running_jobs}/${n.max_jobs} jobs${n.pool_names && n.pool_names.length ? ' · pooled with ' + n.pool_names.map(esc).join(', ') : ''} · exec ${n.exec_enabled ? (n.sandbox ? 'on, sandbox ' + n.sandbox : 'on') : 'off'}` : '';
   const action = fixIssue ? `<button class="small primary" data-act="${fixIssue.act}" data-id="${n.id}">${esc(fixIssue.fix)}</button>`
     : n.online && !n.lending_to ? `<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>` : '';
-  return `<div class="nv-row nv-s-${f.worst}">
+  const open = nodeOpen.has(n.id);
+  return `<div class="nv-row nv-s-${f.worst}${open ? ' open' : ''}" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}">
     <div class="nv-c1"><span class="dot ${f.dot}"></span><div class="nv-min"><b>${esc(nodeName(n))}</b><div class="sub nv-sub">${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}${n.addr ? ' · ' + esc(n.addr.split(':')[0]) : ''}</div>${labelChips(n)}</div></div>
     <div class="nv-min"><div class="nv-ell">${f.model}</div><div class="sub nv-sub nv-wrap">${sub}</div></div>
     <div>${n.online ? `<div class="nv-bars"><span>CPU</span>${bar(f.cpu)}<span>RAM</span>${bar(f.ram)}${f.vram != null ? `<span>VRAM</span>${bar(f.vram)}` : ''}</div>` : `<span class="sub">${n.last_seen ? 'Last seen ' + ago(n.last_seen) : 'Never connected'}</span>`}</div>
     <div class="r">${nvTps(f, true)}</div>
-    <div class="nv-acts">${action}<button class="small" data-act="node-detail" data-id="${n.id}" title="Open in the detailed list">Details</button></div>
-  </div>`;
+    <div class="nv-acts">${action}<button class="small" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}" title="Show or hide all details and controls for this node">${open ? 'Hide' : 'Details'}</button></div>
+  </div>${open ? `<div class="nv-exp">${nodeCard(n)}</div>` : ''}`;
 }
 
 function nodeListView(nodes) {
@@ -1840,7 +1847,8 @@ function renderNodes() {
   const nodes = state.nodes;
   const online = nodes.filter((n) => n.online).length;
   setHTML('node-count', nodes.length ? `${online} of ${nodes.length} online` : '');
-  document.querySelectorAll('[data-node-view]').forEach((b) => b.classList.toggle('on', b.dataset.nodeView === nodeView));
+  if (nodeView === 'detail' && !showDetailed) nodeView = 'list';
+  document.querySelectorAll('[data-node-view]').forEach((b) => { b.classList.toggle('on', b.dataset.nodeView === nodeView); if (b.dataset.nodeView === 'detail') b.hidden = !showDetailed; });
   if (!nodes.length) { setHTML('nodes', `<div class="empty u16">No nodes yet. Click <b>Add node</b> to get the install command.</div>`); return; }
   const labels = state.labels || [];
   if (nodeLabel && !labels.includes(nodeLabel)) nodeLabel = '';
@@ -2722,6 +2730,13 @@ $('set-theme').addEventListener('change', () => {
   if (v) document.documentElement.setAttribute('data-theme', v); else document.documentElement.removeAttribute('data-theme');
   toast(v ? `Theme: ${v}` : 'Theme follows the system');
 });
+try { $('set-detailed').checked = showDetailed; } catch (e) {}
+$('set-detailed').addEventListener('change', () => {
+  showDetailed = $('set-detailed').checked;
+  try { localStorage.setItem('outpost.detailedList', showDetailed ? '1' : '0'); } catch (e) {}
+  if (!showDetailed && nodeView === 'detail') setNodeView('list'); else if (state) renderNodes();
+  toast(showDetailed ? 'Detailed list view shown on the Nodes page' : 'Detailed list view hidden');
+});
 $('set-wake').addEventListener('change', () => saveSettings({ wake_for_work: $('set-wake').checked }, $('set-wake').checked ? 'Nodes are woken for waiting tasks' : 'Automatic wake off'));
 $('set-idle-save').onclick = () => saveSettings({ idle_unload: $('set-idle').value.trim() }, 'Idle unload saved');
 $('set-pooling-save').onclick = () => saveSettings({ pooling_enabled: $('set-pooling').checked }, $('set-pooling').checked ? 'Pooling enabled' : 'Pooling off; pools dissolved');
@@ -2870,7 +2885,7 @@ function palSource() {
     { t: 'Theme: dark', k: 'action', run: () => { $('set-theme').value = 'dark'; $('set-theme').dispatchEvent(new Event('change')); } },
     { t: 'Theme: same as the system', k: 'action', run: () => { $('set-theme').value = ''; $('set-theme').dispatchEvent(new Event('change')); } },
   ];
-  (state ? state.nodes : []).forEach((n) => items.push({ t: nodeName(n), k: 'node', sub: n.online ? (n.heartbeat && n.heartbeat.loaded_model) || 'online' : 'offline', run: () => { nodeSel = n.id; nodeView = 'detail'; location.hash = '#/nodes'; renderNodes(); } }));
+  (state ? state.nodes : []).forEach((n) => items.push({ t: nodeName(n), k: 'node', sub: n.online ? (n.heartbeat && n.heartbeat.loaded_model) || 'online' : 'offline', run: () => { nodeSel = n.id; nodeOpen.add(n.id); nodeView = showDetailed ? 'detail' : 'list'; location.hash = '#/nodes'; renderNodes(); } }));
   (tasks || []).forEach((t) => items.push({ t: t.title || 'Task', k: 'task', sub: statusWord(t), run: go('#/tasks/' + t.id) }));
   (projects || []).forEach((p) => items.push({ t: p.name, k: 'project', run: go('#/projects') }));
   (state && state.templates || []).forEach((tp) => items.push({ t: 'Run saved task: ' + tp.name, k: 'action', run: () => templateAction('tpl-run', tp.id).catch((e) => toast(e.message)) }));
@@ -2999,7 +3014,11 @@ document.addEventListener('click', async (e) => {
         await post(`/api/nodes/${id}/restart`); toast('Restarting'); break;
       }
       case 'remove': removeNode(id); break;
-      case 'node-detail': nodeSel = id; setNodeView('detail'); return;
+      case 'node-detail':
+        // Grid "Details": the detailed list when enabled, else the node opened under its List row.
+        if (showDetailed) { nodeSel = id; setNodeView('detail'); } else { nodeOpen.add(id); setNodeView('list'); }
+        return;
+      case 'node-toggle': if (nodeOpen.has(id)) nodeOpen.delete(id); else nodeOpen.add(id); renderNodes(); return;
       case 'node-select': nodeSel = id; renderNodes(); return;
       case 'node-view': setNodeView(el.dataset.nodeView); return;
       case 'cat-filter': catFilter = el.dataset.catFilter; renderModels(); return;
