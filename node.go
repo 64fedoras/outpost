@@ -57,6 +57,7 @@ type Node struct {
 	updating    bool
 	args        []string
 	llama       *llamaMgr
+	sd          *sdMgr // stable-diffusion.cpp server for image generation (node_sd.go)
 	rpc         *rpcMgr
 	paused      bool            // no new work (tray icon or web UI); kept in <data>/paused
 	pausedBy    string          // tray | web
@@ -90,6 +91,7 @@ func runNode(args []string) error {
 		jobs: map[string]context.CancelFunc{}, wsLastUsed: map[string]time.Time{}, stats: newStatSampler(),
 		args: stripJoin(os.Args[1:])}
 	n.llama = newLlamaMgr(n)
+	n.sd = newSDMgr(n)
 	n.rpc = newRPCMgr(n)
 	for _, d := range []string{*data, n.workRoot, filepath.Join(*data, "models"), n.agentDir()} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
@@ -140,6 +142,7 @@ func runNode(args []string) error {
 	go n.autoload()
 	go n.verifyModelsBackground()
 	go n.llama.idleLoop(context.Background())
+	go n.sd.idleLoop(context.Background())
 	go n.autostartRPC()
 	go migratePeerFirewallRule()
 	n.startPeerServer()
@@ -359,7 +362,11 @@ func (n *Node) sessionInner(welcomed *bool) error {
 		case "runtime.install":
 			var ri RuntimeInstall
 			if json.Unmarshal(env.Body, &ri) == nil {
-				go n.installRuntime(ri)
+				if ri.Runtime == "sd" {
+					go n.installSDRuntime(ri)
+				} else {
+					go n.installRuntime(ri)
+				}
 			}
 		case "toolchain.install":
 			var ti ToolInstall
@@ -523,6 +530,9 @@ func (n *Node) hello() Hello {
 	}
 	if rt := n.currentRuntime(); rt != nil {
 		h.Runtime = &rt.RuntimeInfo
+	}
+	if rt := n.currentSD(); rt != nil {
+		h.SDRuntime = &rt.RuntimeInfo
 	}
 	h.MemBWGBs = memBandwidthGBs()
 	startMemBandwidth(hw.RAMBytes, n.resendHello)
@@ -736,6 +746,35 @@ func (n *Node) runJob(jd JobDispatch) {
 	}
 	if !validWSID(wsID) {
 		fail(errf("bad_request", false, "invalid workspace id"))
+		return
+	}
+	if jd.Kind == "generate" {
+		n.mu.Lock()
+		updating := n.updating
+		n.mu.Unlock()
+		if updating {
+			fail(errf("busy", true, "node is installing an update"))
+			return
+		}
+		dir := n.wsDir(wsID)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			fail(errf("disk_full", true, "%v", err))
+			return
+		}
+		n.runGenerate(ctx, jd, &res, dir)
+		if res.Status == "succeeded" {
+			files, e := n.collectGenerated(dir, jd.JobID)
+			res.Files = files
+			for _, f := range files {
+				if f.Blob { // the controller fetches these, then closes the workspace
+					private = false
+				}
+			}
+			if e != nil {
+				res.Status, res.Error = "failed", e
+			}
+		}
+		finish()
 		return
 	}
 	if jd.Kind != "exec" {
