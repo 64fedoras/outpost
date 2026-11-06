@@ -275,6 +275,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/nodes/{id}/pause", c.auth(c.handlePauseNode))
 	mux.HandleFunc("GET /v1/releases/{platform}", c.handleServeRelease)
 	mux.HandleFunc("GET /v1/runtime/{variant}", c.handleServeRuntime)
+	c.installRoutes(mux)
 	c.toolchainRoutes(mux)
 	mux.HandleFunc("GET /v1/models/{name}/files/{index}", c.handleServeModelFile)
 	mux.HandleFunc("GET /v1/jobs/{id}/inputs", c.handleServeJobInput)
