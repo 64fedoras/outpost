@@ -79,7 +79,7 @@ func (n *Node) setPausedBy(p bool, by string, until time.Time) {
 	n.mu.Unlock()
 	if p {
 		b, _ := json.Marshal(pauseFile{By: by, Until: until})
-		_ = os.WriteFile(pausedPath(n.dataDir), b, 0o600)
+		_ = writeFileAtomic(pausedPath(n.dataDir), b, 0o600)
 	} else {
 		_ = os.Remove(pausedPath(n.dataDir))
 	}
@@ -231,7 +231,7 @@ func (n *Node) startControl() {
 	}
 	cf := controlFile{Port: ln.Addr().(*net.TCPAddr).Port, Token: randHex(16), PID: os.Getpid()}
 	b, _ := json.Marshal(cf)
-	if err := os.WriteFile(controlPath(n.dataDir), b, 0o600); err != nil {
+	if err := writeFileAtomic(controlPath(n.dataDir), b, 0o600); err != nil {
 		log.Printf("tray control unavailable: %v", err)
 		ln.Close()
 		return
