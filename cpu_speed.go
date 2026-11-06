@@ -37,7 +37,7 @@ type modelCost struct {
 // costOf derives the cost from the file size and GGUF header. Without a header
 // the model counts as dense: the whole file is read per token (slow side).
 func costOf(fileBytes int64, s *ModelShape) modelCost {
-	return modelCost{Active: s.activeBytes(fileBytes), Sparse: s != nil && s.ActiveFrac > 0 && s.ActiveFrac < 1}
+	return modelCost{Active: s.ActiveBytes(fileBytes), Sparse: s != nil && s.ActiveFrac > 0 && s.ActiveFrac < 1}
 }
 
 func isVirtualCPU(model string) bool {

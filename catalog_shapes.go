@@ -37,7 +37,7 @@ func (c *Controller) fetchCatalogShapes() int {
 		c.mu.Lock()
 		have := c.catShapes[e.ID]
 		c.mu.Unlock()
-		if have != nil && !have.needsHeaderRefresh() {
+		if have != nil && !have.NeedsHeaderRefresh() {
 			continue
 		}
 		f := mainModelFile(e.Files)
