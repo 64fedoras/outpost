@@ -665,6 +665,32 @@ connection is planned (roadmap row 24) but not built.
 Expect slower generation than a single machine. Every token crosses your network, so wired
 gigabit or faster is best. Use it for models that would not fit otherwise, not for speed.
 
+## Chat and the OpenAI-compatible API
+
+**Chat** (sidebar) is a plain conversation with a model on your nodes, for quick questions that do not
+need a task. Pick a node or leave it on *Any node* (the strongest free one). Replies stream in, thinking
+models show their reasoning folded away, and each answer notes the node, model and speed. **Ctrl+Enter**
+sends, **Stop** ends a reply, and **Make this a task** copies the conversation into a new task. Chats are
+kept on the controller (`chats/`, up to 500); a long chat sends only the newest messages that fit the
+model's context. Chat only uses a free model slot: while a task keeps every node busy, a message waits
+up to 5 minutes and then says so. It never interrupts task work and costs no Claude money.
+
+**OpenAI-compatible API.** Editors and tools that speak the OpenAI API (Continue, aider, Open WebUI and
+others) can use the cluster. Point them at:
+
+```
+base URL:  https://192.0.2.10:8443/v1
+API key:   an API token from Settings → API tokens
+model:     auto   (or the name of a loaded model, from GET /v1/models)
+```
+
+`POST /v1/chat/completions` supports streaming, `max_tokens`, `stop`, tools (tool calls are sent in one
+piece at the end of a stream), image parts as `data:` URIs for vision models, and `reasoning_content`
+for thinking models. A model name that no ready node has loaded returns 404; when every node is busy a
+request waits up to 2 minutes for a free slot, then returns 503. Tick **Chat only** when you create a
+token for a tool: such a token works on `/v1/` and nothing else. The controller's certificate is
+self-signed, so the tool must trust it (or use your own certificate, see below).
+
 ## Claude usage and the spending cap
 
 Claude only plans, writes subtasks the local models could not finish, and fixes failing tests; all
@@ -776,7 +802,8 @@ build on disk.
 is blocked for 15 minutes (the page shows the failure count). It lists every signed-in browser with
 Sign out, and **Sign out everywhere**. **API tokens** are named, shown once, stored hashed, and sent
 as `Authorization: Bearer opt_…` to any `/api/` endpoint a script needs (state, tasks and so on).
-Tokens cannot manage tokens, sessions, the certificate or backups; only a browser sign-in can.
+Tokens cannot manage tokens, sessions, the certificate or backups; only a browser sign-in can. A token
+made with **Chat only** ticked works only on the OpenAI-compatible `/v1/` API (see Chat above).
 
 **Browser hardening.** Every controller response carries `Content-Security-Policy` (scripts, styles and
 images only from the controller itself, no inline code), `X-Frame-Options: DENY`,
@@ -906,6 +933,8 @@ See also [SECURITY.md](SECURITY.md) for the security model and its limits (the L
 - Idle unload is covered by unit tests but its reload timing is **untested with a real llama-server** on
   the cluster. A request that wakes an unloaded model waits for the whole load (large models take minutes),
   and a node restart reloads a model that was unloaded for idleness.
+- Chat and the `/v1` API are tested against a fake node only, never with a real llama-server, a real
+  editor plugin or a thinking model. Streamed tool calls arrive whole at the end, not piece by piece.
 - Version 0.8.0 is **untested on the real cluster** (nodes, GPUs, real transfer speeds), on real Windows
   (service, PowerShell test runs, Go install, Defender) and on a real Mac. It was tested against stub
   Claude and OpenRouter servers and fake llama-server and Chromium. The live OpenRouter API was never

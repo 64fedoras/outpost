@@ -48,6 +48,7 @@
     </div>
     <a class="new-task" href="#/new"><span aria-hidden="true">＋</span> New task</a>
     <a class="new-task side-projects" href="#/projects" data-tab="projects"><span aria-hidden="true">▤</span> Projects</a>
+    <a class="new-task side-projects" href="#/chat" data-tab="chat"><span aria-hidden="true">💬</span> Chat</a>
     <nav class="side-tasks" id="side-tasks" aria-label="Tasks"></nav>
     <div class="side-foot">
       <div class="cluster" id="side-cluster"></div>
@@ -189,6 +190,28 @@
       </label>
       <div class="u4" id="releases"></div>
       <p class="sub wrap u5" id="ctl-info"></p>
+    </section>
+
+    <!-- CHAT -->
+    <section data-page="chat" class="hidden">
+      <div class="section-head"><h2>Chat</h2><button class="small" id="chat-new">New chat</button></div>
+      <p class="hint">Ask a model on your nodes directly: no plan, no files. A chat only uses a node that is free, so task work goes first; it waits up to 5 minutes for one.</p>
+      <div class="chat-layout">
+        <nav class="chat-list" id="chat-list" aria-label="Chats"></nav>
+        <div class="chat-main">
+          <div class="chat-msgs" id="chat-msgs" aria-live="polite"></div>
+          <div class="chat-compose">
+            <textarea id="chat-text" rows="3" placeholder="Ask anything… (Ctrl+Enter sends)" aria-label="Message"></textarea>
+            <div class="chat-bar">
+              <label class="chip-input">model <select id="chat-node" aria-label="Which node answers"></select></label>
+              <span class="grow"></span>
+              <button class="small hidden" id="chat-totask" title="Start a new task with this conversation as its request">Make this a task</button>
+              <button class="small danger hidden" id="chat-stop">Stop</button>
+              <button class="primary" id="chat-send">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- PROJECTS -->
@@ -361,6 +384,7 @@
           <label class="u5" for="tok-name">API tokens <span class="muted">· for scripts: <code>Authorization: Bearer …</code></span></label>
           <div id="tokens-list"></div>
           <div class="btns u3"><input id="tok-name" placeholder="Token name, e.g. nightly script" autocomplete="off"><button id="tok-create">Create token</button></div>
+          <label class="toggle u3"><input type="checkbox" id="tok-chat"> <span>Chat only: works with the OpenAI-compatible API (<code>/v1/chat/completions</code>, <code>/v1/models</code>) and nothing else. Use this for editors and chat apps.</span></label>
           <div class="note hidden u6" id="tok-new"></div>
         </div>
         <div class="section-head"><h2>HTTPS certificate</h2></div>

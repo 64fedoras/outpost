@@ -27,6 +27,8 @@ type liveEvent struct {
 	Tok   int     `json:"tok,omitempty"`
 	TPS   float64 `json:"tps,omitempty"`
 	Est   bool    `json:"est,omitempty"` // token count is an estimate (cloud planners)
+	// Reason marks a delta that is a thinking model's reasoning, not its answer.
+	Reason bool `json:"reason,omitempty"`
 	// Prompt reading progress before the first token (local nodes with a
 	// llama.cpp that reports it): tokens read, prompt size, seconds left.
 	Read  int `json:"read,omitempty"`
@@ -142,6 +144,10 @@ func (lh *liveHandle) with(fn func(lt *liveTask, lc *liveCall)) {
 }
 
 func (h *liveHub) addText(lt *liveTask, lc *liveCall, text string, tokens int) {
+	h.addTextKind(lt, lc, text, tokens, false)
+}
+
+func (h *liveHub) addTextKind(lt *liveTask, lc *liveCall, text string, tokens int, reasoning bool) {
 	lc.lastOut = time.Now()
 	if lc.first.IsZero() {
 		lc.first = time.Now()
@@ -155,7 +161,7 @@ func (h *liveHub) addText(lt *liveTask, lc *liveCall, text string, tokens int) {
 	if len(lc.buf) > liveBufBytes {
 		lc.buf = append([]byte(nil), lc.buf[len(lc.buf)-liveBufBytes:]...)
 	}
-	h.broadcastLocked(lt, liveEvent{T: "delta", Call: lc.id, Text: text, Tok: lc.tok, TPS: lc.tps()})
+	h.broadcastLocked(lt, liveEvent{T: "delta", Call: lc.id, Text: text, Tok: lc.tok, TPS: lc.tps(), Reason: reasoning})
 }
 
 // Write appends streamed text (cloud planners; tokens are estimated).
@@ -233,7 +239,7 @@ func (h *liveHub) jobOutput(o JobOutput) {
 		}
 		return
 	}
-	h.addText(lt, lc, o.Data, o.Tokens)
+	h.addTextKind(lt, lc, o.Data, o.Tokens, o.Stream == "reasoning")
 }
 
 // parseProgress reads the last "processed total cached ms" line a node sent
@@ -319,7 +325,12 @@ func (c *Controller) handleTaskEvents(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]string{"error": "streaming not supported"})
 		return
 	}
-	snap, ch, cancel := taskLive.subscribe(t.ID)
+	serveLive(w, r, fl, t.ID)
+}
+
+// serveLive streams one live key (a task id, or "chat_" + a chat id) as SSE.
+func serveLive(w http.ResponseWriter, r *http.Request, fl http.Flusher, key string) {
+	snap, ch, cancel := taskLive.subscribe(key)
 	defer cancel()
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
