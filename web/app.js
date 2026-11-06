@@ -2438,6 +2438,8 @@ function renderUpdates() {
       prog = `<div class="prog"><span>${esc(what)}</span>${bar(pct, 'good')}</div>`;
     } else if (u && u.state === 'failed') prog = `<span class="error-msg u2">${esc(u.error)}</span>`;
     else if (u && u.state === 'done' && (Date.now() - new Date(u.updated)) < 600000) prog = `<span class="st-done">✓ updated</span>`;
+    const ro0 = state.rollout;
+    if (ro0 && !ro0.ended && ro0.state === 'checking' && ro0.canary === n.id && u && u.state === 'done') prog = `<span class="st-done">updated, checking…</span>`;
     const busy = u && UPD_BUSY.includes(u.state);
     const canUpdate = n.update_to && n.online && !busy;
     rows.push(`<tr><td><span class="dot ${n.online ? 'on' : ''}" title="${n.online ? 'service online' : 'offline'}"></span></td><td><b>${esc(nodeName(n))}</b><div class="sub u2">${n.online ? 'online' : n.last_seen ? 'offline · seen ' + ago(n.last_seen) : 'never connected'}</div></td>
