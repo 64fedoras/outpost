@@ -757,6 +757,11 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .chat-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .chat-msgs { display: flex; flex-direction: column; gap: 12px; min-height: 30vh; max-height: 62vh; overflow: auto; padding: 4px 2px; }
 .chat-answer { max-width: 92%; }
+/* New chat (none open): centre the empty state and the box in the space beside the list */
+.chat-fresh .chat-layout { min-height: 55vh; }
+.chat-fresh .chat-main { width: 100%; max-width: 720px; margin: auto; justify-content: center; align-self: center; }
+.chat-fresh .chat-msgs { min-height: 0; max-height: none; overflow: visible; text-align: center; }
+.chat-fresh .chat-empty { font-size: 18px; margin: 0; }
 .chat-text { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
 .chat-compose { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 8px; }
 .chat-compose textarea { width: 100%; box-sizing: border-box; border: 0; background: transparent; color: var(--ink); font: inherit; resize: vertical; outline: none; }

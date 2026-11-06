@@ -711,6 +711,7 @@ async function projectAction(act, el) {
 let chatES = null, chatCur = null, chatLive = {};
 async function chatOpen(id) {
   chatCur = null; chatLive = {};
+  document.querySelector('[data-page="chat"]').classList.toggle('chat-fresh', !id);
   await chatList();
   fillChatNodes();
   if (id) await chatLoad(id); else { setHTML('chat-msgs', '<p class="muted chat-empty">Start a new chat below.</p>'); chatButtons(); }
