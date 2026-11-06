@@ -245,7 +245,7 @@ func (c *Controller) modelTierLocked(name string, bytes int64) int {
 func (c *Controller) isReserved(id string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.reserved[id]
+	return c.reserved[id] >= c.slotsLocked(id)
 }
 
 func (c *Controller) freeScores(scores []nodeScore, skip string) []nodeScore {
@@ -339,7 +339,7 @@ func (c *Controller) benchBlockedLocked(id string) string {
 		return "the node is paused"
 	case hb.LoadedModel == "" || !hb.InferenceRdy:
 		return "no model is ready on the node"
-	case hb.InferenceBusy != 0 || c.reserved[id] || c.pipelines[id] != nil:
+	case hb.InferenceBusy != 0 || c.reserved[id] > 0 || c.pipelines[id] != nil:
 		return "the node is busy"
 	}
 	if n := c.nodes[id]; n != nil && n.Benching {
@@ -360,11 +360,15 @@ func (c *Controller) startBenchmark(id string) error {
 		c.mu.Unlock()
 		return errors.New("no such node")
 	}
-	c.reserved[id] = true
+	c.reserved[id] = exclusive
 	n.Benching = true
 	c.mu.Unlock()
 	go func() {
-		defer c.releaseNode(id)
+		defer func() {
+			c.mu.Lock()
+			delete(c.reserved, id)
+			c.mu.Unlock()
+		}()
 		c.benchmarkNode(context.Background(), id)
 	}()
 	return nil

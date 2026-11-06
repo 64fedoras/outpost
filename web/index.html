@@ -436,8 +436,12 @@
     <div class="row2">
       <div><label for="load-ctx-range">Context size (tokens)</label>
         <div class="ctx-slider"><input id="load-ctx-range" type="range" min="0" max="6" step="1" aria-label="Context size"><input id="load-ctx" type="number" min="512" step="1024" aria-label="Exact context size in tokens"></div>
-        <div class="ctx-ticks" aria-hidden="true"><span>2K</span><span id="load-ctx-max">128K</span></div></div>
+        <div class="ctx-ticks" aria-hidden="true"><span>2K</span><button type="button" class="small" id="load-ctx-fit" title="Set the biggest context that fits this node's memory, leaving 10% spare">Largest that fits</button><span id="load-ctx-max">128K</span></div></div>
       <div><label for="load-ngl">GPU layers</label><select id="load-ngl"><option value="">Automatic (fit to VRAM)</option><option value="all">All on GPU</option><option value="0">CPU only</option></select></div>
+    </div>
+    <div class="row2">
+      <div><label for="load-cache">Context cache</label><select id="load-cache"><option value="">16-bit (default)</option><option value="q8_0">8-bit (half the memory)</option><option value="q4_0">4-bit (a quarter, slight quality loss)</option></select></div>
+      <div><label for="load-slots">Calls at once</label><select id="load-slots"><option value="0">1 (default)</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
     </div>
     <p id="load-ctx-hint" class="hint hidden"></p>
     <details id="load-pool-wrap" class="hidden u6"><summary class="hint">Pool memory from other nodes (for models too big for this one)</summary>
@@ -449,6 +453,11 @@
         <div><label for="load-threads">CPU threads (0 = automatic)</label><input id="load-threads" type="number" min="0" value="0"></div>
         <div><label for="load-extra">Extra llama-server arguments</label><input id="load-extra" placeholder="--n-cpu-moe 20" class="mono"></div>
       </div>
+      <div class="row2">
+        <div><label for="load-fa">Flash attention</label><select id="load-fa"><option value="">Automatic (default)</option><option value="on">On</option><option value="off">Off</option></select></div>
+        <div><label for="load-draft">Draft model (speculative decoding)</label><select id="load-draft"></select></div>
+      </div>
+      <p class="hint u6" id="load-draft-hint">A small model of the same family (same tokenizer) guesses ahead and the main model checks its guesses: often 1.5 to 2 times faster for code on a GPU. Use a model under a fifth of the main one's size, for example a 0.5B or 1.5B of the same family. Watch the tok/s on the node card; if it is not faster, load again without it.</p>
     </details>
     <div class="error-msg hidden" id="load-err"></div>
     <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="load-go">Load</button></div>

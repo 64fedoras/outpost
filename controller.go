@@ -149,7 +149,7 @@ type Controller struct {
 	projects   map[string]*Project      // see projects.go
 	// resumeWake wakes autoResumeInterrupted on node heartbeats (nudgeResume).
 	resumeWake chan struct{}
-	reserved   map[string]bool
+	reserved   map[string]int // calls holding a node (see slotsLocked)
 	cooldown   map[string]time.Time
 	restarts   map[string]time.Time
 	poolStale  map[string]time.Time // main node -> when a helper reconnected
@@ -179,7 +179,7 @@ func runController(args []string) error {
 		tokens: map[string]time.Time{}, usedTok: map[string]usedToken{}, sessions: map[string]time.Time{}, sessMeta: map[string]sessionMeta{}, loginFails: map[string][]time.Time{},
 		jobs: map[string]*JobRec{}, updates: map[string]*UpdateStatus{},
 		waiters: map[string]chan *JobResult{}, nodeOps: map[string]*nodeOpView{},
-		pipelines: map[string]*pipeline{}, reserved: map[string]bool{}, cooldown: map[string]time.Time{}, restarts: map[string]time.Time{}, poolStale: map[string]time.Time{},
+		pipelines: map[string]*pipeline{}, reserved: map[string]int{}, cooldown: map[string]time.Time{}, restarts: map[string]time.Time{}, poolStale: map[string]time.Time{},
 		resumeWake: make(chan struct{}, 1),
 	}
 	launchNewest(c.agentDir(), os.Args[1:]) // switch to an installed update, if newer

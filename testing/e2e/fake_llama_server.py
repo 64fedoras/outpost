@@ -37,8 +37,15 @@ class H(BaseHTTPRequestHandler):
         else:
             files = re.search(r"Write these files: (.*)", user).group(1).split(", ")
             text = "".join(f"<<<FILE {f}>>>\n{CONTENT.get(f, '# ?\n')}<<<END>>>\n" for f in files)
-        time.sleep(4)  # slow enough to watch progress and steer in the UI test
         self.send_response(200); self.send_header("content-type", "text/event-stream"); self.end_headers()
+        # Reading the prompt (slow enough to watch progress and steer in the UI test); reported like
+        # llama-server's return_progress when asked.
+        total = max(500, len(user) // 4)
+        for k in range(1, 5):
+            time.sleep(1)
+            if body.get("return_progress"):
+                pp = {"choices": [], "prompt_progress": {"total": total, "cache": 0, "processed": total * k // 4, "time_ms": 1000 * k}}
+                self.wfile.write(b"data: " + json.dumps(pp).encode() + b"\n\n"); self.wfile.flush()
         for i in range(0, len(text), 40):
             ch = {"choices": [{"index": 0, "delta": {"content": text[i:i+40]}, "finish_reason": None}]}
             self.wfile.write(b"data: " + json.dumps(ch).encode() + b"\n\n"); self.wfile.flush(); time.sleep(0.01)

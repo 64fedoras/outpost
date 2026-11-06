@@ -589,6 +589,19 @@ type llamaMgr struct {
 
 func newLlamaMgr(n *Node) *llamaMgr { return &llamaMgr{n: n} }
 
+// draftModel is the draft model of the loaded (or idle-unloaded) model.
+func (l *llamaMgr) draftModel() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.cold != nil && l.cmd == nil {
+		return l.cold.Draft
+	}
+	if l.cmd != nil {
+		return l.opts.Draft
+	}
+	return ""
+}
+
 func (l *llamaMgr) loadedModel() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -693,6 +706,16 @@ func (l *llamaMgr) load(ml ModelLoad) {
 	}
 	sort.Strings(files) // split models: llama.cpp is given the first part
 	modelPath := filepath.Join(l.n.modelsDir(), ml.Name, files[0])
+	ml.DraftPath = ""
+	if ml.Draft != "" {
+		p, err := l.n.mainModelPath(ml.Draft)
+		if err != nil {
+			fail("draft model %s: %v", ml.Draft, err)
+			return
+		}
+		l.n.touchModel(ml.Draft)
+		ml.DraftPath = p
+	}
 	if err := l.start(rt, ml, modelPath, 0); err != nil {
 		fail("%v", err)
 		return
@@ -709,6 +732,43 @@ func (l *llamaMgr) load(ml ModelLoad) {
 	l.n.pushHeartbeat()
 	l.n.opStatus(op, ml.Name, "ready", 0, 0, "")
 	l.n.resendHello()
+}
+
+// servingArgs are the cache, flash attention and draft model arguments.
+func servingArgs(ml ModelLoad) []string {
+	var a []string
+	if ml.CacheType != "" {
+		a = append(a, "-ctk", ml.CacheType, "-ctv", ml.CacheType)
+	}
+	if ml.FlashAttn != "" {
+		a = append(a, "-fa", ml.FlashAttn)
+	}
+	if ml.DraftPath != "" {
+		a = append(a, "-md", ml.DraftPath)
+		if ml.GPULayers != "0" {
+			a = append(a, "-ngld", "99") // the draft is small: keep it on the GPU when there is one
+		}
+	}
+	return a
+}
+
+// mainModelPath is the file llama.cpp is given for a stored model.
+func (n *Node) mainModelPath(name string) (string, error) {
+	m, err := n.modelManifest(name)
+	if err != nil {
+		return "", fmt.Errorf("not on this node")
+	}
+	var files []string
+	for _, f := range m.Files {
+		if !strings.Contains(strings.ToLower(f.Path), "mmproj") {
+			files = append(files, f.Path)
+		}
+	}
+	if len(files) == 0 {
+		return "", fmt.Errorf("no model file")
+	}
+	sort.Strings(files)
+	return filepath.Join(n.modelsDir(), name, files[0]), nil
 }
 
 func hasJinjaArg(args []string) bool {
@@ -729,14 +789,16 @@ func (l *llamaMgr) start(rt *runtimeRecord, ml ModelLoad, modelPath string, rest
 	if ml.MMProj != "" {
 		args = append(args, "--mmproj", ml.MMProj)
 	}
-	if ml.Ctx > 0 {
-		args = append(args, "-c", strconv.Itoa(ml.Ctx))
-	}
 	parallel := ml.Parallel
 	if parallel <= 0 {
 		parallel = 1
 	}
+	if ml.Ctx > 0 {
+		// llama-server splits the context between slots: give each the full size.
+		args = append(args, "-c", strconv.Itoa(ml.Ctx*parallel))
+	}
 	args = append(args, "-np", strconv.Itoa(parallel))
+	args = append(args, servingArgs(ml)...)
 	if ml.Threads > 0 {
 		args = append(args, "-t", strconv.Itoa(ml.Threads))
 	}
@@ -836,6 +898,20 @@ func (l *llamaMgr) waitReady(timeout time.Duration) error {
 // chat runs one OpenAI-style chat completion against llama-server, streaming
 // tokens through emit. It returns the final text and usage.
 func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(string)) (*InferenceOutput, *ErrInfo) {
+	return l.chatP(ctx, spec, emit, nil)
+}
+
+// promptProgress is llama-server's report while it reads the prompt
+// (return_progress; older builds ignore the request and send none).
+type promptProgress struct {
+	Total     int   `json:"total"`
+	Cache     int   `json:"cache"`
+	Processed int   `json:"processed"`
+	TimeMs    int64 `json:"time_ms"`
+}
+
+// chatP is chat with an optional prompt-progress callback.
+func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(string), prog func(promptProgress)) (*InferenceOutput, *ErrInfo) {
 	if e := l.wake(spec.Model); e != nil {
 		return nil, e
 	}
@@ -861,6 +937,9 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 	}()
 
 	body := map[string]any{"messages": chatPayload(spec.Messages), "stream": true, "stream_options": map[string]bool{"include_usage": true}}
+	if prog != nil {
+		body["return_progress"] = true
+	}
 	if spec.Params.Temperature != nil {
 		body["temperature"] = *spec.Params.Temperature
 	}
@@ -908,7 +987,7 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 		log.Printf("llama-server refused the JSON schema (%s); answering without it", strings.TrimSpace(string(msg)))
 		spec.Params.JSONSchema = nil
 		cancelReq()
-		return l.chat(outer, spec, emit)
+		return l.chatP(outer, spec, emit, prog)
 	}
 	if resp.StatusCode != 200 {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
@@ -951,9 +1030,13 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 				PromptTokens     int `json:"prompt_tokens"`
 				CompletionTokens int `json:"completion_tokens"`
 			} `json:"usage"`
+			Progress *promptProgress `json:"prompt_progress"`
 		}
 		if json.Unmarshal([]byte(data), &chunk) != nil {
 			continue
+		}
+		if chunk.Progress != nil && prog != nil {
+			prog(*chunk.Progress)
 		}
 		for _, c := range chunk.Choices {
 			if c.Delta.Reasoning != nil && *c.Delta.Reasoning != "" {
@@ -1019,7 +1102,11 @@ func (n *Node) runInference(ctx context.Context, jd JobDispatch, res *JobResult)
 	}
 	sw := newStreamer(n, jd.JobID, spec.Stream)
 	w := sw.writer("tokens")
-	out, e := n.llama.chat(ctx, spec, func(s string) { _, _ = w.Write([]byte(s)); sw.token() })
+	pw := sw.writer("progress")
+	out, e := n.llama.chatP(ctx, spec, func(s string) { _, _ = w.Write([]byte(s)); sw.token() }, func(p promptProgress) {
+		// "processed total cached ms" per report; the controller reads the last line
+		fmt.Fprintf(pw, "%d %d %d %d\n", p.Processed, p.Total, p.Cache, p.TimeMs)
+	})
 	sw.close()
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):

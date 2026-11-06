@@ -38,10 +38,16 @@ func (n *Node) protectedModels() map[string]bool {
 	if m := n.llama.coldModel(); m != "" {
 		p[m] = true
 	}
+	if d := n.llama.draftModel(); d != "" {
+		p[d] = true
+	}
 	if b, err := os.ReadFile(n.autoloadPath()); err == nil {
 		var ml ModelLoad
 		if json.Unmarshal(b, &ml) == nil && ml.Name != "" {
 			p[ml.Name] = true
+			if ml.Draft != "" {
+				p[ml.Draft] = true
+			}
 		}
 	}
 	n.mu.Lock()

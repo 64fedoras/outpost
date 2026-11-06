@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -25,6 +27,11 @@ type liveEvent struct {
 	Tok   int     `json:"tok,omitempty"`
 	TPS   float64 `json:"tps,omitempty"`
 	Est   bool    `json:"est,omitempty"` // token count is an estimate (cloud planners)
+	// Prompt reading progress before the first token (local nodes with a
+	// llama.cpp that reports it): tokens read, prompt size, seconds left.
+	Read  int `json:"read,omitempty"`
+	Total int `json:"total,omitempty"`
+	Left  int `json:"left,omitempty"`
 }
 
 type liveCall struct {
@@ -34,6 +41,7 @@ type liveCall struct {
 	est                  bool
 	first                time.Time
 	lastOut              time.Time // last text or start, for stall detection
+	read, total, left    int       // prompt progress (see liveEvent)
 }
 
 func (lc *liveCall) tps() float64 {
@@ -217,7 +225,44 @@ func (h *liveHub) jobOutput(o JobOutput) {
 	if lt == nil || lt.calls[ref[1]] == nil {
 		return
 	}
-	h.addText(lt, lt.calls[ref[1]], o.Data, o.Tokens)
+	lc := lt.calls[ref[1]]
+	if o.Stream == "progress" {
+		if read, total, left, ok := parseProgress(o.Data); ok {
+			lc.read, lc.total, lc.left, lc.lastOut = read, total, left, time.Now()
+			h.broadcastLocked(lt, liveEvent{T: "progress", Call: lc.id, Read: read, Total: total, Left: left})
+		}
+		return
+	}
+	h.addText(lt, lc, o.Data, o.Tokens)
+}
+
+// parseProgress reads the last "processed total cached ms" line a node sent
+// and estimates the seconds left from the speed of the tokens read so far.
+func parseProgress(data string) (read, total, left int, ok bool) {
+	lines := strings.Fields(data)
+	if len(lines) < 4 {
+		return 0, 0, 0, false
+	}
+	f := lines[len(lines)-4:]
+	var v [4]int
+	for i, s := range f {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 0 {
+			return 0, 0, 0, false
+		}
+		v[i] = n
+	}
+	read, total, cached, ms := v[0], v[1], v[2], v[3]
+	if total <= 0 {
+		return 0, 0, 0, false
+	}
+	if read > total {
+		read = total
+	}
+	if done := read - cached; done > 0 && ms > 0 {
+		left = int(float64(total-read) * float64(ms) / float64(done) / 1000)
+	}
+	return read, total, left, true
 }
 
 // changed tells browsers that the task's state changed and should be refetched.
@@ -239,7 +284,7 @@ func (h *liveHub) subscribe(taskID string) ([]liveEvent, chan liveEvent, func())
 	for _, id := range lt.order {
 		lc := lt.calls[id]
 		snap = append(snap, liveEvent{T: "start", Call: lc.id, Sub: lc.sub, Label: lc.label, Node: lc.node,
-			Text: string(lc.buf), Tok: lc.tok, TPS: lc.tps(), Est: lc.est})
+			Text: string(lc.buf), Tok: lc.tok, TPS: lc.tps(), Est: lc.est, Read: lc.read, Total: lc.total, Left: lc.left})
 	}
 	// finished calls whose slot has no running call: start then end, so the
 	// browser files them as the slot's last output
