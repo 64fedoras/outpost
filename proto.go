@@ -442,6 +442,13 @@ type InferenceParams struct {
 	Temperature *float64 `json:"temperature,omitempty"`
 	MaxTokens   int      `json:"max_tokens,omitempty"`
 	Stop        []string `json:"stop,omitempty"`
+	// Pass-through sampling and tool settings from the OpenAI-compatible API.
+	TopP             *float64        `json:"top_p,omitempty"`
+	Seed             *int            `json:"seed,omitempty"`
+	PresencePenalty  *float64        `json:"presence_penalty,omitempty"`
+	FrequencyPenalty *float64        `json:"frequency_penalty,omitempty"`
+	ToolChoice       json.RawMessage `json:"tool_choice,omitempty"`
+	ResponseFormat   json.RawMessage `json:"response_format,omitempty"`
 	// JSONSchema, when set, makes llama-server constrain the answer to JSON of
 	// this shape (response_format json_schema). Used only for a retry after a
 	// local model's answer could not be parsed.
