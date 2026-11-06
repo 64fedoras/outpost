@@ -1,6 +1,6 @@
 package main
 
-// The tray icon: a white tent on a rounded square whose colour shows the
+// The tray icon: the brand mark (ring and dots, as in the favicon) in white on a rounded square whose colour shows the
 // node's state. Drawn in code (no image files) and encoded as PNG for Linux
 // and as a classic BMP-based .ico for Windows.
 
@@ -33,32 +33,30 @@ func drawTrayIcon(size int, st trayState) *image.RGBA {
 	big := size * ss
 	bg := trayColors[st]
 	fs := float64(big)
-	radius := fs * 0.22
+	radius := fs * 112 / 512
 	inRounded := func(x, y float64) bool {
 		cx := math.Max(radius, math.Min(fs-radius, x))
 		cy := math.Max(radius, math.Min(fs-radius, y))
 		return (x-cx)*(x-cx)+(y-cy)*(y-cy) <= radius*radius
 	}
-	// Tent: a triangle with a door cut out, plus a ground line.
-	apexX, apexY := fs*0.5, fs*0.2
-	baseY, left, right := fs*0.74, fs*0.16, fs*0.84
-	inTriangle := func(x, y float64) bool {
-		if y < apexY || y > baseY {
-			return false
+	// Brand mark (same as web/icons/icon.svg): a ring with a centre dot and
+	// three satellite dots, on the state colour. Coordinates are in a 512 grid.
+	k := fs / 512
+	dist := func(x, y, cx, cy float64) float64 { return math.Hypot(x-cx*k, y-cy*k) }
+	inMark := func(x, y float64) bool {
+		if d := dist(x, y, 256, 256); d >= (132-22)*k && d <= (132+22)*k {
+			return true
 		}
-		t := (y - apexY) / (baseY - apexY)
-		return x >= apexX-(apexX-left)*t && x <= apexX+(right-apexX)*t
-	}
-	inDoor := func(x, y float64) bool {
-		if y < fs*0.47 || y > baseY {
-			return false
+		for _, p := range [][2]float64{{256, 256}, {256, 80}, {408, 344}, {104, 344}} {
+			r := 30.0
+			if p == [2]float64{256, 256} {
+				r = 46
+			}
+			if dist(x, y, p[0], p[1]) <= r*k {
+				return true
+			}
 		}
-		t := (y - fs*0.47) / (baseY - fs*0.47)
-		half := fs * 0.11 * t
-		return x >= apexX-half && x <= apexX+half
-	}
-	inGround := func(x, y float64) bool {
-		return y >= fs*0.78 && y <= fs*0.84 && x >= fs*0.1 && x <= fs*0.9
+		return false
 	}
 	out := image.NewRGBA(image.Rect(0, 0, size, size))
 	for py := 0; py < size; py++ {
@@ -72,7 +70,7 @@ func drawTrayIcon(size int, st trayState) *image.RGBA {
 						continue
 					}
 					c := bg
-					if (inTriangle(x, y) && !inDoor(x, y)) || inGround(x, y) {
+					if inMark(x, y) {
 						c = color.RGBA{0xff, 0xff, 0xff, 0xff}
 					}
 					r += float64(c.R)

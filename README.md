@@ -1,3 +1,5 @@
+<img src="web/icons/icon.svg" alt="" width="72" align="right">
+
 # Outpost
 
 Self-hosted AI cluster. One binary runs as the **controller** (web UI, planning, job dispatch) or as a

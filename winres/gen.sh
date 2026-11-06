@@ -10,7 +10,7 @@ $V
 EOT
 T=$(mktemp -d)
 sed "s/@V@/$V/g; s/@MA@/$MA/g; s/@MI@/$MI/g; s/@PA@/$PA/g" winres/outpost.rc.in > $T/outpost.rc
-cp winres/outpost.manifest $T/
+cp winres/outpost.manifest winres/outpost.ico $T/
 (cd $T && llvm-rc /nologo /fo outpost.res outpost.rc)
 llvm-cvtres /machine:x64 /out:rsrc_windows_amd64.syso $T/outpost.res >/dev/null
 rm -rf $T
