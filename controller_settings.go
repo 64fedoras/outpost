@@ -91,7 +91,7 @@ func (c *Controller) secretKey() ([]byte, error) {
 	if _, err := rand.Read(k); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(p, k, 0o600); err != nil {
+	if err := writeFileAtomic(p, k, 0o600); err != nil {
 		return nil, err
 	}
 	return k, nil

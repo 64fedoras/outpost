@@ -118,7 +118,7 @@ func (n *Node) pushModel(mp ModelPush) {
 		before += f.Bytes
 	}
 	b, _ := json.MarshalIndent(modelManifest{Name: mp.Name, Files: mp.Files}, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), b, 0o644); err != nil {
+	if err := writeFileAtomic(filepath.Join(dir, "manifest.json"), b, 0o644); err != nil {
 		fail("%v", err)
 		return
 	}
