@@ -805,3 +805,23 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .pal-empty { padding: 10px; }
 .pal-hint { margin: 8px 4px 0; }
 .modal:focus { outline: none; }
+
+/* New image page */
+.page-image { padding-top: 6vh; }
+.page-image .section-head { margin-top: 26px; }
+.img-neg { margin-top: 10px; font-size: 13px; }
+.gen-accept, .gen-card, .gen-model { margin-top: 12px; }
+.gen-accept { border-color: var(--warn); }
+.gen-prompt { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.gen-card .bar { margin-top: 8px; }
+.gen-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin: 10px 0 4px; }
+.gen-grid.small { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.gen-shot { margin: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); display: block; }
+.gen-shot img { display: block; width: 100%; height: auto; aspect-ratio: 1 / 1; object-fit: cover; }
+.gen-shot figcaption { display: flex; justify-content: space-between; gap: 8px; padding: 5px 8px; font-size: 11.5px; color: var(--muted); }
+.gen-shot.wait { aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px; font-size: 12px; color: var(--muted);
+  background: repeating-linear-gradient(135deg, var(--bg), var(--bg) 8px, var(--tint) 8px, var(--tint) 16px); }
+.gen-fail { color: var(--bad); }
+.gen-model .rowline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gen-model .sub { margin-top: 3px; }
+@media (max-width: 640px) { .page-image { padding-top: 3vh; } .gen-grid { grid-template-columns: repeat(2, 1fr); } }

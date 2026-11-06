@@ -20,3 +20,32 @@ API (same sign-in or API token as the rest): `GET /api/images/models`, `POST /ap
 `DELETE /api/images/{id}`, `GET|POST /api/images/settings`. Nodes need this version (`node.gen`).
 **Untested on real hardware:** Vulkan on AMD cards, memory numbers, speeds, Windows and macOS. Everything was
 tested against a stand-in `sd-server`.
+
+## Using the New image page
+
+Open **New image** in the sidebar (or press Ctrl+K and type "image"). Type a prompt, choose a model, a size and
+how many pictures, then **Generate**. **Change options** adds steps, cfg, a seed and a negative prompt. Running
+generations show the node and the step; **Stop** cancels them. Finished ones appear under **Results** with
+Download, **Variations** (same settings, new seeds), **Use prompt**, **Keep** (never deleted automatically),
+**Retry failed** and Delete; older ones sit in a compact grid. **Image models** at the bottom lists the models,
+their licence and which nodes they fit, and downloads one to a node of your choice. A model with a restricted
+licence asks for an accept click first. **Settings, Model settings, Pictures** sets how long (default 30 days)
+and how much (default 5 GB) to keep. The page was checked in a headless browser against stand-in data only.
+
+## The OpenAI-style image API
+
+Off by default. Turn it on under **Settings, Model settings, Pictures** ("Allow the image API"), and make an API
+token with **Chat and pictures** ticked (or use a full-access token). A chat-only token is refused.
+
+```sh
+curl -sk https://192.0.2.10:8443/v1/images/generations \
+  -H "Authorization: Bearer opt_..." -H "Content-Type: application/json" \
+  -d '{"model":"flux1-schnell-q8","prompt":"a stone outpost at dusk","n":2,"size":"1024x1024"}'
+```
+
+`model` is an id from `GET /v1/models` (image models are listed while the API is on), `n` is 1 to 16,
+`size` is `WxH`, and `response_format` is `b64_json` (default) or `url` (a `/v1/images/files/...` link that needs
+the same token). Extras: `seed`, `steps`, `negative_prompt`. The call waits until the pictures are done (up to
+15 minutes) and cancels them if the client disconnects. The pictures also appear on the New image page, marked
+with the token's name, and follow the same retention rules. `/v1/images/edits` is not built.
+**Untested** with real clients (Open WebUI, the OpenAI SDKs) and real nodes.

@@ -55,6 +55,7 @@
       <button class="icon-btn side-close" id="side-close" aria-label="Close menu">✕</button>
     </div>
     <a class="new-task" href="#/new"><span aria-hidden="true">＋</span> New task</a>
+    <a class="new-task side-projects" href="#/image" data-tab="image"><span aria-hidden="true">✦</span> New image</a>
     <a class="new-task side-projects" href="#/projects" data-tab="projects"><span aria-hidden="true">▤</span> Projects</a>
     <a class="new-task side-projects" href="#/chat" data-tab="chat"><span aria-hidden="true">💬</span> Chat</a>
     <nav class="side-tasks" id="side-tasks" aria-label="Tasks"></nav>
@@ -111,6 +112,43 @@
         <div class="starters" id="nt-starters"></div>
         <div id="nt-saved"></div>
         <div id="home-setup"></div>
+      </div>
+    </section>
+
+    <!-- NEW IMAGE -->
+    <section data-page="image" class="page-new page-image hidden">
+      <div class="new-wrap">
+        <h1 class="new-title">What should the cluster draw?</h1>
+        <p class="new-sub" id="img-sub"></p>
+        <div class="composer big">
+          <textarea id="img-prompt" rows="3" placeholder="Describe the picture. For example: a lighthouse on a cliff at dusk, oil painting."></textarea>
+          <div class="composer-bar">
+            <select id="img-model" class="chip-select" aria-label="Image model"></select>
+            <select id="img-size" class="chip-select" aria-label="Size">
+              <option value="512x512">512 × 512</option><option value="768x768">768 × 768</option><option value="1024x1024" selected>1024 × 1024</option>
+              <option value="1024x768">1024 × 768 wide</option><option value="768x1024">768 × 1024 tall</option>
+            </select>
+            <select id="img-count" class="chip-select" aria-label="How many pictures"><option value="1">1 picture</option><option value="2">2 pictures</option><option value="4">4 pictures</option><option value="8">8 pictures</option></select>
+            <span class="spacer"></span>
+            <button class="send" id="img-go">Generate</button>
+          </div>
+        </div>
+        <div class="optline"><span id="img-optline"></span><button type="button" class="link-btn" id="img-opt-toggle" aria-expanded="false" aria-controls="img-opts">Change options</button></div>
+        <div class="card opts hidden" id="img-opts">
+          <div class="opts-grid">
+            <label class="chip-input" title="More steps is slower and usually a little cleaner. Empty uses the model's default.">steps <input id="img-steps" type="number" min="1" max="150" placeholder="auto" aria-label="Steps"></label>
+            <label class="chip-input" title="How closely to follow the prompt. Empty uses the model's default.">cfg <input id="img-cfg" type="number" min="0" max="30" step="0.5" placeholder="auto" aria-label="Guidance scale"></label>
+            <label class="chip-input" title="Same seed and settings give the same picture. Empty picks a random one.">seed <input id="img-seed" type="number" min="0" placeholder="random" aria-label="Seed"></label>
+          </div>
+          <input id="img-neg" type="text" class="img-neg" placeholder="Avoid (negative prompt, optional)" autocomplete="off" aria-label="Negative prompt">
+        </div>
+        <div class="error-msg hidden" id="img-err"></div>
+        <div id="img-accept"></div>
+        <div id="img-busy"></div>
+        <div id="img-results"></div>
+        <div id="img-earlier"></div>
+        <div class="section-head"><h2>Image models</h2></div>
+        <div id="img-models"></div>
       </div>
     </section>
 
@@ -304,6 +342,17 @@
           <div class="hint" id="set-idle-now"></div>
           <div class="modal-foot"><button class="primary" id="set-idle-save">Save</button></div>
         </div>
+        <div class="section-head"><h2>Pictures</h2></div>
+        <div class="card">
+          <p class="hint">Pictures made on the New image page are stored on this controller, never on the nodes. Old ones are deleted when they pass the age or the size limit below, whichever comes first. Pictures you mark Keep are never deleted automatically. Use <code>0</code> for no limit.</p>
+          <div class="opts-grid">
+            <label class="chip-input">keep for <input id="set-img-days" type="number" min="0" max="3650" aria-label="Days to keep pictures"> days</label>
+            <label class="chip-input">at most <input id="set-img-gb" type="number" min="0" max="100000" aria-label="Gigabytes of pictures"> GB</label>
+          </div>
+          <label class="check"><input type="checkbox" id="set-img-api"> Allow the image API (<code>POST /v1/images/generations</code>) for API tokens with full or picture access</label>
+          <div class="hint" id="set-img-used"></div>
+          <div class="modal-foot"><button class="primary" id="set-img-save">Save</button></div>
+        </div>
         <div class="section-head"><h2>Wake sleeping nodes</h2></div>
         <div class="card">
           <label class="toggle"><input type="checkbox" id="set-wake"> <span>Wake offline nodes with Wake-on-LAN when a task is waiting for a worker</span></label>
@@ -407,6 +456,7 @@
           <p class="hint u3" id="agent-hint"></p>
           <div class="btns u3"><input id="tok-name" placeholder="Token name, e.g. nightly script" autocomplete="off"><button id="tok-create">Create token</button></div>
           <label class="toggle u3"><input type="checkbox" id="tok-chat"> <span>Chat only: works with the OpenAI-compatible API (<code>/v1/chat/completions</code>, <code>/v1/models</code>) and nothing else. Use this for editors and chat apps.</span></label>
+          <label class="toggle u3"><input type="checkbox" id="tok-img"> <span>Chat and pictures: like chat only, and also allows <code>/v1/images/generations</code> while the image API is switched on (Settings, Pictures).</span></label>
           <div class="note hidden u6" id="tok-new"></div>
         </div>
         <div class="section-head"><h2>HTTPS certificate</h2></div>
@@ -689,5 +739,6 @@
 
 <script src="guard.js"></script>
 <script src="app.js"></script>
+<script src="images.js"></script>
 </body>
 </html>
