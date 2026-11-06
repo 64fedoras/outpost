@@ -1,6 +1,6 @@
 # Building and verifying Outpost
 
-Moved out of the README; the README links here.
+Moved out of the README; the README and user guide link here.
 
 ## Verifying downloads and unsigned binaries
 
@@ -9,7 +9,7 @@ still an open decision. What that means in practice:
 
 - **Windows** shows a SmartScreen warning ("Windows protected your PC") for an unsigned exe that was
   downloaded from the internet. Choose **More info → Run anyway**, or right-click the file →
-  Properties → **Unblock**. Defender may also flag it (see the Defender note under Install in the [README](../README.md)).
+  Properties → **Unblock**. Defender may also flag it (see the Defender note under Install in the [user guide](USER-GUIDE.md)).
 - **macOS** Gatekeeper blocks an unsigned binary that came from a browser. Clear the quarantine flag
   with `xattr -d com.apple.quarantine outpost-darwin-arm64` or right-click → Open.
 - **Anyone can rebuild Outpost**, so a binary is only as trustworthy as where you got it. Download from
@@ -102,4 +102,4 @@ If you build Outpost yourself from a fork, point the controller at it under **Se
 GitHub → Repository to trust for updates**. Your fork's workflow must publish a release with the five
 binaries and a `SHA256SUMS` file, as this repository's does. For a private fork, create a fine-grained
 personal access token limited to that repository with read-only *Contents* access and paste it into the
-same section; the README ("Updating") has the steps.
+same section; the user guide ("Updating") has the steps.
