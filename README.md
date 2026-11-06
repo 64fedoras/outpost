@@ -307,6 +307,25 @@ can check detection without joining.
    OpenRouter key to plan with any model OpenRouter offers.
 5. **New task:** describe what to build and click **Plan it**. See below.
 
+## Using the web UI
+
+- **Search (Ctrl+K, or Cmd+K on a Mac)** opens a box that jumps to any task, node, project, page or
+  Settings section, and runs actions such as *Check cluster*, *Add node*, *New chat*, a saved task or a
+  theme. Type a few letters, use the arrow keys and Enter. The *Search* link at the bottom of the
+  sidebar opens it too.
+- **Theme:** Settings → Application → Appearance picks light, dark or the system's setting, kept in this
+  browser.
+- **On a phone:** add the page to the home screen (Safari: Share → Add to Home Screen; Chrome: menu →
+  Add to Home screen) and it opens full screen with the Outpost icon. With the controller's self-signed
+  certificate some browsers only make a shortcut, not an installed app. There are no push notifications
+  from the app itself; use ntfy (see Notifications).
+- **Live updates:** the page gets node and task changes pushed over one stream from the controller
+  instead of asking every 2 seconds. If the stream does not get through (some proxies hold it back), the
+  page goes back to asking every 2 seconds on its own.
+- **Keyboard and screen readers:** dialogs take the focus when they open, keep Tab inside, and give it
+  back when they close (Esc closes). Task status changes (Plan ready, Done, Failed) are read out by
+  screen readers. Text colours meet WCAG AA contrast in both themes.
+
 ## Working with tasks
 
 The web UI is laid out like a chat app. The sidebar lists your tasks in three groups: **Needs you**
@@ -813,6 +832,15 @@ a model loaded (after waiting for the model to load again) and an `echo` command
 then are the other nodes updated. If the first node does not come back, or fails its check, it is rolled
 back to its previous version, the rest are left alone, automatic install skips that version from then on,
 and an *Update failed* notification says why. A line above the table shows how far it got.
+
+### Suggested models between releases
+
+Each release also carries `catalog.json`, the list of suggested models (checked against `SHA256SUMS`
+like the binaries). When the controller checks GitHub for updates it fetches that list from the newest
+release and uses it on top of the one built into its own version: entries are updated and new models
+are added, none are removed. So new good models show up on the Models page without updating Outpost.
+The Updates page says which list is in use. Every entry is still checked against each node's memory
+before it is suggested. Turning off GitHub checks (Settings) turns this off too.
 
 ### Rolling back
 

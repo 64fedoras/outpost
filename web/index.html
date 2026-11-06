@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Outpost</title>
+<meta name="theme-color" content="#2f6fdb">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Outpost">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<script src="theme.js"></script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -58,7 +66,7 @@
         <a href="#/updates" data-tab="updates">Updates <span class="badge hidden" id="badge-updates"></span></a>
         <a href="#/settings" data-tab="settings">Settings</a>
       </nav>
-      <div class="side-meta"><span id="hdr-meta"></span><button class="link-btn" id="btn-logout">Sign out</button></div>
+      <div class="side-meta"><span id="hdr-meta"></span><button class="link-btn" id="pal-open" aria-keyshortcuts="Control+K" title="Go to a task, node or page (Ctrl+K)">Search ⌃K</button><button class="link-btn" id="btn-logout">Sign out</button></div>
       <div class="legal">AGPL-3.0 · <a id="src-link" href="https://github.com/64fedoras/outpost" target="_blank" rel="noopener">Source code</a> · <a href="/licenses" target="_blank" rel="noopener">Licenses</a></div>
     </div>
   </aside>
@@ -329,6 +337,11 @@
         </section>
         <section class="set-sec" id="set-app">
           <h2 class="set-sec-title">Application</h2>
+        <div class="section-head"><h2>Appearance</h2></div>
+        <div class="card">
+          <label class="chip-input">theme <select id="set-theme" aria-label="Theme"><option value="">same as the system</option><option value="light">light</option><option value="dark">dark</option></select></label>
+          <p class="hint">Kept in this browser only. On a phone, use the browser's <i>Add to Home screen</i> (Safari: Share → Add to Home Screen) to open Outpost like an app; with the controller's self-signed certificate, Chrome may only offer a bookmark-style shortcut.</p>
+        </div>
         <div class="section-head"><h2>Storage</h2></div>
         <div class="card" id="storage-card">
           <p class="hint">How the controller's disk is used. Below 10% (or 5 GB) free, a warning shows at the top of every page and a <i>disk low</i> notification is sent.</p>
@@ -650,6 +663,16 @@
 <div id="drop-overlay" class="hidden"><div><b>Drop to upload</b><span>Outpost binaries (outpost-&lt;platform&gt;) become releases</span></div></div>
 <div id="toast" class="hidden"></div>
 <div id="task-ctx" class="ctx-menu hidden" role="menu"></div>
+<div id="sr-status" class="sr-only" role="status" aria-live="polite"></div>
+
+<div id="modal-palette" class="overlay hidden palette-ov">
+  <div class="modal palette" role="dialog" aria-modal="true" aria-label="Go to or run">
+    <input id="pal-q" type="text" autocomplete="off" spellcheck="false" placeholder="Go to a task, node or page, or run an action…" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list">
+    <div id="pal-list" class="pal-list" role="listbox" aria-label="Results"></div>
+    <div class="hint pal-hint">↑ ↓ to choose · Enter to open · Esc to close · Ctrl+K opens this anywhere</div>
+  </div>
+</div>
+
 <script src="guard.js"></script>
 <script src="app.js"></script>
 </body>

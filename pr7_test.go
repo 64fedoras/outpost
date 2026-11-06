@@ -129,8 +129,8 @@ func TestScheduleNext(t *testing.T) {
 	if got := d.next(at(3, 2, 30)); !got.Equal(at(4, 2, 30)) {
 		t.Fatalf("daily next day %v", got)
 	}
-	w := &Schedule{Every: "weekly", At: "23:00", Weekday: 1} // Monday
-	if got := w.next(at(3, 9, 0)); !got.Equal(at(9, 23, 0)) {   // Tue the 3rd -> Mon the 9th
+	w := &Schedule{Every: "weekly", At: "23:00", Weekday: 1}  // Monday
+	if got := w.next(at(3, 9, 0)); !got.Equal(at(9, 23, 0)) { // Tue the 3rd -> Mon the 9th
 		t.Fatalf("weekly %v", got)
 	}
 	if (&Schedule{Every: "hourly", At: "01:00"}).check() == nil {

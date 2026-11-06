@@ -33,7 +33,7 @@ func (c *Controller) loadCatalogShapes() {
 // fetchCatalogShapes reads the headers that are still missing and returns how many are.
 func (c *Controller) fetchCatalogShapes() int {
 	missing := 0
-	for _, e := range modelCatalog {
+	for _, e := range catalogNow() {
 		c.mu.Lock()
 		have := c.catShapes[e.ID]
 		c.mu.Unlock()

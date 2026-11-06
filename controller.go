@@ -160,6 +160,7 @@ type Controller struct {
 	poolStale  map[string]time.Time // main node -> when a helper reconnected
 	woken      map[string]time.Time // Wake-on-LAN packets sent, by node (wol.go)
 	templates  []*Template          // saved tasks and schedules (templates.go), guarded by mu
+	stateHub   stateHub             // pushed /api/state (state_stream.go)
 }
 
 func runController(args []string) error {
@@ -199,6 +200,7 @@ func runController(args []string) error {
 	c.loadProjects()
 	c.loadChats()
 	c.loadTemplates()
+	c.loadSavedCatalog()
 	c.loadTasks()
 	go c.autoResumeInterrupted(autoResumeWait, time.Second)
 	c.advertise = *advertise
@@ -248,6 +250,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/apitokens", c.authSession(c.handleNewAPIToken))
 	mux.HandleFunc("DELETE /api/apitokens/{id}", c.authSession(c.handleRevokeAPIToken))
 	mux.HandleFunc("GET /api/state", c.auth(c.handleState))
+	mux.HandleFunc("GET /api/state/events", c.authSession(c.handleStateEvents))
 	mux.HandleFunc("POST /api/recovered/dismiss", c.auth(c.handleDismissRecovered))
 	mux.HandleFunc("POST /api/diagnostics", c.authSession(c.handleDiagnostics))
 	mux.HandleFunc("GET /api/storage", c.auth(c.handleStorage))
@@ -489,6 +492,11 @@ func (c *Controller) runningLocked(nodeID string) int {
 }
 
 func (c *Controller) handleState(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, c.stateView())
+}
+
+// stateView is what /api/state returns (and what the state stream pushes).
+func (c *Controller) stateView() map[string]any {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	nodes := make([]nodeView, 0, len(c.nodes))
@@ -537,7 +545,7 @@ func (c *Controller) handleState(w http.ResponseWriter, r *http.Request) {
 	if r := c.releases[thisPlatform()]; r != nil && compareVersions(r.Version, Version) > 0 {
 		ctlUpdate = r.Version
 	}
-	writeJSON(w, 200, map[string]any{
+	return map[string]any{
 		"version": Version, "platform": thisPlatform(), "controller_update_to": ctlUpdate,
 		"controller_rollback_to": previousVersion(c.agentDir()),
 		"fingerprint":            c.fingerprint, "advertise": c.advertise,
@@ -553,7 +561,7 @@ func (c *Controller) handleState(w http.ResponseWriter, r *http.Request) {
 		"rollout":          c.rollout,
 		"labels":           c.allLabelsLocked(),
 		"templates":        c.templateViewsLocked(),
-	})
+	}
 }
 
 func (c *Controller) handleNewToken(w http.ResponseWriter, r *http.Request) {
