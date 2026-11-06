@@ -25,7 +25,22 @@ accepted for this step; to allow others add `--setup-allow-from 203.0.113.0/24,1
 
 ### Nodes
 
-Put `outpost-linux-amd64` in the node's home folder (any way you like), then on the **Nodes** tab
+**One paste (easiest).** Upload the binary for each platform you use in the **Updates** tab once. On the
+**Nodes** tab click **Add node**: the top two boxes are ready-to-paste commands with the controller
+address and a join code already filled in. On Linux or macOS run
+
+```bash
+curl -fsSk --pinnedpubkey 'sha256//<controller key>' 'https://192.0.2.10:8443/install.sh?t=<code>' | sh
+```
+
+and on Windows paste the PowerShell command into an **Administrator** terminal. The script works out
+the platform, downloads the matching binary from the controller, checks its SHA-256 against the
+uploaded release and runs `install node --join` (using `sudo` on Linux when needed). The connection
+is pinned to the controller's own certificate, so no `-k` trust-on-first-use is involved. The
+downloads only work with an unused, unexpired join code and only from private/LAN addresses
+(widen with `--setup-allow-from`). **Untested on real Windows, macOS and the real cluster.**
+
+**Copying the binary yourself.** Put `outpost-linux-amd64` in the node's home folder (any way you like), then on the **Nodes** tab
 click **Add node** and paste the one command it gives you. If you type the node's SSH target (for
 example `admin@node1.example.local`) it wraps the command in `ssh -t` so you can run it from your own
 computer:

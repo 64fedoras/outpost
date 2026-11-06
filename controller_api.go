@@ -4,7 +4,6 @@ package main
 
 import (
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -207,15 +206,18 @@ func (c *Controller) handleNewToken(w http.ResponseWriter, r *http.Request) {
 	}
 	c.tokens[secret] = exp
 	c.mu.Unlock()
-	b, _ := json.Marshal(JoinToken{URL: c.advertise, Fingerprint: c.fingerprintNow(), Secret: secret})
-	tok := base64.RawURLEncoding.EncodeToString(b)
+	tok := encodeJoinToken(c.advertise, c.fingerprintNow(), secret)
+	cmds := c.installCommands(tok)
 	writeJSON(w, 200, map[string]any{
-		"id":      tokenID(secret),
-		"token":   tok,
-		"expires": exp,
-		"linux":   "outpost install node --join " + tok,
-		"windows": "outpost.exe install node --join " + tok,
-		"macos":   "outpost node --join " + tok,
+		"id":        tokenID(secret),
+		"token":     tok,
+		"expires":   exp,
+		"linux":     "outpost install node --join " + tok,
+		"windows":   "outpost.exe install node --join " + tok,
+		"macos":     "outpost node --join " + tok,
+		"curl_unix": cmds["curl_unix"],
+		"curl_win":  cmds["curl_win"],
+		"platforms": c.releasePlatforms(),
 	})
 }
 
