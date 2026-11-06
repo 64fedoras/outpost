@@ -120,6 +120,7 @@ type Task struct {
 	BuildStatus  string          `json:"build_status,omitempty"` // "" | passed | failed | skipped
 	BuildOutput  string          `json:"build_output,omitempty"`
 	Artifacts    []Artifact      `json:"artifacts,omitempty"`
+	Cleaned      *time.Time      `json:"cleaned,omitempty"` // old round copies (and maybe build outputs) removed by the clean-up
 	FixRounds    int             `json:"fix_rounds"`
 	Error        string          `json:"error,omitempty"`
 	ResultBytes  int64           `json:"result_bytes"`
@@ -1200,7 +1201,7 @@ func isNodeProblem(err error) bool {
 	var ei *ErrInfo
 	if errors.As(err, &ei) {
 		switch ei.Code {
-		case "inference_unavailable", "model_missing", "busy", "send_failed", "lost":
+		case "inference_unavailable", "model_missing", "busy", "send_failed", "lost", "model_hung":
 			return true
 		}
 	}

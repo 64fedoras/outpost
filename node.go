@@ -58,7 +58,9 @@ type Node struct {
 	args        []string
 	llama       *llamaMgr
 	rpc         *rpcMgr
-	paused      bool            // no new work (tray icon); kept in <data>/paused
+	paused      bool            // no new work (tray icon or web UI); kept in <data>/paused
+	pausedBy    string          // tray | web
+	pausedUntil time.Time       // resume on its own after this (zero: no end)
 	stoppedJobs map[string]bool // jobs cancelled by "Pause now" in the tray; reported as retryable
 	online      bool            // connected and welcomed by the controller
 	tools       toolCache
@@ -129,13 +131,12 @@ func runNode(args []string) error {
 		_ = writeNodeConfig(cfgPath, n.cfg)
 	}
 
-	if _, err := os.Stat(pausedPath(n.dataDir)); err == nil {
-		n.paused = true
-	}
+	n.loadPaused()
 	n.startControl()
 	freed := n.sweepWorkRoot()
 	log.Printf("outpost node %s starting; node id %s; work root %s (startup sweep freed %d bytes)", Version, n.cfg.NodeID, n.workRoot, freed)
 	go n.workspaceJanitor()
+	go n.pauseTimer()
 	go n.autoload()
 	go n.verifyModelsBackground()
 	go n.llama.idleLoop(context.Background())
@@ -418,6 +419,11 @@ func (n *Node) sessionInner(welcomed *bool) error {
 			if json.Unmarshal(env.Body, &mc) == nil {
 				go n.cleanupModels(mc)
 			}
+		case "node.pause":
+			var pr NodePause
+			if json.Unmarshal(env.Body, &pr) == nil {
+				go n.applyPause(pr)
+			}
 		case "node.restart":
 			go n.restartSelf()
 		case "node.rollback":
@@ -511,6 +517,7 @@ func (n *Node) hello() Hello {
 		VulkanAvailable: vulkanAvailable(),
 		RollbackTo:      previousVersion(n.agentDir()),
 		Paused:          n.isPaused(),
+		Features:        nodeFeatures,
 		Tools:           n.toolInventory(false), Shell: nodeShell(),
 		Sandbox: n.sandboxMode(), SandboxLayers: sandboxLayers(n.sandboxMode()),
 	}
@@ -556,7 +563,7 @@ func (n *Node) buildHeartbeat() Heartbeat {
 		hb.LoadedModel, hb.InferenceRdy, hb.IdleUnloaded = cold, true, true
 	}
 	hb.RPCEndpoint = n.rpc.current()
-	hb.Paused = n.isPaused()
+	hb.Paused, hb.PausedBy, hb.PausedUntil = n.pauseInfo()
 	return hb
 }
 
@@ -710,7 +717,7 @@ func (n *Node) runJob(jd JobDispatch) {
 
 	log.Printf("job %s (%s) received", jd.JobID, jd.Kind)
 	if n.isPaused() {
-		fail(errf("busy", true, "node is paused (choose Accept new work in its tray icon)"))
+		fail(errf("busy", true, "node is paused (resume it on its card in the web UI, or with Accept new work in its tray icon)"))
 		return
 	}
 	if jd.Kind == "inference" {

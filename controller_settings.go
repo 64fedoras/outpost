@@ -43,6 +43,8 @@ type Settings struct {
 	GitHubHoldVersion string         `json:"github_hold_version,omitempty"` // set by a rollback: auto-install skips this version and older
 	Sandbox           string         `json:"sandbox,omitempty"`             // default sandbox for exec jobs on nodes: off | basic | strict; empty = basic
 	IdleUnload        string         `json:"idle_unload,omitempty"`         // default idle unload wait for nodes, as typed ("1hr", "30m", "0" = never); empty = 1 hour
+	CleanupDays       int            `json:"cleanup_days,omitempty"`        // remove old round copies, screenshots and result zips of tasks finished this many days ago (0 = never)
+	CleanupBuilds     bool           `json:"cleanup_builds,omitempty"`      // also remove their build outputs
 	Notify            NotifySettings `json:"notify"`
 }
 
@@ -201,6 +203,7 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 			NtfyToken  *string         `json:"ntfy_token"`
 			WebhookURL *string         `json:"webhook_url"`
 			PublicURL  *string         `json:"public_url"`
+			DigestHour *int            `json:"digest_hour"`
 			Events     map[string]bool `json:"events"`
 		} `json:"notify"`
 		AutoResume      *bool   `json:"auto_resume"`
@@ -304,6 +307,12 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		}
 		if ntfyEnc != nil {
 			ns.NtfyTokenEnc = *ntfyEnc
+		}
+		if nr.DigestHour != nil && *nr.DigestHour >= 0 && *nr.DigestHour <= 23 {
+			ns.DigestHour = *nr.DigestHour
+			if ns.DigestHour == 0 {
+				ns.DigestHour = 24 // 0 in the file means "default (8)"; midnight is stored as 24
+			}
 		}
 		for _, e := range notifyEvents {
 			if on, ok := nr.Events[e.ID]; ok {
