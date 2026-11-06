@@ -248,8 +248,21 @@ can check detection without joining.
    the dialog shows the context cache that size needs and the total with the weights, and turns amber when that
    is more than the GPU memory, more than the node can hold, or past the trained context. The controller reads
    the model's GGUF header (layers, KV heads, head size, sliding window) when the model is added, from its own
-   copy or by streaming only the header from Hugging Face, so the figure assumes llama.cpp's default 16-bit cache;
-   until the header is read it falls back to the rough estimate above. Outpost installs llama.cpp on the node (Vulkan for
+   copy or by streaming only the header from Hugging Face; until the header is read it falls back to the rough
+   estimate above. **Largest that fits** sets the biggest context whose estimate stays within the node's VRAM
+   (or RAM on a CPU node, or VRAM plus RAM when the weights alone do not fit the GPU), with 10% spare because the
+   estimate is not exact.
+   **Context cache** shrinks the context memory: 8-bit uses about half (answers are nearly identical), 4-bit about a
+   quarter (a small loss in quality), so a longer context fits; the estimate follows the choice. It needs flash
+   attention, which llama.cpp turns on by itself where it can (**Advanced → Flash attention** forces it on or off).
+   **Calls at once** (2 to 4) lets a big node run that many model calls in parallel, for example writing one subtask
+   while reviewing another. Each call keeps the full context size, so the cache needs that many times the memory;
+   the estimate includes it, and the dispatcher gives the node that many calls. **Advanced → Draft model** loads a
+   small model of the same family (same tokenizer, under half the main model's size; a fifth or less works best)
+   for speculative decoding: it guesses a few tokens ahead and the main model checks them, often 1.5 to 2 times
+   faster for code on a GPU. A draft from a different family makes llama.cpp refuse to start, and the load fails
+   with its message. Outpost does not measure the gain by itself: compare the tok/s on the node card with and
+   without it. The node card lists these options next to the speed. Outpost installs llama.cpp on the node (Vulkan for
    GPUs, CPU otherwise), gets the model onto the node, and starts it. Downloads resume if
    interrupted and are checked against Hugging Face's SHA-256. Progress shows on the card. The node
    reloads the same model by itself after a reboot or update.
@@ -321,7 +334,7 @@ Each task is a conversation:
    once per request; clear requests go straight to a plan.
 3. **The plan appears as a card.** Approve it, adjust the cap, or reply with changes ("use SQLite
    instead", "drop the web UI") and it revises the plan. Nothing runs until you approve.
-4. **Progress is live.** A strip fills in as subtasks finish, with which node wrote and checked each. Each running subtask has a "live output" pane showing what the model is writing; it starts collapsed, click to expand. An expanded pane stays open and keeps its scroll position, and keeps showing the last call's output (marked "finished") until the next call starts, so it no longer goes blank between the fixer's calls. The pane names the node (and "checking" during a review) and says "waiting for output" until the first token; a thinking model's reasoning is shown there too.
+4. **Progress is live.** A strip fills in as subtasks finish, with which node wrote and checked each. Each running subtask has a "live output" pane showing what the model is writing; it starts collapsed, click to expand. An expanded pane stays open and keeps its scroll position, and keeps showing the last call's output (marked "finished") until the next call starts, so it no longer goes blank between the fixer's calls. The pane names the node (and "checking" during a review) and says "waiting for output" until the first token; a thinking model's reasoning is shown there too. While a node is still reading a long prompt, its pane header says how far it has got, for example "reading the prompt: 7,420 of 18,950 tokens, about 2 min left", so a slow CPU node does not look stuck (needs a llama.cpp build that reports prompt progress; older builds just show "waiting for output").
    While the tests run and the fixer works, a **Tests and fixes** card under the subtasks lists each step: the test run and which node ran it with a count such as "4 failing of 12" (when the runner prints one), what the fixer read, ran and edited, and how long the current step has been going. If the node is offline or paused, or a model has produced no text for two minutes, a warning says so instead of the card looking busy. If the planner's node restarts or is updated in the middle of a fix round, the controller waits (up to 10 minutes) for it to come back and repeats that round without using one up. The "The controller restarted, so this task resumed automatically" line in the thread appears only after the controller restarts; a node restart shows up on this card instead.
    A running subtask expands to show the text its node is writing, with tokens per second, and
    planning with Claude or OpenRouter streams the same way. The page also updates as soon as the
@@ -872,7 +885,8 @@ that box. Nothing is sent anywhere.
 
 See also [SECURITY.md](SECURITY.md) for the security model and its limits (the Linux-only command sandbox, unsigned binaries and checksums).
 
-- One model per node at a time; each node runs one model call at a time. A node lending memory
+- One model per node at a time; each node runs one model call at a time unless it was loaded with
+  **Calls at once** above 1. A node lending memory
   to a pool runs no model of its own.
 - Nodes need this Outpost version for agent mode: update nodes before using it with them.
 - Go is the only tool Outpost installs (Chromium is detected only, never installed); the Go install and PowerShell test runs are untested on real Windows.

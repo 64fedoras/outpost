@@ -676,6 +676,10 @@ func (c *Controller) handleLoadModel(w http.ResponseWriter, r *http.Request) {
 		Threads   int      `json:"threads"`
 		ExtraArgs string   `json:"extra_args"`
 		Pool      []string `json:"pool"` // helper node IDs that lend their memory
+		CacheType string   `json:"cache_type"`
+		FlashAttn string   `json:"flash_attn"`
+		Draft     string   `json:"draft"`
+		Parallel  int      `json:"parallel"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 		writeJSON(w, 400, map[string]string{"error": "model name required"})
@@ -709,7 +713,12 @@ func (c *Controller) handleLoadModel(w http.ResponseWriter, r *http.Request) {
 	if req.Ctx <= 0 {
 		req.Ctx = m.Ctx
 	}
-	ml := ModelLoad{Name: req.Name, Ctx: req.Ctx, GPULayers: req.GPULayers, Threads: req.Threads, ExtraArgs: strings.Fields(req.ExtraArgs)}
+	if err := c.checkServing(&req.CacheType, &req.FlashAttn, req.Draft, req.Name, &req.Parallel); err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	ml := ModelLoad{Name: req.Name, Ctx: req.Ctx, GPULayers: req.GPULayers, Threads: req.Threads, ExtraArgs: strings.Fields(req.ExtraArgs),
+		CacheType: req.CacheType, FlashAttn: req.FlashAttn, Draft: req.Draft, Parallel: req.Parallel}
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &pipeline{cancel}
 	c.mu.Lock()
@@ -772,32 +781,19 @@ func (c *Controller) loadPipeline(ctx context.Context, id string, ml ModelLoad) 
 		}
 		ml.RPC = endpoints
 	}
-	// 2. model files: from another node first, checked against the controller's hash
-	if !c.nodeHasModel(id, ml.Name) {
-		if err := c.copyFromPeers(ctx, id, m); err != nil && ctx.Err() == nil {
-			log.Printf("node %s: copy of %s from other nodes failed (%v); using the usual route", id, ml.Name, err)
-		}
+	// 2. model files (and the draft model's, for speculative decoding)
+	if err := c.ensureModelOnNode(ctx, id, nc, m); err != nil {
+		return err
 	}
-	if !c.nodeHasModel(id, ml.Name) && m.Storage == "direct" {
-		files := make([]ModelFetchFile, len(m.Files))
-		for i, f := range m.Files {
-			files[i] = ModelFetchFile{ModelFile: f, URL: hfURL(m.Repo, m.HFFiles[i])}
+	if ml.Draft != "" {
+		c.mu.Lock()
+		dm := c.models[ml.Draft]
+		c.mu.Unlock()
+		if dm == nil || dm.Status != "ready" {
+			return fmt.Errorf("the draft model %s is not ready in the library", ml.Draft)
 		}
-		c.setNodeOp(id, OpStatus{Op: "model.fetch", Target: ml.Name, State: "downloading", BytesTotal: totalBytes(m.Files)})
-		if err := nc.send("model.fetch", ModelFetch{Name: ml.Name, Files: files, Token: c.hfToken(), Reclaim: c.reclaimFor(id, ml.Name)}); err != nil {
-			return err
-		}
-		if err := c.waitNodeOp(ctx, id, "model.fetch", ml.Name, 24*time.Hour); err != nil {
-			return fmt.Errorf("downloading the model on the node: %w", err)
-		}
-	}
-	if !c.nodeHasModel(id, ml.Name) && m.Storage != "direct" {
-		c.setNodeOp(id, OpStatus{Op: "model.push", Target: ml.Name, State: "downloading", BytesTotal: totalBytes(m.Files)})
-		if err := nc.send("model.push", ModelPush{Name: ml.Name, Files: m.Files, Reclaim: c.reclaimFor(id, ml.Name)}); err != nil {
-			return err
-		}
-		if err := c.waitNodeOp(ctx, id, "model.push", ml.Name, 24*time.Hour); err != nil {
-			return fmt.Errorf("copying the model: %w", err)
+		if err := c.ensureModelOnNode(ctx, id, nc, dm); err != nil {
+			return fmt.Errorf("draft model: %w", err)
 		}
 	}
 	// 3. load
@@ -806,6 +802,41 @@ func (c *Controller) loadPipeline(ctx context.Context, id string, ml ModelLoad) 
 		return err
 	}
 	return c.waitNodeOp(ctx, id, "model.load", ml.Name, 20*time.Minute)
+}
+
+// ensureModelOnNode gets a library model's files onto the node: from another
+// node first (checked against the controller's hash), else from Hugging Face
+// or the controller.
+func (c *Controller) ensureModelOnNode(ctx context.Context, id string, nc *nodeConn, m *ModelRec) error {
+	// 2. model files: from another node first, checked against the controller's hash
+	if !c.nodeHasModel(id, m.Name) {
+		if err := c.copyFromPeers(ctx, id, m); err != nil && ctx.Err() == nil {
+			log.Printf("node %s: copy of %s from other nodes failed (%v); using the usual route", id, m.Name, err)
+		}
+	}
+	if !c.nodeHasModel(id, m.Name) && m.Storage == "direct" {
+		files := make([]ModelFetchFile, len(m.Files))
+		for i, f := range m.Files {
+			files[i] = ModelFetchFile{ModelFile: f, URL: hfURL(m.Repo, m.HFFiles[i])}
+		}
+		c.setNodeOp(id, OpStatus{Op: "model.fetch", Target: m.Name, State: "downloading", BytesTotal: totalBytes(m.Files)})
+		if err := nc.send("model.fetch", ModelFetch{Name: m.Name, Files: files, Token: c.hfToken(), Reclaim: c.reclaimFor(id, m.Name)}); err != nil {
+			return err
+		}
+		if err := c.waitNodeOp(ctx, id, "model.fetch", m.Name, 24*time.Hour); err != nil {
+			return fmt.Errorf("downloading the model on the node: %w", err)
+		}
+	}
+	if !c.nodeHasModel(id, m.Name) && m.Storage != "direct" {
+		c.setNodeOp(id, OpStatus{Op: "model.push", Target: m.Name, State: "downloading", BytesTotal: totalBytes(m.Files)})
+		if err := nc.send("model.push", ModelPush{Name: m.Name, Files: m.Files, Reclaim: c.reclaimFor(id, m.Name)}); err != nil {
+			return err
+		}
+		if err := c.waitNodeOp(ctx, id, "model.push", m.Name, 24*time.Hour); err != nil {
+			return fmt.Errorf("copying the model: %w", err)
+		}
+	}
+	return nil
 }
 
 func totalBytes(fs []ModelFile) int64 {

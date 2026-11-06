@@ -1243,10 +1243,10 @@ func (c *Controller) workerCounts() (int, int) { return len(c.workerNodes()), le
 func (c *Controller) tryReserve(id string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.reserved[id] {
+	if c.reserved[id] >= c.slotsLocked(id) {
 		return false
 	}
-	c.reserved[id] = true
+	c.reserved[id]++
 	return true
 }
 
@@ -1265,7 +1265,11 @@ func (c *Controller) reserveNode(ctx context.Context, id string) error {
 
 func (c *Controller) releaseNode(id string) {
 	c.mu.Lock()
-	delete(c.reserved, id)
+	if c.reserved[id] <= 1 {
+		delete(c.reserved, id)
+	} else {
+		c.reserved[id]--
+	}
 	c.mu.Unlock()
 }
 

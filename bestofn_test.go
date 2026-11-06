@@ -97,7 +97,7 @@ type bonRig struct {
 func newBonRig(t *testing.T, nodes map[string]string) *bonRig {
 	t.Helper()
 	c := &Controller{dataDir: t.TempDir(), conns: map[string]*nodeConn{}, lastHB: map[string]*Heartbeat{}, nodes: map[string]*NodeRec{},
-		models: map[string]*ModelRec{}, reserved: map[string]bool{}, pipelines: map[string]*pipeline{}, cooldown: map[string]time.Time{}}
+		models: map[string]*ModelRec{}, reserved: map[string]int{}, pipelines: map[string]*pipeline{}, cooldown: map[string]time.Time{}}
 	for id, model := range nodes {
 		c.conns[id] = &nodeConn{}
 		c.lastHB[id] = &Heartbeat{InferenceRdy: true, LoadedModel: model}
