@@ -302,3 +302,19 @@ func TestChatOnlyToken(t *testing.T) {
 		t.Fatal("/v1 auth")
 	}
 }
+
+func TestV1SpecPassesAgentSettings(t *testing.T) {
+	var req v1Request
+	body := `{"model":"auto","messages":[{"role":"user","content":"x"}],"top_p":0.5,"seed":7,"tool_choice":"required","response_format":{"type":"json_object"},"tools":[{"type":"function","function":{"name":"f"}}],"stream_options":{"include_usage":true}}`
+	if err := json.Unmarshal([]byte(body), &req); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := req.spec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := spec.Params
+	if p.TopP == nil || *p.TopP != 0.5 || p.Seed == nil || *p.Seed != 7 || string(p.ToolChoice) != `"required"` || !strings.Contains(string(p.ResponseFormat), "json_object") || !req.StreamOptions.IncludeUsage {
+		t.Fatalf("params not passed through: %+v", p)
+	}
+}

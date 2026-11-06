@@ -745,6 +745,24 @@ request waits up to 2 minutes for a free slot, then returns 503. Tick **Chat onl
 token for a tool: such a token works on `/v1/` and nothing else. The controller's certificate is
 self-signed, so the tool must trust it (or use your own certificate, see below).
 
+### Connect an agent (Hermes, aider, Open WebUI and others)
+
+An AI agent can use the cluster as its model backend, so the computing happens on your nodes:
+
+1. Settings → API tokens → name it after the agent, tick **Chat only**, create, copy the token.
+2. In the agent's settings choose an OpenAI-compatible provider and enter the base URL
+   (`https://<controller>:8443/v1`, also shown under API tokens), the token as API key, and the model
+   `auto` (or a name from `GET /v1/models`).
+3. Revoke the token in the same place to cut the agent off.
+
+Agents that call tools work when the model's own chat template supports tools (nodes start llama-server
+with `--jinja`; `tool_choice`, `top_p`, `seed`, penalties, `response_format` and
+`stream_options.include_usage` are passed through). Requests share free model slots with chat, so a busy
+cluster makes an agent wait up to 2 minutes and then answer 503; agents should retry. Not offered yet:
+embeddings, per-token rate or spend limits, and CORS for browser-based agents. The API is plain HTTPS
+with a self-signed certificate by default; keep it on your LAN, or put a trusted certificate in front
+before exposing it. Not tested against Hermes or the real cluster.
+
 ## Claude usage and the spending cap
 
 Claude only plans, writes subtasks the local models could not finish, and fixes failing tests; all
