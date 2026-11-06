@@ -35,6 +35,7 @@ type ghUpdateState struct {
 	Error   string    `json:"error,omitempty"`
 	Busy    string    `json:"busy,omitempty"` // "checking", "downloading <platform>"
 	Fetched []string  `json:"fetched,omitempty"`
+	Catalog string    `json:"catalog,omitempty"` // release whose model catalog is in use (catalog_remote.go); "" = built in
 }
 
 type ghAsset struct {
@@ -254,9 +255,6 @@ func (c *Controller) checkGitHubRun(ctx context.Context) (latest string, fetched
 			want = append(want, p)
 		}
 	}
-	if len(want) == 0 {
-		return latest, nil, nil
-	}
 	assets := map[string]ghAsset{}
 	for _, a := range rel.Assets {
 		assets[a.Name] = a
@@ -275,6 +273,12 @@ func (c *Controller) checkGitHubRun(ctx context.Context) (latest string, fetched
 		return latest, nil, err
 	}
 	sums := parseSums(sumBytes)
+	if err := c.updateCatalog(ctx, rel, latest, sums, token); err != nil {
+		log.Printf("model catalog update: %v", err)
+	}
+	if len(want) == 0 {
+		return latest, nil, nil
+	}
 	var errs []string
 	for _, p := range want {
 		name := releaseFileName(p)
@@ -476,7 +480,7 @@ func (c *Controller) ghViewLocked() map[string]any {
 	return map[string]any{
 		"enabled": !c.settings.GitHubUpdatesOff, "auto_install": c.settings.GitHubAutoInstall,
 		"hold": c.settings.GitHubHoldVersion, "repo": repo,
-		"checked": s.Checked, "latest": s.Latest, "error": s.Error, "busy": s.Busy, "fetched": s.Fetched,
+		"checked": s.Checked, "latest": s.Latest, "error": s.Error, "busy": s.Busy, "fetched": s.Fetched, "catalog": s.Catalog,
 	}
 }
 

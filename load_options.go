@@ -53,8 +53,9 @@ func (c *Controller) loadOptionsFor(id string, maxRecommended int) ([]LoadOption
 		free = int64(n.Hello.ModelsFreeBytes)
 	}
 	catalog := map[string]*CatalogEntry{}
-	for i := range modelCatalog {
-		catalog[modelCatalog[i].ID] = &modelCatalog[i]
+	cat := catalogNow()
+	for i := range cat {
+		catalog[cat[i].ID] = &cat[i]
 	}
 	var opts []LoadOption
 	add := func(o LoadOption) {
@@ -80,7 +81,7 @@ func (c *Controller) loadOptionsFor(id string, maxRecommended int) ([]LoadOption
 			opts[len(opts)-1].Label = m.Name
 		}
 	}
-	for _, e := range modelCatalog {
+	for _, e := range cat {
 		if m := c.models[e.ID]; m != nil && m.Status != "failed" {
 			continue // in the library (or on its way there)
 		}

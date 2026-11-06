@@ -78,6 +78,8 @@ func main() {
 		err = runRepin(os.Args[2:])
 	case "licenses":
 		runLicenses()
+	case "catalog-json":
+		runCatalogJSON()
 	case "hwinfo":
 		runHWInfo()
 	case "version", "--version", "-v":
