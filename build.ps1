@@ -8,7 +8,7 @@ No sh, zip utility or osslsigncode is needed. The Windows exe is left unsigned u
 OUTPOST_SIGN_CMD (a command line where {exe} stands for the file to sign).
 
 If llvm-rc and llvm-cvtres are on PATH the Windows version info is regenerated for the version
-being built; otherwise the committed rsrc_windows_amd64.syso is used as it is.
+being built; otherwise the committed cmd/outpost/rsrc_windows_amd64.syso is used as it is.
 
 .PARAMETER Target
 current (default, this machine), all (the five release platforms), or one of
@@ -18,8 +18,8 @@ linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64.
 Where the binaries go, in OutDir\bin. Default: ..\dist\outpost-<version>
 
 .PARAMETER Version
-Stamp this version (1.2.3) into the binaries instead of the base version in proto.go.
-proto.go is restored afterwards. Same as setting OUTPOST_VERSION.
+Stamp this version (1.2.3) into the binaries instead of the base version in cmd/outpost/proto.go.
+cmd/outpost/proto.go is restored afterwards. Same as setting OUTPOST_VERSION.
 
 .PARAMETER Zip
 Also write outpost-<version>.zip next to OutDir (uses Compress-Archive).
@@ -73,8 +73,8 @@ if (-not $Version) { $Version = $env:OUTPOST_VERSION }
 if ($Version -and $Version -notmatch '^\d+\.\d+\.\d+$') { Fail "version must look like 1.2.3, got: $Version" }
 
 # --- save what the build touches, restore it at the end --------------------------------------
-$protoPath = Join-Path $root 'proto.go'
-$sysoPath = Join-Path $root 'rsrc_windows_amd64.syso'
+$protoPath = Join-Path $root 'cmd\outpost\proto.go'
+$sysoPath = Join-Path $root 'cmd\outpost\rsrc_windows_amd64.syso'
 $protoBytes = [IO.File]::ReadAllBytes($protoPath)
 $sysoBytes = [IO.File]::ReadAllBytes($sysoPath)
 $saveEnv = @{}
@@ -90,7 +90,7 @@ try {
         [IO.File]::WriteAllText($protoPath, $text, (New-Object Text.UTF8Encoding($false)))
     }
     $vm = [regex]::Match([IO.File]::ReadAllText($protoPath), '(?m)^const Version = "([^"]*)"')
-    if (-not $vm.Success) { Fail 'cannot find "const Version" in proto.go' }
+    if (-not $vm.Success) { Fail 'cannot find "const Version" in cmd/outpost/proto.go' }
     $v = $vm.Groups[1].Value
     if (-not $OutDir) { $OutDir = Join-Path (Split-Path -Parent $root) "dist\outpost-$v" }
     elseif (-not [IO.Path]::IsPathRooted($OutDir)) { $OutDir = Join-Path (Get-Location).Path $OutDir }
@@ -115,7 +115,7 @@ try {
                 if ($LASTEXITCODE -ne 0) { Fail 'llvm-cvtres failed' }
             } finally { Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue }
         } else {
-            Write-Host "note: llvm-rc/llvm-cvtres not found; using the committed rsrc_windows_amd64.syso (its version info may differ from $v)"
+            Write-Host "note: llvm-rc/llvm-cvtres not found; using the committed cmd/outpost/rsrc_windows_amd64.syso (its version info may differ from $v)"
         }
     }
 
@@ -130,7 +130,7 @@ try {
         $out = Join-Path $bin "outpost-$os-$arch$ext"
         Write-Host "building $os/$arch ..."
         $env:GOOS = $os; $env:GOARCH = $arch
-        & go build -trimpath $ldflags -o $out .
+        & go build -trimpath $ldflags -o $out ./cmd/outpost
         if ($LASTEXITCODE -ne 0) { Fail "go build failed for $t" }
         $outputs += $out
     }

@@ -6,7 +6,7 @@ Part of the [Outpost user guide](USER-GUIDE.md).
 
 ## Updating
 
-Every merge to `main` is built by GitHub Actions as the next patch version (0.8.1, 0.8.2, ...; after patch 19 the minor rolls, so 0.8.19 is followed by 0.9.0) and published as a release `v<version>` with the five binaries, a zip and `SHA256SUMS`, so each build shows up as a newer version in the Updates tab. Major versions (1.0) are set by hand in `proto.go`, and versions compare numerically (0.8.10 is newer than 0.8.9) in `proto.go`.
+Every merge to `main` is built by GitHub Actions as the next patch version (0.8.1, 0.8.2, ...; after patch 19 the minor rolls, so 0.8.19 is followed by 0.9.0) and published as a release `v<version>` with the five binaries, a zip and `SHA256SUMS`, so each build shows up as a newer version in the Updates tab. Major versions (1.0) are set by hand in `cmd/outpost/proto.go`, and versions compare numerically (0.8.10 is newer than 0.8.9) in `cmd/outpost/proto.go`.
 
 **From GitHub (on by default).** The controller checks this repository's latest release every 6 hours
 (and when you click **Check now** on the Updates tab) and downloads the binaries for its own platform

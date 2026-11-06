@@ -33,7 +33,7 @@ jobs:
         id: ver
         run: |
           V=$(sh .github/next-version.sh)
-          sed -i "s/^const Version = \".*\"/const Version = \"$V\"/" proto.go
+          sed -i "s/^const Version = \".*\"/const Version = \"$V\"/" cmd/outpost/proto.go
           echo "OUTPOST_VERSION=$V" >> "$GITHUB_ENV"
           echo "Building Outpost $V"
       - name: Vet and test

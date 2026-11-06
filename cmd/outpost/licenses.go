@@ -1,20 +1,18 @@
 package main
 
 import (
-	_ "embed"
 	"fmt"
 	"net/http"
 	"os"
+
+	"outpost"
 )
 
 // Outpost is AGPL-3.0 (LICENSE). Section 13 asks that users of the web UI can get the source,
 // so the licence texts ship inside the binary and are served at /licenses.
-//
-//go:embed LICENSE
-var licenseText string
+var licenseText = outpost.LicenseText
 
-//go:embed THIRD_PARTY_NOTICES.txt
-var thirdPartyNotices string
+var thirdPartyNotices = outpost.ThirdPartyNotices
 
 const sourceURL = "https://github.com/64fedoras/outpost"
 

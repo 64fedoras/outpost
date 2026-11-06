@@ -10,7 +10,7 @@ import (
 
 // Every vendored module must have its licence in THIRD_PARTY_NOTICES.txt (run scripts/gen_notices.sh).
 func TestNoticesCoverVendoredModules(t *testing.T) {
-	mods, err := os.ReadFile("vendor/modules.txt")
+	mods, err := os.ReadFile("../../vendor/modules.txt")
 	if err != nil {
 		t.Skip("no vendor dir")
 	}
