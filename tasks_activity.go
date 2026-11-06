@@ -139,7 +139,7 @@ func (c *Controller) activityFor(t *Task) *actDetail {
 	if len(steps) == 0 || (status != "testing" && status != "fixing" && status != "building") {
 		return nil
 	}
-	d := &actDetail{Steps: steps, Round: rounds + 1, Max: maxFixRounds, Server: time.Now()}
+	d := &actDetail{Steps: steps, Round: rounds + 1, Max: t.fixLimit(), Server: time.Now()}
 	cur := steps[len(steps)-1]
 	if cur.Status != "running" {
 		return d

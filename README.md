@@ -315,7 +315,7 @@ Each task is a conversation:
 
 1. **You describe the task.** The line under the box says what *Plan it* will use (for example
    "Claude Sonnet 5.5 · cap $2 · peer review on"). **Change options** opens the planner, Claude model,
-   spending cap, peer review and mockups-first controls.
+   spending cap, peer review, mockups-first, fix-round and test-time-limit controls.
 2. **The planner may ask questions** when the request leaves open a choice that changes the design
    (language, storage, interface). Click the answers, type your own, or skip any. It asks at most
    once per request; clear requests go straight to a plan.
@@ -347,6 +347,10 @@ Each task is a conversation:
    its name) and uploaded as the release for that platform, like the Updates tab's upload.
    Updating the controller and nodes stays your click there; a task never updates anything by itself. The Project files
    view has checkboxes and **Zip ticked files**.
+   A line under **Finished** sums the request up: how long it took, which nodes wrote it, how many
+   subtasks needed another try, the fix rounds, the cloud cost and roughly how many lines changed.
+   **.patch** next to **Changes** downloads that request's changes as a git diff (`git apply` takes it),
+   and **All changes .patch** downloads everything Outpost changed in the task as one diff.
    Files of any size up to 2 GB per job move between the controller and exec nodes in hash-checked
    pieces (project files over 1 MiB go to the build node, build outputs come back). A node holds a
    build's output only until the controller has fetched it, and the node's file-sharing port (8444) must
@@ -391,7 +395,43 @@ the model is still offered for tasks, and the next request loads it again, so th
 normal model load. Unloading it yourself with **Unload** is different: the node then has no model and
 gets no work until you load one. A pooled model is never unloaded for idleness.
 
-**When the tests fail**, the planner gets up to 3 fix rounds. Each round sees the test output and
+**Handing off to a coding assistant.** When local models get most of the way but not all of it,
+**Hand off to a coding assistant** on the result card downloads a zip with the files plus
+`HANDOFF.md` (the requests, the plan, what each request changed, the test command, the last failing
+test output and next steps) and `outpost-changes.patch`. The zip also has a short pointer to
+`HANDOFF.md` in each assistant's own instructions file, so whichever you open it in picks it up:
+`CLAUDE.md` (Claude Code), `AGENTS.md` (OpenAI Codex and other agents that read it), `GEMINI.md` (Gemini
+CLI), `.github/copilot-instructions.md` (GitHub Copilot) and `.cursor/rules/outpost-handoff.mdc`
+(Cursor). If the project already has one of those files, its text is kept and the pointer is added at
+the end. Unzip it, open the folder in the assistant and ask it to read `HANDOFF.md`. Nothing is sent
+anywhere by Outpost; the zip is only a download.
+
+**Redo one subtask.** When a task has stopped, **Redo…** on a subtask row writes just that subtask
+again and then runs the tests (and fix rounds) again; the other subtasks and their files are kept.
+Choose who writes it: the strongest free node, a particular node (it waits up to 10 minutes for that
+node to be free, then lets any node take it), or the planner (a cloud planner counts against the
+spending cap). An optional note ("use argparse, not click") is added to that subtask's instructions
+for this try only.
+
+**Editing a file by hand.** On a task that has stopped, open a file in the Project files view and press
+**Edit**, change it, and **Save**. Your edits become their own step in the thread ("You edited 2
+file(s) by hand"), so **Changes**, **.patch** and **Undo** work on them like on any request, and the
+next follow-up plans on your edited files. Only text files up to 1 MB can be edited this way.
+
+**Deleting and renaming files.** A plan can now delete files and rename (move) them, listed on the plan
+card before you approve. They are applied before the subtasks run, kept like any other change, and
+shown as "deleted" in **Changes**; **Undo** brings them back. A plan cannot delete or rename a file
+that one of its own subtasks writes.
+
+**When a local planner's plan is not valid JSON**, the next try asks llama-server to keep its answer
+to the plan's shape (a JSON schema). Only the retry is constrained, so models that plan well today are
+not affected; an older llama.cpp build that does not take a schema simply answers without it.
+
+**Fix rounds and the test time limit.** By default the planner gets up to 3 fix rounds and one test run
+may take 10 minutes. Change both per task under **Change options** (1 to 8 rounds; 5 to 60 minutes), or
+as a project default on the project's card.
+
+**When the tests fail**, the planner gets its fix rounds (3 unless changed). Each round sees the test output and
 which files earlier rounds changed, and works as an agent (below). It treats the tests as the
 specification and only edits a test that is clearly wrong.
 
@@ -477,16 +517,24 @@ Settings has a **Project instructions** box for standing rules, like a `CLAUDE.m
 dependencies, no cgo, keep the web UI vanilla JS"). The text is copied into each task when you create it
 and goes at the top of every planner, worker, reviewer and fix prompt of that task. If the task's files
 contain an `OUTPOST.md` at the root, its text is added as well. Both together are cut at 8,000 characters
-so a small local model keeps room for the code. Changing the box affects new tasks only. Per-project
-instructions will replace this once projects exist.
+so a small local model keeps room for the code. Changing the box affects new tasks only.
+
+A project has its own **Instructions** box on its card too. For a task in that project they are added
+after the Settings rules (the same 8,000-character limit applies to all of it together).
+
+**Learning from failures.** When a task in a project finishes with its tests still failing, the planner
+is asked once for a short general rule that would have avoided it ("use the testing package only; do
+not add testify"). The rule appears on the project's card as a suggestion: **Add to instructions** or
+**Dismiss**; nothing changes until you choose. The last 5 suggestions are kept. With Claude or OpenRouter
+this is one small call counted in the task's cost, and it is skipped if it would pass the cap.
 
 ## Projects, attachments and git
 
 **Projects** (sidebar → Projects) keep a folder of files between tasks. Pick a project in the
 composer and the task starts from the project's current files and writes into them, the way a
 follow-up round does. Only one task works in a project at a time; later ones show *Waiting for
-project* and start when the first finishes. A project can store defaults (test command, peer
-review). Tasks without a project work as before, and existing tasks stay as they were. Delete a
+project* and start when the first finishes. A project can store defaults (test command, peer review, fix rounds, test time limit) and its own instructions.
+Tasks without a project work as before, and existing tasks stay as they were. Delete a
 project's tasks before deleting the project.
 
 **Attachments:** the 📎 button in the composer takes up to 50 MB in total. A `.zip` becomes the
@@ -830,8 +878,6 @@ See also [SECURITY.md](SECURITY.md) for the security model and its limits (the L
 - Go is the only tool Outpost installs (Chromium is detected only, never installed); the Go install and PowerShell test runs are untested on real Windows.
 - Screenshots need a Chromium or Chrome that can run headless on the node. A snap-packaged Chromium may not
   be able to read Outpost's work folder, and a screenshot over 1 MiB (a very tall page) is not collected.
-- A plan cannot delete files: a subtask that "removes" a file still has to write it, usually as a
-  short stub. Delete it from the downloaded zip.
 - The low-level job history (Home → Recent jobs) is kept in memory and clears on restart; tasks
   and their files are kept on disk.
 - Service install: systemd on Linux, the Outpost Node service on Windows (admin shell) and a per-user

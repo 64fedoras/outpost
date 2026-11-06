@@ -60,3 +60,6 @@ WebSocket that executes the Chromium job locally. They use a headless Chromium f
 - One-node-first updates on the real cluster: a Windows node as the first node (Defender blocking the new exe should stop the rollout and leave the rest alone), a first node whose model takes minutes to load again, and GitHub auto-install with the rollout.
 - The hung-model watchdog against a real llama-server that stalls (for example SIGSTOP the llama-server process during a call: after about 4 minutes it should be killed, restarted, and the subtask should move).
 - Pause from the web UI on a node that also has a tray: the tray menu should show the web pause, and resuming from either side should clear it.
+- The JSON-schema retry for local planners against the real llama.cpp builds Outpost installs (a build that rejects `response_format` should fall back silently; check `node.log`), and whether the schema slows a small model's plan noticeably.
+- Hand-off zips opened in each assistant: Claude Code reads `CLAUDE.md`, Codex `AGENTS.md`, Gemini CLI `GEMINI.md`, Copilot `.github/copilot-instructions.md`, Cursor `.cursor/rules/*.mdc`. Only the file layout is unit-tested; none was tried in the real tools.
+- `git apply` of a task's `.patch` on a project with CRLF files or binary files (binary changes are not in the patch).

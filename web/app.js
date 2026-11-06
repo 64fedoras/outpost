@@ -489,6 +489,8 @@ function renderOptLine() {
   if (paid) parts.push('cap $' + ($('nt-cap').value || 0));
   parts.push($('nt-review').checked ? 'peer review on' : 'peer review off');
   if ($('nt-mockup').checked) parts.push('mockups first');
+  if (+$('nt-fix').value) parts.push(`${$('nt-fix').value} fix round${$('nt-fix').value === '1' ? '' : 's'}`);
+  if (+$('nt-testmin').value) parts.push(`tests up to ${$('nt-testmin').value} min`);
   setHTML('nt-optline', esc(parts.join(' · ')));
 }
 $('nt-opt-toggle').addEventListener('click', () => {
@@ -497,7 +499,7 @@ $('nt-opt-toggle').addEventListener('click', () => {
   $('nt-opt-toggle').setAttribute('aria-expanded', show);
   $('nt-opt-toggle').textContent = show ? 'Hide options' : 'Change options';
 });
-['nt-model', 'nt-cap', 'nt-review', 'nt-mockup'].forEach((id) => $(id).addEventListener('change', renderOptLine));
+['nt-model', 'nt-cap', 'nt-review', 'nt-mockup', 'nt-fix', 'nt-testmin'].forEach((id) => $(id).addEventListener('change', renderOptLine));
 $('nt-cap').addEventListener('input', renderOptLine);
 $('nt-planner').addEventListener('change', () => { renderNew(); ntImg.refresh(); });
 $('nt-project').addEventListener('change', () => { try { localStorage.setItem('nt-project', $('nt-project').value); } catch (e) {} });
@@ -507,7 +509,7 @@ $('nt-files').addEventListener('change', () => {
 });
 async function startTask() {
   $('nt-err').classList.add('hidden');
-  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, mockup: $('nt-mockup').checked, project: $('nt-project').value, images: ntImg.payload() };
+  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, mockup: $('nt-mockup').checked, fix_rounds: +$('nt-fix').value, test_minutes: +$('nt-testmin').value, project: $('nt-project').value, images: ntImg.payload() };
   if (!body.prompt.trim()) { $('nt-prompt').focus(); return; }
   $('nt-go').disabled = true;
   try {
@@ -541,10 +543,17 @@ function renderProjects() {
       <div class="btns u14">
         <label class="chip-input">tests <input data-pf="test_command" data-id="${p.id}" value="${esc(p.test_command)}" placeholder="none"></label>
         <label class="toggle"><input type="checkbox" data-pf="review" data-id="${p.id}" ${p.review === false ? '' : 'checked'}> peer review</label>
+        <label class="chip-input">fix rounds <select data-pf="fix_rounds" data-id="${p.id}">${[0, 1, 2, 3, 5, 8].map((v) => `<option value="${v}" ${(p.fix_rounds || 0) === v ? 'selected' : ''}>${v || 'default'}</option>`).join('')}</select></label>
+        <label class="chip-input">test limit <select data-pf="test_minutes" data-id="${p.id}">${[0, 5, 10, 30, 60].map((v) => `<option value="${v}" ${(p.test_minutes || 0) === v ? 'selected' : ''}>${v ? v + ' min' : 'default'}</option>`).join('')}</select></label>
         ${p.git_url ? `<label class="toggle"><input type="checkbox" data-pf="git_push" data-id="${p.id}" ${p.git_push ? 'checked' : ''}> push</label>
         <label class="toggle"><input type="checkbox" data-pf="git_pr" data-id="${p.id}" ${p.git_pr ? 'checked' : ''}> open PR</label>` : ''}
         <button data-act="project-save" data-id="${p.id}">Save</button>
-        <a href="#/new" data-act="project-use" data-id="${p.id}"><button class="primary">New task here</button></a></div></div>`).join(''));
+        <a href="#/new" data-act="project-use" data-id="${p.id}"><button class="primary">New task here</button></a></div>
+      <details class="u6" ${p.instructions ? 'open' : ''}><summary class="hint">Project instructions${p.instructions ? '' : ' (none yet)'}</summary>
+        <p class="hint">Standing rules for every task in this project, added after the ones in Settings (and before an <code>OUTPOST.md</code> in the files). For example: "Tests use pytest. Keep Python 3.9 compatible."</p>
+        <textarea rows="4" data-pf="instructions" data-id="${p.id}" spellcheck="false" placeholder="e.g. Use the standard library only.">${esc(p.instructions || '')}</textarea>
+        ${(p.suggestions || []).map((s) => `<div class="note u6 nv-note"><span class="nv-grow"><b>Suggested after a failed task:</b> ${esc(s.text)} <span class="muted">(${esc(s.task_title || '')})</span></span><button class="small primary" data-act="project-suggest" data-id="${p.id}" data-sid="${esc(s.id)}" data-do="add">Add to instructions</button><button class="small" data-act="project-suggest" data-id="${p.id}" data-sid="${esc(s.id)}" data-do="dismiss">Dismiss</button></div>`).join('')}
+      </details></div>`).join(''));
 }
 $('np-go').onclick = async () => {
   const err = $('np-err'); err.classList.add('hidden');
@@ -565,9 +574,12 @@ async function projectAction(act, el) {
     await api(`/api/projects/${id}`, { method: 'DELETE' }); toast('Project deleted');
   } else if (act === 'project-save') {
     const f = (k) => document.querySelector(`[data-pf="${k}"][data-id="${id}"]`);
-    const body = { test_command: f('test_command').value, review: f('review').checked };
+    const body = { test_command: f('test_command').value, review: f('review').checked, fix_rounds: +f('fix_rounds').value, test_minutes: +f('test_minutes').value, instructions: f('instructions').value };
     if (f('git_push')) { body.git_push = f('git_push').checked; body.git_pr = f('git_pr').checked; }
     await post(`/api/projects/${id}`, body); toast('Saved');
+  } else if (act === 'project-suggest') {
+    await post(`/api/projects/${id}/suggestions/${encodeURIComponent(el.dataset.sid)}/${el.dataset.do}`, {});
+    toast(el.dataset.do === 'add' ? 'Added to the instructions' : 'Dismissed'); refresh();
   } else if (act === 'project-use') {
     try { localStorage.setItem('nt-project', id); } catch (e) {}
     $('nt-project').value = id;
@@ -775,6 +787,11 @@ function canEditMsg(t, m) {
 function msgItem(t, m, liveQuestions, livePlan) {
   const key = m.id;
   if (m.superseded) return supersededItem(t, m);
+  if (m.kind === 'hand_edit') {
+    const files = (m.files || []).map((f) => `<a href="#" data-act="view-file" data-path="${esc(f)}">${esc(f)}</a>`).join('');
+    const hasRound = (taskRounds || []).some((r) => r.round === m.round);
+    return { key, cls: 'card-row', html: `<div class="card-msg"><div class="card-head">Your edits</div><p>${esc(m.text)}</p>${files ? `<div class="changed">${files}</div>` : ''}${hasRound ? `<div class="card-actions"><button class="small" data-act="show-changes" data-round="${m.round}">Changes</button></div>` : ''}</div>` };
+  }
   if (m.role === 'user') {
     const tag = m.kind === 'agent_answer' ? '<span class="bubble-tag">answer to the agent</span>' : m.kind === 'steer' ? '<span class="bubble-tag">note while working</span>' : m.kind === 'answers' ? '<span class="bubble-tag">answers</span>' : '';
     const pics = (m.images || []).length ? `<div class="bubble-imgs">${m.images.map((n) => `<a href="/api/tasks/${t.id}/image?name=${encodeURIComponent(n)}" target="_blank" rel="noopener"><img src="/api/tasks/${t.id}/image?name=${encodeURIComponent(n)}" alt="attached image" loading="lazy"></a>`).join('')}</div>` : '';
@@ -922,7 +939,16 @@ function planCard(t, m, live) {
   const pencil = editable ? `<button class="msg-tool shown" data-act="task-pe-open" data-msg="${esc(m.id)}" title="Edit plan" aria-label="Edit plan">${PENCIL}</button>` : '';
   return `<div class="card-msg plan ${live ? 'live' : ''}"><div class="card-head">Plan · ${esc(p.title || '')}${m.edited ? ' <span class="edited-mark inline">edited</span>' : ''}${pencil}</div>
     ${m.text ? `<p>${esc(m.text)}</p>` : ''}<p class="plan-summary">${esc(p.summary || '')}</p><p class="plan-facts">${facts}</p>
-    <ol class="plan-steps">${subs}</ol>${actions}</div>`;
+    <ol class="plan-steps">${subs}</ol>${fileOpsNote(p)}${actions}</div>`;
+}
+// Files the plan removes or moves (fileops.go), shown before approval.
+function fileOpsNote(p) {
+  const del = p.delete || [], ren = p.rename || [];
+  if (!del.length && !ren.length) return '';
+  const parts = [];
+  if (ren.length) parts.push(`Moves ${ren.map((r) => `<code>${esc(r.from)}</code> → <code>${esc(r.to)}</code>`).join(', ')}`);
+  if (del.length) parts.push(`Deletes ${del.map((f) => `<code>${esc(f)}</code>`).join(', ')}`);
+  return `<p class="card-note fileops">${parts.join('. ')}. Undo on this request puts them back.</p>`;
 }
 
 const ST_ICON = { pending: '', running: '', reviewing: '', written: '', done: '✓', failed: '✕' };
@@ -944,13 +970,15 @@ function progressCard(t) {
     else if (x.status === 'failed') who = esc(x.error || 'failed');
     else who = s.depends_on && s.depends_on.length ? `waits for ${s.depends_on.map(esc).join(', ')}` : 'waiting for a free node';
     const lives = liveFor((c) => c.sub === s.id).map(([id, c]) => livePane(c, id)).join('');
-    return `<li class="p-${x.status}"><span class="p-ico" aria-hidden="true">${ST_ICON[x.status] || ''}</span><span class="p-title">${esc(s.title)}</span><span class="p-who">${who}</span>${lives}</li>`;
+    const idle = ['done', 'failed', 'cancelled'].includes(t.status) && s.kind !== 'investigate' && (x.status === 'done' || x.status === 'failed');
+    const redo = idle ? `<button class="small p-redo" data-act="task-redo" data-sub="${esc(s.id)}" title="Write this subtask again on a node you pick, then re-run the tests">Redo…</button>` : '';
+    return `<li class="p-${x.status}"><span class="p-ico" aria-hidden="true">${ST_ICON[x.status] || ''}</span><span class="p-title">${esc(s.title)}</span><span class="p-who">${who}</span>${redo}${lives}</li>`;
   }).join('');
   let phase = '';
   if (t.activity) phase = '';   // the "Tests and fixes" card below says it in more detail
   else if (t.status === 'testing') phase = 'Running the tests…';
   else if (t.status === 'building') phase = 'Building…';
-  else if (t.status === 'fixing') phase = `Tests failed; fixing (round ${t.fix_rounds + 1} of 3). The fixer reads, edits and re-runs on its own.`;
+  else if (t.status === 'fixing') phase = `Tests failed; fixing (round ${t.fix_rounds + 1} of ${t.max_fix_rounds || 3}). The fixer reads, edits and re-runs on its own.`;
   else if (t.status === 'running' && !t.workers_online) phase = 'Waiting for a node with a model ready. Load one on the Nodes page.';
   const head = t.status === 'running' || t.status === 'testing' || t.status === 'building' || t.status === 'fixing'
     ? `Working · ${done} of ${specs.length} subtasks done` : `${done} of ${specs.length} subtasks done`;
@@ -995,12 +1023,44 @@ function resultCard(t, m) {
   const latest = m.round === (t.round || 1);
   const files = (m.files || []).map((f) => `<a href="#" data-act="view-file" data-path="${esc(f)}">${esc(f)}</a>`).join('');
   const tone = /tests still fail/.test(m.text) ? 'warn' : 'good';
-  return `<div class="card-msg result ${tone}"><div class="card-head">${tone === 'good' ? 'Finished' : 'Finished with failing tests'}</div><p>${esc(m.text)}</p>
+  return `<div class="card-msg result ${tone}"><div class="card-head">${tone === 'good' ? 'Finished' : 'Finished with failing tests'}</div><p>${esc(m.text)}</p>${statsLine(m.stats)}
     ${files ? `<div class="changed"><span class="hint">${m.round > 1 ? 'Changed in this request' : 'Files'}</span>${files}</div>` : ''}
     ${latest ? artifactsBlock(t) : ''}
     ${latest && t.test_output && t.test_status !== 'passed' ? `<details class="testout"><summary>Last test output</summary><pre class="out">${esc(t.test_output)}</pre></details>` : ''}
-    ${(taskRounds || []).some((r) => r.round === m.round) ? `<div class="card-actions"><button class="small" data-act="show-changes" data-round="${m.round}">Changes</button></div>` : ''}
-    ${latest ? `<div class="card-actions"><a href="/api/tasks/${t.id}/download"><button class="primary">Download .zip</button></a><span class="hint">Want changes? Send a follow-up below; it builds on these files.</span></div>` : ''}</div>`;
+    ${(taskRounds || []).some((r) => r.round === m.round) ? `<div class="card-actions"><button class="small" data-act="show-changes" data-round="${m.round}">Changes</button><a href="/api/tasks/${t.id}/patch?round=${m.round}" title="This request's changes as a git diff (git apply)"><button class="small">.patch</button></a></div>` : ''}
+    ${latest ? `<div class="card-actions"><a href="/api/tasks/${t.id}/download"><button class="primary">Download .zip</button></a><a href="/api/tasks/${t.id}/handoff" title="The files plus HANDOFF.md and instruction files for Claude Code, Codex, Gemini CLI, GitHub Copilot and Cursor"><button class="small">Hand off to a coding assistant</button></a>${(taskRounds || []).length ? `<a href="/api/tasks/${t.id}/patch" title="Every change Outpost made, as one git diff"><button class="small">All changes .patch</button></a>` : ''}<span class="hint">Want changes? Send a follow-up below; it builds on these files.</span></div>` : ''}</div>`;
+}
+
+// Redo one subtask (tasks_redo.go).
+let redoSub = null;
+function openRedo(t, sid) {
+  const s = ((t.plan || {}).subtasks || []).find((x) => x.id === sid);
+  if (!s) return;
+  redoSub = { task: t.id, sub: sid };
+  $('redo-title').textContent = s.title;
+  const nodes = (state ? state.nodes : []).filter((n) => n.online && n.heartbeat && n.heartbeat.loaded_model);
+  setHTML('redo-node', `<option value="strongest">The strongest free node</option>${nodes.map((n) => `<option value="${esc(n.id)}">${esc(nodeName(n))} (${esc(n.heartbeat.loaded_model)})</option>`).join('')}<option value="planner">The planner (${esc(t.planner_label || 'planner')})</option>`);
+  $('redo-note').value = '';
+  open('modal-redo'); $('redo-note').focus();
+}
+$('redo-go').onclick = async () => {
+  if (!redoSub) return;
+  try { await post(`/api/tasks/${redoSub.task}/subtasks/${encodeURIComponent(redoSub.sub)}/redo`, { node: $('redo-node').value, note: $('redo-note').value }); close('modal-redo'); toast('Redoing'); pollTask(); }
+  catch (e) { toast(e.message); }
+};
+
+// The one-line summary under a Finished card (stats.go).
+function statsLine(s) {
+  if (!s) return '';
+  const dur = (sec) => sec < 90 ? `${sec} s` : sec < 5400 ? `${Math.round(sec / 60)} min` : `${(sec / 3600).toFixed(1)} h`;
+  const parts = [];
+  if (s.seconds) parts.push(dur(s.seconds));
+  if ((s.nodes || []).length) parts.push(`written by ${s.nodes.map(esc).join(', ')}`);
+  if (s.retried) parts.push(`${s.retried} subtask${s.retried === 1 ? '' : 's'} retried`);
+  if (s.fix_rounds) parts.push(`${s.fix_rounds} fix round${s.fix_rounds === 1 ? '' : 's'}`);
+  if (s.files) parts.push(`${s.files} file${s.files === 1 ? '' : 's'}, <span class="st-done">+${s.lines_added || 0}</span> <span class="st-failed">−${s.lines_removed || 0}</span> lines`);
+  if (s.cost_usd) parts.push(`${usd(s.cost_usd)} cloud`);
+  return parts.length ? `<p class="stats-line">${parts.join(' · ')}</p>` : '';
 }
 
 // A card for states that need the person, at the end of the thread.
@@ -1176,7 +1236,7 @@ async function showChanges(round) {
   try {
     const r = await api(`/api/tasks/${pageArg}/changes?round=${round}`);
     setHTML('ch-hint', `${r.files.length} file${r.files.length === 1 ? '' : 's'} changed. Shown against the files as they are now.`);
-    setHTML('ch-body', r.files.map((f) => `<details open><summary class="mono">${esc(f.path)} <span class="muted">${f.status === 'added' ? 'new file' : 'changed'}${f.gone ? ', since deleted' : ''}</span></summary><pre class="out code diff">${unified(f.before, f.after)}</pre></details>`).join(''));
+    setHTML('ch-body', r.files.map((f) => `<details open><summary class="mono">${esc(f.path)} <span class="muted">${f.status === 'added' ? 'new file' : f.status === 'deleted' ? 'deleted' : 'changed'}${f.gone && f.status !== 'deleted' ? ', since deleted' : ''}</span></summary><pre class="out code diff">${unified(f.before, f.after)}</pre></details>`).join(''));
     $('ch-undo').classList.toggle('hidden', !r.undoable);
   } catch (e) { setHTML('ch-body', `<span class="error-msg">${esc(e.message)}</span>`); }
 }
@@ -1185,6 +1245,7 @@ async function taskAction(act, el) {
   const id = pageArg;
   try {
     switch (act) {
+      case 'task-redo': openRedo(taskDetail, el.dataset.sub); return;
       case 'task-approve': await post(`/api/tasks/${id}/approve`, { cap_usd: parseFloat(($('ta-cap') || {}).value) || 0 }); break;
       case 'task-pick': await post(`/api/tasks/${id}/pick`, { page: el.dataset.page }); toast('Building from that variant'); break;
       case 'task-msg-edit': {
@@ -1288,17 +1349,47 @@ $('files-zip').onclick = () => {
   f.appendChild(i); document.body.appendChild(f); f.submit(); f.remove();
 };
 
+let fbPath = null, fbText = '';
 async function viewFile(path) {
   if (taskDetail) renderFiles(taskDetail);
   open('modal-files');
+  fbPath = path; fbText = '';
+  fbEditing(false);
   $('fb-title').textContent = path; $('fb-body').textContent = 'Loading…';
   $('fb-dl').classList.remove('hidden');
   $('fb-dl').href = `/api/tasks/${pageArg}/file?path=${encodeURIComponent(path)}&download=1`;
+  $('fb-edit').classList.add('hidden');
   try {
     const r = await fetch(`/api/tasks/${pageArg}/file?path=${encodeURIComponent(path)}`, { credentials: 'same-origin' });
-    setHTML('fb-body', numbered(await r.text(), path));
+    fbText = await r.text();
+    setHTML('fb-body', numbered(fbText, path));
+    const idle = taskDetail && ['done', 'failed', 'cancelled'].includes(taskDetail.status);
+    // Text only: a NUL byte means a binary file.
+    $('fb-edit').classList.toggle('hidden', !(r.ok && idle && !fbText.includes('\u0000') && fbText.length < 1e6));
   } catch (e) { $('fb-body').textContent = e.message; }
 }
+// Hand edits (tasks_handedit.go): the viewer turns into a text box.
+function fbEditing(on) {
+  $('fb-body').classList.toggle('hidden', on); $('fb-editor').classList.toggle('hidden', !on);
+  $('fb-save').classList.toggle('hidden', !on); $('fb-cancel').classList.toggle('hidden', !on);
+  $('fb-edit').classList.toggle('hidden', on); $('fb-dl').classList.toggle('hidden', on);
+  if (on) { $('fb-editor').value = fbText; $('fb-editor').focus(); }
+}
+$('fb-edit').onclick = () => fbEditing(true);
+$('fb-cancel').onclick = () => { fbEditing(false); $('fb-edit').classList.remove('hidden'); };
+$('fb-save').onclick = async () => {
+  const content = $('fb-editor').value;
+  if (content === fbText) { $('fb-cancel').click(); return; }
+  try {
+    await post(`/api/tasks/${pageArg}/file`, { path: fbPath, content });
+    toast('Saved as your edit; Changes and Undo work on it');
+    await loadRounds(); viewFile(fbPath); pollTask();
+  } catch (e) { toast(e.message); }
+};
+$('fb-editor').addEventListener('keydown', (e) => {
+  if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); document.execCommand('insertText', false, '\t'); }
+  if (e.key === 's' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $('fb-save').click(); }
+});
 
 // ---------- nodes ----------
 // benchLine shows a node's measured speed, a running or failed benchmark, and the re-run link.
@@ -2507,7 +2598,7 @@ document.addEventListener('click', async (e) => {
       case 'del-release': if (confirm(`Delete the uploaded ${el.dataset.platform} release?`)) await api(`/api/releases/${el.dataset.platform}`, { method: 'DELETE' }); break;
       case 'view-file': viewFile(el.dataset.path); return;
       case 'starter': $('nt-prompt').value = STARTERS[+el.dataset.i][1]; $('nt-prompt').focus(); return;
-      case 'project-delete': case 'project-save': case 'project-use': await projectAction(act, el); break;
+      case 'project-delete': case 'project-save': case 'project-use': case 'project-suggest': await projectAction(act, el); break;
       default: if (act.startsWith('task-')) { await taskAction(act, el); return; }
     }
   } catch (x) { toast(x.message, 4000); }
