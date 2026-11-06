@@ -23,6 +23,7 @@ var apiWait = 2 * time.Minute
 
 func (c *Controller) openAIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/models", c.authAPI(c.handleV1Models))
+	mux.HandleFunc("GET /v1/models/{id...}", c.authAPI(c.handleV1Model))
 	mux.HandleFunc("POST /v1/chat/completions", c.authAPI(c.handleV1Chat))
 }
 
@@ -87,6 +88,18 @@ func (c *Controller) handleV1Models(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"object": "list", "data": data})
 }
 
+// handleV1Model answers GET /v1/models/{id} (some clients probe a model before using it).
+func (c *Controller) handleV1Model(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	for _, m := range c.v1ModelIDs() {
+		if m == id {
+			writeJSON(w, 200, map[string]any{"id": m, "object": "model", "created": time.Now().Unix(), "owned_by": "outpost"})
+			return
+		}
+	}
+	oaiError(w, 404, "invalid_request_error", "no ready node has "+id+" loaded")
+}
+
 // v1Message accepts content as a string or as a list of parts (text only;
 // image parts become data URIs for vision models).
 type v1Message struct {
@@ -105,6 +118,16 @@ type v1Request struct {
 	Temperature *float64    `json:"temperature"`
 	Stop        any         `json:"stop"`
 	Tools       []ToolDef   `json:"tools"`
+
+	TopP             *float64        `json:"top_p"`
+	Seed             *int            `json:"seed"`
+	PresencePenalty  *float64        `json:"presence_penalty"`
+	FrequencyPenalty *float64        `json:"frequency_penalty"`
+	ToolChoice       json.RawMessage `json:"tool_choice"`
+	ResponseFormat   json.RawMessage `json:"response_format"`
+	StreamOptions    struct {
+		IncludeUsage bool `json:"include_usage"`
+	} `json:"stream_options"`
 }
 
 func (m v1Message) toChat() (ChatMessage, error) {
@@ -155,6 +178,14 @@ func (req *v1Request) spec() (InferenceSpec, error) {
 		return InferenceSpec{}, errors.New("messages is required")
 	}
 	spec := InferenceSpec{Tools: req.Tools, Params: InferenceParams{Temperature: req.Temperature, MaxTokens: req.MaxTokens}}
+	spec.Params.TopP, spec.Params.Seed = req.TopP, req.Seed
+	spec.Params.PresencePenalty, spec.Params.FrequencyPenalty = req.PresencePenalty, req.FrequencyPenalty
+	if len(req.Tools) > 0 && string(req.ToolChoice) != "null" {
+		spec.Params.ToolChoice = req.ToolChoice
+	}
+	if string(req.ResponseFormat) != "null" {
+		spec.Params.ResponseFormat = req.ResponseFormat
+	}
 	if req.MaxCompl > 0 {
 		spec.Params.MaxTokens = req.MaxCompl
 	}

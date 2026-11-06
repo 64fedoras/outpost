@@ -952,6 +952,24 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 	}
 	if len(spec.Tools) > 0 {
 		body["tools"] = spec.Tools
+		if len(spec.Params.ToolChoice) > 0 {
+			body["tool_choice"] = spec.Params.ToolChoice
+		}
+	}
+	if p := spec.Params; p.TopP != nil {
+		body["top_p"] = *p.TopP
+	}
+	if spec.Params.Seed != nil {
+		body["seed"] = *spec.Params.Seed
+	}
+	if spec.Params.PresencePenalty != nil {
+		body["presence_penalty"] = *spec.Params.PresencePenalty
+	}
+	if spec.Params.FrequencyPenalty != nil {
+		body["frequency_penalty"] = *spec.Params.FrequencyPenalty
+	}
+	if len(spec.Params.ResponseFormat) > 0 && len(spec.Params.JSONSchema) == 0 {
+		body["response_format"] = spec.Params.ResponseFormat
 	}
 	if len(spec.Params.JSONSchema) > 0 {
 		body["response_format"] = map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "answer", "schema": spec.Params.JSONSchema}}
