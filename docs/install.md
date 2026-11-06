@@ -59,6 +59,13 @@ The one exception is GPU drivers: GPU nodes use llama.cpp's Vulkan build, which 
 Vulkan driver (`sudo apt install libvulkan1 mesa-vulkan-drivers`). The node card tells you if it is
 missing.
 
+**Older Linux (glibc):** llama.cpp's newest Linux builds can need a newer glibc than the machine has
+(for example Ubuntu 22.04 and JetPack 6 on Jetson have glibc 2.35). When a node reports
+`glibc too old: this build needs glibc 2.38 or newer, this machine has glibc 2.35 (tried llama.cpp bNNNN, ...)`, the controller
+automatically tries the next older llama.cpp release, up to 8 times, and remembers the one that
+worked for that node. If none of the recent releases runs, the error says so; the machine then needs
+a newer OS. **Untested** on a real Jetson or other arm64 boards: covered by unit tests only.
+
 **Freeing disk space automatically:** when a node is about to receive a model (copied from the controller or downloaded from Hugging Face) and its disk is too small, it deletes stored models to make room instead of failing. It removes models the controller also holds a copy of first, then, only if that is not enough, models it downloaded straight from Hugging Face (they download again when needed); within each group the least recently used goes first (last load or arrival), and it stops as soon as the new model fits with some headroom (the larger of 1 GB and 5%). It never touches the loaded model, the one it reloads after a restart, or one being copied or downloaded, and models the controller does not know are left alone. If deleting everything eligible would still not make room, nothing is deleted and the error says so (`not enough disk space: need 16.9 GB, have 15.4 GB; ... nothing was deleted`). Each cleanup is written to the node log and shown on the node card for a day ("Freed 12.0 GB by removing X"). Turn it off under Settings -> Free disk space. The "need" figure subtracts what a partly downloaded model already has on disk. **Untested** on real nodes, Windows and macOS: covered by unit tests with a simulated disk.
 
 **Cleaning up old models:** a node's card lists the models stored on its disk, each with a **×** to delete just that one (after a confirmation; models in use have no ×, and the node refuses them anyway). **clean up…** opens a

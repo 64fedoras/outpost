@@ -86,13 +86,14 @@ type runtimeCache struct {
 	checked  time.Time
 	releases []ghRelease
 	locks    map[string]*sync.Mutex
+	ceiling  map[string]string // node|variant -> newest build known to run on that node (older glibc)
 }
 
 func (c *Controller) runtimeDir() string { return filepath.Join(c.dataDir, "runtime") }
 
 func (c *Controller) loadRuntimes() {
 	c.runtimes = map[string]*RuntimeRec{}
-	c.rtCache = &runtimeCache{locks: map[string]*sync.Mutex{}}
+	c.rtCache = &runtimeCache{locks: map[string]*sync.Mutex{}, ceiling: map[string]string{}}
 	entries, _ := os.ReadDir(c.runtimeDir())
 	for _, e := range entries {
 		b, err := os.ReadFile(filepath.Join(c.runtimeDir(), e.Name(), "runtime.json"))
@@ -148,6 +149,37 @@ func newestAsset(rels []ghRelease, variant string) (build, name, url string, siz
 		}
 	}
 	return "", "", "", 0
+}
+
+// olderBuild returns the next release after current (listed newest first)
+// that has a binary for variant.
+func olderBuild(rels []ghRelease, variant, current string) string {
+	suffix := runtimeAssets[variant]
+	seen := false
+	for _, r := range rels {
+		if !seen {
+			seen = r.TagName == current
+			continue
+		}
+		for _, a := range r.Assets {
+			if strings.HasSuffix(a.Name, suffix) && !strings.HasPrefix(a.Name, "cudart") {
+				return r.TagName
+			}
+		}
+	}
+	return ""
+}
+
+func (c *Controller) runtimeCeiling(node, variant string) string {
+	c.rtCache.mu.Lock()
+	defer c.rtCache.mu.Unlock()
+	return c.rtCache.ceiling[node+"|"+variant]
+}
+
+func (c *Controller) setRuntimeCeiling(node, variant, build string) {
+	c.rtCache.mu.Lock()
+	c.rtCache.ceiling[node+"|"+variant] = build
+	c.rtCache.mu.Unlock()
 }
 
 // assetFor finds variant's binary in a specific release.

@@ -78,6 +78,9 @@ func (n *Node) installRuntime(ri RuntimeInstall) {
 	// (bundledLibs) are dropped next to llama-server when the system lacks them.
 	if msg := checkLlamaRuns(server); msg != "" {
 		os.RemoveAll(dest)
+		if strings.HasPrefix(msg, glibcTooOldMarker) {
+			msg += fmt.Sprintf(" (tried llama.cpp %s, %s)", ri.Build, ri.Archive)
+		}
 		fail("%s", msg)
 		return
 	}
