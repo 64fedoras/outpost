@@ -9,7 +9,7 @@ You describe a task in the web UI; a planner (Claude API, or a local model on a 
 subtasks, asks questions if unclear, shows a plan to approve; nodes write the files in parallel; the
 controller reviews, runs tests on an exec-enabled node, fixes failures, and offers a zip.
 
-Read `README.md` (short overview) and `docs/USER-GUIDE.md` (full user-facing behaviour) and `docs/ROADMAP.md` for what was built (rows 1 to 23, all
+Read `README.md` (short overview) and `docs/USER-GUIDE.md` (index of the topic pages `docs/install.md`, `using-tasks.md`, `cluster.md`, `chat-and-api.md`, `operations.md`, `known-limits.md`: full user-facing behaviour) and `docs/ROADMAP.md` for what was built (rows 1 to 23, all
 shipped by 0.8.0) and the notes on what is untested.
 `docs/ARCHITECTURE.md` explains the data folders, node connection, task lifecycle and update flow.
 
@@ -21,7 +21,7 @@ shipped by 0.8.0) and the notes on what is untested.
 - Linux machines use a single admin login (kept in the private project artifact, not in the repo).
 - The Add-node command shown in the UI must be a single paste with no scp line:
   `sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install node --join TOKEN`
-- Update `docs/USER-GUIDE.md` (and `README.md` if the overview changes) for every user-visible change. **Patch and minor versions are automatic**: every push to `main` is built as the next patch after the latest `v*` tag (0.8.0 -> 0.8.1 -> 0.8.2), and after patch 19 the minor rolls (0.8.19 -> 0.9.0, 0.9.19 -> 0.10.0), stamped at build time by `.github/next-version.sh` and `OUTPOST_VERSION` in `build.sh`, with nothing committed back. A hand-made minor bump needs no sign-off either; only a **major** bump (1.0.0, 2.0.0) must be deliberate, at the owner's say-so. PRs must not bump `Version` for a patch. `const Version` in `proto.go` is only the base: to move to a new minor or major, change it by hand, and the next build uses it if it is higher than the next patch.
+- Update the matching topic page under `docs/` (and `README.md` only if the short overview changes) for every user-visible change. **Patch and minor versions are automatic**: every push to `main` is built as the next patch after the latest `v*` tag (0.8.0 -> 0.8.1 -> 0.8.2), and after patch 19 the minor rolls (0.8.19 -> 0.9.0, 0.9.19 -> 0.10.0), stamped at build time by `.github/next-version.sh` and `OUTPOST_VERSION` in `build.sh`, with nothing committed back. A hand-made minor bump needs no sign-off either; only a **major** bump (1.0.0, 2.0.0) must be deliberate, at the owner's say-so. PRs must not bump `Version` for a patch. `const Version` in `proto.go` is only the base: to move to a new minor or major, change it by hand, and the next build uses it if it is higher than the next patch.
 
 ## The cluster it runs on
 The owner's own cluster: one controller VM, a few Linux nodes (a small 4 GB test VM, a large-RAM CPU server),
