@@ -253,9 +253,14 @@ func (c *Controller) checkPort(row *checkRow, nc *nodeConn, hello Hello) {
 		c.setStep(row, "port", "fail", shortErr(err))
 		fix := fmt.Sprintf("sudo ufw allow %d/tcp", hello.Peer.Port)
 		if hello.OS == "windows" {
-			fix = fmt.Sprintf("New-NetFirewallRule -DisplayName 'Outpost model sharing' -Direction Inbound -Protocol TCP -LocalPort %d -Action Allow", hello.Peer.Port)
+			// Same rule the installer adds (see peerFirewallAddArgs).
+			fix = "netsh " + strings.Join(peerFirewallAddArgs(hello.Peer.Port), " ")
 		}
-		c.addNote(row, "bad", fmt.Sprintf("the controller cannot reach its file-sharing port %d (%s). Large build outputs and model copies to and from this node will fail. Open the port in its firewall.", hello.Peer.Port, shortErr(err)), fix)
+		msg := fmt.Sprintf("the controller cannot reach its file-sharing port %d (%s). Large build outputs and model copies to and from this node will fail. Open the port in its firewall.", hello.Peer.Port, shortErr(err))
+		if hello.OS == "windows" {
+			msg += " The install command normally does this when run as administrator, so you only need it if the node was installed without admin rights. Run the command below in an Administrator PowerShell. The rule covers private and domain networks only, so if Windows has this network set to Public, switch it to Private."
+		}
+		c.addNote(row, "bad", msg, fix)
 		return
 	}
 	conn.Close()
