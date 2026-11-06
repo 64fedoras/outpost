@@ -138,6 +138,7 @@ type Hello struct {
 	SandboxLayers     []string     `json:"sandbox_layers,omitempty"` // what that mode enforces here, e.g. landlock-v3, netns, seccomp
 	FreedNote         string       `json:"freed_note,omitempty"`     // last automatic disk cleanup, e.g. "Freed 12.0 GB by removing X"
 	FreedAt           int64        `json:"freed_at,omitempty"`       // unix seconds of that cleanup
+	MACs              []string     `json:"macs,omitempty"`           // wired/wireless interfaces with an IPv4 address, for Wake-on-LAN
 }
 
 // PeerInfo is a node's model-sharing endpoint: the port and the fingerprint

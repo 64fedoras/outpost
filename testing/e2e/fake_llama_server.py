@@ -26,7 +26,14 @@ class H(BaseHTTPRequestHandler):
         if body.get("tools"):
             return self.agent_turn(body)
         system = body["messages"][0]["content"] if body["messages"][0]["role"] == "system" else ""
-        if "reviewing a teammate" in system:
+        if "planner for Outpost" in system:
+            # A node as the planner: the same word-counter plan the Claude stub gives.
+            text = json.dumps({"title": "Word Counter", "summary": "A tiny Python CLI. wordcount/core.py defines count_words(text) -> dict (lowercase, split on whitespace).",
+                "language": "python", "setup_command": "", "test_command": "python3 -m unittest discover -s tests -v",
+                "subtasks": [{"id": "t1", "title": "Core counting", "files": ["wordcount/__init__.py", "wordcount/core.py"], "depends_on": [], "instructions": "count_words(text)"},
+                             {"id": "t2", "title": "CLI", "files": ["wordcount/cli.py"], "depends_on": ["t1"], "instructions": "main(argv)"},
+                             {"id": "t3", "title": "Tests and README", "files": ["tests/test_core.py", "README.md"], "depends_on": ["t1"], "instructions": "unittest tests"}]})
+        elif "reviewing a teammate" in system:
             # Review: fix the counting bug in core.py, approve everything else.
             if "wordcount/core.py" in user:
                 text = "<<<FILE wordcount/core.py>>>\ndef count_words(text):\n    counts = {}\n    for w in text.lower().split():\n        counts[w] = counts.get(w, 0) + 1\n    return counts\n<<<END>>>\n"

@@ -53,6 +53,9 @@ type NodeRec struct {
 	Bench       *NodeBench `json:"bench,omitempty"`      // measured speed of the loaded model
 	BenchFail   *BenchFail `json:"bench_fail,omitempty"` // why the last benchmark did not finish
 	Benching    bool       `json:"benching,omitempty"`   // a benchmark is running
+	Labels      []string   `json:"labels,omitempty"`     // owner's tags ("gpu", "office"); tasks can ask for one (labels.go)
+	Hours       *WorkHours `json:"hours,omitempty"`      // when the node takes work; nil = always (hours.go)
+	LastAddr    string     `json:"last_addr,omitempty"`  // address it last connected from, for Wake-on-LAN (wol.go)
 }
 
 type nodeConn struct {
@@ -155,6 +158,8 @@ type Controller struct {
 	cooldown   map[string]time.Time
 	restarts   map[string]time.Time
 	poolStale  map[string]time.Time // main node -> when a helper reconnected
+	woken      map[string]time.Time // Wake-on-LAN packets sent, by node (wol.go)
+	templates  []*Template          // saved tasks and schedules (templates.go), guarded by mu
 }
 
 func runController(args []string) error {
@@ -193,6 +198,7 @@ func runController(args []string) error {
 	c.loadRuntimes()
 	c.loadProjects()
 	c.loadChats()
+	c.loadTemplates()
 	c.loadTasks()
 	go c.autoResumeInterrupted(autoResumeWait, time.Second)
 	c.advertise = *advertise
@@ -252,6 +258,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/tokens", c.auth(c.handleNewToken))
 	mux.HandleFunc("GET /api/tokens/{id}", c.auth(c.handleTokenStatus))
 	mux.HandleFunc("POST /api/nodes/{id}/settings", c.auth(c.handleNodeSettings))
+	mux.HandleFunc("POST /api/nodes/{id}/wake", c.auth(c.handleWakeNode))
 	mux.HandleFunc("DELETE /api/nodes/{id}", c.auth(c.handleNodeDelete))
 	mux.HandleFunc("POST /api/nodes/{id}/jobs", c.auth(c.handleNewJob))
 	mux.HandleFunc("GET /api/jobs/{id}", c.auth(c.handleGetJob))
@@ -297,6 +304,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/nodes/{id}/models/cleanup", c.auth(c.handleCleanupNodeModels))
 	c.projectRoutes(mux)
 	c.chatRoutes(mux)
+	c.templateRoutes(mux)
 	c.openAIRoutes(mux)
 	mux.HandleFunc("GET /api/tasks", c.auth(c.handleListTasks))
 	mux.HandleFunc("POST /api/tasks", c.auth(c.handleCreateTask))
@@ -350,6 +358,8 @@ func runController(args []string) error {
 	go c.ghLoop()
 	go c.benchLoop()
 	go c.catalogShapeLoop()
+	go c.hoursLoop()
+	go c.templateLoop()
 
 	log.Printf("outpost controller %s listening on %s", Version, *listen)
 	log.Printf("web UI:           %s", c.advertise)
@@ -443,6 +453,8 @@ type nodeView struct {
 	LendingTo   string        `json:"lending_to,omitempty"`  // name of the node this one lends memory to
 	PoolNames   []string      `json:"pool_names,omitempty"`  // names of nodes lending memory to this one
 	IdleNow     string        `json:"idle_unload_effective"` // the idle unload wait that applies, as text ("1h", "never")
+	OffHours    bool          `json:"off_hours,omitempty"`   // outside its working hours now (hours.go)
+	CanWake     bool          `json:"can_wake,omitempty"`    // offline with a known MAC (wol.go)
 	Update      *UpdateStatus `json:"update,omitempty"`
 }
 
@@ -491,6 +503,8 @@ func (c *Controller) handleState(w http.ResponseWriter, r *http.Request) {
 			v.LastSeen = &t
 		}
 		v.Heartbeat = c.lastHB[id]
+		v.OffHours = !n.Hours.open(time.Now())
+		v.CanWake = !v.Online && n.Hello != nil && len(n.Hello.MACs) > 0
 		if rel := c.updateCandidateLocked(n); rel != nil {
 			v.UpdateTo = rel.Version
 		}
@@ -537,6 +551,8 @@ func (c *Controller) handleState(w http.ResponseWriter, r *http.Request) {
 		"recovered":        c.recoveredList(),
 		"disk_warning":     c.diskWarning(),
 		"rollout":          c.rollout,
+		"labels":           c.allLabelsLocked(),
+		"templates":        c.templateViewsLocked(),
 	})
 }
 
@@ -599,8 +615,12 @@ func (c *Controller) handleTokenStatus(w http.ResponseWriter, r *http.Request) {
 // nodeSettingsLocked is what a node is told: the exec switch, the heartbeat and
 // the effective idle unload wait. c.mu must be held.
 func (c *Controller) nodeSettingsLocked(n *NodeRec) NodeSettings {
+	idle := idleUnloadFor(c.settings.IdleUnload, n.IdleUnload)
+	if !n.Hours.open(time.Now()) {
+		idle = minIdleUnload // outside working hours: free the memory soon after the last call
+	}
 	return NodeSettings{HeartbeatS: heartbeatSeconds, ExecEnabled: n.ExecEnabled,
-		IdleUnloadS: int(idleUnloadFor(c.settings.IdleUnload, n.IdleUnload) / time.Second),
+		IdleUnloadS: int(idle / time.Second),
 		Sandbox:     effectiveSandbox(c.settings.Sandbox, n.Sandbox)}
 }
 
@@ -626,15 +646,24 @@ func (c *Controller) pushNodeSettings() {
 func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req struct {
-		Name        *string `json:"name"`
-		ExecEnabled *bool   `json:"exec_enabled"`
-		MaxJobs     *int    `json:"max_jobs_override"`
-		IdleUnload  *string `json:"idle_unload"` // "" = use the global setting
-		Sandbox     *string `json:"sandbox"`     // "" = use the global setting; off | basic | strict
+		Name        *string    `json:"name"`
+		ExecEnabled *bool      `json:"exec_enabled"`
+		MaxJobs     *int       `json:"max_jobs_override"`
+		IdleUnload  *string    `json:"idle_unload"` // "" = use the global setting
+		Sandbox     *string    `json:"sandbox"`     // "" = use the global setting; off | basic | strict
+		Labels      *[]string  `json:"labels"`
+		Hours       *WorkHours `json:"hours"` // {} or from == to... see hours.go; "clear_hours" removes them
+		ClearHours  bool       `json:"clear_hours"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
 		return
+	}
+	if req.Hours != nil {
+		if err := req.Hours.check(); err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	if req.IdleUnload != nil && strings.TrimSpace(*req.IdleUnload) != "" {
 		if _, err := parseIdleDuration(*req.IdleUnload); err != nil {
@@ -667,6 +696,14 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.MaxJobs != nil && *req.MaxJobs >= 0 {
 		n.MaxJobs = *req.MaxJobs
+	}
+	if req.Labels != nil {
+		n.Labels = normLabels(*req.Labels)
+	}
+	if req.ClearHours {
+		n.Hours = nil
+	} else if req.Hours != nil {
+		n.Hours = req.Hours
 	}
 	c.saveNodesLocked()
 	nc := c.conns[id]
@@ -924,6 +961,7 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 	}
 	c.conns[n.ID] = nc
 	c.lastSeen[n.ID] = time.Now()
+	n.LastAddr = nc.addr
 	c.saveNodesLocked()
 	// Jobs the controller thinks are running but the node doesn't list are lost.
 	running := map[string]bool{}

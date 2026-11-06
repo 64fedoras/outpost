@@ -21,7 +21,8 @@ type Settings struct {
 	HFTokenEnc        string         `json:"hf_token_enc,omitempty"`
 	ClaudeModel       string         `json:"claude_model"`
 	DefaultCapUSD     float64        `json:"default_cap_usd"`
-	DefaultPlanner    string         `json:"default_planner"` // "claude", "openrouter" or "node:<id>"
+	WakeForWork       bool           `json:"wake_for_work,omitempty"` // Wake-on-LAN offline nodes when a task waits for a worker (wol.go)
+	DefaultPlanner    string         `json:"default_planner"`         // "claude", "openrouter" or "node:<id>"
 	OpenRouterKeyEnc  string         `json:"openrouter_key_enc,omitempty"`
 	OpenRouterModel   string         `json:"openrouter_model,omitempty"`
 	WebSearch         bool           `json:"web_search,omitempty"`        // Claude planner may use the web search tool (paid per search)
@@ -169,7 +170,8 @@ func (c *Controller) settingsView() map[string]any {
 		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
 		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner,
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
-		"auto_resume": !c.settings.AutoResumeOff, "best_of_n": normBestOf(c.settings.BestOfN),
+		"wake_for_work": c.settings.WakeForWork,
+		"auto_resume":   !c.settings.AutoResumeOff, "best_of_n": normBestOf(c.settings.BestOfN),
 		"agent_mode": !c.settings.AgentOff, "web_search": c.settings.WebSearch, "web_allow_private": c.settings.WebAllowPrivate,
 		"auto_free": !c.settings.AutoFreeOff, "pooling_enabled": c.poolingOnLocked(), "pooling_notice": c.settings.PoolingNotice,
 		"github_repo": c.ghRepoLocked(), "github_repo_default": ghDefaultRepo, "github_token_set": c.settings.GitHubTokenEnc != "",
@@ -194,6 +196,7 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		HFToken         *string  `json:"hf_token"`
 		ClaudeModel     *string  `json:"claude_model"`
 		DefaultCapUSD   *float64 `json:"default_cap_usd"`
+		WakeForWork     *bool    `json:"wake_for_work"`
 		DefaultPlanner  *string  `json:"default_planner"`
 		OpenRouterKey   *string  `json:"openrouter_key"`
 		OpenRouterModel *string  `json:"openrouter_model"`
@@ -345,6 +348,9 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		if _, ok := claudePrices[*req.ClaudeModel]; ok {
 			c.settings.ClaudeModel = *req.ClaudeModel
 		}
+	}
+	if req.WakeForWork != nil {
+		c.settings.WakeForWork = *req.WakeForWork
 	}
 	if req.DefaultCapUSD != nil && *req.DefaultCapUSD > 0 && *req.DefaultCapUSD <= 1000 {
 		c.settings.DefaultCapUSD = *req.DefaultCapUSD
