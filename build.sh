@@ -9,8 +9,8 @@
 # is not a target name it is taken as DIR, so `sh build.sh /some/dir` still builds everything.
 #
 # OUTPOST_VERSION=1.2.3 stamps that version into the binaries (CI does this for every release).
-# proto.go and the Windows resource file are restored afterwards, so a build leaves the checkout
-# clean. Without it the binaries report the base `const Version` in proto.go.
+# cmd/outpost/proto.go and the Windows resource file are restored afterwards, so a build leaves the checkout
+# clean. Without it the binaries report the base `const Version` in cmd/outpost/proto.go.
 #
 # Needs only Go (the version in go.mod) and, for the Windows version info, optionally llvm-rc +
 # llvm-cvtres. Dependencies are vendored; nothing is downloaded.
@@ -54,23 +54,23 @@ fi
 
 # --- version stamping -----------------------------------------------------------------------
 restore() {
-  cp "$SAVE/proto.go" proto.go
-  cp "$SAVE/syso" rsrc_windows_amd64.syso
+  cp "$SAVE/proto.go" cmd/outpost/proto.go
+  cp "$SAVE/syso" cmd/outpost/rsrc_windows_amd64.syso
   rm -rf "$SAVE"
 }
 # proto.go and the committed Windows resource file are put back on exit, whatever the build did to them.
 SAVE=$(mktemp -d "${TMPDIR:-/tmp}/outpost-build.XXXXXX")
 trap restore EXIT
-cp proto.go "$SAVE/proto.go"
-cp rsrc_windows_amd64.syso "$SAVE/syso"
+cp cmd/outpost/proto.go "$SAVE/proto.go"
+cp cmd/outpost/rsrc_windows_amd64.syso "$SAVE/syso"
 if [ -n "$OUTPOST_VERSION" ]; then
   case "$OUTPOST_VERSION" in
     [0-9]*.[0-9]*.[0-9]*) ;;
     *) die "OUTPOST_VERSION must look like 1.2.3, got: $OUTPOST_VERSION" ;;
   esac
-  sed "s/^const Version = \".*\"/const Version = \"$OUTPOST_VERSION\"/" "$SAVE/proto.go" > proto.go
+  sed "s/^const Version = \".*\"/const Version = \"$OUTPOST_VERSION\"/" "$SAVE/proto.go" > cmd/outpost/proto.go
 fi
-V=$(sed -n 's/^const Version = "\(.*\)"/\1/p' proto.go)
+V=$(sed -n 's/^const Version = "\(.*\)"/\1/p' cmd/outpost/proto.go)
 D=${1:-../dist/outpost-$V}
 
 # --- Windows version info (needs llvm-rc and llvm-cvtres; otherwise the committed file is used)
@@ -79,7 +79,7 @@ case " $TARGETS " in
     if command -v llvm-rc >/dev/null 2>&1 && command -v llvm-cvtres >/dev/null 2>&1; then
       sh winres/gen.sh
     else
-      echo "note: llvm-rc/llvm-cvtres not found; using the committed rsrc_windows_amd64.syso (its version info may differ from $V)" >&2
+      echo "note: llvm-rc/llvm-cvtres not found; using the committed cmd/outpost/rsrc_windows_amd64.syso (its version info may differ from $V)" >&2
     fi ;;
 esac
 
@@ -95,7 +95,7 @@ for t in $TARGETS; do
   o=${t%-*}; a=${t#*-}; ext=""; flags="-s -w -buildid="
   if [ "$o" = windows ]; then ext=.exe; flags="-buildid="; fi
   echo "building $o/$a ..."
-  GOOS=$o GOARCH=$a go build -trimpath -ldflags="$flags" -o "$D/bin/outpost-$o-$a$ext" .
+  GOOS=$o GOARCH=$a go build -trimpath -ldflags="$flags" -o "$D/bin/outpost-$o-$a$ext" ./cmd/outpost
   OUT="$OUT $D/bin/outpost-$o-$a$ext"
 done
 case " $TARGETS " in *windows-amd64*) sh winres/sign.sh "$D/bin/outpost-windows-amd64.exe" ;; esac

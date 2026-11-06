@@ -27,7 +27,7 @@ esac
 
 sh "$HERE/stop_all.sh" 2>/dev/null || true
 rm -rf "$RUN"; mkdir -p "$RUN/ctl" "$RUN/node"
-(cd "$ROOT" && CGO_ENABLED=0 go build -tags e2e -o "$RUN/outpost" .)
+(cd "$ROOT" && CGO_ENABLED=0 go build -tags e2e -o "$RUN/outpost" ./cmd/outpost)
 cp -r "$HERE/fixtures/ctl-seed/." "$RUN/ctl/"
 # fake_llama_server.py is the source of the stub llama.cpp archive: repack it so the two never drift apart
 RT=$RUN/ctl/runtime/linux-x64-cpu; ARC=llama-b99999-bin-ubuntu-x64.tar.gz

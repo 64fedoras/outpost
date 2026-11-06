@@ -2,7 +2,7 @@
 
 Self-hosted distributed local-AI cluster, written in Go as **one binary** with two modes:
 `controller` (web UI, planning, job dispatch, model and release storage) and `node` (runs
-llama.cpp, runs commands, keeps no job data). Current version: **0.8.0** (`const Version` in `proto.go`).
+llama.cpp, runs commands, keeps no job data). Current version: **0.8.0** (`const Version` in `cmd/outpost/proto.go`).
 
 The owner uses it to fan programming tasks out across their home machines, as a supplement to Claude Code.
 You describe a task in the web UI; a planner (Claude API, or a local model on a node) splits it into
@@ -14,14 +14,14 @@ shipped by 0.8.0) and the notes on what is untested.
 `docs/ARCHITECTURE.md` explains the data folders, node connection, task lifecycle and update flow.
 
 ## Owner preferences (standing)
-- **Version numbering:** patch numbers are automatic (see below); only a **major** bump must be deliberate (owner's words, 2026-10-28: he only cares that major version numbers are deliberate). Minor bumps are by hand in `proto.go` but need no special sign-off. Two-digit components (0.8.10, 0.10.0) are fine at the owner's say-so (2026-10-28), so versions are always compared numerically, never as strings. The 0.8.0 pin was a one-time request for that single combined release.
+- **Version numbering:** patch numbers are automatic (see below); only a **major** bump must be deliberate (owner's words, 2026-10-28: he only cares that major version numbers are deliberate). Minor bumps are by hand in `cmd/outpost/proto.go` but need no special sign-off. Two-digit components (0.8.10, 0.10.0) are fine at the owner's say-so (2026-10-28), so versions are always compared numerically, never as strings. The 0.8.0 pin was a one-time request for that single combined release.
 - Keep Outpost **self-contained in the binary** (without making it huge) so updates and rollbacks stay easy.
   Zero runtime dependencies on nodes except what Outpost installs itself (llama.cpp builds, bundled libgomp).
 - Hands-off flow: the owner approves a plan, nodes work, the finished output is downloadable from the web UI.
 - Linux machines use a single admin login (kept in the private project artifact, not in the repo).
 - The Add-node command shown in the UI must be a single paste with no scp line:
   `sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install node --join TOKEN`
-- Update the matching topic page under `docs/` (and `README.md` only if the short overview changes) for every user-visible change. **Patch and minor versions are automatic**: every push to `main` is built as the next patch after the latest `v*` tag (0.8.0 -> 0.8.1 -> 0.8.2), and after patch 19 the minor rolls (0.8.19 -> 0.9.0, 0.9.19 -> 0.10.0), stamped at build time by `.github/next-version.sh` and `OUTPOST_VERSION` in `build.sh`, with nothing committed back. A hand-made minor bump needs no sign-off either; only a **major** bump (1.0.0, 2.0.0) must be deliberate, at the owner's say-so. PRs must not bump `Version` for a patch. `const Version` in `proto.go` is only the base: to move to a new minor or major, change it by hand, and the next build uses it if it is higher than the next patch.
+- Update the matching topic page under `docs/` (and `README.md` only if the short overview changes) for every user-visible change. **Patch and minor versions are automatic**: every push to `main` is built as the next patch after the latest `v*` tag (0.8.0 -> 0.8.1 -> 0.8.2), and after patch 19 the minor rolls (0.8.19 -> 0.9.0, 0.9.19 -> 0.10.0), stamped at build time by `.github/next-version.sh` and `OUTPOST_VERSION` in `build.sh`, with nothing committed back. A hand-made minor bump needs no sign-off either; only a **major** bump (1.0.0, 2.0.0) must be deliberate, at the owner's say-so. PRs must not bump `Version` for a patch. `const Version` in `cmd/outpost/proto.go` is only the base: to move to a new minor or major, change it by hand, and the next build uses it if it is higher than the next patch.
 
 ## The cluster it runs on
 The owner's own cluster: one controller VM, a few Linux nodes (a small 4 GB test VM, a large-RAM CPU server),
@@ -52,7 +52,7 @@ although it is imported directly; harmless.
 
 ## Release routine
 1. Change code; add or update tests.
-2. Only for a minor/major release: set the new base in `Version` in `proto.go` and run `sh winres/gen.sh`. Otherwise leave it.
+2. Only for a minor/major release: set the new base in `Version` in `cmd/outpost/proto.go` and run `sh winres/gen.sh`. Otherwise leave it.
 3. `go vet ./... && go test ./...`; run the e2e rig for anything touching tasks, the UI or updates.
 4. `sh build.sh`; copy README and source next to `bin/`; zip as `outpost-<version>.zip`.
    GitHub Actions (`.github/workflows/build.yml`) does this on every push to `main`: it runs vet and
@@ -60,10 +60,10 @@ although it is imported directly; harmless.
    `v<version>` with the zip and binaries the first time a version appears. It bumps nothing.
 5. The owner uploads the five binaries in the web UI's Updates tab, updates the controller, then each node.
    Rollback is a button there. The controller finds the version of an uploaded binary through the
-   `OUTPOST_BUILD_INFO|<version>|` string (`buildInfo` in `proto.go`, regex in `update.go`), so `Version`
+   `OUTPOST_BUILD_INFO|<version>|` string (`buildInfo` in `cmd/outpost/proto.go`, regex in `cmd/outpost/update.go`), so `Version`
    must stay a plain string constant.
 
-## Code map (package main in the repo root, plus `transfer/` and `internal/` packages compiled into the same binary)
+## Code map (package main lives in `cmd/outpost/`; file names below are relative to it unless marked repo root. `transfer/` and `internal/` packages and the root embed package `outpost` compile into the same binary)
 | Area | Files |
 | --- | --- |
 | Entry, flags, TLS | `main.go` (usage, data dirs, self-signed cert, fingerprint pinning `pinnedTLS`), `proto.go` (wire types, `Version`) |
@@ -73,9 +73,9 @@ although it is imported directly; harmless.
 | Node | `node.go` (connect, jobs, exec, file transfer, pause, node lock), `node_llama.go` (paths, downloads, llama-server supervision, chat), `node_runtime.go` (runtime install), `node_models.go` (model files), `node_llama_idle.go` (idle unload), `node_llama_util.go` (autoload, checks, model fetch), `node_rpc.go` (ggml-rpc-server for memory pooling), `node_update.go`, `node_control.go` (127.0.0.1 control server for the tray), `hw*.go` (CPU/RAM/GPU detection, Windows via DXGI/PDH/registry, no cgo) |
 | Tray | `tray.go` (loop), `tray_linux.go` (StatusNotifierItem/DBusMenu), `tray_windows.go` (Win32), `tray_icon.go` (icons drawn in code), `tray_other.go` |
 | Install, update, restart | `install*.go` (systemd on Linux; Windows Run key and autostart), `update.go`, `relaunch_unix.go`, `relaunch_windows.go`, `nodelock_*.go`, `sys_*.go` |
-| Web UI | `web/index.html`, `web/app.js`, `web/style.css` (vanilla JS single-page app, embedded with `go:embed web`, dark mode, sidebar shell, mobile drawer) |
-| Packages | `internal/gguf` (GGUF header parser and `Shape`, used by the controller as `ModelShape`; `gguf_controller.go` reads headers from the model store or Hugging Face), `transfer/` (peer file server) |
-| Bundled | `bundled/linux-amd64/libgomp.so.1.gz` (+ licence): needed by llama.cpp's Linux builds, missing on minimal installs |
+| Web UI (repo root) | `web/index.html`, `web/app.js`, `web/style.css` (vanilla JS single-page app, embedded with `go:embed web`, dark mode, sidebar shell, mobile drawer) |
+| Packages | root `outpost` package (`embed.go`, `embed_linux_amd64.go`: embeds `web/`, `LICENSE`, the notices and libgomp, because `go:embed` cannot reach upward), `internal/gguf` (GGUF header parser and `Shape`, used by the controller as `ModelShape`; `gguf_controller.go` reads headers from the model store or Hugging Face), `transfer/` (peer file server) |
+| Bundled (repo root) | `bundled/linux-amd64/libgomp.so.1.gz` (+ licence): needed by llama.cpp's Linux builds, missing on minimal installs |
 | Test builds | `e2e_hook.go` (build tag `e2e`: `OUTPOST_TEST_HF` redirects Hugging Face); `OUTPOST_ANTHROPIC_URL` and `OUTPOST_GITHUB_API` redirect the Claude and GitHub APIs |
 
 ## Things that bit before (do not repeat)
