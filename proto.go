@@ -478,4 +478,4 @@ type NodePause struct {
 
 // nodeFeatures lists the controller-to-node messages added after 0.8.0, so the
 // controller can tell an older node apart instead of waiting for no answer.
-var nodeFeatures = []string{"node.ask", "node.pause", "node.gen"}
+var nodeFeatures = []string{"node.ask", "node.pause", "node.gen", "node.video"}

@@ -27,6 +27,7 @@ const (
 	genDefaultDays = 30
 	genDefaultGB   = 5
 	genMaxCount    = 16
+	genMaxVideos   = 4
 	genAttempts    = 2
 )
 
@@ -41,6 +42,7 @@ type GenItem struct {
 	Steps    int       `json:"steps,omitempty"`
 	Seconds  float64   `json:"seconds,omitempty"`
 	Bytes    int64     `json:"bytes,omitempty"`
+	Ext      string    `json:"ext,omitempty"` // stored file type; empty means png
 	Error    string    `json:"error,omitempty"`
 	Attempts int       `json:"attempts,omitempty"`
 	Started  time.Time `json:"started,omitempty"`
@@ -62,7 +64,9 @@ type GenRec struct {
 	CFG      float64    `json:"cfg"`
 	Sampler  string     `json:"sampler,omitempty"`
 	Count    int        `json:"count"`
-	Source   string     `json:"source"` // web | api:<token name>
+	Frames   int        `json:"frames,omitempty"` // video
+	FPS      int        `json:"fps,omitempty"`    // video
+	Source   string     `json:"source"`           // web | api:<token name>
 	Keep     bool       `json:"keep,omitempty"`
 	Created  time.Time  `json:"created"`
 	Items    []*GenItem `json:"items"`
@@ -189,6 +193,15 @@ func (c *Controller) saveGen(rec *GenRec) {
 }
 
 func genFile(dir string, index int) string { return filepath.Join(dir, strconv.Itoa(index)+".png") }
+
+// genItemFile is the stored file of a finished item (a picture, or a clip).
+func genItemFile(dir string, it *GenItem) string {
+	ext := it.Ext
+	if ext == "" {
+		ext = "png"
+	}
+	return filepath.Join(dir, strconv.Itoa(it.Index)+"."+ext)
+}
 
 // ---------- stable-diffusion.cpp runtime mirror ----------
 
@@ -452,6 +465,11 @@ type GenNode struct {
 
 // genNodesLocked evaluates every node for a model at a size. c.mu must be held.
 func (c *Controller) genNodesLocked(d *ImageModelDef, w, h int) []GenNode {
+	return c.genNodesFramesLocked(d, w, h, 0)
+}
+
+// genNodesFramesLocked is genNodesLocked for a clip of frames frames (0 for a picture).
+func (c *Controller) genNodesFramesLocked(d *ImageModelDef, w, h, frames int) []GenNode {
 	var out []GenNode
 	for id, n := range c.nodes {
 		gn := GenNode{ID: id, Name: displayName(n), Online: c.conns[id] != nil, Fit: fitNo}
@@ -472,8 +490,11 @@ func (c *Controller) genNodesLocked(d *ImageModelDef, w, h int) []GenNode {
 			vram = 0
 		}
 		gn.VRAM = vram
-		obs := c.gens.settings.Observed[genObsKey(d.ID, id, w, h)]
-		gn.Fit, gn.Offload = imageFit(d, w, h, obs, vram, ram)
+		var obs int64
+		if frames == 0 { // a clip's buffer depends on its length, which the key does not carry
+			obs = c.gens.settings.Observed[genObsKey(d.ID, id, w, h)]
+		}
+		gn.Fit, gn.Offload = genFit(d, w, h, frames, obs, vram, ram)
 		gn.HasModel = false
 		for _, m := range hello.Models {
 			if m.Name == d.Dir() {
@@ -493,6 +514,8 @@ func (c *Controller) genNodesLocked(d *ImageModelDef, w, h int) []GenNode {
 			gn.Why = "paused"
 		case !hasFeature(hello.Features, "node.gen"):
 			gn.Why = "update this node's Outpost to make images"
+		case frames > 0 && !hasFeature(hello.Features, "node.video"):
+			gn.Why = "update this node's Outpost to make video"
 		default:
 			gn.CanRun = true
 			if gn.Busy {
@@ -594,7 +617,7 @@ func (c *Controller) dispatchGens() {
 				continue
 			}
 			if nodes == nil {
-				nodes = c.genNodesLocked(def, rec.Width, rec.Height)
+				nodes = c.genNodesFramesLocked(def, rec.Width, rec.Height, rec.Frames)
 			}
 			n := pickGenNode(nodes)
 			if n == nil {
@@ -668,13 +691,14 @@ func (c *Controller) runGenItem(rec *GenRec, it *GenItem, gn GenNode, def *Image
 		}
 	}
 	spec := GenSpec{Kind: rec.Kind, Model: rec.Model, Dir: def.Dir(), Files: args, Offload: gn.Offload, Prompt: rec.Prompt,
-		Negative: rec.Negative, Width: rec.Width, Height: rec.Height, Steps: rec.Steps, CFG: rec.CFG, Sampler: rec.Sampler, Seed: it.Seed}
+		Negative: rec.Negative, Width: rec.Width, Height: rec.Height, Steps: rec.Steps, CFG: rec.CFG, Sampler: rec.Sampler, Seed: it.Seed,
+		Frames: rec.Frames, FPS: rec.FPS}
 	b, _ := json.Marshal(spec)
 	job := &JobDispatch{Kind: "generate", TimeoutS: int((90 * time.Minute).Seconds()), Spec: b, JobID: newID("job")}
 	c.gens.mu.Lock()
 	it.jobID, it.Status = job.JobID, "running"
 	c.gens.mu.Unlock()
-	ch, err := c.dispatchJob(gn.ID, job, "image: "+shortText(rec.Prompt, 60))
+	ch, err := c.dispatchJob(gn.ID, job, rec.Kind+": "+shortText(rec.Prompt, 60))
 	if err != nil {
 		c.failGenItem(rec, it, gn.ID, err, true)
 		return
@@ -714,7 +738,11 @@ func (c *Controller) runGenItem(rec *GenRec, it *GenItem, gn GenNode, def *Image
 	}
 	var out GenOutput
 	_ = json.Unmarshal(res.Output, &out)
-	final := genFile(dir, it.Index)
+	ext := genExt(rec.Kind, out.Format)
+	if ext == "png" {
+		ext = ""
+	}
+	final := genItemFile(dir, &GenItem{Index: it.Index, Ext: ext})
 	if err := os.Rename(filepath.Join(tmp, arts[0].Path), final); err != nil {
 		os.RemoveAll(tmp)
 		c.failGenItem(rec, it, gn.ID, err, false)
@@ -723,8 +751,8 @@ func (c *Controller) runGenItem(rec *GenRec, it *GenItem, gn GenNode, def *Image
 	os.RemoveAll(tmp)
 	c.gens.mu.Lock()
 	delete(c.gens.busy, gn.ID)
-	it.Status, it.Seconds, it.Bytes, it.Step, it.cancel = "done", out.Seconds, arts[0].Bytes, it.Steps, nil
-	if out.ComputeBytes > 0 {
+	it.Status, it.Seconds, it.Bytes, it.Step, it.cancel, it.Ext = "done", out.Seconds, arts[0].Bytes, it.Steps, nil, ext
+	if out.ComputeBytes > 0 && rec.Kind == genImage {
 		if c.gens.settings.Observed == nil {
 			c.gens.settings.Observed = map[string]int64{}
 		}
@@ -833,6 +861,8 @@ type GenRequest struct {
 	CFG      float64 `json:"cfg"`
 	Sampler  string  `json:"sampler"`
 	Count    int     `json:"count"`
+	Frames   int     `json:"frames"` // video
+	FPS      int     `json:"fps"`    // video
 	Seed     *int64  `json:"seed"`
 	Node     string  `json:"node"` // optional: only this node
 }
@@ -847,7 +877,20 @@ func (c *Controller) newGen(req GenRequest, source string) (*GenRec, error) {
 		req.Width = def.Size
 	}
 	if req.Height == 0 {
-		req.Height = def.Size
+		req.Height = def.DefaultHeight()
+	}
+	if def.Kind == genVideo {
+		if req.Frames == 0 {
+			req.Frames = def.Frames
+		}
+		if req.FPS == 0 {
+			req.FPS = def.FPS
+		}
+		if req.Count > genMaxVideos {
+			return nil, fmt.Errorf("at most %d clips at a time", genMaxVideos)
+		}
+	} else {
+		req.Frames, req.FPS = 0, 0
 	}
 	if req.Steps == 0 {
 		req.Steps = def.Steps
@@ -868,7 +911,7 @@ func (c *Controller) newGen(req GenRequest, source string) (*GenRec, error) {
 		req.Negative = ""
 	}
 	check := GenSpec{Kind: def.Kind, Prompt: req.Prompt, Negative: req.Negative, Width: req.Width, Height: req.Height, Steps: req.Steps, CFG: req.CFG, Sampler: req.Sampler,
-		Files: []GenArg{{Flag: "-m", File: "x"}}}
+		Frames: req.Frames, FPS: req.FPS, Files: []GenArg{{Flag: "-m", File: "x"}}}
 	if err := check.validate(); err != nil {
 		return nil, err
 	}
@@ -879,7 +922,7 @@ func (c *Controller) newGen(req GenRequest, source string) (*GenRec, error) {
 		c.mu.Unlock()
 		return nil, fmt.Errorf("%s has a restricted licence (%s); accept it first", def.Label, def.License)
 	}
-	nodes := c.genNodesLocked(def, req.Width, req.Height)
+	nodes := c.genNodesFramesLocked(def, req.Width, req.Height, req.Frames)
 	c.gens.mu.Unlock()
 	c.mu.Unlock()
 	any := false
@@ -896,7 +939,7 @@ func (c *Controller) newGen(req GenRequest, source string) (*GenRec, error) {
 		base = *req.Seed
 	}
 	rec := &GenRec{ID: newID("gen"), Kind: def.Kind, Model: def.ID, Label: def.Label, Prompt: strings.TrimSpace(req.Prompt), Negative: req.Negative,
-		Width: req.Width, Height: req.Height, Steps: req.Steps, CFG: req.CFG, Sampler: req.Sampler, Count: req.Count, Source: source, Created: time.Now()}
+		Width: req.Width, Height: req.Height, Steps: req.Steps, CFG: req.CFG, Sampler: req.Sampler, Count: req.Count, Frames: req.Frames, FPS: req.FPS, Source: source, Created: time.Now()}
 	for i := 0; i < req.Count; i++ {
 		rec.Items = append(rec.Items, &GenItem{Index: i, Seed: base + int64(i), Status: "queued", Steps: req.Steps})
 	}

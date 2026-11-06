@@ -118,17 +118,19 @@
     <!-- NEW IMAGE -->
     <section data-page="image" class="page-new page-image hidden">
       <div class="new-wrap">
-        <h1 class="new-title">What should the cluster draw?</h1>
+        <h1 class="new-title" id="img-title">What should the cluster draw?</h1>
         <p class="new-sub" id="img-sub"></p>
         <div class="composer big">
           <textarea id="img-prompt" rows="3" placeholder="Describe the picture. For example: a lighthouse on a cliff at dusk, oil painting."></textarea>
           <div class="composer-bar">
+            <div class="kind-switch" role="group" aria-label="Kind"><button type="button" id="img-k-image" class="on" aria-pressed="true">Image</button><button type="button" id="img-k-video" aria-pressed="false">Video</button></div>
             <select id="img-model" class="chip-select" aria-label="Image model"></select>
             <select id="img-size" class="chip-select" aria-label="Size">
               <option value="512x512">512 × 512</option><option value="768x768">768 × 768</option><option value="1024x1024" selected>1024 × 1024</option>
               <option value="1024x768">1024 × 768 wide</option><option value="768x1024">768 × 1024 tall</option>
             </select>
-            <select id="img-count" class="chip-select" aria-label="How many pictures"><option value="1">1 picture</option><option value="2">2 pictures</option><option value="4">4 pictures</option><option value="8">8 pictures</option></select>
+            <select id="img-len" class="chip-select hidden" aria-label="Length of the clip"><option value="17">1 second</option><option value="33" selected>2 seconds</option><option value="65">4 seconds</option><option value="81">5 seconds</option></select>
+            <select id="img-count" class="chip-select" aria-label="How many pictures"></select>
             <span class="spacer"></span>
             <button class="send" id="img-go">Generate</button>
           </div>
@@ -147,7 +149,7 @@
         <div id="img-busy"></div>
         <div id="img-results"></div>
         <div id="img-earlier"></div>
-        <div class="section-head"><h2>Image models</h2></div>
+        <div class="section-head"><h2>Image and video models</h2></div>
         <div id="img-models"></div>
       </div>
     </section>
@@ -344,7 +346,7 @@
         </div>
         <div class="section-head"><h2>Pictures</h2></div>
         <div class="card">
-          <p class="hint">Pictures made on the New image page are stored on this controller, never on the nodes. Old ones are deleted when they pass the age or the size limit below, whichever comes first. Pictures you mark Keep are never deleted automatically. Use <code>0</code> for no limit.</p>
+          <p class="hint">Pictures and clips made on the New image page are stored on this controller, never on the nodes. Old ones are deleted when they pass the age or the size limit below, whichever comes first. Pictures you mark Keep are never deleted automatically. Use <code>0</code> for no limit.</p>
           <div class="opts-grid">
             <label class="chip-input">keep for <input id="set-img-days" type="number" min="0" max="3650" aria-label="Days to keep pictures"> days</label>
             <label class="chip-input">at most <input id="set-img-gb" type="number" min="0" max="100000" aria-label="Gigabytes of pictures"> GB</label>

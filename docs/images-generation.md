@@ -49,3 +49,20 @@ the same token). Extras: `seed`, `steps`, `negative_prompt`. The call waits unti
 15 minutes) and cancels them if the client disconnects. The pictures also appear on the New image page, marked
 with the token's name, and follow the same retention rules. `/v1/images/edits` is not built.
 **Untested** with real clients (Open WebUI, the OpenAI SDKs) and real nodes.
+
+## Video
+
+The **Video** switch on the New image page makes short clips with the same machinery. The built-in model is
+**Wan 2.1 text-to-video 1.3B**; pick a size (832 × 480 is what it was trained at), a length (1, 2, 4 or 5 seconds
+at 16 frames a second) and one or two clips. A clip takes minutes, not seconds, and uses one node for the whole
+time; the page shows how long it has been working (sd-server reports no step progress for video). Clips play in
+the page, with Download, Keep and the rest as for pictures, and follow the same retention rules. The node asks
+sd-server for WebM and falls back to AVI if that build has no WebM support. A longer clip needs more memory, so
+the fit check on the Models list and the "no node can run it" message take the length into account.
+
+Video is not part of the OpenAI-style API (`/v1/images/generations` refuses video models). It needs nodes on this
+version or newer (`node.video`). **Untested:** all of it on real hardware. Two guesses to check first with
+`sd-server -h` on a node: the arguments that start sd-server in video mode (the node passes `-M vid_gen`; set
+`OUTPOST_SD_VIDEO_ARGS` on the node to change them, or `none` for no extra arguments), and the Hugging Face file
+names in the catalog (Comfy-Org's Wan 2.1 repackaged files and city96's UMT5 encoder). The memory numbers for clips are
+rough guesses.
