@@ -128,7 +128,7 @@ func (c *Controller) loadModels() {
 		}
 		m.Vision = m.hasVision()
 		c.models[m.Name] = &m
-		if m.Status == "ready" && (m.Shape == nil || m.Shape.ActiveFrac == 0) {
+		if m.Status == "ready" && m.Shape.needsHeaderRefresh() {
 			go c.fillModelShape(&m) // models added before the header was read
 		}
 	}
@@ -681,6 +681,7 @@ func (c *Controller) handleLoadModel(w http.ResponseWriter, r *http.Request) {
 		FlashAttn string   `json:"flash_attn"`
 		Draft     string   `json:"draft"`
 		Parallel  int      `json:"parallel"`
+		CPUMoe    string   `json:"cpu_moe"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 		writeJSON(w, 400, map[string]string{"error": "model name required"})
@@ -718,7 +719,11 @@ func (c *Controller) handleLoadModel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
-	ml := ModelLoad{Name: req.Name, Ctx: req.Ctx, GPULayers: req.GPULayers, Threads: req.Threads, ExtraArgs: strings.Fields(req.ExtraArgs),
+	if !validCPUMoe(req.CPUMoe) {
+		writeJSON(w, 400, map[string]string{"error": "experts in RAM must be off, all, or a number of layers"})
+		return
+	}
+	ml := ModelLoad{Name: req.Name, Ctx: req.Ctx, GPULayers: req.GPULayers, Threads: req.Threads, ExtraArgs: strings.Fields(req.ExtraArgs), CPUMoe: req.CPUMoe,
 		CacheType: req.CacheType, FlashAttn: req.FlashAttn, Draft: req.Draft, Parallel: req.Parallel}
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &pipeline{cancel}
@@ -1444,4 +1449,13 @@ func (c *Controller) endPipeline(id string, p *pipeline) {
 		delete(c.pipelines, id)
 	}
 	c.mu.Unlock()
+}
+
+// validCPUMoe accepts "" (off), "all" or a layer count from 1 to 999.
+func validCPUMoe(v string) bool {
+	if v == "" || v == "all" {
+		return true
+	}
+	n, err := strconv.Atoi(v)
+	return err == nil && n >= 1 && n <= 999
 }

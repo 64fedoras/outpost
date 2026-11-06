@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"strings"
 	"testing"
 )
 
@@ -186,6 +187,12 @@ func TestGGUFActiveFraction(t *testing.T) {
 	if got := s.activeBytes(1000); got != 157 {
 		t.Errorf("activeBytes(1000) = %d", got)
 	}
+	if s.ExpertBytes != 2304000 {
+		t.Errorf("ExpertBytes = %d", s.ExpertBytes)
+	}
+	if s.needsHeaderRefresh() || !(&ModelShape{ActiveFrac: 0.2}).needsHeaderRefresh() {
+		t.Error("needsHeaderRefresh")
+	}
 	// An unknown tensor type leaves the fraction unknown but keeps the KV shape.
 	g2 := &ggufBuilder{}
 	g2.str("general.architecture", "qwen3moe")
@@ -196,5 +203,35 @@ func TestGGUFActiveFraction(t *testing.T) {
 	s2, err := readGGUFShape(bytes.NewReader(g2.bytes()))
 	if err != nil || s2.ActiveFrac != 0 || s2.FullBytesPerToken == 0 {
 		t.Errorf("unknown type: %+v %v", s2, err)
+	}
+}
+
+func TestExpertBytesOf(t *testing.T) {
+	s := &ModelShape{Layers: 40, ExpertBytes: 4000}
+	for mode, want := range map[string]int64{"": 0, "all": 4000, "10": 1000, "40": 4000, "99": 4000, "0": 0, "x": 0} {
+		if got := s.expertBytesOf(mode); got != want {
+			t.Errorf("expertBytesOf(%q) = %d, want %d", mode, got, want)
+		}
+	}
+	if (&ModelShape{Layers: 4}).expertBytesOf("all") != 0 || (*ModelShape)(nil).expertBytesOf("all") != 0 {
+		t.Error("dense or unknown model moves nothing")
+	}
+}
+
+func TestCPUMoeArgs(t *testing.T) {
+	join := func(ml ModelLoad) string { return strings.Join(servingArgs(ml), " ") }
+	if got := join(ModelLoad{CPUMoe: "all"}); got != "--cpu-moe" {
+		t.Errorf("all: %q", got)
+	}
+	if got := join(ModelLoad{CPUMoe: "20"}); got != "--n-cpu-moe 20" {
+		t.Errorf("n: %q", got)
+	}
+	if got := join(ModelLoad{CPUMoe: "all", ExtraArgs: []string{"--n-cpu-moe", "5"}}); got != "" {
+		t.Errorf("extra args win: %q", got)
+	}
+	for v, ok := range map[string]bool{"": true, "all": true, "1": true, "999": true, "0": false, "1000": false, "-3": false, "some": false} {
+		if validCPUMoe(v) != ok {
+			t.Errorf("validCPUMoe(%q) != %v", v, ok)
+		}
 	}
 }
