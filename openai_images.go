@@ -109,9 +109,13 @@ func (c *Controller) handleV1Images(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Model == "" {
-		req.Model = imageCatalog[0].ID
+		req.Model = imageCatalog[0].ID // the catalog starts with a picture model
 	}
 	def := imageModel(req.Model)
+	if def != nil && def.Kind != genImage {
+		oaiError(w, 400, "invalid_request_error", def.Label+" makes video; the API only makes pictures")
+		return
+	}
 	if def == nil {
 		oaiError(w, 404, "invalid_request_error", "unknown image model "+req.Model)
 		return

@@ -61,7 +61,7 @@ func (c *Controller) handleImageModels(w http.ResponseWriter, r *http.Request) {
 		d := &imageCatalog[i]
 		total, aux := d.Bytes()
 		views = append(views, imageModelView{ImageModelDef: *d, Bytes: total, AuxBytes: aux,
-			Accepted: !d.Restricted || !c.gens.settings.Accepted[d.ID].IsZero(), Nodes: c.genNodesLocked(d, d.Size, d.Size)})
+			Accepted: !d.Restricted || !c.gens.settings.Accepted[d.ID].IsZero(), Nodes: c.genNodesFramesLocked(d, d.Size, d.DefaultHeight(), d.Frames)})
 	}
 	set := c.gens.settings
 	c.gens.mu.Unlock()
@@ -214,15 +214,21 @@ func (c *Controller) handleGenFile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]string{"error": "no such picture"})
 		return
 	}
-	p := genFile(filepath.Join(c.genDir(), rec.ID), idx)
+	c.gens.mu.Lock()
+	p := genItemFile(filepath.Join(c.genDir(), rec.ID), rec.Items[idx])
+	ext := rec.Items[idx].Ext
+	c.gens.mu.Unlock()
 	if _, err := os.Stat(p); err != nil {
-		writeJSON(w, 404, map[string]string{"error": "the picture was deleted"})
+		writeJSON(w, 404, map[string]string{"error": "the file was deleted"})
 		return
 	}
-	w.Header().Set("Content-Type", "image/png")
+	if ext == "" {
+		ext = "png"
+	}
+	w.Header().Set("Content-Type", genExts[ext])
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	if r.URL.Query().Get("download") != "" {
-		w.Header().Set("Content-Disposition", `attachment; filename="`+rec.ID+"-"+strconv.Itoa(idx)+`.png"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="`+rec.ID+"-"+strconv.Itoa(idx)+"."+ext+`"`)
 	}
 	http.ServeFile(w, r, p)
 }

@@ -8,6 +8,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -40,12 +41,23 @@ type ImageModelDef struct {
 	Restricted bool           `json:"restricted"` // the licence limits use (non-commercial, research): needs an accept click
 	Files      []ImageFileDef `json:"files"`
 	// Defaults the Create form starts from.
-	Size      int     `json:"size"` // default width and height
+	Size      int     `json:"size"`             // default width and height (video: the width)
+	Height    int     `json:"height,omitempty"` // video: default height (Size is the width)
+	Frames    int     `json:"frames,omitempty"` // video: default frame count
+	FPS       int     `json:"fps,omitempty"`    // video: default frames per second
 	Steps     int     `json:"steps"`
 	CFG       float64 `json:"cfg"`
 	Sampler   string  `json:"sampler"`
 	Negative  bool    `json:"negative"`   // the model uses a negative prompt
 	ComputeMB int     `json:"compute_mb"` // compute buffer per megapixel, an estimate until a real run on the node reports it
+}
+
+// DefaultHeight is the height the form starts from.
+func (d *ImageModelDef) DefaultHeight() int {
+	if d.Height > 0 {
+		return d.Height
+	}
+	return d.Size
 }
 
 // Dir is the model folder name on a node (nodes store image models next to LLMs).
@@ -98,6 +110,17 @@ var imageCatalog = []ImageModelDef{
 		},
 		Size: 1024, Steps: 8, CFG: 1, Sampler: "euler", ComputeMB: 1200,
 	},
+	{
+		ID: "wan21-t2v-1.3b", Label: "Wan 2.1 text-to-video 1.3B", Kind: genVideo,
+		About:   "Short clips (about 2 seconds at 832 by 480) from a prompt. The smallest Wan model: slow, but it fits a 12 GB card and, very slowly, a CPU. Expect minutes per clip.",
+		License: "Apache-2.0", LicenseURL: "https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B",
+		Files: []ImageFileDef{
+			{Flag: "--diffusion-model", Repo: "Comfy-Org/Wan_2.1_ComfyUI_repackaged", Match: "wan2.1_t2v_1.3B_fp16.safetensors", Bytes: 2_900 << 20},
+			{Flag: "--vae", Repo: "Comfy-Org/Wan_2.1_ComfyUI_repackaged", Match: "wan_2.1_vae.safetensors", Bytes: 254 << 20, Aux: true},
+			{Flag: "--t5xxl", Repo: "city96/umt5-xxl-encoder-gguf", Match: "umt5-xxl-encoder-Q8_0.gguf", Bytes: 6_200 << 20, Aux: true},
+		},
+		Size: 832, Height: 480, Frames: 33, FPS: 16, Steps: 20, CFG: 6, Sampler: "euler", Negative: true, ComputeMB: 150,
+	},
 }
 
 // imageModel finds a catalog entry.
@@ -114,6 +137,8 @@ const (
 	genOverheadBytes = 500 << 20
 	maxGenSide       = 2048
 	minGenSide       = 256
+	maxVideoSide     = 1280
+	maxVideoFrames   = 129
 )
 
 // estimateImage returns the memory a generation needs: full with everything in
@@ -121,12 +146,29 @@ const (
 // observed, when above zero, is a compute buffer a node measured on a real run
 // at about this size and replaces the per-megapixel guess.
 func estimateImage(d *ImageModelDef, w, h int, observed int64) (full, gpu int64) {
+	return estimateGen(d, w, h, 0, observed)
+}
+
+// videoLatentFrames is how many latent frames a clip of n frames has (4 frames per latent, plus one).
+func videoLatentFrames(frames int) int {
+	if frames < 1 {
+		return 1
+	}
+	return (frames-1)/4 + 1
+}
+
+// estimateGen is estimateImage for pictures (frames 0) and clips: for a clip the
+// compute buffer also grows with the number of latent frames.
+func estimateGen(d *ImageModelDef, w, h, frames int, observed int64) (full, gpu int64) {
 	total, aux := d.Bytes()
 	compute := observed
 	if compute <= 0 {
 		mp := float64(w) * float64(h) / 1e6
 		if mp < 0.25 {
 			mp = 0.25
+		}
+		if frames > 0 {
+			mp *= float64(videoLatentFrames(frames))
 		}
 		compute = int64(float64(d.ComputeMB) * mp * (1 << 20))
 	}
@@ -139,7 +181,12 @@ func estimateImage(d *ImageModelDef, w, h int, observed int64) (full, gpu int64)
 // as LLMs: fitVRAM, fitSplit, fitRAM, fitNo). offload reports that the node has to
 // keep the text encoders and VAE in system RAM (--offload-to-cpu).
 func imageFit(d *ImageModelDef, w, h int, observed, vram, ram int64) (fit string, offload bool) {
-	full, gpu := estimateImage(d, w, h, observed)
+	return genFit(d, w, h, 0, observed, vram, ram)
+}
+
+// genFit is imageFit for clips too (frames above 0).
+func genFit(d *ImageModelDef, w, h, frames int, observed, vram, ram int64) (fit string, offload bool) {
+	full, gpu := estimateGen(d, w, h, frames, observed)
 	_, aux := d.Bytes()
 	usableVRAM := vram * 92 / 100
 	usableRAM := ram * 75 / 100
@@ -239,6 +286,9 @@ type GenSpec struct {
 	Sampler  string   `json:"sampler,omitempty"`
 	Seed     int64    `json:"seed"` // -1 = random
 	Threads  int      `json:"threads,omitempty"`
+	Frames   int      `json:"frames,omitempty"` // video only
+	FPS      int      `json:"fps,omitempty"`    // video only
+
 }
 
 // GenOutput is the result of a generate job.
@@ -246,7 +296,21 @@ type GenOutput struct {
 	Seed         int64   `json:"seed"`
 	Seconds      float64 `json:"seconds"`
 	ComputeBytes int64   `json:"compute_bytes,omitempty"` // peak compute buffer sd-server reported, for the next estimate
-	Format       string  `json:"format"`
+	Format       string  `json:"format"`                  // file extension: png for pictures; webm, avi or webp for clips
+}
+
+// genExts are the file types a generation may be stored as, with their media types.
+var genExts = map[string]string{"png": "image/png", "webm": "video/webm", "avi": "video/x-msvideo", "webp": "image/webp"}
+
+// genExt cleans a node-reported format into a stored extension.
+func genExt(kind, format string) string {
+	if _, ok := genExts[format]; ok {
+		return format
+	}
+	if kind == genVideo {
+		return "webm"
+	}
+	return "png"
 }
 
 func (s *GenSpec) validate() error {
@@ -256,8 +320,18 @@ func (s *GenSpec) validate() error {
 	if len(s.Prompt) > 4000 || len(s.Negative) > 4000 {
 		return fmt.Errorf("the prompt is too long")
 	}
-	if s.Width < minGenSide || s.Height < minGenSide || s.Width > maxGenSide || s.Height > maxGenSide || s.Width%8 != 0 || s.Height%8 != 0 {
-		return fmt.Errorf("the size must be %d to %d pixels each way, in steps of 8", minGenSide, maxGenSide)
+	maxSide := maxGenSide
+	if s.Kind == genVideo {
+		maxSide = maxVideoSide
+		if s.Frames < 5 || s.Frames > maxVideoFrames {
+			return fmt.Errorf("a clip needs 5 to %d frames", maxVideoFrames)
+		}
+		if s.FPS < 4 || s.FPS > 60 {
+			return fmt.Errorf("frames per second must be 4 to 60")
+		}
+	}
+	if s.Width < minGenSide || s.Height < minGenSide || s.Width > maxSide || s.Height > maxSide || s.Width%8 != 0 || s.Height%8 != 0 {
+		return fmt.Errorf("the size must be %d to %d pixels each way, in steps of 8", minGenSide, maxSide)
 	}
 	if s.Steps < 1 || s.Steps > 150 {
 		return fmt.Errorf("steps must be 1 to 150")
@@ -307,6 +381,9 @@ func sdServerArgs(spec GenSpec, modelDir string, port int) []string {
 	for _, f := range files {
 		args = append(args, f.Flag, path.Join(modelDir, f.File))
 	}
+	if spec.Kind == genVideo {
+		args = append(args, sdVideoModeArgs()...)
+	}
 	if spec.Offload {
 		args = append(args, "--offload-to-cpu")
 	}
@@ -344,4 +421,19 @@ func pickRepoFile(paths []string, match string) (string, error) {
 		return "", fmt.Errorf("no file matching %q", match)
 	}
 	return "", fmt.Errorf("%d files match %q (%s)", len(part), match, strings.Join(part, ", "))
+}
+
+// sdVideoModeArgs are the extra sd-server arguments that start it in video mode.
+// The stable-diffusion.cpp documentation does not say how the server picks video
+// mode, so the default is the CLI's "-M vid_gen" and OUTPOST_SD_VIDEO_ARGS replaces
+// it ("none" for no extra arguments) until it has been checked on a real node.
+func sdVideoModeArgs() []string {
+	v, ok := os.LookupEnv("OUTPOST_SD_VIDEO_ARGS")
+	if !ok {
+		return []string{"-M", "vid_gen"}
+	}
+	if strings.TrimSpace(v) == "none" {
+		return nil
+	}
+	return strings.Fields(v)
 }

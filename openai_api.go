@@ -88,6 +88,9 @@ func (c *Controller) handleV1Models(w http.ResponseWriter, r *http.Request) {
 	}
 	if c.imageAPIOn() {
 		for i := range imageCatalog {
+			if imageCatalog[i].Kind != genImage {
+				continue
+			}
 			data = append(data, map[string]any{"id": imageCatalog[i].ID, "object": "model", "created": now, "owned_by": "outpost", "capabilities": []string{"image"}})
 		}
 	}

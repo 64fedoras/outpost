@@ -825,3 +825,10 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .gen-model .rowline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .gen-model .sub { margin-top: 3px; }
 @media (max-width: 640px) { .page-image { padding-top: 3vh; } .gen-grid { grid-template-columns: repeat(2, 1fr); } }
+.kind-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--bg); }
+.kind-switch button { border: 0; border-radius: 0; background: transparent; padding: 4px 12px; font-size: 12.5px; color: var(--muted); }
+.kind-switch button.on { background: var(--ink); color: var(--bg); }
+.gen-shot video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #000; }
+.gen-grid.clips { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.gen-grid.small video { aspect-ratio: 16 / 9; object-fit: cover; }
+.gen-model .pill + .pill { margin-left: 4px; }

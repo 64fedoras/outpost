@@ -250,7 +250,7 @@ func genController(t *testing.T) *Controller {
 	}
 	c.nodes["n"].Hello = &Hello{OS: "linux", Arch: "amd64", VulkanAvailable: true, RAMBytes: 64 << 30,
 		GPUs:     []GPUInfo{{Vendor: "amd", VRAMBytes: 16 << 30}},
-		Features: []string{"node.gen"}, SDRuntime: &RuntimeInfo{Build: "b", Variant: "linux-x64-vulkan"}}
+		Features: []string{"node.gen", "node.video"}, SDRuntime: &RuntimeInfo{Build: "b", Variant: "linux-x64-vulkan"}}
 	return c
 }
 
@@ -298,8 +298,12 @@ func fakeGenNode(t *testing.T, c *Controller, id string, png []byte, specs *[]Ge
 			if e := fail(spec); e != nil {
 				res = JobResult{JobID: jd.JobID, Status: "failed", Error: e}
 			} else {
-				out, _ := json.Marshal(GenOutput{Seed: spec.Seed, Seconds: 1.5, Format: "png", ComputeBytes: 700 << 20})
-				res = JobResult{JobID: jd.JobID, Status: "succeeded", Output: out, Files: []FileEntry{inlineFile("out.png", png)}}
+				ext := "png"
+				if spec.Kind == genVideo {
+					ext = "webm"
+				}
+				out, _ := json.Marshal(GenOutput{Seed: spec.Seed, Seconds: 1.5, Format: ext, ComputeBytes: 700 << 20})
+				res = JobResult{JobID: jd.JobID, Status: "succeeded", Output: out, Files: []FileEntry{inlineFile("out."+ext, png)}}
 			}
 			rb, _ := json.Marshal(res)
 			c.handleNodeMessage(id, &Envelope{Type: "job.result", Body: rb})
