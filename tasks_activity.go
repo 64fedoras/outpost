@@ -158,13 +158,17 @@ func (c *Controller) activityFor(t *Task) *actDetail {
 		case !online:
 			d.Stall = name + " is offline. Anything it was running is marked lost after 60 seconds and retried, so this should pick up when it reconnects."
 		case hb != nil && hb.Paused:
-			d.Stall = name + " is paused from its tray menu; this step waits until it accepts work again."
+			by := "from its tray menu"
+			if hb.PausedBy == "web" {
+				by = "from the web UI"
+			}
+			d.Stall = name + " is paused " + by + "; this step waits until it accepts work again."
 		}
 	}
 	if d.Stall == "" {
 		if idle := taskLive.idleFor(t.ID); idle > stallAfter {
 			d.IdleS = int(idle.Seconds())
-			d.Stall = fmt.Sprintf("No output for %s. A large prompt can take a while to start on a CPU node; if nothing moves, Stop and send a message to retry.", idle.Round(time.Second))
+			d.Stall = fmt.Sprintf("No output for %s. A large prompt can take a while to start on a CPU node. If the model has stopped answering altogether, the node restarts it after a few minutes; if nothing moves, Stop and send a message to retry.", idle.Round(time.Second))
 		}
 	}
 	return d

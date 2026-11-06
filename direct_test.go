@@ -61,9 +61,14 @@ func TestResolveDirectModel(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(c.modelsStoreDir(), "coder", "coder-Q4_K_M.gguf")); err == nil {
 		t.Fatal("direct model stored a file on the controller")
 	}
+	c.mu.Lock() // the header reader started by resolveModel may still be running
 	m.HFFiles = []string{"missing.gguf"}
+	c.mu.Unlock()
 	c.resolveModel(context.Background(), m)
-	if m.Status != "failed" {
+	c.mu.Lock()
+	status := m.Status
+	c.mu.Unlock()
+	if status != "failed" {
 		t.Fatal("missing file not reported")
 	}
 }

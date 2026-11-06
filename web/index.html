@@ -64,6 +64,7 @@
   <div class="scrim hidden" id="scrim"></div>
   <div class="content">
   <div id="recovered-banner" class="note warn hidden recovered-banner" role="status"></div>
+  <div id="disk-banner" class="note bad hidden recovered-banner" role="status"></div>
   <div id="offline-banner" class="note bad hidden u1"><b>Can't reach the controller.</b> Showing the last data received; retrying every 2 seconds. If this lasts, check <code>sudo systemctl status outpost-controller</code> on the controller.</div>
 
     <!-- NEW TASK -->
@@ -174,6 +175,7 @@
     <!-- UPDATES -->
     <section data-page="updates" class="hidden">
       <div class="section-head"><h2>Controller and nodes</h2><span class="spacer"></span><button id="btn-upd-all">Update all</button></div>
+      <div id="rollout-note" class="note hidden" role="status"></div>
       <div class="table-wrap" id="upd-table"></div>
       <div class="section-head"><h2>GitHub releases</h2><span class="spacer"></span><button id="btn-gh-check" class="small">Check now</button> <button id="btn-gh-install" class="small primary">Check and install</button></div>
       <p class="sub wrap" id="gh-info"></p>
@@ -295,6 +297,17 @@
         </section>
         <section class="set-sec" id="set-app">
           <h2 class="set-sec-title">Application</h2>
+        <div class="section-head"><h2>Storage</h2></div>
+        <div class="card" id="storage-card">
+          <p class="hint">How the controller's disk is used. Below 10% (or 5 GB) free, a warning shows at the top of every page and a <i>disk low</i> notification is sent.</p>
+          <div id="st-bar" class="st-bar" role="img" aria-label="Disk use"></div>
+          <div id="st-legend" class="st-legend"></div>
+          <label class="check u5"><input type="checkbox" id="st-on"> Clean up tasks that finished more than <input id="st-days" type="number" min="1" max="3650" value="30" class="st-days" aria-label="Days"> days ago</label>
+          <p class="hint">Removes their per-round copies (so their rounds can no longer be undone), screenshots and the cached result zip (made again when you download). Conversations, files, attachments and the download itself stay. Runs once a day.</p>
+          <label class="check"><input type="checkbox" id="st-builds"> Also remove their build outputs (the files a build step produced)</label>
+          <p class="hint" id="st-status"></p>
+          <div class="modal-foot"><button id="st-run">Clean up now</button><button class="primary" id="st-save">Save</button></div>
+        </div>
         <div class="section-head"><h2>Updates from GitHub</h2></div>
         <div class="card">
           <p class="hint">Outpost can look at a GitHub repository's releases every 6 hours and download newer binaries for the controller and the platforms of your nodes. Each file is checked against the release's <code>SHA256SUMS</code> and must be an Outpost binary of that version before it is kept; it then appears in the Updates tab like an uploaded one. <code>SHA256SUMS</code> catches damaged downloads, not a tampered repository, since the releases are unsigned. Only the version check and downloads go to GitHub; nothing about your cluster is sent. Rollback works as before.</p>

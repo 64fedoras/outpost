@@ -44,7 +44,7 @@ type LogTail struct {
 	Note   string `json:"note,omitempty"` // e.g. "no tray on this node"
 }
 
-var errOldNode = errors.New("the node did not answer; it may be running an older Outpost (update it to use this)")
+var errOldNode = errors.New("this node runs an older Outpost that cannot send its logs; update it first")
 
 // ---- controller side ----
 
@@ -56,9 +56,14 @@ type askWaiters struct {
 func (c *Controller) ask(nodeID, kind string, args any, timeout time.Duration, out any) error {
 	c.mu.Lock()
 	nc := c.conns[nodeID]
+	n := c.nodes[nodeID]
+	old := n != nil && n.Hello != nil && !c.nodeHasLocked(nodeID, "node.ask")
 	c.mu.Unlock()
 	if nc == nil {
 		return errors.New("node is offline")
+	}
+	if old {
+		return errOldNode
 	}
 	a, _ := json.Marshal(args)
 	req := AskRequest{Req: newID("ask"), Kind: kind, Args: a}

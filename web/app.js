@@ -119,6 +119,11 @@ function closeSide() { $('side').classList.remove('open'); $('scrim').classList.
 $('side-open').onclick = openSide; $('task-menu').onclick = openSide; $('side-close').onclick = closeSide; $('scrim').onclick = closeSide;
 
 // Damaged state files found when the controller started (recovered.go).
+function renderDiskWarning() {
+  const w = state && state.disk_warning;
+  $('disk-banner').classList.toggle('hidden', !w);
+  if (w) $('disk-banner').textContent = w;
+}
 function renderRecovered() {
   const notes = (state && state.recovered) || [];
   $('recovered-banner').classList.toggle('hidden', !notes.length);
@@ -130,7 +135,7 @@ $('recovered-banner').addEventListener('click', async (e) => {
   if (e.target.id !== 'recovered-dismiss') return;
   await post('/api/recovered/dismiss').catch(() => {});
   if (state) state.recovered = [];
-  renderRecovered();
+  renderRecovered(); renderDiskWarning();
 });
 
 // ---------- polling ----------
@@ -149,7 +154,7 @@ async function refresh() {
     api('/api/projects').then((p) => { projects = p; }).catch(() => {}),
   ]);
   $('hdr-meta').textContent = `v${state.version}`;
-  renderRecovered();
+  renderRecovered(); renderDiskWarning();
   $('hdr-meta').title = state.advertise;
   $('src-link').href = `https://github.com/64fedoras/outpost/tree/v${state.version}`; // AGPL section 13: source of the running version
   $('ctl-info').textContent = `Controller ${state.advertise} · ${state.platform} · certificate SHA-256 ${state.fingerprint}`;
@@ -1337,7 +1342,7 @@ function nodeFacts(n) {
   else {
     if (o && o.state === 'failed' && (Date.now() - new Date(o.updated)) < 3600000) issues.push({ lvl: 'bad', short: 'Failed', text: o.error || 'The last model operation failed.', act: 'load', fix: 'Load model…' });
     else if (hb && hb.llama_error && !ready) issues.push({ lvl: 'bad', short: 'Model error', text: hb.llama_error, act: 'load', fix: 'Load model…' });
-    if (hb && hb.paused) issues.push({ lvl: 'warn', short: 'Paused', text: 'Paused on the node. It takes no new work until someone chooses Accept new work in its tray icon.' });
+    if (hb && hb.paused) issues.push({ lvl: 'warn', short: 'Paused', text: pauseText(n), ...(canPause(n) ? { act: 'node-resume', fix: 'Resume' } : {}) });
     if (h.os === 'linux' && (h.gpus || []).some((x) => x.vendor !== 'apple') && !h.vulkan_available) issues.push({ lvl: 'warn', short: 'No Vulkan', text: 'GPU found, but no Vulkan driver, so models run on CPU.' });
     if (h.models_free_bytes && h.models_free_bytes < 10 * 1024 ** 3) issues.push({ lvl: 'warn', short: 'Low disk', text: `${bytes(h.models_free_bytes)} free for models. The next model copy may need a cleanup.`, act: 'clean', fix: 'Clean up…' });
     if (n.update_to) issues.push({ lvl: 'info', short: 'Update', text: `Runs v${h.agent_version || '?'}; v${n.update_to} is available.`, act: 'node-update', fix: 'Update' });
@@ -1565,7 +1570,7 @@ function nodeCard(n) {
     <div class="metric"><span class="k">CPU</span>${bar(hb ? hb.cpu_pct : 0)}<span class="v">${hb ? hb.cpu_pct.toFixed(1) + '%' : '—'}</span></div>
     <div class="metric"><span class="k">RAM</span>${bar(ramPct)}<span class="v">${hb ? bytes(hb.ram_used_bytes) + '/' + bytes(hb.ram_total_bytes) : '—'}</span></div>
     ${gpus}
-    ${paused ? `<div class="note warn u17"><b>Paused on the node.</b> It takes no new work until someone chooses <b>Accept new work</b> in its tray icon.</div>` : ''}
+    ${paused ? `<div class="note warn u17 nv-note"><span class="nv-grow">${esc(pauseText(n))}</span>${canPause(n) ? `<button class="small" data-act="node-resume" data-id="${n.id}">Resume</button>` : ''}</div>` : ''}
     <div class="sub u17">${status}${hb && hb.swap_used_bytes ? ` · swap ${bytes(hb.swap_used_bytes)}` : ''}${n.addr ? ` · ${esc(n.addr.split(':')[0])}` : ''}</div>
     ${modelBox}
     ${toolsBox(n)}
@@ -1573,6 +1578,7 @@ function nodeCard(n) {
       <label class="toggle" title="Allow this node to run shell commands (needed for tests)"><input type="checkbox" data-exec="${n.id}" ${n.exec_enabled ? 'checked' : ''}> exec</label>
       ${sandboxPicker(n)}
       <span class="u20"></span>
+      ${n.online && !paused && canPause(n) ? pausePicker(n) : ''}
       <button class="small" data-act="restart" data-id="${n.id}" ${n.online && !n.restarting ? '' : 'disabled'} title="Restart the Outpost service on this node">${n.restarting ? 'Restarting…' : 'Restart'}</button>
       <button class="small" data-act="logs" data-id="${n.id}" ${n.online ? '' : 'disabled'} title="Show this node's recent log">Logs</button>
       <button class="small" data-act="rename" data-id="${n.id}">Rename</button>
@@ -1582,6 +1588,30 @@ function nodeCard(n) {
   </div>`;
 }
 
+// Pause from the web UI (node_control.go applyPause). Older nodes only pause from their tray icon.
+function canPause(n) { return n.online && ((n.hello || {}).features || []).includes('node.pause'); }
+function pauseText(n) {
+  const hb = n.heartbeat || {};
+  const by = hb.paused_by === 'web' ? 'from the web UI' : 'from its tray icon';
+  const until = hb.paused_until ? ` until ${new Date(hb.paused_until).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : '';
+  const how = canPause(n) ? 'Resume here or with Accept new work in its tray icon.' : 'Choose Accept new work in its tray icon to resume.';
+  return `Paused ${by}${until}: it takes no new work. ${how}`;
+}
+function pausePicker(n) {
+  return `<select class="small" data-pause="${n.id}" aria-label="Pause this node" title="Stop sending new work to this node">
+    <option value="">Pause…</option>
+    <option value="drain">Finish current work, then pause</option>
+    <option value="now">Pause now (running work moves to other nodes)</option>
+    <option value="drain:60">Pause for 1 hour</option>
+    <option value="drain:480">Pause for 8 hours</option></select>`;
+}
+async function pauseNode(id, v) {
+  const [mode, mins] = v.split(':');
+  const n = nodeById(id);
+  if (mode === 'now' && n.running_jobs && !confirm(`Pause ${nodeName(n)} now? Its ${n.running_jobs} running job(s) stop and go to other nodes.`)) { renderNodes(); return; }
+  try { await post(`/api/nodes/${id}/pause`, { mode, minutes: parseInt(mins || '0', 10) }); toast(mode === 'resume' ? 'Resumed' : 'Paused'); refresh(); }
+  catch (e) { toast(e.message); renderNodes(); }
+}
 function sandboxPicker(n) {
   if (!n.exec_enabled) return '';
   const h = n.hello || {};
@@ -1948,9 +1978,17 @@ function renderUpdates() {
   }
   setHTML('upd-table', `<table><thead><tr><th class="u26"></th><th>Machine</th><th>Platform</th><th>Running</th><th>Available</th><th>Progress</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`);
   const outdated = state.nodes.filter((n) => n.online && n.update_to && !(n.update && UPD_BUSY.includes(n.update.state))).length;
+  const ro = state.rollout, roRunning = ro && !ro.ended, roRecent = ro && ro.ended && Date.now() - new Date(ro.ended) < 24 * 3600e3;
+  const rn = $('rollout-note');
+  rn.classList.toggle('hidden', !(roRunning || roRecent));
+  if (roRunning || roRecent) {
+    rn.className = `note ${ro.state === 'failed' ? 'bad' : ro.state === 'done' ? 'good' : ''}`;
+    rn.textContent = roRunning ? `${ro.text}${ro.rest ? `; ${ro.rest} more wait until it passes a quick check` : ''}…` : `${ro.text} (${ago(ro.ended)})`;
+  }
   const b = $('btn-upd-all');
-  b.disabled = !outdated; b.className = outdated ? 'primary' : '';
-  b.textContent = outdated ? `Update ${outdated} node${outdated === 1 ? '' : 's'}` : 'All nodes up to date';
+  b.disabled = !outdated || roRunning; b.className = outdated && !roRunning ? 'primary' : '';
+  b.textContent = roRunning ? 'Updating…' : outdated ? (outdated === 1 ? 'Update 1 node' : `Update ${outdated} nodes, one first`) : 'All nodes up to date';
+  b.title = outdated > 1 ? 'Updates one node, checks it, then the rest. If the first node fails its check it is rolled back and the rest are left alone.' : '';
   const rel = state.releases || [];
   setHTML('releases', rel.length ? `<div class="table-wrap"><table><thead><tr><th>Platform</th><th>Version</th><th>Size</th><th>SHA-256</th><th>Uploaded</th><th></th></tr></thead><tbody>${
     rel.map((r) => `<tr><td>${esc(r.platform)}</td><td>v${esc(r.version)}</td><td>${bytes(r.bytes)}</td><td class="mono" title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 12))}…</td><td>${ago(r.uploaded)}</td>
@@ -1976,7 +2014,7 @@ async function ghAction(path, msg) {
 $('btn-gh-check').onclick = () => ghAction('/api/github-updates/check', 'Checked GitHub');
 $('btn-gh-install').onclick = () => { if (confirm('Check GitHub and update idle nodes and the controller to the latest release now?')) ghAction('/api/github-updates/install', 'Installing from GitHub'); };
 $('btn-upd-all').onclick = async () => {
-  try { const r = await post('/api/update-all'); toast(`Started ${r.started} update(s)`); refresh(); } catch (e) { toast(e.message); }
+  try { const r = await post('/api/update-all'); toast(r.waiting ? `Updating ${r.canary} first; ${r.waiting} more follow once it passes` : `Updating ${r.canary}`, 6000); refresh(); } catch (e) { toast(e.message); }
 };
 async function rollbackController() {
   const to = state.controller_rollback_to;
@@ -2109,6 +2147,7 @@ async function loadSettings() {
   if (state) $('set-planner').innerHTML = plannerOptions(settings.default_planner);
   loadNotifySettings();
   loadSecurity();
+  loadStorage();
   Guard.settingsReset();
 }
 let orLoaded = false;
@@ -2121,9 +2160,10 @@ async function loadOpenRouterModels() {
     $('set-or-model-state').textContent = `· ${r.models.length} models`;
   } catch (e) { $('set-or-model-state').textContent = '· ' + e.message; }
 }
-const NOTIFY_EVENTS = [['question', 'The planner asked a question'], ['plan', 'A plan is ready to approve'], ['done', 'A task finished'], ['failed', 'A task failed'], ['cap', 'The spending cap paused a task'], ['node_offline', 'A node has been offline for 5 minutes'], ['backup_failed', 'A nightly backup failed its check']];
 function loadNotifySettings() {
-  setHTML('nf-events', NOTIFY_EVENTS.map(([id, label]) => `<label class="check"><input type="checkbox" data-nf="${id}" ${settings.notify_events[id] ? 'checked' : ''}> ${esc(label)}</label>`).join(''));
+  const hour = settings.notify_digest_hour ?? 8;
+  const hours = Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === hour ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('');
+  setHTML('nf-events', (settings.notify_event_list || []).map(({ id, label }) => `<label class="check"><input type="checkbox" data-nf="${id}" ${settings.notify_events[id] ? 'checked' : ''}> ${esc(label)}${id === 'digest' ? ` at <select class="small" id="nf-digest-hour" aria-label="Summary time">${hours}</select> <span class="muted">(controller's clock)</span>` : ''}</label>`).join(''));
   $('nf-browser').checked = !!settings.notify_browser;
   $('nf-ntfy').value = settings.notify_ntfy_url || ''; $('nf-webhook').value = settings.notify_webhook_url || ''; $('nf-public').value = settings.notify_public_url || '';
   $('nf-ntfy-token-state').textContent = settings.notify_has_ntfy_token ? '· saved' : '· not set';
@@ -2132,6 +2172,7 @@ function loadNotifySettings() {
 function notifyBody() {
   const events = {}; document.querySelectorAll('[data-nf]').forEach((b) => { events[b.dataset.nf] = b.checked; });
   const n = { browser: $('nf-browser').checked, ntfy_url: $('nf-ntfy').value, webhook_url: $('nf-webhook').value, public_url: $('nf-public').value, events };
+  if ($('nf-digest-hour')) n.digest_hour = parseInt($('nf-digest-hour').value, 10);
   if ($('nf-ntfy-token').value.trim()) n.ntfy_token = $('nf-ntfy-token').value.trim();
   return n;
 }
@@ -2399,6 +2440,8 @@ document.addEventListener('change', async (e) => {
     try { await post(`/api/models/${encodeURIComponent(tier.dataset.tier)}/tier`, { tier: tier.value }); toast('Tier saved'); } catch (err) { toast(err.message); }
     return;
   }
+  const pz = e.target.closest('[data-pause]');
+  if (pz) { if (pz.value) pauseNode(pz.dataset.pause, pz.value); return; }
   const sb = e.target.closest('[data-sandbox]');
   if (sb) { setSandbox(sb.dataset.sandbox, sb.value); return; }
   const cb = e.target.closest('[data-exec]');
@@ -2425,6 +2468,7 @@ document.addEventListener('click', async (e) => {
       case 'clean': openClean(id); break;
       case 'rename': renameNode(id); break;
       case 'logs': openLogs(id); break;
+      case 'node-resume': await pauseNode(id, 'resume'); break;
       case 'idle': setNodeIdle(id); break;
       case 'restart': {
         const n = nodeById(id);
@@ -2618,3 +2662,30 @@ $('dg-download').onclick = async () => {
     toast('Diagnostics downloaded');
   } catch (e) { toast(e.message); } finally { b.disabled = false; }
 };
+
+// ---- Storage (storage.go) ----
+const ST_PARTS = [['tasks', 'Tasks'], ['models', 'Models'], ['releases', 'Releases and updates'], ['runtime', 'llama.cpp builds'], ['projects', 'Projects'], ['other', 'Settings, logs and keys']];
+function renderStorage(s) {
+  const used = s.total ? s.total - s.free : 0, ours = Object.values(s.parts || {}).reduce((a, b) => a + b, 0);
+  const others = Math.max(0, used - ours);
+  const segs = ST_PARTS.map(([k, l], i) => [l, (s.parts || {})[k] || 0, `st-c${i}`]).concat([['Other files on this disk', others, 'st-cx'], ['Free', s.free, 'st-free']]);
+  const pct = (b) => s.total ? (100 * b / s.total) : 0;
+  setHTML('st-bar', segs.filter(([, b]) => b > 0).map(([l, b, c]) => `<span class="${c} w${Math.max(1, Math.round(pct(b)))}" title="${esc(l)}: ${bytes(b)}"></span>`).join(''));
+  setHTML('st-legend', `<span class="${s.low ? 'st-failed' : ''}"><b>${bytes(s.free)}</b> free of ${bytes(s.total)} (${pct(s.free).toFixed(0)}%)</span>` +
+    segs.slice(0, -1).filter(([, b]) => b > 0).map(([l, b, c]) => `<span><i class="st-dot ${c}"></i>${esc(l)} ${bytes(b)}</span>`).join(''));
+  $('st-on').checked = s.cleanup_days > 0; $('st-days').value = s.cleanup_days || 30; $('st-builds').checked = !!s.cleanup_builds;
+  const parts = [];
+  if (s.cleanup_days > 0) parts.push(s.reclaimable ? `${bytes(s.reclaimable)} can be freed now.` : 'Nothing to clean up right now.');
+  if (s.last_cleanup) parts.push(`Last clean-up ${ago(s.last_cleanup)}: freed ${bytes(s.last_freed)} from ${s.last_tasks} task(s).`);
+  $('st-status').textContent = parts.join(' ');
+  $('st-run').disabled = !(s.cleanup_days > 0);
+}
+async function loadStorage() { try { renderStorage(await api('/api/storage')); } catch (e) {} }
+async function saveStorage(run) {
+  const days = $('st-on').checked ? parseInt($('st-days').value, 10) || 0 : 0;
+  if (run && !confirm(`Remove old round copies${$('st-builds').checked ? ', build outputs' : ''} and screenshots of tasks finished more than ${days} days ago?`)) return;
+  try { const s = await post('/api/storage', { cleanup_days: days, cleanup_builds: $('st-builds').checked, run }); renderStorage(s); toast(run ? `Freed ${bytes(s.last_freed)}` : 'Saved'); }
+  catch (e) { toast(e.message); }
+}
+$('st-save').onclick = () => saveStorage(false);
+$('st-run').onclick = () => saveStorage(true);

@@ -22,14 +22,18 @@ import (
 // NotifySettings is stored inside Settings. An event missing from Events is on.
 type NotifySettings struct {
 	Browser      bool            `json:"browser,omitempty"`
-	NtfyURL      string          `json:"ntfy_url,omitempty"` // topic URL, e.g. https://ntfy.sh/my-topic
+	NtfyURL      string          `json:"ntfy_url,omitempty"`    // topic URL, e.g. https://ntfy.sh/my-topic
+	DigestHour   int             `json:"digest_hour,omitempty"` // hour (controller time) of the morning summary; 0 = 8, 24 = midnight
 	NtfyTokenEnc string          `json:"ntfy_token_enc,omitempty"`
 	WebhookURL   string          `json:"webhook_url,omitempty"`
 	PublicURL    string          `json:"public_url,omitempty"` // base of the links; empty = the address the browser used
 	Events       map[string]bool `json:"events,omitempty"`
 }
 
-var notifyEvents = []struct{ ID, Label string }{
+var notifyEvents = []struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}{
 	{"question", "The planner asked a question"},
 	{"plan", "A plan is ready to approve"},
 	{"done", "A task finished"},
@@ -37,13 +41,36 @@ var notifyEvents = []struct{ ID, Label string }{
 	{"cap", "The spending cap paused a task"},
 	{"node_offline", "A node has been offline for 5 minutes"},
 	{"backup_failed", "A nightly backup failed its check"},
+	{"disk_low", "The controller's disk is nearly full"},
+	{"update_failed", "A node update or rollback failed"},
+	{"model_failed", "A model download or load failed"},
+	{"digest", "Morning summary of what finished overnight"},
 }
+
+func (n NotifySettings) digestHour() int {
+	switch {
+	case n.DigestHour == 24:
+		return 0 // midnight
+	case n.DigestHour <= 0 || n.DigestHour > 23:
+		return 8
+	}
+	return n.DigestHour
+}
+
+// offByDefault lists events that stay off until ticked.
+var offByDefault = map[string]bool{"digest": true}
+
+// eventPage is where a notification without a task links to.
+var eventPage = map[string]string{"disk_low": "settings", "backup_failed": "settings", "update_failed": "updates", "model_failed": "models", "digest": "tasks"}
 
 const nodeOfflineAfter = 5 * time.Minute
 
 func (n NotifySettings) eventOn(id string) bool {
 	on, ok := n.Events[id]
-	return !ok || on
+	if !ok {
+		return !offByDefault[id]
+	}
+	return on
 }
 
 // Notification is one sent event, as the browser sees it.
@@ -103,6 +130,9 @@ func (c *Controller) deliverNotification(event, title, message, taskID string) {
 		base = "https://" + c.nt.host
 	}
 	link := base + "/#/nodes"
+	if p := eventPage[event]; p != "" {
+		link = base + "/#/" + p
+	}
 	if taskID != "" {
 		link = base + "/#/tasks/" + taskID
 	}
@@ -281,5 +311,6 @@ func (c *Controller) notifyView() map[string]any {
 	return map[string]any{
 		"notify_browser": ns.Browser, "notify_ntfy_url": ns.NtfyURL, "notify_has_ntfy_token": ns.NtfyTokenEnc != "",
 		"notify_webhook_url": ns.WebhookURL, "notify_public_url": ns.PublicURL, "notify_events": events,
+		"notify_event_list": notifyEvents, "notify_digest_hour": ns.digestHour(),
 	}
 }

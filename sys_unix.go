@@ -16,6 +16,15 @@ func diskFree(path string) uint64 {
 	return uint64(st.Bavail) * uint64(st.Bsize)
 }
 
+// diskTotal is the size of the file system holding path.
+func diskTotal(path string) uint64 {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(path, &st); err != nil {
+		return 0
+	}
+	return uint64(st.Blocks) * uint64(st.Bsize)
+}
+
 // setProcGroup runs the command in its own process group so cancelling a job
 // also stops anything it spawned (for example the children of sh -c).
 func setProcGroup(cmd *exec.Cmd) {

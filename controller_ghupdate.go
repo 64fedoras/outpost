@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -410,14 +411,16 @@ func (c *Controller) autoInstall() {
 		}
 	}
 	c.mu.Unlock()
-	for _, id := range ids {
-		if err := c.startNodeUpdate(id); err != nil {
-			log.Printf("auto-install: node %s: %v", id, err)
+	sort.Strings(ids)
+	if len(ids) > 0 {
+		// One node first, like Update all (rollout.go). A rollout already running is left alone.
+		if _, err := c.startRollout(ids); err != nil {
+			log.Printf("auto-install: %v", err)
 		}
 	}
 	c.mu.Lock()
 	rel := c.releases[thisPlatform()]
-	ok := rel != nil && compareVersions(rel.Version, Version) > 0 && (hold == "" || compareVersions(rel.Version, hold) > 0)
+	ok := rel != nil && compareVersions(rel.Version, Version) > 0 && (hold == "" || compareVersions(rel.Version, hold) > 0) && !c.rollout.running()
 	if ok {
 		for _, u := range c.updates {
 			if time.Since(u.Updated) < 10*time.Minute && (u.State == "sent" || u.State == "downloading" || u.State == "installing" || u.State == "restarting") {

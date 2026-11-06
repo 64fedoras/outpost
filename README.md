@@ -152,8 +152,13 @@ Desktop nodes get a tent icon in the system tray (notification area): **green** 
     node (up to twice). Other steps running there (review, fix, agent or build runs) fail as they
     would if the node went offline. While paused with nothing running, this item is the ticked one.
 
-  Paused is amber, and the node card in the web UI says *Paused on the node*. Pausing survives
+  Paused is amber, and the node card in the web UI says who paused it. Pausing survives
   restarts. Pausing does **not** unload the model, and pools keep lending.
+
+  The same pause is on each node card in the web UI (**Nodes → Detailed list → Pause…**): finish current
+  work then pause, pause now (running work moves to other nodes), or pause for 1 or 8 hours, after which the
+  node takes work again on its own. **Resume** on the card ends any pause, including one set from the tray.
+  Nodes older than this feature can only be paused from their tray icon; the web UI says to update them.
 - **Unload model:** frees the model's memory (RAM and VRAM) now, the same way an idle unload does.
   The node keeps taking work and loads the model again when the next task needs it (pause
   it as well if nothing should load it). Greyed out while a job is running, while
@@ -675,10 +680,17 @@ Or by hand:
 
 1. **Updates tab:** drop the new binaries anywhere on the page (or click the box to choose them), one per platform you use (`outpost-linux-amd64`, …).
 2. Click **Update** on the controller row (updates the web UI too; you stay signed in), then
-   **Update N nodes**. Each row shows the machine's status, its version and a live progress bar.
+   **Update N nodes, one first**. Each row shows the machine's status, its version and a live progress bar.
 
 Nodes verify the download's SHA-256, run it once to confirm the version, and restart into it.
 Updates need no root and survive reboots. Nodes with running jobs wait until they are idle.
+
+**One node first.** *Update N nodes* (and automatic install from GitHub) updates a single idle node first,
+waits up to 15 minutes for it to reconnect on the new version, then checks it: a short model call if it had
+a model loaded (after waiting for the model to load again) and an `echo` command if commands are on. Only
+then are the other nodes updated. If the first node does not come back, or fails its check, it is rolled
+back to its previous version, the rest are left alone, automatic install skips that version from then on,
+and an *Update failed* notification says why. A line above the table shows how far it got.
 
 ### Rolling back
 
@@ -740,8 +752,11 @@ notification (once per distinct failure). Saving the schedule makes the first co
 ## Notifications
 
 **Settings → Notifications** sends a message when the planner asks a question, a plan is ready to approve,
-a task finishes or fails, the spending cap pauses a task, a node has been offline for 5 minutes, or a nightly backup fails its check. Each
-event can be switched off. Every message links to the task (or the Nodes page).
+a task finishes or fails, the spending cap pauses a task, a node has been offline for 5 minutes, a nightly
+backup fails its check, the controller's disk is nearly full, a node update or rollback fails, or a model
+download, copy or load fails. Each event can be switched off. The **morning summary** (off until ticked, at
+08:00 controller time by default) sends one message a day listing tasks that finished or failed since the
+last one, tasks waiting for you and offline nodes; on a quiet day it sends nothing. Every message links to the task (or the Nodes page).
 
 - **Browser:** desktop notifications while an Outpost tab is open (the browser asks permission when you save).
 - **ntfy:** paste the topic URL (`https://ntfy.sh/my-topic` or your own server). Add an access token only for
@@ -777,6 +792,19 @@ until you dismiss it.
 **Stopping and updating.** A stop from systemd (or Ctrl+C), an update and a rollback first save every task, then the
 controller exits. Tasks that were running resume when it is back (local planners on their own, Claude and OpenRouter
 tasks with Resume, as before).
+
+**Controller disk.** *Settings → Application → Storage* shows what uses the controller's disk (tasks,
+models, releases, llama.cpp builds, projects) and how much is free. Below 10% or 5 GB free, a red line at
+the top of every page says so and a *disk low* notification is sent once (it clears above 15%). Optionally,
+**Clean up tasks that finished more than N days ago** removes, once a day, their per-round copies (those
+rounds can then no longer be undone), screenshots and the cached result zip (rebuilt when you download it),
+and, if ticked, their build outputs. Conversations, the task's files and attachments always stay, and the
+task's event log notes what was removed. **Clean up now** runs it at once.
+
+**Hung model watchdog.** While a node runs a model call, it watches llama-server: if nothing has come back
+for 3 minutes and llama-server's health check then fails twice, the call is stopped, llama-server is
+restarted, and the subtask goes back in the queue for another node. A model that is merely slow (a long
+prompt on a CPU) keeps answering its health check and is left alone.
 
 **Reading a node's log from the browser.** *Logs* on a node's card (Nodes → Detailed list) shows the end of
 that node's Outpost log, its llama-server output or its tray log, and follows new lines while it is open. It
