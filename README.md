@@ -73,7 +73,7 @@ On the **Nodes** page click **Add node**, then paste the command it gives you on
 
 Everything else (llama.cpp builds, models, the Go toolchain for test runs) is fetched by the
 controller and copied to nodes. More detail, options, the tray icon and troubleshooting are in the
-[user guide](docs/USER-GUIDE.md#install-starts-at-boot).
+[user guide](docs/install.md#install-starts-at-boot).
 
 ## Platform status
 
@@ -83,13 +83,13 @@ Outpost is developed and tested on Linux. **Treat everything else as untested un
 - **macOS** (LaunchAgent, menu bar item) has never run on a real Mac.
 - The current release has been tested against stub Claude and OpenRouter servers and a fake llama-server, **not on the real cluster** with real GPUs and transfer speeds. The live OpenRouter API was never called.
 
-The full list of known limits is in the [user guide](docs/USER-GUIDE.md#known-limits).
+The full list of known limits is in the [user guide](docs/known-limits.md).
 
 ## Documentation
 
 | Read this | For |
 | --- | --- |
-| [User guide](docs/USER-GUIDE.md) | Everything: first run, tasks, nodes working together, updating, backups, settings, known limits |
+| [User guide](docs/USER-GUIDE.md) | Everything else, by topic: [install and first run](docs/install.md), [tasks](docs/using-tasks.md), [nodes working together](docs/cluster.md), [chat and API](docs/chat-and-api.md), [updates, security and operations](docs/operations.md), [known limits](docs/known-limits.md) |
 | [SECURITY.md](SECURITY.md) | Threat model, protections, limits, reporting a problem |
 | [docs/BUILDING.md](docs/BUILDING.md) | Verifying downloads, building from source |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Data folders, node connection, task lifecycle, update flow |
