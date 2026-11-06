@@ -2095,6 +2095,9 @@ function openLoad(id) {
   $('load-cache').value = pref.cache_type || '';
   $('load-slots').value = String(pref.parallel > 1 ? pref.parallel : 0);
   $('load-fa').value = pref.flash_attn || '';
+  const pm = pref.cpu_moe || '';
+  $('load-moe').value = pm === '' || pm === 'all' ? pm : 'n';
+  $('load-moe-n').value = pm && pm !== 'all' ? pm : 20;
   loadDraftPref = pref.draft || '';
   $('load-draft').innerHTML = '';
   const helpers = state.nodes.filter((x) => x.id !== id && !(x.pool_names && x.pool_names.length));
@@ -2134,6 +2137,26 @@ function kvEstimate(m, ctx) {
   if (s) return { kv: f * (s.full_bytes_per_token * ctx + s.swa_bytes_per_token * Math.min(ctx, s.swa_window || ctx)), exact: true };
   return { kv: f * m.bytes_total / (1 << 30) * (12 << 10) * ctx, exact: false };
 }
+// Experts in system RAM (--cpu-moe / --n-cpu-moe): the setting as sent to the node, and the bytes it moves.
+function moeMode() {
+  const v = $('load-moe').value;
+  if (!v) return '';
+  if (v === 'all') return 'all';
+  const n = parseInt($('load-moe-n').value, 10);
+  return n >= 1 ? String(Math.min(n, 999)) : '';
+}
+function moeBytes(m) {
+  const s = m && m.shape, mode = moeMode();
+  if (!s || !s.expert_bytes || !mode) return 0;
+  if (mode === 'all' || !s.layers || parseInt(mode, 10) >= s.layers) return s.expert_bytes;
+  return Math.floor(s.expert_bytes * parseInt(mode, 10) / s.layers);
+}
+function showMoe(m) {
+  const on = !!(m && m.shape && m.shape.expert_bytes);
+  $('load-moe-wrap').classList.toggle('hidden', !on);
+  if (!on) $('load-moe').value = '';
+  $('load-moe-n-wrap').classList.toggle('hidden', !on || $('load-moe').value !== 'n');
+}
 // Weights plus the draft model plus a fixed allowance for buffers.
 function loadWeights(m) {
   const d = (models && models.models || []).find((x) => x.name === $('load-draft').value);
@@ -2153,9 +2176,10 @@ function largestFit() {
   const m = (models && models.models || []).find((x) => x.name === $('load-model').value);
   const n = nodeById(loadNodeId);
   if (!m || !n || !n.hello || !m.bytes_total) return 0;
-  const { vram, ram } = loadMem(n), w = loadWeights(m);
+  const { vram, ram } = loadMem(n), moe = vram ? moeBytes(m) : 0, w = loadWeights(m) - moe;
   let room;
-  if (vram && w < vram * 0.9) room = vram * 0.9;
+  if (moe) room = moe <= ram * 0.75 ? vram * 0.9 : 0; // experts live in RAM; the rest and the cache must fit the GPU
+  else if (vram && w < vram * 0.9) room = vram * 0.9;
   else if (vram) room = (vram + ram) * 0.8;
   else room = ram * 0.75;
   const max = CTX_STOPS[CTX_STOPS.length - 1] || 131072;
@@ -2170,15 +2194,21 @@ $('load-ctx-fit').onclick = () => {
   $('load-ctx').value = v; syncCtxRange(); updateCtxHint();
 };
 ['load-cache', 'load-slots', 'load-draft'].forEach((id) => $(id).addEventListener('change', updateCtxHint));
+['load-moe', 'load-moe-n'].forEach((id) => $(id).addEventListener('input', () => onLoadModelChange(parseInt($('load-ctx').value, 10))));
 function updateCtxHint() {
   const el = $('load-ctx-hint');
   const m = (models && models.models || []).find((x) => x.name === $('load-model').value);
   const n = nodeById(loadNodeId), ctx = parseInt($('load-ctx').value, 10) || 0;
   if (!m || !n || !n.hello || !m.bytes_total || !ctx) { el.classList.add('hidden'); return; }
   const { kv, exact } = kvEstimate(m, ctx), need = loadWeights(m) + kv;
-  const { vram, ram } = loadMem(n);
+  const { vram, ram } = loadMem(n), moe = vram ? moeBytes(m) : 0;
   let txt = `Context cache at ${ctx.toLocaleString()} tokens: about ${bytes(kv)}. Weights plus cache need roughly ${bytes(need)}.`, cls = 'hint';
-  if (vram && need > vram * 0.92) { txt += need > (vram + ram) * 0.9 ? ' More than this node can hold: lower the context size.' : ' More than the GPU memory, so part will run from system RAM (slower).'; cls = 'hint warn-text'; }
+  if (moe) {
+    const gpu = need - moe;
+    txt += ` With experts in system RAM: about ${bytes(gpu)} on the GPU and ${bytes(moe)} in RAM.`;
+    if (gpu > vram * 0.92) { txt += ' The GPU part still does not fit: lower the context size.'; cls = 'hint warn-text'; }
+    else if (moe > ram * 0.75) { txt += ' The experts do not fit in this node\'s RAM.'; cls = 'hint warn-text'; }
+  } else if (vram && need > vram * 0.92) { txt += need > (vram + ram) * 0.9 ? ' More than this node can hold: lower the context size.' : ' More than the GPU memory, so part will run from system RAM (slower).'; cls = 'hint warn-text'; }
   else if (!vram && need > ram * 0.9) { txt += ' More than this node can hold: lower the context size.'; cls = 'hint warn-text'; }
   else if (!vram && need > ram * 0.75) { txt += ' Close to the RAM limit: lower the context size.'; cls = 'hint warn-text'; }
   const train = m.shape && m.shape.train_ctx;
@@ -2198,8 +2228,13 @@ function onLoadModelChange(ctx) {
   if (!m || !n || !n.hello) { fit.classList.add('hidden'); return; }
   const { vram, ram, pool } = loadMem(n);
   const size = m.bytes_total || 0;
+  showMoe(m);
+  const moe = vram ? moeBytes(m) : 0;
   let msg = '', cls = 'note';
-  if (size > ram + vram) { msg = `This model (${bytes(size)}) is larger than this node's RAM${vram ? ' plus VRAM' : ''} (${bytes(ram + vram)}). It will not load.`; cls = 'note bad'; }
+  if (moe) {
+    if (moe > ram * 0.75 || size - moe > vram * 0.9) { msg = `Even with experts in system RAM (${bytes(moe)}), the rest (${bytes(size - moe)}) or the experts do not fit in ${size - moe > vram * 0.9 ? 'VRAM' : 'RAM'}.`; cls = 'note bad'; }
+    else msg = `Attention and shared weights (${bytes(size - moe)}) stay in ${bytes(vram)} of VRAM; ${bytes(moe)} of experts go to system RAM. Slower than all-VRAM, usually much faster than a plain spill.`;
+  } else if (size > ram + vram) { msg = `This model (${bytes(size)}) is larger than this node's RAM${vram ? ' plus VRAM' : ''} (${bytes(ram + vram)}). It will not load.`; cls = 'note bad'; }
   else if (vram && size <= vram * 0.9) msg = `Fits in this node's ${bytes(vram)} of VRAM: fast.`;
   else if (vram) msg = `Larger than this node's ${bytes(vram)} of VRAM; llama.cpp keeps the rest in system RAM. Slower, but works.`;
   else if (size > ram * 0.8) { msg = `Uses most of this node's ${bytes(ram)} of RAM; expect swapping.`; cls = 'note warn'; }
@@ -2238,7 +2273,7 @@ $('load-model').addEventListener('change', () => onLoadModelChange());
 $('load-go').onclick = async () => {
   $('load-err').classList.add('hidden');
   const body = { name: $('load-model').value, ctx: parseInt($('load-ctx').value, 10) || 0, gpu_layers: $('load-ngl').value,
-    threads: parseInt($('load-threads').value, 10) || 0, extra_args: $('load-extra').value,
+    threads: parseInt($('load-threads').value, 10) || 0, extra_args: $('load-extra').value, cpu_moe: moeMode(),
     cache_type: $('load-cache').value, flash_attn: $('load-fa').value, draft: $('load-draft').value, parallel: parseInt($('load-slots').value, 10) || 0,
     pool: [...document.querySelectorAll('.pool-cb:checked')].map((cb) => cb.value) };
   if (!body.name) return;

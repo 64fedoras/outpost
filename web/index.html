@@ -489,6 +489,11 @@
       <div><label for="load-cache">Context cache</label><select id="load-cache"><option value="">16-bit (default)</option><option value="q8_0">8-bit (half the memory)</option><option value="q4_0">4-bit (a quarter, slight quality loss)</option></select></div>
       <div><label for="load-slots">Calls at once</label><select id="load-slots"><option value="0">1 (default)</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
     </div>
+    <div class="row2 hidden" id="load-moe-wrap">
+      <div><label for="load-moe">Experts in system RAM</label><select id="load-moe"><option value="">Off (default)</option><option value="all">All experts</option><option value="n">First layers only…</option></select></div>
+      <div id="load-moe-n-wrap" class="hidden"><label for="load-moe-n">Layers whose experts move to RAM</label><input id="load-moe-n" type="number" min="1" max="999" value="20"></div>
+      <p class="hint" id="load-moe-hint">This model is a mixture of experts. Keeping the expert weights in system RAM leaves the GPU for attention and the context cache, so a model bigger than the GPU can still run quickly.</p>
+    </div>
     <p id="load-ctx-hint" class="hint hidden"></p>
     <details id="load-pool-wrap" class="hidden u6"><summary class="hint">Pool memory from other nodes (for models too big for this one)</summary>
       <p class="hint u8">Helpers lend their RAM and VRAM over your network with llama.cpp's RPC mode; this node runs the model. Helpers stop their own model while lending, and only this node's address can connect to them. Expect slower generation over a home network: best for models that would not fit otherwise. Trusted networks only: pooling traffic is neither encrypted nor authenticated beyond that IP check.</p>

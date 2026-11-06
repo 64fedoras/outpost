@@ -743,6 +743,14 @@ func servingArgs(ml ModelLoad) []string {
 	if ml.FlashAttn != "" {
 		a = append(a, "-fa", ml.FlashAttn)
 	}
+	if !hasMoeArg(ml.ExtraArgs) {
+		switch {
+		case ml.CPUMoe == "all":
+			a = append(a, "--cpu-moe")
+		case ml.CPUMoe != "":
+			a = append(a, "--n-cpu-moe", ml.CPUMoe)
+		}
+	}
 	if ml.DraftPath != "" {
 		a = append(a, "-md", ml.DraftPath)
 		if ml.GPULayers != "0" {
@@ -769,6 +777,16 @@ func (n *Node) mainModelPath(name string) (string, error) {
 	}
 	sort.Strings(files)
 	return filepath.Join(n.modelsDir(), name, files[0]), nil
+}
+
+// hasMoeArg is true when the extra arguments already choose where experts go.
+func hasMoeArg(args []string) bool {
+	for _, a := range args {
+		if a == "--cpu-moe" || a == "-cmoe" || a == "--n-cpu-moe" || a == "-ncmoe" || strings.HasPrefix(a, "--n-cpu-moe=") {
+			return true
+		}
+	}
+	return false
 }
 
 func hasJinjaArg(args []string) bool {

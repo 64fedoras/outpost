@@ -385,7 +385,10 @@ type ModelLoad struct {
 	FlashAttn string `json:"flash_attn,omitempty"`
 	// Draft is a small library model of the same family used for speculative
 	// decoding (-md); the node fetches it like the main model.
-	Draft     string `json:"draft,omitempty"`
+	Draft string `json:"draft,omitempty"`
+	// CPUMoe keeps mixture-of-experts weights in system RAM: "" (off), "all"
+	// (--cpu-moe) or a layer count N (--n-cpu-moe N: the experts of the first N layers).
+	CPUMoe    string `json:"cpu_moe,omitempty"`
 	DraftPath string `json:"draft_path,omitempty"` // set by the node
 }
 
