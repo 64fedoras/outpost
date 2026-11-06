@@ -115,6 +115,14 @@ func TestPickRepoFile(t *testing.T) {
 	if _, err := pickRepoFile(paths, ".gguf"); err == nil || !strings.Contains(err.Error(), "3 files match") {
 		t.Fatalf("an ambiguous match must be an error, got %v", err)
 	}
+	// a preview picture named like the quantisation must not make the match ambiguous
+	z := []string{"README.md", "z_image/q4_K.png", "z_image_turbo-Q4_K.gguf", "z_image_turbo-Q8_0.gguf"}
+	if p, err := pickRepoFile(z, "z_image_turbo-Q4_K.gguf"); err != nil || p != "z_image_turbo-Q4_K.gguf" {
+		t.Fatalf("%q %v", p, err)
+	}
+	if p, err := pickRepoFile(z, "q4_k"); err != nil || p != "z_image_turbo-Q4_K.gguf" {
+		t.Fatalf("pictures must be ignored: %q %v", p, err)
+	}
 	if _, err := pickRepoFile(paths, "q5_k"); err == nil {
 		t.Fatal("no match must be an error")
 	}
