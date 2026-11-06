@@ -49,6 +49,13 @@ type Project struct {
 	Planner     string `json:"planner,omitempty"`
 	Review      *bool  `json:"review,omitempty"`
 	TestCommand string `json:"test_command,omitempty"`
+	FixRounds   int    `json:"fix_rounds,omitempty"`   // fix rounds after failing tests; 0 = default (3)
+	TestMinutes int    `json:"test_minutes,omitempty"` // time limit for one test run; 0 = default (10)
+	// Instructions are this project's standing rules, added after the ones in
+	// Settings for every task started in the project.
+	Instructions string `json:"instructions,omitempty"`
+	// Suggestions are rules proposed after failed tasks (project_suggest.go).
+	Suggestions []ProjectSuggestion `json:"suggestions,omitempty"`
 
 	// Git. GitURL empty = a plain folder project.
 	GitURL      string `json:"git_url,omitempty"`
@@ -118,6 +125,12 @@ func (p *Project) applyDefaults(req createReq) createReq {
 	if req.Review == nil {
 		req.Review = p.Review
 	}
+	if req.FixRounds == 0 {
+		req.FixRounds = p.FixRounds
+	}
+	if req.TestMinutes == 0 {
+		req.TestMinutes = p.TestMinutes
+	}
 	return req
 }
 
@@ -169,24 +182,28 @@ func (c *Controller) execTask(ctx context.Context, t *Task) {
 // ---------- HTTP ----------
 
 type projectView struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Created     time.Time `json:"created"`
-	Planner     string    `json:"planner"`
-	Review      *bool     `json:"review"`
-	TestCommand string    `json:"test_command"`
-	GitURL      string    `json:"git_url"`
-	GitBranch   string    `json:"git_branch"`
-	GitBase     string    `json:"git_base"`
-	GitUser     string    `json:"git_user"`
-	GitToken    bool      `json:"git_token_set"`
-	GitKey      bool      `json:"git_ssh_key_set"`
-	GitPush     bool      `json:"git_push"`
-	GitPR       bool      `json:"git_pr"`
-	LastPush    string    `json:"last_push"`
-	LastPR      string    `json:"last_pr"`
-	Files       int       `json:"files"`
-	Tasks       int       `json:"tasks"`
+	ID          string              `json:"id"`
+	Name        string              `json:"name"`
+	Created     time.Time           `json:"created"`
+	Planner     string              `json:"planner"`
+	Review      *bool               `json:"review"`
+	TestCommand string              `json:"test_command"`
+	FixRounds   int                 `json:"fix_rounds"`
+	TestMinutes int                 `json:"test_minutes"`
+	Instr       string              `json:"instructions"`
+	Suggest     []ProjectSuggestion `json:"suggestions"`
+	GitURL      string              `json:"git_url"`
+	GitBranch   string              `json:"git_branch"`
+	GitBase     string              `json:"git_base"`
+	GitUser     string              `json:"git_user"`
+	GitToken    bool                `json:"git_token_set"`
+	GitKey      bool                `json:"git_ssh_key_set"`
+	GitPush     bool                `json:"git_push"`
+	GitPR       bool                `json:"git_pr"`
+	LastPush    string              `json:"last_push"`
+	LastPR      string              `json:"last_pr"`
+	Files       int                 `json:"files"`
+	Tasks       int                 `json:"tasks"`
 }
 
 func (c *Controller) projectViews() []projectView {
@@ -206,7 +223,7 @@ func (c *Controller) projectViews() []projectView {
 	for _, p := range ps {
 		p.mu.Lock()
 		out = append(out, projectView{ID: p.ID, Name: p.Name, Created: p.Created, Planner: p.Planner, Review: p.Review,
-			TestCommand: p.TestCommand, GitURL: p.GitURL, GitBranch: p.GitBranch, GitBase: p.GitBase, GitUser: p.GitUser,
+			TestCommand: p.TestCommand, FixRounds: p.FixRounds, TestMinutes: p.TestMinutes, Instr: p.Instructions, Suggest: append([]ProjectSuggestion(nil), p.Suggestions...), GitURL: p.GitURL, GitBranch: p.GitBranch, GitBase: p.GitBase, GitUser: p.GitUser,
 			GitToken: p.GitTokenEnc != "", GitKey: p.GitKeyEnc != "", GitPush: p.GitPush, GitPR: p.GitPR,
 			LastPush: p.LastPush, LastPR: p.LastPR, Tasks: counts[p.ID]})
 		p.mu.Unlock()
@@ -221,6 +238,7 @@ func (c *Controller) projectRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/projects", c.auth(c.handleCreateProject))
 	mux.HandleFunc("POST /api/projects/{id}", c.auth(c.handleUpdateProject))
 	mux.HandleFunc("DELETE /api/projects/{id}", c.auth(c.handleDeleteProject))
+	mux.HandleFunc("POST /api/projects/{id}/suggestions/{sid}/{act}", c.auth(c.handleProjectSuggestion))
 	mux.HandleFunc("GET /api/projects/{id}/download", c.auth(c.handleDownloadProject))
 }
 
@@ -229,6 +247,9 @@ type projectReq struct {
 	Planner     *string `json:"planner"`
 	Review      *bool   `json:"review"`
 	TestCommand *string `json:"test_command"`
+	FixRounds   *int    `json:"fix_rounds"`
+	TestMinutes *int    `json:"test_minutes"`
+	Instr       *string `json:"instructions"`
 	GitURL      string  `json:"git_url"`
 	GitBranch   *string `json:"git_branch"`
 	GitUser     *string `json:"git_user"`
@@ -254,6 +275,15 @@ func (c *Controller) applyProjectReq(p *Project, req projectReq) error {
 	}
 	if req.TestCommand != nil {
 		p.TestCommand = strings.TrimSpace(*req.TestCommand)
+	}
+	if req.FixRounds != nil {
+		p.FixRounds = clampFixRounds(*req.FixRounds)
+	}
+	if req.TestMinutes != nil {
+		p.TestMinutes = clampTestMinutes(*req.TestMinutes)
+	}
+	if req.Instr != nil {
+		p.Instructions = clipInstructions(*req.Instr)
 	}
 	if req.GitBranch != nil {
 		p.GitBranch = strings.TrimSpace(*req.GitBranch)

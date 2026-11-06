@@ -873,6 +873,9 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 	if len(spec.Tools) > 0 {
 		body["tools"] = spec.Tools
 	}
+	if len(spec.Params.JSONSchema) > 0 {
+		body["response_format"] = map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "answer", "schema": spec.Params.JSONSchema}}
+	}
 	b, _ := json.Marshal(body)
 	// The watchdog cancels this request (and restarts llama-server) if the
 	// server goes quiet and stops answering its health check.
@@ -897,6 +900,16 @@ func (l *llamaMgr) chat(ctx context.Context, spec InferenceSpec, emit func(strin
 		return nil, errf("inference_unavailable", true, "%v", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == 400 && len(spec.Params.JSONSchema) > 0 {
+		// An older llama.cpp build (or a schema it cannot turn into a grammar):
+		// answer without the constraint instead of failing.
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		resp.Body.Close()
+		log.Printf("llama-server refused the JSON schema (%s); answering without it", strings.TrimSpace(string(msg)))
+		spec.Params.JSONSchema = nil
+		cancelReq()
+		return l.chat(outer, spec, emit)
+	}
 	if resp.StatusCode != 200 {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		retry := resp.StatusCode >= 500

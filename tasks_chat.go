@@ -20,19 +20,20 @@ import (
 )
 
 type TaskMessage struct {
-	ID        string     `json:"id"`
-	Time      time.Time  `json:"time"`
-	Role      string     `json:"role"` // user | assistant | event
-	Kind      string     `json:"kind"` // text | answers | steer | questions | plan | result | error | event | agent_question | agent_answer
-	Text      string     `json:"text,omitempty"`
-	Questions []Question `json:"questions,omitempty"`
-	Plan      *Plan      `json:"plan,omitempty"`
-	Files     []string   `json:"files,omitempty"`  // result: files added or changed in this round
-	Images    []string   `json:"images,omitempty"` // user: attached image file names (see handleTaskImage)
-	Shots     []Shot     `json:"shots,omitempty"`  // shots, mockup: rendered pages (see visual.go)
-	Round     int        `json:"round"`
-	Pending   bool       `json:"pending,omitempty"` // agent_question: waiting for the user's answer
-	Subtask   string     `json:"subtask,omitempty"` // agent messages: which subtask they belong to
+	ID        string      `json:"id"`
+	Time      time.Time   `json:"time"`
+	Role      string      `json:"role"` // user | assistant | event
+	Kind      string      `json:"kind"` // text | answers | steer | questions | plan | result | error | event | agent_question | agent_answer
+	Text      string      `json:"text,omitempty"`
+	Questions []Question  `json:"questions,omitempty"`
+	Plan      *Plan       `json:"plan,omitempty"`
+	Files     []string    `json:"files,omitempty"`  // result: files added or changed in this round
+	Images    []string    `json:"images,omitempty"` // user: attached image file names (see handleTaskImage)
+	Shots     []Shot      `json:"shots,omitempty"`  // shots, mockup: rendered pages (see visual.go)
+	Round     int         `json:"round"`
+	Pending   bool        `json:"pending,omitempty"` // agent_question: waiting for the user's answer
+	Subtask   string      `json:"subtask,omitempty"` // agent messages: which subtask they belong to
+	Stats     *roundStats `json:"stats,omitempty"`   // result: the one-line summary (stats.go)
 	// Editing a message (see tasks_edit.go) keeps the old branch: everything from the
 	// edited message on is marked Superseded and left in the thread, dimmed, and the
 	// edited text is appended as a new message with Edited set.

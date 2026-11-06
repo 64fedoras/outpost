@@ -92,6 +92,8 @@
             <label class="chip-input" id="nt-cap-wrap" title="Spending cap for Claude on this task">cap $<input id="nt-cap" type="number" min="0.05" step="0.25" aria-label="Spending cap in US dollars"></label>
             <label class="toggle" title="A second node checks each subtask and fixes mistakes"><input type="checkbox" id="nt-review" checked> peer review</label>
             <label class="toggle" title="Plan 2 or 3 design variants of the page first, rendered side by side, and build the real code from the one you pick. Needs a node with exec and Chromium."><input type="checkbox" id="nt-mockup"> mockups first</label>
+            <label class="chip-input" title="How many times the planner tries to fix failing tests before giving you the result">fix rounds <select id="nt-fix" aria-label="Fix rounds"><option value="0">default</option><option>1</option><option>2</option><option>3</option><option>5</option><option>8</option></select></label>
+            <label class="chip-input" title="How long one test run may take">test limit <select id="nt-testmin" aria-label="Test time limit"><option value="0">default</option><option value="5">5 min</option><option value="10">10 min</option><option value="30">30 min</option><option value="60">60 min</option></select></label>
           </div>
         </div>
         <div class="error-msg hidden" id="nt-img-warn"></div>
@@ -500,6 +502,16 @@
   </div>
 </div>
 
+<div id="modal-redo" class="overlay hidden">
+  <div class="modal">
+    <h3>Redo <span id="redo-title"></span></h3>
+    <p class="hint">Writes this subtask again and then runs the tests (and fixes) again. The other subtasks and their files stay as they are.</p>
+    <label for="redo-node">Who writes it</label><select id="redo-node"></select>
+    <label for="redo-note">Note for this try (optional)</label><textarea id="redo-note" rows="3" placeholder="e.g. Use argparse, not click."></textarea>
+    <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="redo-go">Redo</button></div>
+  </div>
+</div>
+
 <div id="modal-run" class="overlay hidden">
   <div class="modal">
     <h3>Run a command on <span id="run-node"></span></h3>
@@ -552,8 +564,9 @@
     <div class="fb">
       <div class="fb-tree" id="tv-files"></div>
       <div class="fb-view">
-        <div class="fb-bar"><span class="mono" id="fb-title"></span><a id="fb-dl" class="hidden"><button class="small">Download file</button></a></div>
+        <div class="fb-bar"><span class="mono" id="fb-title"></span><button class="small hidden" id="fb-edit" title="Change this file by hand; saved as your own round, so Changes and Undo work">Edit</button><button class="small hidden" id="fb-cancel">Cancel</button><button class="small primary hidden" id="fb-save">Save</button><a id="fb-dl" class="hidden"><button class="small">Download file</button></a></div>
         <pre class="out code" id="fb-body">Pick a file.</pre>
+        <textarea class="out code fb-editor hidden" id="fb-editor" spellcheck="false" aria-label="File contents"></textarea>
       </div>
     </div>
     <div class="modal-foot"><a id="files-dl"><button class="primary">Download .zip</button></a><button id="files-zip" title="Tick files in the list first">Zip ticked files</button><button data-close>Close</button></div>

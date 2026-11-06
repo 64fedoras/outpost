@@ -42,6 +42,7 @@ type llmRequest struct {
 	Images      []llmImage  // attached to the user turn (planner only)
 	Msgs        []agentMsg  // agent mode: the conversation so far; replaces User
 	Tools       []agentTool
+	JSONSchema  json.RawMessage // local planners only: constrain the answer (see InferenceParams)
 }
 
 type llmResponse struct {
