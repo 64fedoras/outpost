@@ -58,12 +58,12 @@ build with `CGO_ENABLED=0 -trimpath`, and print the SHA-256 of every binary.
 
 **Where the output goes:** `../dist/outpost-<version>/bin/` (next to your checkout) unless you name a
 directory. Files are named `outpost-<os>-<arch>` (`.exe` on Windows), the same names the Updates tab
-expects. To build without the scripts: `CGO_ENABLED=0 go build -trimpath -o outpost .`
+expects. To build without the scripts: `CGO_ENABLED=0 go build -trimpath -o outpost ./cmd/outpost`
 
-**Versions.** The binary's version is the base `const Version` in `proto.go`. For releases, CI stamps the
+**Versions.** The binary's version is the base `const Version` in `cmd/outpost/proto.go`. For releases, CI stamps the
 next patch (or, after patch 19, minor) version over it at build time and commits nothing, so a plain local build reports the base
 (`0.8.0`), not the release number. To stamp your own number, set `OUTPOST_VERSION` (or `-Version` in
-PowerShell); `proto.go` is put back afterwards, so your checkout stays clean:
+PowerShell); `cmd/outpost/proto.go` is put back afterwards, so your checkout stays clean:
 
 ```bash
 OUTPOST_VERSION=0.8.20 sh build.sh current

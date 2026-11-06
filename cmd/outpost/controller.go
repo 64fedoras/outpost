@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"embed"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,10 +18,11 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"outpost"
 )
 
-//go:embed web
-var webFS embed.FS
+var webFS = outpost.WebFS
 
 const (
 	maxJobOutputBytes = 1 << 20 // per job, kept on the controller for the UI

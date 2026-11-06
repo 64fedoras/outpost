@@ -1,7 +1,7 @@
 # Testing
 
 ## Unit tests
-The Linux sandbox tests (`sandbox_linux_test.go`) run real sandboxed commands and skip themselves on kernels without Landlock.
+The Linux sandbox tests (`cmd/outpost/sandbox_linux_test.go`) run real sandboxed commands and skip themselves on kernels without Landlock.
     go vet ./... && go test ./...
     CGO_ENABLED=1 go test -race ./...     # also run on every pull request
 
@@ -54,7 +54,7 @@ WebSocket that executes the Chromium job locally. They use a headless Chromium f
 - Linux sandbox on the real nodes: Ubuntu 24.04 restricts unprivileged user namespaces with AppArmor (strict then falls back to Landlock TCP rules on kernel 6.7+, or refuses); check a node installed with `sudo` (root) and one run as an ordinary user, the node card badge, `go build`/`go test` with an Outpost-installed Go and a distro Go, git, Chromium screenshots (`visual.go` runs under the sandbox and may need `OUTPOST_SANDBOX_EXTRA_RO` or sandbox off on that node), and a test step with a download.
 - Real Claude API cost figures.
 
-- Windows experimental job-object limits (`OUTPOST_EXPERIMENTAL_WINDOWS_SANDBOX=1`): run `go test -run 'Job|Windows' .` on a real Windows machine and check a cancelled exec job leaves no child processes (Task Manager).
+- Windows experimental job-object limits (`OUTPOST_EXPERIMENTAL_WINDOWS_SANDBOX=1`): run `go test -run 'Job|Windows' ./cmd/outpost` on a real Windows machine and check a cancelled exec job leaves no child processes (Task Manager).
 - Check cluster on the real nodes: a firewall that blocks the file-sharing port (the note's `ufw` / `New-NetFirewallRule` command), a node with a wrong clock, a Windows node's `echo` through PowerShell, and a node still on an older version (its Logs button says to update it).
 - Node logs and Download diagnostics against Windows and macOS nodes (tray log path), and a nightly backup to an NFS folder that fills up or goes away mid-write (the Backup card and the *Backup failed* notification).
 - One-node-first updates on the real cluster: a Windows node as the first node (Defender blocking the new exe should stop the rollout and leave the rest alone), a first node whose model takes minutes to load again, and GitHub auto-install with the rollout.
