@@ -224,7 +224,7 @@ func (n *Node) fetchModel(mf ModelFetch) {
 			n.opStatus(op, mf.Name, "downloading", base+d, total, "")
 		})
 		if err != nil {
-			fail("download %s: %v", f.Path, err)
+			fail("download %s: %v%s", f.Path, err, hfAccessHint(err, mf.Token != "", f.URL))
 			return
 		}
 		if f.SHA256 != "" && !strings.EqualFold(sum, f.SHA256) {
@@ -271,4 +271,22 @@ func chatPayload(msgs []ChatMessage) []any {
 		out = append(out, map[string]any{"role": m.Role, "content": parts})
 	}
 	return out
+}
+
+// hfAccessHint says what to do when Hugging Face refuses a download because the
+// file's repository is gated (401 or 403): accept its licence on huggingface.co and
+// give Outpost a token. Empty for every other error.
+func hfAccessHint(err error, haveToken bool, url string) string {
+	msg := err.Error()
+	if !strings.Contains(msg, "Hugging Face: 401") && !strings.Contains(msg, "Hugging Face: 403") {
+		return ""
+	}
+	repo := strings.TrimPrefix(url, hfBase()+"/")
+	if parts := strings.SplitN(repo, "/", 3); len(parts) >= 2 {
+		repo = parts[0] + "/" + parts[1]
+	}
+	if haveToken {
+		return fmt.Sprintf(". The Hugging Face token was refused for %s: open huggingface.co/%s while signed in to the token's account and accept the licence, then try again", repo, repo)
+	}
+	return fmt.Sprintf(". %s is gated: accept its licence on huggingface.co/%s, create a read token at huggingface.co/settings/tokens and save it in Outpost under Settings, API keys, Hugging Face, then try again", repo, repo)
 }
