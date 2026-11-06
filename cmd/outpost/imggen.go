@@ -104,7 +104,7 @@ var imageCatalog = []ImageModelDef{
 		About:   "Modern 6B model in 8 steps with a Qwen text encoder; good at text in pictures. Fits a 12 GB card.",
 		License: "Apache-2.0", LicenseURL: "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo",
 		Files: []ImageFileDef{
-			{Flag: "--diffusion-model", Repo: "leejet/Z-Image-Turbo-GGUF", Match: "q4_k", Bytes: 3_900 << 20},
+			{Flag: "--diffusion-model", Repo: "leejet/Z-Image-Turbo-GGUF", Match: "z_image_turbo-Q4_K.gguf", Bytes: 3_900 << 20},
 			{Flag: "--vae", Repo: "Comfy-Org/z_image_turbo", Match: "ae.safetensors", Bytes: 335 << 20, Aux: true},
 			{Flag: "--llm", Repo: "unsloth/Qwen3-4B-Instruct-2507-GGUF", Match: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf", Bytes: 2_500 << 20, Aux: true},
 		},
@@ -393,6 +393,17 @@ func sdServerArgs(spec GenSpec, modelDir string, port int) []string {
 	return args
 }
 
+// notModelFile says a repository file is never a model file: documentation, metadata,
+// previews and scripts (a repository may carry a preview picture named like its quantisation).
+func notModelFile(lowerPath string) bool {
+	for _, ext := range []string{".md", ".json", ".txt", ".gitattributes", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".py", ".yaml", ".yml"} {
+		if strings.HasSuffix(lowerPath, ext) {
+			return true
+		}
+	}
+	return false
+}
+
 // pickRepoFile finds the file a catalog entry means among a repository's files.
 // An exact base name (case-insensitive) wins; otherwise the match must be part of
 // exactly one path. Several candidates are an error rather than a guess.
@@ -401,7 +412,7 @@ func pickRepoFile(paths []string, match string) (string, error) {
 	var exact, part []string
 	for _, p := range paths {
 		lp := strings.ToLower(p)
-		if strings.HasSuffix(lp, ".md") || strings.HasSuffix(lp, ".json") || strings.HasSuffix(lp, ".txt") || strings.HasSuffix(lp, ".gitattributes") {
+		if notModelFile(lp) {
 			continue
 		}
 		if path.Base(lp) == m {
