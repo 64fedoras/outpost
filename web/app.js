@@ -110,7 +110,7 @@ $('setup-form').onsubmit = async (e) => {
 };
 $('btn-logout').onclick = async () => { await post('/api/logout').catch(() => {}); showLogin(); };
 
-const PAGES = ['new', 'task', 'chat', 'projects', 'nodes', 'models', 'updates', 'settings'];
+const PAGES = ['new', 'image', 'task', 'chat', 'projects', 'nodes', 'models', 'updates', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
   ntDraft.flush(); tmDraft.flush();
@@ -120,7 +120,7 @@ function route() {
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
   document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === page));
   document.querySelector('.page-plain').classList.toggle('hidden', !['chat', 'projects', 'nodes', 'models', 'updates', 'settings'].includes(page));
-  document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task' }[page] || page[0].toUpperCase() + page.slice(1));
+  document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image' }[page] || page[0].toUpperCase() + page.slice(1));
   document.body.classList.toggle('on-task', page === 'task');
   closeSide();
   clearTimeout(taskTimer);
@@ -129,6 +129,7 @@ function route() {
   if (page === 'new') { ntDraft.restore('new'); setTimeout(() => $('nt-prompt').focus(), 0); }
   if (page === 'settings') loadSettings();
   if (page === 'chat') chatOpen(pageArg);
+  if (typeof imgRoute === 'function') imgRoute(page);
   renderSideTasks();
   if (state) refresh();
 }
@@ -2908,7 +2909,7 @@ function palSource() {
   const go = (h) => () => { location.hash = h; };
   const sec = (href) => () => { location.hash = '#/settings'; setTimeout(() => { const a = document.querySelector(`#set-nav a[href="${href}"]`); if (a) a.click(); }, 150); };
   const items = [
-    { t: 'New task', k: 'page', run: go('#/new') }, { t: 'Chat', k: 'page', run: go('#/chat') },
+    { t: 'New task', k: 'page', run: go('#/new') }, { t: 'New image', k: 'page', run: go('#/image') }, { t: 'Chat', k: 'page', run: go('#/chat') },
     { t: 'New chat', k: 'action', run: () => $('chat-new').click() },
     { t: 'Projects', k: 'page', run: go('#/projects') }, { t: 'Nodes', k: 'page', run: go('#/nodes') },
     { t: 'Models', k: 'page', run: go('#/models') }, { t: 'Updates', k: 'page', run: go('#/updates') },

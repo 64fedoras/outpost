@@ -20,3 +20,14 @@ API (same sign-in or API token as the rest): `GET /api/images/models`, `POST /ap
 `DELETE /api/images/{id}`, `GET|POST /api/images/settings`. Nodes need this version (`node.gen`).
 **Untested on real hardware:** Vulkan on AMD cards, memory numbers, speeds, Windows and macOS. Everything was
 tested against a stand-in `sd-server`.
+
+## Using the New image page
+
+Open **New image** in the sidebar (or press Ctrl+K and type "image"). Type a prompt, choose a model, a size and
+how many pictures, then **Generate**. **Change options** adds steps, cfg, a seed and a negative prompt. Running
+generations show the node and the step; **Stop** cancels them. Finished ones appear under **Results** with
+Download, **Variations** (same settings, new seeds), **Use prompt**, **Keep** (never deleted automatically),
+**Retry failed** and Delete; older ones sit in a compact grid. **Image models** at the bottom lists the models,
+their licence and which nodes they fit, and downloads one to a node of your choice. A model with a restricted
+licence asks for an accept click first. **Settings, Model settings, Pictures** sets how long (default 30 days)
+and how much (default 5 GB) to keep. The page was checked in a headless browser against stand-in data only.
