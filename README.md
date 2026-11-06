@@ -59,7 +59,7 @@ opens it first sets the password, and by default only LAN addresses are accepted
 
 ### Nodes
 
-On the **Nodes** page click **Add node**, then paste the command it gives you on the node. It looks like this:
+On the **Nodes** page click **Add node**, then paste the command it gives you on the node. The top boxes are a one-line `curl ... | sh` (Linux/macOS) and a PowerShell one-liner (Windows) that download the binary from the controller and install it. Or copy the binary yourself; the commands then look like this:
 
 | Platform | Command |
 | --- | --- |

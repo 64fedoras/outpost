@@ -2820,6 +2820,13 @@ function showAddToken(note) {
   renderAddCmds();
   $('cmd-win').textContent = '.\\' + addToken.windows.replace(/^outpost\.exe/, 'outpost-windows-amd64.exe');
   $('cmd-mac').textContent = 'chmod +x ./outpost-darwin-arm64 && ./outpost-darwin-arm64 ' + addToken.macos.replace(/^outpost /, '');
+  $('cmd-curl').textContent = addToken.curl_unix || '';
+  $('cmd-curlwin').textContent = addToken.curl_win || '';
+  const have = addToken.platforms || [];
+  const missing = ['linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64', 'windows-amd64'].filter((p) => !have.includes(p));
+  const np = $('add-noplat');
+  np.textContent = missing.length ? `The one-paste commands only work for platforms whose binary is uploaded in the Updates tab. Missing: ${missing.join(', ')}.` : '';
+  np.classList.toggle('hidden', !missing.length);
   const n = $('add-note');
   n.textContent = note || ''; n.classList.toggle('hidden', !note);
 }

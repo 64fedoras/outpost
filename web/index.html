@@ -459,6 +459,12 @@
     <h3>Add a node</h3>
     <p class="hint">Linux: installs a service that starts at boot and runs as the user who ran <code>sudo</code>. Windows: runs in the background with a tray icon and starts at sign-in. Each code works once and expires in 1 hour. Once a node joins with it, a new code appears here, so you can add the next node straight away.</p>
     <div id="add-note" class="note hidden u7"></div>
+    <label>Linux or macOS: paste on the new machine (it downloads Outpost from this controller and installs it)</label>
+    <div class="codebox"><span id="cmd-curl"></span><button data-copy="cmd-curl">Copy</button></div>
+    <label>Windows: paste in an <b>Administrator</b> PowerShell or Command Prompt</label>
+    <div class="codebox"><span id="cmd-curlwin"></span><button data-copy="cmd-curlwin">Copy</button></div>
+    <p id="add-noplat" class="note hidden u7"></p>
+    <details class="u6"><summary class="hint">Other ways: copy the binary yourself, or run over SSH</summary>
     <label for="ssh-target">Run over SSH from this computer (optional, e.g. admin@192.0.2.11)</label>
     <input id="ssh-target" placeholder="user@host" autocomplete="off">
     <label>Linux (with <code>outpost-linux-amd64</code> already in the node's home folder)</label>
@@ -467,6 +473,7 @@
     <div class="codebox"><span id="cmd-win"></span><button data-copy="cmd-win">Copy</button></div>
     <label>macOS (runs in the foreground for now)</label>
     <div class="codebox"><span id="cmd-mac"></span><button data-copy="cmd-mac">Copy</button></div>
+    </details>
     <p class="hint u4">The node connects to <code id="add-url"></code>. If that address is wrong, reinstall the controller with <code>--advertise https://IP:8443</code>.</p>
     <div class="modal-foot"><button id="add-regen" title="Make a new code and cancel the current one">New code</button><button data-close>Done</button></div>
   </div>
