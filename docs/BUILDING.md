@@ -30,7 +30,7 @@ published it (`SHA256SUMS` is not signed either). If you would rather not trust 
 
 ## Build from source
 
-You need **Go 1.24.7 or newer** (the `go` line in `go.mod`) and nothing else. There is no cgo, and every
+You need **Go 1.26.10 or newer** (the `go` line in `go.mod`) and nothing else. There is no cgo, and every
 dependency is committed in `vendor/`, so the build needs no network after Go itself is installed (the
 scripts turn off module and toolchain downloads on purpose). Get the source with `git clone` or from the
 release zip.
@@ -78,7 +78,7 @@ OUTPOST_VERSION=0.8.20 sh build.sh current
 **Official release versus your build.** Both are unsigned. The builds are reproducible: with the same
 Go version, the same source and the same stamped version, two builds on the same machine gave
 byte-identical binaries for all five platforms (`-trimpath` removes paths and `-buildid=` removes
-Go's random build id). That was checked on Linux with Go 1.24.7; it was not checked across different
+Go's random build id). That was checked on Linux with Go 1.24.7 (before the 1.26.x upgrade); it was not checked across different
 operating systems or Go versions, and a different Go version will give different bytes. The Windows exe
 also contains version info made by `llvm-rc`/`llvm-cvtres`. The scripts regenerate it when those tools
 are installed; without them the committed resource file is used, so a Windows exe built without them
