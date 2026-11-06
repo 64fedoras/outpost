@@ -28,3 +28,4 @@ BEGIN
   END
 END
 1 24 "outpost.manifest"
+2 ICON "outpost.ico"
