@@ -541,6 +541,20 @@ not add testify"). The rule appears on the project's card as a suggestion: **Add
 **Dismiss**; nothing changes until you choose. The last 5 suggestions are kept. With Claude or OpenRouter
 this is one small call counted in the task's cost, and it is skipped if it would pass the cap.
 
+## Saved and scheduled tasks
+
+**Save for later** (next to *Change options* on the New task page) keeps the request and its options
+(planner, project, peer review, fix rounds, test limit, node label) as a saved task. Attached files and
+images are not kept. Saved tasks are listed under the starters: **Run now** starts one as if you typed
+it, **Edit first** puts it in the box to change, **Schedule…** runs it every day or every week at a time
+(the controller's clock).
+
+A scheduled run starts on its own: the planner is told nobody is watching and asks no questions, and the
+plan is approved without you. You get the usual *Finished* or *Failed* notification. To make sure a
+schedule never spends money, it must plan on a node (a node or *Auto*); a schedule with Claude or
+OpenRouter as the planner is refused. A run is skipped (and noted on the saved task) while the previous
+run is still going, and runs missed while the controller was off are not made up.
+
 ## Projects, attachments and git
 
 **Projects** (sidebar → Projects) keep a folder of files between tasks. Pick a project in the
@@ -664,6 +678,27 @@ connection is planned (roadmap row 24) but not built.
 
 Expect slower generation than a single machine. Every token crosses your network, so wired
 gigabit or faster is best. Use it for models that would not fit otherwise, not for speed.
+
+## Labels, working hours and Wake-on-LAN
+
+**Labels.** On a node's card (Nodes → Detailed list) click *edit* next to Labels and type tags such as
+`gpu, fast, office`. The Nodes page then shows a filter row with one button per label. A task can ask for
+a label (Change options → *nodes*), and a project can set one for all its tasks: writing, peer review and
+best-of-N judging then use only nodes with that label. The planner node and the nodes that run tests are
+not filtered.
+
+**Working hours.** *set hours* on the node card picks days and a time window (22:00 to 07:00 runs past
+midnight, on the controller's clock). Outside its hours a node takes no new model calls or test runs (a
+call already running finishes) and its idle unload drops to 10 seconds, so its model stops soon and the
+memory is free. The model loads again on the first call once the hours start. Chat and the `/v1` API
+leave it alone too. The card shows *Off hours* while it is outside them.
+
+**Wake-on-LAN.** Nodes report their network cards' MAC addresses. An offline node that has reported one
+gets a **Wake** button. With *Settings → Wake sleeping nodes* on, the controller also wakes offline nodes
+(inside their hours, with the task's label if any, at most once per 10 minutes each) when a task is
+waiting for a worker. Wake-on-LAN must be on in the machine's firmware and OS, and the controller must be
+on the same network segment: the packet is a broadcast (to `255.255.255.255` and the node's last /24) and
+does not cross routers.
 
 ## Chat and the OpenAI-compatible API
 
@@ -933,6 +968,8 @@ See also [SECURITY.md](SECURITY.md) for the security model and its limits (the L
 - Idle unload is covered by unit tests but its reload timing is **untested with a real llama-server** on
   the cluster. A request that wakes an unloaded model waits for the whole load (large models take minutes),
   and a node restart reloads a model that was unloaded for idleness.
+- Wake-on-LAN, working hours and schedules are tested with unit tests and the local test rig only; no
+  machine was actually woken. "Only when the PC has been idle" is not built; working hours are clock times.
 - Chat and the `/v1` API are tested against a fake node only, never with a real llama-server, a real
   editor plugin or a thinking model. Streamed tool calls arrive whole at the end, not piece by piece.
 - Version 0.8.0 is **untested on the real cluster** (nodes, GPUs, real transfer speeds), on real Windows

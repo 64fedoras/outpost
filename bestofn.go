@@ -444,7 +444,7 @@ func (c *Controller) judgeCandidates(ctx context.Context, t *Task, spec PlanSubt
 	judge := ""
 	deadline := time.Now().Add(bonJudgeWait)
 	for judge == "" {
-		all := c.scoreNodes(c.workerNodes())
+		all := c.scoreNodes(c.taskWorkers(t))
 		if w := pickReviewer(best, c.freeScores(all, "")); w != "" && c.tryReserve(w) {
 			judge = w
 			break

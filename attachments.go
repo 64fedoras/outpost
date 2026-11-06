@@ -54,6 +54,7 @@ type createReq struct {
 	FixRounds   int           `json:"fix_rounds"`   // 0 = project or default
 	TestMinutes int           `json:"test_minutes"` // 0 = project or default
 	Images      []imageUpload `json:"images"`       // screenshots for the planner (tasks_images.go)
+	NodeLabel   string        `json:"node_label"`   // only nodes with this label work on it; "" = project default, then any
 }
 
 type attachedFile struct {

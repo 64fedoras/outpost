@@ -467,6 +467,10 @@ function renderNew() {
   }
   const psel = $('nt-project'), pcur = psel.value || localStorage.getItem('nt-project') || '';
   setHTML(psel, `<option value="">No project</option>` + projects.map((p) => `<option value="${p.id}" ${p.id === pcur ? 'selected' : ''}>Project: ${esc(p.name)}</option>`).join(''));
+  const labels = state.labels || [], lcur = $('nt-label').value;
+  setHTML('nt-label', `<option value="">any</option>` + labels.map((l) => `<option value="${esc(l)}" ${l === lcur ? 'selected' : ''}>labelled ${esc(l)}</option>`).join(''));
+  $('nt-label-wrap').classList.toggle('hidden', !labels.length);
+  renderSaved();
   $('nt-model').classList.toggle('hidden', sel.value !== 'claude');
   $('nt-cap-wrap').classList.toggle('hidden', sel.value !== 'claude' && sel.value !== 'openrouter');
   renderOptLine();
@@ -493,6 +497,7 @@ function renderOptLine() {
   if ($('nt-mockup').checked) parts.push('mockups first');
   if (+$('nt-fix').value) parts.push(`${$('nt-fix').value} fix round${$('nt-fix').value === '1' ? '' : 's'}`);
   if (+$('nt-testmin').value) parts.push(`tests up to ${$('nt-testmin').value} min`);
+  if ($('nt-label').value) parts.push(`only nodes labelled ${$('nt-label').value}`);
   setHTML('nt-optline', esc(parts.join(' · ')));
 }
 $('nt-opt-toggle').addEventListener('click', () => {
@@ -501,7 +506,7 @@ $('nt-opt-toggle').addEventListener('click', () => {
   $('nt-opt-toggle').setAttribute('aria-expanded', show);
   $('nt-opt-toggle').textContent = show ? 'Hide options' : 'Change options';
 });
-['nt-model', 'nt-cap', 'nt-review', 'nt-mockup', 'nt-fix', 'nt-testmin'].forEach((id) => $(id).addEventListener('change', renderOptLine));
+['nt-model', 'nt-cap', 'nt-review', 'nt-mockup', 'nt-fix', 'nt-testmin', 'nt-label'].forEach((id) => $(id).addEventListener('change', renderOptLine));
 $('nt-cap').addEventListener('input', renderOptLine);
 $('nt-planner').addEventListener('change', () => { renderNew(); ntImg.refresh(); });
 $('nt-project').addEventListener('change', () => { try { localStorage.setItem('nt-project', $('nt-project').value); } catch (e) {} });
@@ -511,7 +516,7 @@ $('nt-files').addEventListener('change', () => {
 });
 async function startTask() {
   $('nt-err').classList.add('hidden');
-  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, mockup: $('nt-mockup').checked, fix_rounds: +$('nt-fix').value, test_minutes: +$('nt-testmin').value, project: $('nt-project').value, images: ntImg.payload() };
+  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, mockup: $('nt-mockup').checked, fix_rounds: +$('nt-fix').value, test_minutes: +$('nt-testmin').value, project: $('nt-project').value, node_label: $('nt-label').value, images: ntImg.payload() };
   if (!body.prompt.trim()) { $('nt-prompt').focus(); return; }
   $('nt-go').disabled = true;
   try {
@@ -532,6 +537,69 @@ async function startTask() {
   $('nt-go').disabled = false;
 }
 $('nt-go').onclick = startTask;
+
+// ---------- saved tasks and schedules (templates.go) ----------
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+function schedText(t) {
+  const s = t.schedule;
+  if (!s) return '';
+  return (s.every === 'weekly' ? `Every ${DAYS_LONG[s.weekday]}` : 'Every day') + ` at ${s.at}`;
+}
+function renderSaved() {
+  const list = state.templates || [];
+  if (!list.length) { setHTML('nt-saved', ''); return; }
+  setHTML('nt-saved', `<div class="section-head"><h2>Saved tasks</h2></div><div class="card saved-list">${list.map((t) => {
+    const last = t.last_task ? ` · last run <a href="#/tasks/${esc(t.last_task)}">${ago(t.last_run)}</a>${t.last_status ? ' ' + pill(t.last_status) : ''}` : '';
+    const sched = t.schedule ? `<span class="pill st-ready">${esc(schedText(t))}</span> ` : '';
+    return `<div class="rowline"><span class="nv-min nv-grow"><b>${esc(t.name)}</b> ${sched}<span class="sub">${t.request.project ? esc((projects.find((p) => p.id === t.request.project) || {}).name || 'project') + ' · ' : ''}${t.request.node_label ? 'nodes labelled ' + esc(t.request.node_label) + ' · ' : ''}${t.next_run ? 'next ' + new Date(t.next_run).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : 'not scheduled'}${last}</span>${t.last_note ? `<div class="sub warn-text">${esc(t.last_note)}</div>` : ''}</span>
+      <button class="small" data-act="tpl-use" data-id="${esc(t.id)}" title="Put the request in the box above to change it first">Edit first</button><button class="small" data-act="tpl-sched" data-id="${esc(t.id)}">Schedule…</button><button class="small primary" data-act="tpl-run" data-id="${esc(t.id)}">Run now</button><button class="small danger" data-act="tpl-del" data-id="${esc(t.id)}" aria-label="Delete saved task">×</button></div>`;
+  }).join('')}</div>`);
+}
+$('nt-save-tpl').onclick = async () => {
+  const prompt0 = $('nt-prompt').value.trim();
+  if (!prompt0) { $('nt-prompt').focus(); toast('Write the request first'); return; }
+  const name = prompt('Name for this saved task', prompt0.split('\n')[0].slice(0, 60));
+  if (name === null) return;
+  const request = { prompt: prompt0, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, mockup: $('nt-mockup').checked, fix_rounds: +$('nt-fix').value, test_minutes: +$('nt-testmin').value, project: $('nt-project').value, node_label: $('nt-label').value };
+  try { await post('/api/templates', { name, request }); toast(ntFiles.length || ntImg.payload().length ? 'Saved (attachments and images are not kept)' : 'Saved under Saved tasks'); refresh(); } catch (e) { toast(e.message); }
+};
+let schedTpl = null;
+function openSched(id) {
+  schedTpl = (state.templates || []).find((t) => t.id === id);
+  if (!schedTpl) return;
+  const s = schedTpl.schedule || {};
+  $('sched-name').textContent = schedTpl.name;
+  $('sched-every').value = s.every || ''; $('sched-day').value = String(s.weekday || 1); $('sched-at').value = s.at || '02:00';
+  $('sched-err').classList.add('hidden');
+  schedShow(); open('modal-sched');
+}
+function schedShow() { $('sched-day-wrap').classList.toggle('hidden', $('sched-every').value !== 'weekly'); }
+$('sched-every').addEventListener('change', schedShow);
+$('sched-go').onclick = async () => {
+  const every = $('sched-every').value;
+  try {
+    await post(`/api/templates/${schedTpl.id}`, { schedule: { every, at: $('sched-at').value, weekday: +$('sched-day').value } });
+    close('modal-sched'); toast(every ? 'Scheduled' : 'Schedule removed'); refresh();
+  } catch (e) { $('sched-err').textContent = e.message; $('sched-err').classList.remove('hidden'); }
+};
+async function templateAction(act, id) {
+  const t = (state.templates || []).find((x) => x.id === id);
+  if (!t) return;
+  if (act === 'tpl-run') { const r = await post(`/api/templates/${id}/run`, {}); location.hash = '#/tasks/' + r.id; refresh(); }
+  else if (act === 'tpl-sched') openSched(id);
+  else if (act === 'tpl-del') { if (confirm(`Delete the saved task "${t.name}"${t.schedule ? ' and its schedule' : ''}?`)) { await api('/api/templates/' + id, { method: 'DELETE' }); toast('Deleted'); refresh(); } }
+  else if (act === 'tpl-use') {
+    const q = t.request;
+    $('nt-prompt').value = q.prompt; $('nt-project').value = q.project || '';
+    if (q.planner && [...$('nt-planner').options].some((o) => o.value === q.planner)) $('nt-planner').value = q.planner;
+    $('nt-review').checked = q.review !== false; $('nt-mockup').checked = !!q.mockup;
+    $('nt-fix').value = String(q.fix_rounds || 0); $('nt-testmin').value = String(q.test_minutes || 0);
+    if (q.cap_usd) $('nt-cap').value = q.cap_usd;
+    $('nt-label').value = q.node_label || '';
+    renderNew(); $('nt-prompt').focus(); window.scrollTo(0, 0);
+  }
+}
 $('nt-prompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) startTask(); });
 
 // ---------- projects ----------
@@ -547,6 +615,7 @@ function renderProjects() {
         <label class="toggle"><input type="checkbox" data-pf="review" data-id="${p.id}" ${p.review === false ? '' : 'checked'}> peer review</label>
         <label class="chip-input">fix rounds <select data-pf="fix_rounds" data-id="${p.id}">${[0, 1, 2, 3, 5, 8].map((v) => `<option value="${v}" ${(p.fix_rounds || 0) === v ? 'selected' : ''}>${v || 'default'}</option>`).join('')}</select></label>
         <label class="chip-input">test limit <select data-pf="test_minutes" data-id="${p.id}">${[0, 5, 10, 30, 60].map((v) => `<option value="${v}" ${(p.test_minutes || 0) === v ? 'selected' : ''}>${v ? v + ' min' : 'default'}</option>`).join('')}</select></label>
+        <label class="chip-input" title="Tasks in this project run only on nodes with this label (empty = any node)">nodes <input data-pf="node_label" data-id="${p.id}" value="${esc(p.node_label || '')}" placeholder="any label"></label>
         ${p.git_url ? `<label class="toggle"><input type="checkbox" data-pf="git_push" data-id="${p.id}" ${p.git_push ? 'checked' : ''}> push</label>
         <label class="toggle"><input type="checkbox" data-pf="git_pr" data-id="${p.id}" ${p.git_pr ? 'checked' : ''}> open PR</label>` : ''}
         <button data-act="project-save" data-id="${p.id}">Save</button>
@@ -576,7 +645,7 @@ async function projectAction(act, el) {
     await api(`/api/projects/${id}`, { method: 'DELETE' }); toast('Project deleted');
   } else if (act === 'project-save') {
     const f = (k) => document.querySelector(`[data-pf="${k}"][data-id="${id}"]`);
-    const body = { test_command: f('test_command').value, review: f('review').checked, fix_rounds: +f('fix_rounds').value, test_minutes: +f('test_minutes').value, instructions: f('instructions').value };
+    const body = { test_command: f('test_command').value, review: f('review').checked, fix_rounds: +f('fix_rounds').value, test_minutes: +f('test_minutes').value, node_label: f('node_label').value, instructions: f('instructions').value };
     if (f('git_push')) { body.git_push = f('git_push').checked; body.git_pr = f('git_pr').checked; }
     await post(`/api/projects/${id}`, body); toast('Saved');
   } else if (act === 'project-suggest') {
@@ -1538,7 +1607,7 @@ function benchLine(n, loaded, ready) {
 // Nodes page views: Grid (cards), List (grouped two-line rows) and Detailed list
 // (short list on the left, the selected node's full card on the right).
 const NODE_VIEWS = ['grid', 'list', 'detail'];
-let nodeView = 'grid', nodeSel = null;
+let nodeView = 'grid', nodeSel = null, nodeLabel = '';
 try { const v = localStorage.getItem('outpost.nodeView'); if (NODE_VIEWS.includes(v)) nodeView = v; } catch (e) { /* storage blocked */ }
 function setNodeView(v) {
   if (!NODE_VIEWS.includes(v)) return;
@@ -1556,8 +1625,9 @@ function nodeFacts(n) {
   const b = n.bench && loaded && n.bench.model === loaded ? n.bench : null;
   const issues = [];
   const o = state.ops && state.ops[n.id];
-  if (!n.online) issues.push({ lvl: 'off', short: 'Offline', text: n.last_seen ? `Last seen ${ago(n.last_seen)}.` : 'Never connected.' });
+  if (!n.online) issues.push({ lvl: 'off', short: 'Offline', text: n.last_seen ? `Last seen ${ago(n.last_seen)}.` : 'Never connected.', ...(n.can_wake ? { act: 'wake', fix: 'Wake' } : {}) });
   else {
+    if (n.off_hours) issues.push({ lvl: 'info', short: 'Off hours', text: `Outside its working hours (${hoursText(n.hours)}): takes no new work.`, act: 'hours', fix: 'Hours…' });
     if (o && o.state === 'failed' && (Date.now() - new Date(o.updated)) < 3600000) issues.push({ lvl: 'bad', short: 'Failed', text: o.error || 'The last model operation failed.', act: 'load', fix: 'Load model…' });
     else if (hb && hb.llama_error && !ready) issues.push({ lvl: 'bad', short: 'Model error', text: hb.llama_error, act: 'load', fix: 'Load model…' });
     if (hb && hb.paused) issues.push({ lvl: 'warn', short: 'Paused', text: pauseText(n), ...(canPause(n) ? { act: 'node-resume', fix: 'Resume' } : {}) });
@@ -1590,7 +1660,7 @@ function nodeRow(n) {
   const action = fixIssue ? `<button class="small primary" data-act="${fixIssue.act}" data-id="${n.id}">${esc(fixIssue.fix)}</button>`
     : n.online && !n.lending_to ? `<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>` : '';
   return `<div class="nv-row nv-s-${f.worst}">
-    <div class="nv-c1"><span class="dot ${f.dot}"></span><div class="nv-min"><b>${esc(nodeName(n))}</b><div class="sub nv-sub">${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}${n.addr ? ' · ' + esc(n.addr.split(':')[0]) : ''}</div></div></div>
+    <div class="nv-c1"><span class="dot ${f.dot}"></span><div class="nv-min"><b>${esc(nodeName(n))}</b><div class="sub nv-sub">${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}${n.addr ? ' · ' + esc(n.addr.split(':')[0]) : ''}</div>${labelChips(n)}</div></div>
     <div class="nv-min"><div class="nv-ell">${f.model}</div><div class="sub nv-sub nv-wrap">${sub}</div></div>
     <div>${n.online ? `<div class="nv-bars"><span>CPU</span>${bar(f.cpu)}<span>RAM</span>${bar(f.ram)}${f.vram != null ? `<span>VRAM</span>${bar(f.vram)}` : ''}</div>` : `<span class="sub">${n.last_seen ? 'Last seen ' + ago(n.last_seen) : 'Never connected'}</span>`}</div>
     <div class="r">${nvTps(f, true)}</div>
@@ -1639,6 +1709,7 @@ function nodeStatus(n, f) {
   if (!n.online) return ['Offline', 'off'];
   if (f.worst === 'bad') return ['Failed', 'bad'];
   if (f.issues.some((i) => i.short === 'Paused')) return ['Paused', 'warn'];
+  if (n.off_hours) return ['Off hours', 'idle'];
   if (n.lending_to) return ['Lending memory', 'busy'];
   if (opActive(n)) return ['Setting up', 'busy'];
   if (!f.loaded) return ['No model', 'idle'];
@@ -1653,11 +1724,12 @@ function gaugeCard(n) {
   const g = gpus[0];
   const ramTot = hb && hb.ram_total_bytes;
   const notes = f.issues.filter((i) => i.lvl !== 'off').map((i) => `<div class="note ${i.lvl === 'info' ? '' : i.lvl} nv-note"><span class="nv-grow">${esc(i.text)}</span>${i.act ? `<button class="small" data-act="${i.act}" data-id="${n.id}">${esc(i.fix)}</button>` : ''}</div>`).join('');
-  const btns = n.online && !n.lending_to ? `<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>${f.loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : '';
+  const btns = n.online && !n.lending_to ? `<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>${f.loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}" title="Send a Wake-on-LAN packet">Wake</button>` : '';
   return `<div class="card gc nv-s-${f.worst}">
     <div class="node-top"><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span><span class="nv-pill nv-p-${cls}"><i></i>${st}</span>
       <button class="small" data-act="node-detail" data-id="${n.id}" title="All details and controls for this node">Details</button></div>
     <div class="sub nv-ell">${esc(cpu.model || 'CPU')} · ${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}</div>
+    ${labelChips(n)}
     <div class="gc-rings">
       ${ring(f.cpu, 'CPU', `${cpu.cores || '?'}C/${cpu.threads || '?'}T`)}
       ${ring(f.ram, 'RAM', ramTot ? bytes(ramTot) : '—')}
@@ -1719,7 +1791,11 @@ function renderNodes() {
   setHTML('node-count', nodes.length ? `${online} of ${nodes.length} online` : '');
   document.querySelectorAll('[data-node-view]').forEach((b) => b.classList.toggle('on', b.dataset.nodeView === nodeView));
   if (!nodes.length) { setHTML('nodes', `<div class="empty u16">No nodes yet. Click <b>Add node</b> to get the install command.</div>`); return; }
-  setHTML('nodes', clusterSummary(nodes) + (nodeView === 'list' ? nodeListView(nodes) : nodeView === 'detail' ? nodeDetailView(nodes) : nodeGridView(nodes)));
+  const labels = state.labels || [];
+  if (nodeLabel && !labels.includes(nodeLabel)) nodeLabel = '';
+  const shown = nodeLabel ? nodes.filter((n) => (n.labels || []).includes(nodeLabel)) : nodes;
+  const chips = labels.length ? `<div class="label-filter" role="group" aria-label="Show nodes with label">${['', ...labels].map((l) => `<button class="small${l === nodeLabel ? ' on' : ''}" data-act="label-filter" data-label="${esc(l)}" aria-pressed="${l === nodeLabel}">${l ? esc(l) + ' · ' + nodes.filter((n) => (n.labels || []).includes(l)).length : 'All nodes'}</button>`).join('')}</div>` : '';
+  setHTML('nodes', clusterSummary(nodes) + chips + (nodeView === 'list' ? nodeListView(shown) : nodeView === 'detail' ? nodeDetailView(shown) : nodeGridView(shown)));
 }
 
 function opView(n) {
@@ -1749,6 +1825,39 @@ function recRow(n, loaded) {
     <div class="sub wrap u18">${esc(rec.reason)} · ${bytes(rec.bytes)}${where}</div>
     ${rec.speed_note ? `<div class="sub wrap u18${rec.speed_low ? ' speed-low' : ''}">${esc(rec.speed_note)}</div>` : ''}</div>`;
 }
+function hoursText(w) {
+  if (!w) return 'any time';
+  const d = !w.days || !w.days.length ? 'every day' : w.days.length === 5 && [1, 2, 3, 4, 5].every((x) => w.days.includes(x)) ? 'weekdays' : w.days.length === 2 && w.days.includes(0) && w.days.includes(6) ? 'weekends' : [...w.days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((x) => DAYS[x]).join(', ');
+  return `${w.from}–${w.to}, ${d}`;
+}
+const labelChips = (n) => (n.labels || []).length ? `<div class="label-row">${n.labels.map((l) => `<span class="label-chip">${esc(l)}</span>`).join('')}</div>` : '';
+async function editLabels(id) {
+  const n = nodeById(id);
+  const v = prompt(`Labels for ${nodeName(n)}, separated by commas (for example gpu, fast, office). A task or project can ask for one label.`, (n.labels || []).join(', '));
+  if (v === null) return;
+  try { await post(`/api/nodes/${id}/settings`, { labels: v.split(',').map((x) => x.trim()).filter(Boolean) }); toast('Labels saved'); } catch (e) { toast(e.message); }
+  refresh();
+}
+let hoursNode = null;
+function openHours(id) {
+  const n = nodeById(id); hoursNode = id;
+  const w = n.hours || { from: '22:00', to: '07:00', days: [] };
+  $('hours-node').textContent = nodeName(n);
+  setHTML('hours-days', [1, 2, 3, 4, 5, 6, 0].map((d) => `<label class="toggle"><input type="checkbox" value="${d}" ${!w.days || !w.days.length || w.days.includes(d) ? 'checked' : ''}> ${DAYS[d]}</label>`).join(''));
+  $('hours-from').value = w.from; $('hours-to').value = w.to;
+  $('hours-err').classList.add('hidden');
+  open('modal-hours');
+}
+async function saveHours(clear) {
+  const days = [...document.querySelectorAll('#hours-days input:checked')].map((i) => +i.value);
+  try {
+    if (!clear && !days.length) throw new Error('Pick at least one day, or choose Work any time.');
+    await post(`/api/nodes/${hoursNode}/settings`, clear ? { clear_hours: true } : { hours: { days, from: $('hours-from').value, to: $('hours-to').value } });
+    close('modal-hours'); toast(clear ? 'Works any time' : 'Working hours saved'); refresh();
+  } catch (e) { $('hours-err').textContent = e.message; $('hours-err').classList.remove('hidden'); }
+}
+$('hours-go').onclick = () => saveHours(false);
+$('hours-clear').onclick = () => saveHours(true);
 function nodeCard(n) {
   const h = n.hello || {}, hb = n.online ? n.heartbeat : null, cpu = h.cpu || {};
   const os = h.os ? `${h.os}/${h.arch}` : 'unknown';
@@ -1789,7 +1898,9 @@ function nodeCard(n) {
     <div class="metric"><span class="k">RAM</span>${bar(ramPct)}<span class="v">${hb ? bytes(hb.ram_used_bytes) + '/' + bytes(hb.ram_total_bytes) : '—'}</span></div>
     ${gpus}
     ${paused ? `<div class="note warn u17 nv-note"><span class="nv-grow">${esc(pauseText(n))}</span>${canPause(n) ? `<button class="small" data-act="node-resume" data-id="${n.id}">Resume</button>` : ''}</div>` : ''}
-    <div class="sub u17">${status}${hb && hb.swap_used_bytes ? ` · swap ${bytes(hb.swap_used_bytes)}` : ''}${n.addr ? ` · ${esc(n.addr.split(':')[0])}` : ''}</div>
+    <div class="sub u17">${status}${hb && hb.swap_used_bytes ? ` · swap ${bytes(hb.swap_used_bytes)}` : ''}${n.addr ? ` · ${esc(n.addr.split(':')[0])}` : ''}${!n.online && n.can_wake ? ` · <a href="#" data-act="wake" data-id="${n.id}">Wake</a>` : ''}</div>
+    <div class="sub u17 wrap">Labels: ${(n.labels || []).length ? (n.labels || []).map((l) => `<span class="label-chip">${esc(l)}</span>`).join(' ') : '<span class="muted">none</span>'} · <a href="#" data-act="labels" data-id="${n.id}">edit</a>
+      · Works: ${n.hours ? esc(hoursText(n.hours)) + (n.off_hours ? ' <span class="nv-chip nv-info">off hours now</span>' : '') : 'any time'} · <a href="#" data-act="hours" data-id="${n.id}">set hours</a></div>
     ${modelBox}
     ${toolsBox(n)}
     <div class="node-foot">
@@ -2403,6 +2514,7 @@ async function loadSettings() {
   $('set-ghtoken-state').innerHTML = settings.github_token_set ? '<span class="st-done">· token set</span>' : '<span class="muted">· not set</span>';
   $('set-ghupd').checked = settings.github_updates !== false; $('set-ghauto').checked = !!settings.github_auto_install;
   $('set-idle').value = settings.idle_unload || '';
+  $('set-wake').checked = !!settings.wake_for_work;
   $('set-sandbox').value = settings.sandbox || 'basic';
   $('set-idle-now').textContent = settings.idle_unload_effective ? 'Nodes unload after: ' + settings.idle_unload_effective + (settings.idle_unload ? '' : ' (default)') : '';
   $('set-pooling').checked = !!settings.pooling_enabled;
@@ -2550,6 +2662,7 @@ $('set-ghtest').onclick = async () => {
 };
 $('set-sandbox-save').onclick = () => saveSettings({ sandbox: $('set-sandbox').value }, 'Sandbox saved');
 $('set-autofree-save').onclick = () => saveSettings({ auto_free: $('set-autofree').checked }, $('set-autofree').checked ? 'Automatic disk cleanup on' : 'Automatic disk cleanup off');
+$('set-wake').addEventListener('change', () => saveSettings({ wake_for_work: $('set-wake').checked }, $('set-wake').checked ? 'Nodes are woken for waiting tasks' : 'Automatic wake off'));
 $('set-idle-save').onclick = () => saveSettings({ idle_unload: $('set-idle').value.trim() }, 'Idle unload saved');
 $('set-pooling-save').onclick = () => saveSettings({ pooling_enabled: $('set-pooling').checked }, $('set-pooling').checked ? 'Pooling enabled' : 'Pooling off; pools dissolved');
 $('set-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0, default_planner: $('set-planner').value, agent_mode: $('set-agent').checked, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked, auto_resume: $('set-autoresume').checked, best_of_n: $('set-bestofn').value }, 'Defaults saved');
@@ -2774,6 +2887,11 @@ document.addEventListener('click', async (e) => {
       }
       case 'del-release': if (confirm(`Delete the uploaded ${el.dataset.platform} release?`)) await api(`/api/releases/${el.dataset.platform}`, { method: 'DELETE' }); break;
       case 'view-file': viewFile(el.dataset.path); return;
+      case 'tpl-run': case 'tpl-sched': case 'tpl-del': case 'tpl-use': await templateAction(act, id); return;
+      case 'wake': await post(`/api/nodes/${id}/wake`, {}); toast('Wake packet sent. A node that wakes connects within a minute or two.'); return;
+      case 'labels': editLabels(id); return;
+      case 'hours': openHours(id); return;
+      case 'label-filter': nodeLabel = el.dataset.label; renderNodes(); return;
       case 'starter': $('nt-prompt').value = STARTERS[+el.dataset.i][1]; $('nt-prompt').focus(); return;
       case 'project-delete': case 'project-save': case 'project-use': case 'project-suggest': await projectAction(act, el); break;
       default: if (act.startsWith('task-')) { await taskAction(act, el); return; }

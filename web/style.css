@@ -763,3 +763,18 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
   .chat-list { flex-direction: row; overflow-x: auto; max-height: none; }
   .chat-list a { flex: none; max-width: 180px; }
 }
+
+/* node labels, working hours, saved tasks */
+.label-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.label-chip { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); background: var(--panel); white-space: nowrap; }
+.label-filter { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.label-filter button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.hours-days { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 8px 0; }
+.saved-list .rowline { gap: 6px; }
+.saved-list .rowline:last-child { border-bottom: 0; }
+.saved-list .rowline button { flex: none; }
+.warn-text { color: var(--warn); }
+.optline .link-btn + .link-btn { margin-left: 12px; }
+@media (max-width: 640px) { .saved-list .rowline { flex-wrap: wrap; } .saved-list .rowline > span { flex-basis: 100%; } }
+.chip-input input[type=time] { width: 8.5em; }
+.saved-list .rowline .sub { white-space: normal; overflow-wrap: anywhere; }
