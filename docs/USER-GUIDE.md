@@ -9,6 +9,7 @@ The full reference for running Outpost, split by topic. New here? Start with the
 | [Using tasks](using-tasks.md) | The web UI, working with tasks, agent mode, saved and scheduled tasks, projects, attachments and git |
 | [Nodes working together](cluster.md) | Peer review, benchmarks and routing, best of N, memory pooling, labels, working hours, Wake-on-LAN |
 | [Chat, the API and cloud planners](chat-and-api.md) | Chat, the OpenAI-compatible API, Claude and OpenRouter, the spending cap |
+| [Image generation](images-generation.md) | stable-diffusion.cpp on nodes, the image models, results and their retention, the API |
 | [Updating, security and operations](operations.md) | Updates and rollback, passwords, sign-in security, backups, notifications, where files live, logs, diagnostics |
 | [Known limits](known-limits.md) | What is not done yet and what is untested |
 

@@ -130,6 +130,7 @@ type Controller struct {
 	models     map[string]*ModelRec
 	runtimes   map[string]*RuntimeRec
 	rtCache    *runtimeCache
+	gens       *genStore // image generation: queue, stored results, settings (controller_images.go)
 	nodeOps    map[string]*nodeOpView
 	pipelines  map[string]*pipeline         // model setups in progress; cancel stops one
 	jobBlobs   map[string]map[string]string // job -> input path -> file on the controller, for nodes to download
@@ -190,6 +191,7 @@ func runController(args []string) error {
 	c.loadSettings()
 	c.loadModels()
 	c.loadRuntimes()
+	c.loadGens()
 	c.loadProjects()
 	c.loadChats()
 	c.loadTemplates()
@@ -302,6 +304,7 @@ func runController(args []string) error {
 	c.chatRoutes(mux)
 	c.templateRoutes(mux)
 	c.openAIRoutes(mux)
+	c.imageRoutes(mux)
 	mux.HandleFunc("GET /api/tasks", c.auth(c.handleListTasks))
 	mux.HandleFunc("POST /api/tasks", c.auth(c.handleCreateTask))
 	mux.HandleFunc("GET /api/tasks/{id}", c.auth(c.handleGetTask))
@@ -355,6 +358,7 @@ func runController(args []string) error {
 	go c.benchLoop()
 	go c.catalogShapeLoop()
 	go c.hoursLoop()
+	go c.genLoop()
 	go c.templateLoop()
 
 	log.Printf("outpost controller %s listening on %s", Version, *listen)

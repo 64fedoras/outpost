@@ -210,6 +210,7 @@ func (c *Controller) handleNodeMessage(nodeID string, env *Envelope) {
 			return
 		}
 		taskLive.jobOutput(o)
+		c.genJobOutput(o)
 		j := c.jobs[o.JobID]
 		if j == nil {
 			return

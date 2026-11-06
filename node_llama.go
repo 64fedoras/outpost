@@ -746,6 +746,9 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 
 // runInference handles a job with kind "inference".
 func (n *Node) runInference(ctx context.Context, jd JobDispatch, res *JobResult) {
+	if n.sd != nil && n.sd.running() && n.sd.idle() {
+		n.sd.stop() // an image model holds GPU memory the chat model needs
+	}
 	var spec InferenceSpec
 	if err := json.Unmarshal(jd.Spec, &spec); err != nil || len(spec.Messages) == 0 {
 		res.Status, res.Error = "failed", errf("bad_request", false, "inference spec needs messages")
