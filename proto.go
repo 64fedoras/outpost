@@ -126,6 +126,7 @@ type Hello struct {
 	ExecEnabled       bool         `json:"exec_enabled"`
 	RunningJobs       []string     `json:"running_jobs"`
 	Runtime           *RuntimeInfo `json:"runtime,omitempty"`
+	SDRuntime         *RuntimeInfo `json:"sd_runtime,omitempty"` // stable-diffusion.cpp build, when installed (image generation)
 	VulkanAvailable   bool         `json:"vulkan_available"`
 	LoadedModel       string       `json:"loaded_model"`
 	RollbackTo        string       `json:"rollback_to,omitempty"` // previous installed Outpost version
@@ -323,6 +324,7 @@ type RuntimeInfo struct {
 
 // RuntimeInstall asks a node to install a llama.cpp build from GET /v1/runtime/<variant>.
 type RuntimeInstall struct {
+	Runtime string `json:"runtime,omitempty"` // "" = llama.cpp, "sd" = stable-diffusion.cpp (image and video generation)
 	Build   string `json:"build"`
 	Variant string `json:"variant"`
 	Archive string `json:"archive"` // file name, decides tar.gz vs zip
@@ -476,4 +478,4 @@ type NodePause struct {
 
 // nodeFeatures lists the controller-to-node messages added after 0.8.0, so the
 // controller can tell an older node apart instead of waiting for no answer.
-var nodeFeatures = []string{"node.ask", "node.pause"}
+var nodeFeatures = []string{"node.ask", "node.pause", "node.gen"}
