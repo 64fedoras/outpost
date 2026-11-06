@@ -147,14 +147,14 @@ func TestBenchBlocked(t *testing.T) {
 	c := &Controller{
 		conns: map[string]*nodeConn{"n": {}}, nodes: map[string]*NodeRec{"n": {ID: "n"}},
 		lastHB:   map[string]*Heartbeat{"n": {LoadedModel: "m", InferenceRdy: true}},
-		reserved: map[string]bool{}, pipelines: map[string]*pipeline{},
+		reserved: map[string]int{}, pipelines: map[string]*pipeline{},
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if why := c.benchBlockedLocked("n"); why != "" {
 		t.Fatalf("idle ready node blocked: %s", why)
 	}
-	c.reserved["n"] = true
+	c.reserved["n"] = 1
 	if c.benchBlockedLocked("n") == "" {
 		t.Error("a reserved node should be busy")
 	}

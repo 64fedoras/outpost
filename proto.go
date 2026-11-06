@@ -378,6 +378,14 @@ type ModelLoad struct {
 	ExtraArgs []string `json:"extra_args"`
 	RPC       []string `json:"rpc,omitempty"`    // helper nodes' RPC servers (host:port) to pool memory from
 	MMProj    string   `json:"mmproj,omitempty"` // set by the node: vision projector file of the model, passed as --mmproj
+	// CacheType quantises the KV cache: "" (16-bit), "q8_0" or "q4_0".
+	CacheType string `json:"cache_type,omitempty"`
+	// FlashAttn is "" (llama.cpp decides), "on" or "off".
+	FlashAttn string `json:"flash_attn,omitempty"`
+	// Draft is a small library model of the same family used for speculative
+	// decoding (-md); the node fetches it like the main model.
+	Draft     string `json:"draft,omitempty"`
+	DraftPath string `json:"draft_path,omitempty"` // set by the node
 }
 
 // RPCStart asks a node to lend its memory: run llama.cpp's RPC server.

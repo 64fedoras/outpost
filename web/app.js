@@ -633,7 +633,14 @@ function liveOpen(id) {
   };
   liveES.onmessage = (e) => {
     let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
-    if (ev.t === 'start') { delete liveLast[ev.sub || '']; liveCalls[ev.call] = { sub: ev.sub || '', label: ev.label, node: ev.node, text: ev.text || '', tok: ev.tok || 0, tps: ev.tps || 0, est: !!ev.est }; }
+    if (ev.t === 'start') { delete liveLast[ev.sub || '']; liveCalls[ev.call] = { sub: ev.sub || '', label: ev.label, node: ev.node, text: ev.text || '', tok: ev.tok || 0, tps: ev.tps || 0, est: !!ev.est, read: ev.read || 0, total: ev.total || 0, left: ev.left || 0 }; }
+    else if (ev.t === 'progress' && liveCalls[ev.call]) {
+      const c = liveCalls[ev.call];
+      Object.assign(c, { read: ev.read || 0, total: ev.total || 0, left: ev.left || 0 });
+      const pre = document.querySelector(`[data-live="${ev.call}"]`);
+      const m = pre && pre.parentNode.querySelector('.live-rate');
+      if (m) { m.textContent = liveRate(c); return; }
+    }
     else if (ev.t === 'reset' && liveCalls[ev.call]) Object.assign(liveCalls[ev.call], { text: '', tok: 0, tps: 0 });
     else if (ev.t === 'end') { const c = liveCalls[ev.call]; if (c && c.text) liveLast[c.sub] = Object.assign({ done: true }, c); delete liveCalls[ev.call]; }
     else if (ev.t === 'delta' && liveCalls[ev.call]) {
@@ -648,7 +655,15 @@ function liveOpen(id) {
   };
 }
 const LIVE_MAX = 8000;   // characters shown per call; the controller keeps 64 KB
-function liveRate(c) { return c.tps ? `${c.est ? '~' : ''}${c.tps} tok/s` : ''; }
+function liveRate(c) {
+  if (c.tps) return `${c.est ? '~' : ''}${c.tps} tok/s`;
+  // Before the first token: how far the node has read the prompt (llama.cpp's prompt progress).
+  if (c.total && !c.text && c.read < c.total) {
+    const left = c.left >= 90 ? `about ${Math.round(c.left / 60)} min left` : c.left > 0 ? `about ${c.left} s left` : '';
+    return `reading the prompt: ${c.read.toLocaleString()} of ${c.total.toLocaleString()} tokens${left ? ', ' + left : ''}`;
+  }
+  return '';
+}
 function setLiveText(pre, c) {
   const stick = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 24;
   pre.textContent = c.text;
@@ -1405,7 +1420,9 @@ function benchLine(n, loaded, ready) {
   else if (b) txt = `Speed ${b.tok_per_s.toFixed(1)} tok/s${b.prompt_tps ? ' · reads ' + Math.round(b.prompt_tps) + ' tok/s' : ''}${b.samples ? ' · ' + b.samples + ' subtask' + (b.samples === 1 ? '' : 's') : b.light ? ' · short benchmark' : ' · benchmark'}`;
   else if (f) txt = `<span class="muted" title="${esc(f.error)}">Benchmark failed (${esc(f.error.length > 60 ? f.error.slice(0, 60) + '…' : f.error)}); retries in a few minutes with a shorter test. Real subtasks fill in the speed meanwhile.</span>`;
   else txt = '<span class="muted">Not benchmarked yet</span>';
-  return `<div class="sub wrap u15" title="Benchmark when the model loaded, then a rolling average of real subtasks">${txt}${rerun}</div>`;
+  const p = n.load_prefs && n.load_prefs.name === loaded ? n.load_prefs : {};
+  const serve = [p.cache_type ? (p.cache_type === 'q8_0' ? '8-bit' : '4-bit') + ' cache' : '', p.parallel > 1 ? p.parallel + ' calls at once' : '', p.draft ? 'draft ' + esc(p.draft) : ''].filter(Boolean).join(' · ');
+  return `<div class="sub wrap u15" title="Benchmark when the model loaded, then a rolling average of real subtasks">${txt}${rerun}${serve ? ` <span class="muted">· ${serve}</span>` : ''}</div>`;
 }
 
 // Nodes page views: Grid (cards), List (grouped two-line rows) and Detailed list
@@ -1795,6 +1812,11 @@ function openLoad(id) {
   $('load-ngl').value = pref.gpu_layers || '';
   $('load-threads').value = pref.threads || 0;
   $('load-extra').value = (pref.extra_args || []).join(' ');
+  $('load-cache').value = pref.cache_type || '';
+  $('load-slots').value = String(pref.parallel > 1 ? pref.parallel : 0);
+  $('load-fa').value = pref.flash_attn || '';
+  loadDraftPref = pref.draft || '';
+  $('load-draft').innerHTML = '';
   const helpers = state.nodes.filter((x) => x.id !== id && !(x.pool_names && x.pool_names.length));
   const inPool = new Set(n.pool || []);
   $('load-pool').innerHTML = helpers.length ? helpers.map((x) => {
@@ -1824,17 +1846,56 @@ function loadMem(n) {
 }
 // KV cache estimate. With the model's GGUF header (m.shape, read by the controller) it uses the real layer and
 // head counts; otherwise the rule of thumb from estimateModelBytes in model_fit.go.
+// The cache type and parallel slots scale it: each slot keeps its own full context.
+const KV_FACTOR = { '': 1, q8_0: 34 / 64, q4_0: 18 / 64 };
 function kvEstimate(m, ctx) {
   const s = m.shape;
-  if (s) return { kv: s.full_bytes_per_token * ctx + s.swa_bytes_per_token * Math.min(ctx, s.swa_window || ctx), exact: true };
-  return { kv: m.bytes_total / (1 << 30) * (12 << 10) * ctx, exact: false };
+  const f = (KV_FACTOR[$('load-cache').value] || 1) * Math.max(1, parseInt($('load-slots').value, 10) || 1);
+  if (s) return { kv: f * (s.full_bytes_per_token * ctx + s.swa_bytes_per_token * Math.min(ctx, s.swa_window || ctx)), exact: true };
+  return { kv: f * m.bytes_total / (1 << 30) * (12 << 10) * ctx, exact: false };
 }
+// Weights plus the draft model plus a fixed allowance for buffers.
+function loadWeights(m) {
+  const d = (models && models.models || []).find((x) => x.name === $('load-draft').value);
+  return m.bytes_total + (d ? d.bytes_total : 0) + (600 << 20);
+}
+// Draft models: ready library models under half the main model's size.
+let loadDraftPref = '';
+function fillDrafts(m) {
+  const cur = $('load-draft').value || loadDraftPref;
+  const opts = (models && models.models || []).filter((x) => x.status === 'ready' && m && x.name !== m.name && x.bytes_total < m.bytes_total / 2)
+    .sort((a, b) => a.bytes_total - b.bytes_total);
+  setHTML('load-draft', `<option value="">None (default)</option>${opts.map((x) => `<option value="${esc(x.name)}" ${x.name === cur ? 'selected' : ''}>${esc(x.label || x.name)} · ${bytes(x.bytes_total)}</option>`).join('')}`);
+}
+// "Largest that fits": the biggest context whose estimate stays within the memory the node would use,
+// with 10% spare because the estimate is not exact.
+function largestFit() {
+  const m = (models && models.models || []).find((x) => x.name === $('load-model').value);
+  const n = nodeById(loadNodeId);
+  if (!m || !n || !n.hello || !m.bytes_total) return 0;
+  const { vram, ram } = loadMem(n), w = loadWeights(m);
+  let room;
+  if (vram && w < vram * 0.9) room = vram * 0.9;
+  else if (vram) room = (vram + ram) * 0.8;
+  else room = ram * 0.75;
+  const max = CTX_STOPS[CTX_STOPS.length - 1] || 131072;
+  if (w + kvEstimate(m, 2048).kv > room) return 0;
+  let lo = 2048, hi = max;
+  while (hi - lo > 256) { const mid = Math.floor((lo + hi) / 2); if (w + kvEstimate(m, mid).kv <= room) lo = mid; else hi = mid; }
+  return lo >= max - 256 ? max : Math.floor(lo / 1024) * 1024;
+}
+$('load-ctx-fit').onclick = () => {
+  const v = largestFit();
+  if (!v) { toast('Even the smallest context does not fit with these settings'); return; }
+  $('load-ctx').value = v; syncCtxRange(); updateCtxHint();
+};
+['load-cache', 'load-slots', 'load-draft'].forEach((id) => $(id).addEventListener('change', updateCtxHint));
 function updateCtxHint() {
   const el = $('load-ctx-hint');
   const m = (models && models.models || []).find((x) => x.name === $('load-model').value);
   const n = nodeById(loadNodeId), ctx = parseInt($('load-ctx').value, 10) || 0;
   if (!m || !n || !n.hello || !m.bytes_total || !ctx) { el.classList.add('hidden'); return; }
-  const { kv, exact } = kvEstimate(m, ctx), need = m.bytes_total + kv + (600 << 20);
+  const { kv, exact } = kvEstimate(m, ctx), need = loadWeights(m) + kv;
   const { vram, ram } = loadMem(n);
   let txt = `Context cache at ${ctx.toLocaleString()} tokens: about ${bytes(kv)}. Weights plus cache need roughly ${bytes(need)}.`, cls = 'hint';
   if (vram && need > vram * 0.92) { txt += need > (vram + ram) * 0.9 ? ' More than this node can hold: lower the context size.' : ' More than the GPU memory, so part will run from system RAM (slower).'; cls = 'hint warn-text'; }
@@ -1842,13 +1903,16 @@ function updateCtxHint() {
   else if (!vram && need > ram * 0.75) { txt += ' Close to the RAM limit: lower the context size.'; cls = 'hint warn-text'; }
   const train = m.shape && m.shape.train_ctx;
   if (train && ctx > train) { txt += ` The model was trained for ${train.toLocaleString()} tokens; more may give poor answers.`; cls = 'hint warn-text'; }
-  txt += exact ? ' Worked out from the model file (16-bit cache).' : ' Rough estimate: the model file has not been read yet.';
+  const cacheName = { '': '16-bit', q8_0: '8-bit', q4_0: '4-bit' }[$('load-cache').value] || '16-bit';
+  const slots = parseInt($('load-slots').value, 10) || 1;
+  txt += exact ? ` Worked out from the model file (${cacheName} cache${slots > 1 ? `, ${slots} calls at once, each with the full context` : ''}).` : ' Rough estimate: the model file has not been read yet.';
   el.className = cls; el.textContent = txt;
 }
 function onLoadModelChange(ctx) {
   const m = (models && models.models || []).find((x) => x.name === $('load-model').value);
   const n = nodeById(loadNodeId);
   $('load-ctx').value = ctx || (m && m.ctx) || 8192;
+  fillDrafts(m);
   setCtxStops(m); syncCtxRange(); updateCtxHint();
   const fit = $('load-fit');
   if (!m || !n || !n.hello) { fit.classList.add('hidden'); return; }
@@ -1895,6 +1959,7 @@ $('load-go').onclick = async () => {
   $('load-err').classList.add('hidden');
   const body = { name: $('load-model').value, ctx: parseInt($('load-ctx').value, 10) || 0, gpu_layers: $('load-ngl').value,
     threads: parseInt($('load-threads').value, 10) || 0, extra_args: $('load-extra').value,
+    cache_type: $('load-cache').value, flash_attn: $('load-fa').value, draft: $('load-draft').value, parallel: parseInt($('load-slots').value, 10) || 0,
     pool: [...document.querySelectorAll('.pool-cb:checked')].map((cb) => cb.value) };
   if (!body.name) return;
   try { await post(`/api/nodes/${loadNodeId}/load`, body); close('modal-load'); toast('Setting up the model; progress shows on the node card'); refresh(); }
