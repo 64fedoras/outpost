@@ -45,6 +45,8 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           sh build.sh "$PWD/dist/outpost-$V"
           cp README.md LICENSE THIRD_PARTY_NOTICES.txt "dist/outpost-$V/"
+          # The model catalog, so older controllers can pick up new suggested models (catalog_remote.go).
+          ./dist/outpost-$V/bin/outpost-linux-amd64 catalog-json > "dist/outpost-$V/bin/catalog.json"
           (cd dist && zip -qr "outpost-$V.zip" "outpost-$V")
           (cd "dist/outpost-$V/bin" && sha256sum * > SHA256SUMS)
           # The stamped binary must report the stamped version, and the updater must be able to read it.

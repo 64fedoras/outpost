@@ -63,7 +63,7 @@ const nodeById = (id) => state && state.nodes.find((n) => n.id === id);
 
 // ---------- auth + routing ----------
 function showLogin() {
-  clearInterval(stateTimer); stateTimer = null;
+  clearInterval(stateTimer); stateTimer = null; stopStateStream();
   $('app').classList.add('hidden');
   // Before any password exists the same page offers first-run setup instead of sign-in.
   fetch('/api/setup', { credentials: 'same-origin' }).then((r) => r.json()).catch(() => ({ needed: false })).then((st) => {
@@ -74,8 +74,29 @@ function showLogin() {
 }
 function showApp() {
   $('login').classList.add('hidden'); $('setup').classList.add('hidden'); $('app').classList.remove('hidden'); route();
-  refresh(); if (!stateTimer) stateTimer = setInterval(refresh, 2000);
+  refresh(); startStateStream();
 }
+// The controller pushes state over one stream (state_stream.go); polling every 2 s
+// is the fallback when the stream does not work (a buffering proxy, an old controller).
+let stateES = null, stateFails = 0, statePushed = 0;
+function startStateStream() {
+  if (stateES || stateTimer) return;
+  if (!window.EventSource) { stateTimer = setInterval(refresh, 2000); return; }
+  stateES = new EventSource('/api/state/events');
+  stateES.addEventListener('state', (e) => {
+    stateFails = 0; statePushed = Date.now();
+    let d; try { d = JSON.parse(e.data); } catch (x) { return; }
+    applyPushed(d);
+  });
+  stateES.onerror = () => {
+    if (++stateFails < 3) return; // EventSource retries on its own first
+    stateES.close(); stateES = null;
+    if (!stateTimer) stateTimer = setInterval(refresh, 2000);
+  };
+  // A stream that opened but stays silent (buffered by a proxy) also falls back.
+  setTimeout(() => { if (stateES && !statePushed) { stateES.close(); stateES = null; if (!stateTimer) stateTimer = setInterval(refresh, 2000); } }, 8000);
+}
+function stopStateStream() { if (stateES) { stateES.close(); stateES = null; } statePushed = 0; stateFails = 0; }
 $('login-form').onsubmit = async (e) => {
   e.preventDefault(); $('login-err').classList.add('hidden');
   try { await post('/api/login', { password: $('pw').value }); $('pw').value = ''; showApp(); }
@@ -150,10 +171,39 @@ async function refresh() {
   }
   const needModels = ['nodes', 'models', 'new'].includes(page) || !models;
   await Promise.all([
-    needModels ? api('/api/models').then((m) => { models = m; }).catch(() => {}) : null,
+    needModels ? api('/api/models').then((m) => { models = m; modelsAt = Date.now(); }).catch(() => {}) : null,
     (() => { const seq = tasksSeq; return api('/api/tasks').then((t) => { if (seq === tasksSeq) tasks = t; }).catch(() => {}); })(), // a list fetched before a rename or pin must not undo it
     api('/api/projects').then((p) => { projects = p; }).catch(() => {}),
   ]);
+  renderAll();
+}
+let modelsAt = 0, pushSeq = 0;
+// applyPushed takes one pushed payload: state, task list and projects together.
+// The model list is not pushed; on the pages that show it, it is fetched at most every 5 s.
+async function applyPushed(d) {
+  const seq = tasksSeq, mine = ++pushSeq;
+  state = d.state; if (seq === tasksSeq) tasks = d.tasks; projects = d.projects;
+  failures = 0; $('offline-banner').classList.add('hidden');
+  if ((['nodes', 'models', 'new'].includes(page) || !models) && Date.now() - modelsAt > 5000) {
+    modelsAt = Date.now();
+    await api('/api/models').then((m) => { models = m; }).catch(() => {});
+    if (mine !== pushSeq) return; // a newer payload already rendered
+  }
+  renderAll();
+}
+// Screen readers hear a task's status change (Plan ready, Done, Failed) without visiting it.
+let lastStatuses = null;
+function announceTaskChanges() {
+  const now = {};
+  (tasks || []).forEach((t) => { now[t.id] = statusWord(t); });
+  if (lastStatuses) {
+    const msgs = (tasks || []).filter((t) => lastStatuses[t.id] && lastStatuses[t.id] !== now[t.id]).map((t) => `${t.title || 'Task'}: ${now[t.id]}`);
+    if (msgs.length) { $('sr-status').textContent = ''; setTimeout(() => { $('sr-status').textContent = msgs.slice(0, 3).join('. '); }, 50); }
+  }
+  lastStatuses = now;
+}
+function renderAll() {
+  announceTaskChanges();
   $('hdr-meta').textContent = `v${state.version}`;
   renderRecovered(); renderDiskWarning();
   $('hdr-meta').title = state.advertise;
@@ -2379,6 +2429,7 @@ function renderGitHub() {
     const mode = !g.enabled ? 'Automatic checks are off (Settings)' : g.auto_install ? 'Checks every 6 hours and installs automatically' : 'Checks every 6 hours; you click Update';
     t = `${mode}. ` + (g.checked && g.checked > '2000' ? `Last checked ${ago(g.checked)}${g.latest ? ', latest is v' + g.latest : ''}.` : 'Not checked yet.');
     if (g.hold) t += ` Auto-install skips v${g.hold} and older after a rollback.`;
+    t += g.catalog ? ` Suggested models: list from v${g.catalog}.` : ' Suggested models: the list built into this version.';
   }
   $('gh-info').textContent = t;
   if (g.error) { const e = document.createElement('span'); e.className = 'error-msg'; e.style.display = 'block'; e.textContent = g.error; $('gh-info').appendChild(e); }
@@ -2662,6 +2713,13 @@ $('set-ghtest').onclick = async () => {
 };
 $('set-sandbox-save').onclick = () => saveSettings({ sandbox: $('set-sandbox').value }, 'Sandbox saved');
 $('set-autofree-save').onclick = () => saveSettings({ auto_free: $('set-autofree').checked }, $('set-autofree').checked ? 'Automatic disk cleanup on' : 'Automatic disk cleanup off');
+try { $('set-theme').value = localStorage.getItem('outpost.theme') || ''; } catch (e) {}
+$('set-theme').addEventListener('change', () => {
+  const v = $('set-theme').value;
+  try { if (v) localStorage.setItem('outpost.theme', v); else localStorage.removeItem('outpost.theme'); } catch (e) {}
+  if (v) document.documentElement.setAttribute('data-theme', v); else document.documentElement.removeAttribute('data-theme');
+  toast(v ? `Theme: ${v}` : 'Theme follows the system');
+});
 $('set-wake').addEventListener('change', () => saveSettings({ wake_for_work: $('set-wake').checked }, $('set-wake').checked ? 'Nodes are woken for waiting tasks' : 'Automatic wake off'));
 $('set-idle-save').onclick = () => saveSettings({ idle_unload: $('set-idle').value.trim() }, 'Idle unload saved');
 $('set-pooling-save').onclick = () => saveSettings({ pooling_enabled: $('set-pooling').checked }, $('set-pooling').checked ? 'Pooling enabled' : 'Pooling off; pools dissolved');
@@ -2792,10 +2850,91 @@ async function pollJob() {
   if (live || (j.kind === 'exec' && !j.cleaned && recent)) jobTimer = setTimeout(pollJob, live ? 500 : 1500);
 }
 
+// ---------- command palette (Ctrl+K) ----------
+let palItems = [], palSel = 0;
+function palSource() {
+  const go = (h) => () => { location.hash = h; };
+  const sec = (href) => () => { location.hash = '#/settings'; setTimeout(() => { const a = document.querySelector(`#set-nav a[href="${href}"]`); if (a) a.click(); }, 150); };
+  const items = [
+    { t: 'New task', k: 'page', run: go('#/new') }, { t: 'Chat', k: 'page', run: go('#/chat') },
+    { t: 'New chat', k: 'action', run: () => $('chat-new').click() },
+    { t: 'Projects', k: 'page', run: go('#/projects') }, { t: 'Nodes', k: 'page', run: go('#/nodes') },
+    { t: 'Models', k: 'page', run: go('#/models') }, { t: 'Updates', k: 'page', run: go('#/updates') },
+    { t: 'Settings', k: 'page', run: go('#/settings') },
+    ...[...document.querySelectorAll('#set-nav a')].map((a) => ({ t: 'Settings: ' + a.textContent, k: 'page', run: sec(a.getAttribute('href')) })),
+    { t: 'Check cluster', k: 'action', run: () => { location.hash = '#/nodes'; setTimeout(() => $('btn-check').click(), 150); } },
+    { t: 'Add node', k: 'action', run: () => { location.hash = '#/nodes'; setTimeout(() => $('btn-add').click(), 150); } },
+    { t: 'Theme: light', k: 'action', run: () => { $('set-theme').value = 'light'; $('set-theme').dispatchEvent(new Event('change')); } },
+    { t: 'Theme: dark', k: 'action', run: () => { $('set-theme').value = 'dark'; $('set-theme').dispatchEvent(new Event('change')); } },
+    { t: 'Theme: same as the system', k: 'action', run: () => { $('set-theme').value = ''; $('set-theme').dispatchEvent(new Event('change')); } },
+  ];
+  (state ? state.nodes : []).forEach((n) => items.push({ t: nodeName(n), k: 'node', sub: n.online ? (n.heartbeat && n.heartbeat.loaded_model) || 'online' : 'offline', run: () => { nodeSel = n.id; nodeView = 'detail'; location.hash = '#/nodes'; renderNodes(); } }));
+  (tasks || []).forEach((t) => items.push({ t: t.title || 'Task', k: 'task', sub: statusWord(t), run: go('#/tasks/' + t.id) }));
+  (projects || []).forEach((p) => items.push({ t: p.name, k: 'project', run: go('#/projects') }));
+  (state && state.templates || []).forEach((tp) => items.push({ t: 'Run saved task: ' + tp.name, k: 'action', run: () => templateAction('tpl-run', tp.id).catch((e) => toast(e.message)) }));
+  return items;
+}
+function palRender() {
+  const q = $('pal-q').value.trim().toLowerCase(), words = q.split(/\s+/).filter(Boolean);
+  const all = palSource();
+  palItems = (words.length ? all.filter((i) => { const h = (i.t + ' ' + i.k + ' ' + (i.sub || '')).toLowerCase(); return words.every((w) => h.includes(w)); })
+    : all.filter((i) => i.k === 'page' && !i.t.startsWith('Settings:') || i.k === 'task').slice(0, 14)).slice(0, 40);
+  palSel = Math.min(palSel, Math.max(0, palItems.length - 1));
+  setHTML('pal-list', palItems.length ? palItems.map((i, n) => `<div class="pal-item${n === palSel ? ' on' : ''}" role="option" id="pal-${n}" aria-selected="${n === palSel}" data-pal="${n}"><span class="pal-k">${esc(i.k)}</span><span class="nv-grow nv-ell">${esc(i.t)}</span>${i.sub ? `<span class="sub">${esc(i.sub)}</span>` : ''}</div>`).join('') : '<div class="pal-empty muted">Nothing matches.</div>');
+  $('pal-q').setAttribute('aria-activedescendant', palItems.length ? 'pal-' + palSel : '');
+  const on = $('pal-list').querySelector('.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+}
+function palOpen() { $('pal-q').value = ''; palSel = 0; palRender(); open('modal-palette'); $('pal-q').focus(); }
+function palRun(n) { const i = palItems[n]; if (!i) return; close('modal-palette'); i.run(); }
+$('pal-open').addEventListener('click', palOpen);
+$('pal-q').addEventListener('input', () => { palSel = 0; palRender(); });
+$('pal-q').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') { e.preventDefault(); palSel = Math.min(palSel + 1, palItems.length - 1); palRender(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); palSel = Math.max(palSel - 1, 0); palRender(); }
+  else if (e.key === 'Enter') { e.preventDefault(); palRun(palSel); }
+});
+$('pal-list').addEventListener('click', (e) => { const el = e.target.closest('[data-pal]'); if (el) palRun(+el.dataset.pal); });
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k' && !$('app').classList.contains('hidden')) {
+    e.preventDefault();
+    if ($('modal-palette').classList.contains('hidden')) palOpen(); else close('modal-palette');
+  }
+});
+
 // ---------- modals + delegated events ----------
-function open(id) { $(id).classList.remove('hidden'); }
+// Dialogs: marked as modal for screen readers, focus moves in (first field) and
+// returns to what opened it on close, and Tab stays inside while one is open.
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const modalReturn = {};
+function open(id) {
+  const ov = $(id), m = ov.querySelector('.modal') || ov;
+  if (!m.hasAttribute('role') && !ov.hasAttribute('role')) { m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true'); }
+  const h = m.querySelector('h3, h2');
+  if (h && !m.hasAttribute('aria-labelledby') && !ov.hasAttribute('aria-labelledby')) { if (!h.id) h.id = id + '-title'; m.setAttribute('aria-labelledby', h.id); }
+  if (ov.classList.contains('hidden')) modalReturn[id] = document.activeElement;
+  ov.classList.remove('hidden');
+  if (!m.contains(document.activeElement)) {
+    const f = [...m.querySelectorAll(FOCUSABLE)].find((x) => x.offsetParent !== null && !x.closest('.modal-foot'));
+    if (!f && !m.hasAttribute('tabindex')) m.setAttribute('tabindex', '-1'); // no field: the dialog itself takes focus
+    (f || m).focus({ preventScroll: true });
+  }
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab') return;
+  const ov = [...document.querySelectorAll('.overlay:not(.hidden)')].pop();
+  if (!ov) return;
+  const items = [...ov.querySelectorAll(FOCUSABLE)].filter((x) => x.offsetParent !== null);
+  if (!items.length) return;
+  const first = items[0], last = items[items.length - 1];
+  if (!ov.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+  else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
 function close(id) {
+  const wasOpen = !$(id).classList.contains('hidden');
   $(id).classList.add('hidden');
+  const back = modalReturn[id]; delete modalReturn[id];
+  if (wasOpen && back && document.contains(back) && back.focus) back.focus({ preventScroll: true });
   if (id === 'modal-job') { clearTimeout(jobTimer); openJobId = null; }
   if (id === 'modal-logs') { clearTimeout(logsTimer); logsNodeId = null; }
   if (id === 'modal-check') clearTimeout(checkTimer);

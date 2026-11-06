@@ -192,9 +192,10 @@ func (c *Controller) handleAddModel(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CatalogID != "" {
 		var ce *CatalogEntry
-		for i := range modelCatalog {
-			if modelCatalog[i].ID == req.CatalogID {
-				ce = &modelCatalog[i]
+		cat := catalogNow()
+		for i := range cat {
+			if cat[i].ID == req.CatalogID {
+				ce = &cat[i]
 			}
 		}
 		if ce == nil {
@@ -914,7 +915,8 @@ func (c *Controller) handleListModels(w http.ResponseWriter, r *http.Request) {
 			fits[m.Name] = c.nodeFitsLocked(m.BytesTotal, m.Ctx)
 		}
 	}
-	for _, e := range modelCatalog {
+	cat := catalogNow()
+	for _, e := range cat {
 		catFits[e.ID] = c.nodeFitsLocked(e.Bytes, e.Ctx)
 	}
 	recommended := map[string]LoadOption{}
@@ -929,8 +931,8 @@ func (c *Controller) handleListModels(w http.ResponseWriter, r *http.Request) {
 	c.mu.Unlock()
 	sort.Slice(models, func(i, j int) bool { return models[i].Added.Before(models[j].Added) })
 	sort.Slice(rts, func(i, j int) bool { return rts[i].Variant < rts[j].Variant })
-	writeJSON(w, 200, map[string]any{"catalog": modelCatalog, "models": models, "runtimes": rts,
-		"fits": fits, "catalog_fits": catFits, "suggested": suggestCoding(modelCatalog, catFits, 4), "recommended": recommended,
+	writeJSON(w, 200, map[string]any{"catalog": cat, "models": models, "runtimes": rts,
+		"fits": fits, "catalog_fits": catFits, "suggested": suggestCoding(cat, catFits, 4), "recommended": recommended,
 		"disk_free": diskFree(c.modelsStoreDir())})
 }
 
