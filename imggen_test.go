@@ -392,10 +392,18 @@ func TestGenerationEndToEnd(t *testing.T) {
 		t.Fatalf("observed %v", c.gens.settings.Observed)
 	}
 	// The record survives a restart.
-	c2 := genController(t)
-	c2.dataDir = c.dataDir
-	c2.loadGens()
-	if r := c2.gens.recs[id]; r == nil || r.status() != "done" || r.Items[1].Seconds != 1.5 {
+	// (the last save lands just after the in-memory status flips, so give it a moment)
+	var r *GenRec
+	for i := 0; i < 200; i++ {
+		c2 := genController(t)
+		c2.dataDir = c.dataDir
+		c2.loadGens()
+		if r = c2.gens.recs[id]; r != nil && r.status() == "done" && r.Items[1].Seconds == 1.5 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if r == nil || r.status() != "done" || r.Items[1].Seconds != 1.5 {
 		t.Fatalf("reloaded %+v", r)
 	}
 	// Delete removes the files.
