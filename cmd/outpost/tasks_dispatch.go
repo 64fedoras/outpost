@@ -532,7 +532,7 @@ func (c *Controller) plannerBudget(t *Task) int {
 	}
 	if planner == "openrouter" {
 		ctxTok := 128000 // unknown model: assume a common window
-		if m := openRouterModels.get(orModel); m != nil && m.Ctx > 0 {
+		if m := openRouterCatalog().Get(orModel); m != nil && m.Ctx > 0 {
 			ctxTok = m.Ctx
 		}
 		return min(400000, max(8000, (ctxTok-16384)*3))
