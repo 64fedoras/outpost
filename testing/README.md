@@ -1,5 +1,18 @@
 # Testing
 
+## Run everything
+One entry point, `sh testing/run_all.sh`:
+
+| Command | What it runs |
+| --- | --- |
+| `sh testing/run_all.sh` (or `fast`) | `go vet`, all unit tests, `node --check` on every `web/*.js`, and a build for all five platforms. |
+| `sh testing/run_all.sh race` | Unit tests with the race detector (needs gcc). |
+| `sh testing/run_all.sh e2e` | Starts the local rig, runs the browser scripts below (`steer`, `edit`, `rerun`, `taskmenu`, `mobile`, `dropzone`), stops the rig. Needs Python Playwright; it stops with an error if that is missing instead of skipping. `E2E_FULL=1` adds `flow.py` (about 4 minutes) and `soak.py`. |
+| `sh testing/run_all.sh all` | `fast`, then `race`, then `e2e`. |
+
+CI runs `fast` and `race` on every pull request. `e2e` is run by hand (the nightly soak workflow runs `soak.py`).
+Tests live beside the code they cover and are named for it; a test checks that no new file is named after a pull request number.
+
 ## Unit tests
 The Linux sandbox tests (`internal/sandbox/linux_test.go`) run real sandboxed commands and skip themselves on kernels without Landlock.
     go vet ./... && go test ./...
