@@ -1,4 +1,4 @@
-package main
+package platform
 
 import (
 	"strings"
@@ -6,8 +6,8 @@ import (
 )
 
 func TestPeerFirewallRuleIsPortBased(t *testing.T) {
-	args := strings.Join(peerFirewallAddArgs(8444), " ")
-	for _, want := range []string{"name=" + peerFirewallRule, "dir=in", "action=allow", "protocol=TCP",
+	args := strings.Join(PeerFirewallAddArgs(8444), " ")
+	for _, want := range []string{"name=" + PeerFirewallRule, "dir=in", "action=allow", "protocol=TCP",
 		"localport=8444", "remoteip=localsubnet", "profile=private,domain"} {
 		if !strings.Contains(args, want) {
 			t.Errorf("rule %q lacks %q", args, want)
@@ -31,8 +31,8 @@ func TestPeerRuleNeedsMigration(t *testing.T) {
 		"Any\r\nC:\\ProgramData\\outpost\\outpost.exe\r\n": true,
 	}
 	for in, want := range cases {
-		if got := peerRuleNeedsMigration(in); got != want {
-			t.Errorf("peerRuleNeedsMigration(%q) = %v, want %v", in, got, want)
+		if got := PeerRuleNeedsMigration(in); got != want {
+			t.Errorf("PeerRuleNeedsMigration(%q) = %v, want %v", in, got, want)
 		}
 	}
 }

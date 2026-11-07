@@ -17,6 +17,8 @@ import (
 	"sync"
 	"syscall"
 	"unsafe"
+
+	"outpost/internal/platform"
 )
 
 var (
@@ -205,9 +207,7 @@ func (s *statSampler) sampleWindows(hb *Heartbeat) {
 		}
 		w.prevIdle, w.prevTotal = i, t
 	}
-	var m memoryStatusEx
-	m.Length = uint32(unsafe.Sizeof(m))
-	if r, _, _ := procGlobalMemoryStatusEx.Call(uintptr(unsafe.Pointer(&m))); r != 0 {
+	if m, ok := platform.MemoryStatus(); ok {
 		hb.RAMTotalBytes = m.TotalPhys
 		hb.RAMUsedBytes = m.TotalPhys - m.AvailPhys
 		// Page file in use beyond physical memory, the closest match to swap.

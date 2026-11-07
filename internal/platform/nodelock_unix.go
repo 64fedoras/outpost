@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package platform
 
 import (
 	"fmt"
@@ -10,10 +10,10 @@ import (
 	"time"
 )
 
-// acquireNodeLock takes an exclusive lock on <data>/node.lock. The file is
+// AcquireNodeLock takes an exclusive lock on <data>/node.lock. The file is
 // opened close-on-exec, so an in-place restart (exec) drops it and the new
 // image takes it again.
-func acquireNodeLock(dataDir string, wait time.Duration) (func(), error) {
+func AcquireNodeLock(dataDir string, wait time.Duration) (func(), error) {
 	f, err := os.OpenFile(filepath.Join(dataDir, "node.lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
