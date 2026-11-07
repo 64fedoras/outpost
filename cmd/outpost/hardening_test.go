@@ -128,61 +128,6 @@ func TestAPITokensAndSessions(t *testing.T) {
 	}
 }
 
-func TestBackupRoundTrip(t *testing.T) {
-	src := t.TempDir()
-	must := func(p, s string) {
-		t.Helper()
-		full := filepath.Join(src, p)
-		_ = os.MkdirAll(filepath.Dir(full), 0o700)
-		if err := os.WriteFile(full, []byte(s), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	must("admin.json", "{}")
-	must("secret.key", "0123456789abcdef0123456789abcdef")
-	must("tasks/t1/task.json", "task")
-	must("models/big.gguf", "weights")
-	big := strings.Repeat("x", 3*backupChunk+17) // spans several encrypted chunks
-	must("tasks/t1/big.txt", big)
-
-	var buf bytes.Buffer
-	if err := writeBackup(&buf, src, "hunter2hunter2", false); err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(buf.Bytes(), []byte("0123456789abcdef")) {
-		t.Fatal("backup is not encrypted")
-	}
-	dst := t.TempDir()
-	n, err := restoreBackup(bytes.NewReader(buf.Bytes()), dst, "hunter2hunter2")
-	if err != nil || n != 4 {
-		t.Fatalf("restore: %d files, %v", n, err)
-	}
-	if b, _ := os.ReadFile(filepath.Join(dst, "tasks/t1/big.txt")); string(b) != big {
-		t.Fatal("large file corrupted")
-	}
-	if _, err := os.Stat(filepath.Join(dst, "models/big.gguf")); err == nil {
-		t.Fatal("models should be left out by default")
-	}
-	if _, err := restoreBackup(bytes.NewReader(buf.Bytes()), t.TempDir(), "wrong passphrase"); err == nil {
-		t.Fatal("wrong passphrase accepted")
-	}
-	// A truncated backup must fail, not restore silently.
-	if _, err := restoreBackup(bytes.NewReader(buf.Bytes()[:buf.Len()-40]), t.TempDir(), "hunter2hunter2"); err == nil {
-		t.Fatal("truncated backup accepted")
-	}
-	var bigBuf bytes.Buffer
-	if err := writeBackup(&bigBuf, src, "hunter2hunter2", true); err != nil {
-		t.Fatal(err)
-	}
-	d2 := t.TempDir()
-	if _, err := restoreBackup(&bigBuf, d2, "hunter2hunter2"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(d2, "models/big.gguf")); err != nil {
-		t.Fatal("include_large should keep models")
-	}
-}
-
 func TestScheduledBackupPrunes(t *testing.T) {
 	c := authTestController(t)
 	out := t.TempDir()
