@@ -51,7 +51,13 @@ func TestSecureHeadersOnRoutes(t *testing.T) {
 // The CSP forbids inline styles, scripts and event handlers, so the UI sources must not contain them.
 func TestWebHasNoInlineCode(t *testing.T) {
 	bad := regexp.MustCompile(`(?i)\sstyle\s*=|\son[a-z]+\s*=\s*["'\\]|javascript:|setAttribute\(\s*['"]style|cssText|<style|<script(\s[^>]*)?>\s*[^<\s]`)
-	for _, name := range []string{"web/index.html", "web/app.js"} {
+	names := []string{"web/index.html"}
+	files, err := fs.Glob(webFS, "web/*.js")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no web scripts found: %v", err)
+	}
+	names = append(names, files...)
+	for _, name := range names {
 		b, err := webFS.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
