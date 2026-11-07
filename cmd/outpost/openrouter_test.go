@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"outpost/internal/llm"
 	"strings"
 	"testing"
 )
@@ -30,15 +31,15 @@ func TestOpenRouterCall(t *testing.T) {
 	ctx := context.Background()
 
 	cat := &orCatalog{}
-	if err := cat.refresh(ctx, "sk-or-test", true); err != nil {
+	if err := cat.Refresh(ctx, "sk-or-test", true); err != nil {
 		t.Fatal(err)
 	}
-	openRouterModels = cat
-	m := cat.get("vendor/m1")
+	llm.OpenRouterModels = cat
+	m := cat.Get("vendor/m1")
 	if m == nil || m.In != 2 || m.Out != 10 || m.Ctx != 32000 {
 		t.Fatalf("model parsed wrong: %+v", m)
 	}
-	if a := cat.get("openrouter/auto"); a == nil || a.In != 0 {
+	if a := cat.Get("openrouter/auto"); a == nil || a.In != 0 {
 		t.Errorf("router price should be 0: %+v", a)
 	}
 

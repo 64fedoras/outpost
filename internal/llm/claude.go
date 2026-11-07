@@ -1,4 +1,4 @@
-package main
+package llm
 
 import (
 	"bufio"
@@ -14,38 +14,38 @@ import (
 	"time"
 )
 
-// claudePrice is USD per million tokens. Source: platform.claude.com pricing,
+// Price is USD per million tokens. Source: platform.claude.com pricing,
 // checked 2026-10-24. Haiku 5.5 costs more above 100k input tokens.
-type claudePrice struct {
+type Price struct {
 	Label                       string
 	In, Out, CacheWrite, CacheR float64
 	LongIn, LongOut             float64 // for prompts over 100k tokens (Haiku only); 0 = same
 }
 
-var claudePrices = map[string]claudePrice{
+var ClaudePrices = map[string]Price{
 	"claude-sonnet-5-5": {Label: "Claude Sonnet 5.5", In: 2, Out: 10, CacheWrite: 2.5, CacheR: 0.10},
 	"claude-opus-5-5":   {Label: "Claude Opus 5.5", In: 4, Out: 20, CacheWrite: 5, CacheR: 0.20},
 	"claude-haiku-5-5":  {Label: "Claude Haiku 5.5", In: 0.10, Out: 0.50, CacheWrite: 0.125, CacheR: 0.01, LongIn: 0.50, LongOut: 2.50},
 }
 
-var claudeModelOrder = []string{"claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"}
+var ClaudeModelOrder = []string{"claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"}
 
-type llmRequest struct {
+type Request struct {
 	System      string
 	User        string
 	MaxTokens   int
 	Temperature float64
 	Label       string
-	WebSearch   bool        // Claude only: allow the web search tool (priced per search)
-	Sub         string      // subtask id, for the live view
-	Live        *liveHandle // streamed text goes here (cloud planners)
-	Images      []llmImage  // attached to the user turn (planner only)
-	Msgs        []agentMsg  // agent mode: the conversation so far; replaces User
-	Tools       []agentTool
+	WebSearch   bool    // Claude only: allow the web search tool (priced per search)
+	Sub         string  // subtask id, for the live view
+	Live        Sink    // streamed text goes here (cloud planners)
+	Images      []Image // attached to the user turn (planner only)
+	Msgs        []Msg   // agent mode: the conversation so far; replaces User
+	Tools       []Tool
 	JSONSchema  json.RawMessage // local planners only: constrain the answer (see InferenceParams)
 }
 
-type llmResponse struct {
+type Response struct {
 	Text          string
 	InTokens      int
 	OutTokens     int
@@ -53,15 +53,15 @@ type llmResponse struct {
 	CacheWrite    int
 	CostUSD       float64
 	WebSearches   int
-	Calls         []toolCall // agent mode: tools the model asked for
+	Calls         []ToolCall // agent mode: tools the model asked for
 	Model         string
 	TokensPerSec  float64
 	ElapsedSecond float64
 }
 
-// usageCost prices one Claude response.
-func usageCost(model string, in, out, cacheW, cacheR int) float64 {
-	p := claudePrices[model]
+// UsageCost prices one Claude response.
+func UsageCost(model string, in, out, cacheW, cacheR int) float64 {
+	p := ClaudePrices[model]
 	inP, outP := p.In, p.Out
 	if p.LongIn > 0 && in+cacheW+cacheR > 100000 {
 		inP, outP = p.LongIn, p.LongOut
@@ -69,9 +69,9 @@ func usageCost(model string, in, out, cacheW, cacheR int) float64 {
 	return (float64(in)*inP + float64(out)*outP + float64(cacheW)*p.CacheWrite + float64(cacheR)*p.CacheR) / 1e6
 }
 
-// estimateCost gives an upper-bound guess for a call before it is made.
-func estimateCost(model string, inputChars, maxOut int) float64 {
-	return usageCost(model, inputChars/3, maxOut/3, 0, 0)
+// EstimateCost gives an upper-bound guess for a call before it is made.
+func EstimateCost(model string, inputChars, maxOut int) float64 {
+	return UsageCost(model, inputChars/3, maxOut/3, 0, 0)
 }
 
 type claudeError struct {
@@ -88,9 +88,9 @@ func anthropicBaseURL() string {
 	return "https://api.anthropic.com"
 }
 
-// callClaude sends one Messages API request (non-streaming) with the system
+// CallClaude sends one Messages API request (non-streaming) with the system
 // prompt cached, retrying overload and rate-limit errors.
-func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmResponse, error) {
+func CallClaude(ctx context.Context, key, model string, req Request) (*Response, error) {
 	if key == "" {
 		return nil, errors.New("no Claude API key; add one in Settings")
 	}
@@ -104,7 +104,7 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 		body["messages"] = claudeMessages(req.Msgs)
 	}
 	if req.WebSearch {
-		body["tools"] = []map[string]any{{"type": "web_search_20250305", "name": "web_search", "max_uses": webSearchUses}}
+		body["tools"] = []map[string]any{{"type": "web_search_20250305", "name": "web_search", "max_uses": WebSearchUses}}
 	}
 	if len(req.Tools) > 0 {
 		body["tools"] = claudeTools(req.Tools)
@@ -120,7 +120,7 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 	start := time.Now()
 	var lastErr error
 	for attempt := 0; attempt < 6; attempt++ {
-		req.Live.Reset()
+		orDiscard(req.Live).Reset()
 		hr, _ := http.NewRequestWithContext(ctx, "POST", anthropicBaseURL()+"/v1/messages", bytes.NewReader(b))
 		hr.Header.Set("x-api-key", key)
 		hr.Header.Set("anthropic-version", "2023-06-01")
@@ -137,7 +137,7 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 				resp.Body.Close()
 				if serr == nil {
 					r.Model, r.ElapsedSecond = model, time.Since(start).Seconds()
-					r.CostUSD = usageCost(model, r.InTokens, r.OutTokens, r.CacheWrite, r.CacheRead)
+					r.CostUSD = UsageCost(model, r.InTokens, r.OutTokens, r.CacheWrite, r.CacheRead)
 					return r, nil
 				}
 				if ctx.Err() != nil {
@@ -176,7 +176,7 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 					return nil, fmt.Errorf("Claude API: bad response: %v", err)
 				}
 				var text strings.Builder
-				var calls []toolCall
+				var calls []ToolCall
 				for _, c := range out.Content {
 					if c.Type == "text" {
 						text.WriteString(c.Text)
@@ -186,13 +186,13 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 						if strings.TrimSpace(args) == "" {
 							args = "{}"
 						}
-						calls = append(calls, toolCall{ID: c.ID, Name: c.Name, Args: args})
+						calls = append(calls, ToolCall{ID: c.ID, Name: c.Name, Args: args})
 					}
 				}
-				r := &llmResponse{Text: text.String(), Calls: calls, InTokens: out.Usage.In, OutTokens: out.Usage.Out,
+				r := &Response{Text: text.String(), Calls: calls, InTokens: out.Usage.In, OutTokens: out.Usage.Out,
 					CacheRead: out.Usage.CacheR, CacheWrite: out.Usage.CacheW, Model: model,
 					WebSearches: out.Usage.Server.Searches, ElapsedSecond: time.Since(start).Seconds()}
-				r.CostUSD = usageCost(model, r.InTokens, r.OutTokens, r.CacheWrite, r.CacheRead) + float64(r.WebSearches)*webSearchUSD
+				r.CostUSD = UsageCost(model, r.InTokens, r.OutTokens, r.CacheWrite, r.CacheRead) + float64(r.WebSearches)*WebSearchUSD
 				return r, nil
 			}
 			var e struct {
@@ -226,15 +226,15 @@ func callClaude(ctx context.Context, key, model string, req llmRequest) (*llmRes
 //	<<<FILE path/to/file>>>
 //	...content...
 //	<<<END>>>
-const fileFormatHelp = "Write each file in exactly this format, with nothing else between files:\n<<<FILE path/relative/to/project>>>\n(complete file content)\n<<<END>>>\nDo not wrap files in markdown code fences. Always output complete files, never diffs or placeholders like \"rest unchanged\"."
+const FileFormatHelp = "Write each file in exactly this format, with nothing else between files:\n<<<FILE path/relative/to/project>>>\n(complete file content)\n<<<END>>>\nDo not wrap files in markdown code fences. Always output complete files, never diffs or placeholders like \"rest unchanged\"."
 
-type fileBlock struct {
+type FileBlock struct {
 	Path    string
 	Content string
 }
 
-func parseFileBlocks(text string) []fileBlock {
-	var out []fileBlock
+func ParseFileBlocks(text string) []FileBlock {
+	var out []FileBlock
 	rest := text
 	for {
 		i := strings.Index(rest, "<<<FILE ")
@@ -256,9 +256,9 @@ func parseFileBlocks(text string) []fileBlock {
 		} else {
 			content, rest = rest[:k], rest[k+len("<<<END>>>"):]
 		}
-		content = stripFence(content)
+		content = StripFence(content)
 		if p != "" {
-			out = append(out, fileBlock{Path: p, Content: content})
+			out = append(out, FileBlock{Path: p, Content: content})
 		}
 		if k < 0 {
 			return out
@@ -266,8 +266,8 @@ func parseFileBlocks(text string) []fileBlock {
 	}
 }
 
-// stripFence removes a markdown fence that small models sometimes add anyway.
-func stripFence(s string) string {
+// StripFence removes a markdown fence that small models sometimes add anyway.
+func StripFence(s string) string {
 	t := strings.TrimSpace(s)
 	if strings.HasPrefix(t, "```") && strings.HasSuffix(t, "```") && len(t) > 6 {
 		if nl := strings.Index(t, "\n"); nl > 0 {
@@ -281,8 +281,8 @@ func stripFence(s string) string {
 	return s
 }
 
-// extractJSON returns the outermost JSON object in a model's answer.
-func extractJSON(text string) string {
+// ExtractJSON returns the outermost JSON object in a model's answer.
+func ExtractJSON(text string) string {
 	i := strings.Index(text, "{")
 	j := strings.LastIndex(text, "}")
 	if i < 0 || j <= i {
@@ -306,11 +306,12 @@ func sseData(r io.Reader, fn func(data string) bool) error {
 }
 
 // readClaudeStream reads a streamed Messages response, sending text to live as it arrives.
-func readClaudeStream(body io.Reader, live *liveHandle) (*llmResponse, error) {
-	r := &llmResponse{}
+func readClaudeStream(body io.Reader, live Sink) (*Response, error) {
+	live = orDiscard(live)
+	r := &Response{}
 	var text strings.Builder
 	type pendingCall struct {
-		toolCall
+		ToolCall
 		args strings.Builder
 	}
 	tools := map[int]*pendingCall{} // tool_use blocks by content index; arguments arrive as JSON pieces
@@ -353,7 +354,7 @@ func readClaudeStream(body io.Reader, live *liveHandle) (*llmResponse, error) {
 			r.InTokens, r.CacheWrite, r.CacheRead = ev.Message.Usage.In, ev.Message.Usage.CacheW, ev.Message.Usage.CacheR
 		case "content_block_start":
 			if ev.ContentBlock.Type == "tool_use" {
-				tools[ev.Index] = &pendingCall{toolCall: toolCall{ID: ev.ContentBlock.ID, Name: ev.ContentBlock.Name}}
+				tools[ev.Index] = &pendingCall{ToolCall: ToolCall{ID: ev.ContentBlock.ID, Name: ev.ContentBlock.Name}}
 				order = append(order, ev.Index)
 			}
 		case "content_block_delta":
@@ -391,13 +392,13 @@ func readClaudeStream(body io.Reader, live *liveHandle) (*llmResponse, error) {
 		if c.Args == "" {
 			c.Args = "{}"
 		}
-		r.Calls = append(r.Calls, c.toolCall)
+		r.Calls = append(r.Calls, c.ToolCall)
 	}
 	return r, nil
 }
 
 // claudeUser is the user turn: plain text, or image blocks followed by the text.
-func claudeUser(req llmRequest) any {
+func claudeUser(req Request) any {
 	if len(req.Images) == 0 {
 		return req.User
 	}

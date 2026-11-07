@@ -28,10 +28,10 @@ func (c *Controller) plannerCall(ctx context.Context, t *Task, req llmRequest) (
 		}
 		var est float64
 		if planner == "openrouter" {
-			_ = openRouterModels.refresh(ctx, c.openRouterKey(), false) // for prices; cached for an hour
-			est = openRouterEstimate(orModel, req.size(), req.MaxTokens/2)
+			_ = openRouterCatalog().Refresh(ctx, c.openRouterKey(), false) // for prices; cached for an hour
+			est = openRouterEstimate(orModel, req.Size(), req.MaxTokens/2)
 		} else {
-			est = estimateCost(model, req.size(), req.MaxTokens/2)
+			est = estimateCost(model, req.Size(), req.MaxTokens/2)
 			if req.WebSearch {
 				est += webSearchUses * webSearchUSD
 			}
@@ -137,7 +137,7 @@ func (c *Controller) nodeCall(ctx context.Context, t *Task, nodeID string, req l
 			return nil, errNoVisionLocal
 		}
 		for _, img := range req.Images {
-			user.Images = append(user.Images, img.dataURI())
+			user.Images = append(user.Images, img.DataURI())
 		}
 	}
 	spec := InferenceSpec{Messages: []ChatMessage{{Role: "system", Content: req.System}, user},

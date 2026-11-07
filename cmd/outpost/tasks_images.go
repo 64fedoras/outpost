@@ -22,7 +22,6 @@ const (
 	maxTaskImages     = 5
 	maxImageBytes     = 5 << 20 // Claude's limit per image
 	maxImageBodyBytes = 40 << 20
-	imageTokenChars   = 4500 // rough cost estimate per image, in prompt characters
 )
 
 // imageUpload is one attachment as the web UI sends it.
@@ -30,14 +29,6 @@ type imageUpload struct {
 	Name string `json:"name"`
 	Data string `json:"data"` // base64, or a data: URI
 }
-
-// llmImage is an image on its way to a model.
-type llmImage struct {
-	Media string // image/png, image/jpeg, image/webp or image/gif
-	B64   string
-}
-
-func (i llmImage) dataURI() string { return "data:" + i.Media + ";base64," + i.B64 }
 
 var imageExt = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}
 
@@ -137,8 +128,8 @@ func (c *Controller) checkPlannerVision(planner, orModel string) error {
 	case planner == "claude":
 		return nil // every Claude model in the price table reads images
 	case planner == "openrouter":
-		_ = openRouterModels.refresh(context.Background(), c.openRouterKey(), false)
-		if m := openRouterModels.get(orModel); m != nil && !m.Vision {
+		_ = openRouterCatalog().Refresh(context.Background(), c.openRouterKey(), false)
+		if m := openRouterCatalog().Get(orModel); m != nil && !m.Vision {
 			return fmt.Errorf("%s does not accept images. Pick a vision model in Settings, or plan with Claude", m.Name)
 		}
 		return nil

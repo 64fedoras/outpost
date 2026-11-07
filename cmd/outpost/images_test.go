@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"outpost/internal/llm"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -104,11 +105,11 @@ func TestOpenRouterImagesAndVisionFlag(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("OUTPOST_OPENROUTER_URL", srv.URL)
 	cat := &orCatalog{}
-	if err := cat.refresh(context.Background(), "k", true); err != nil {
+	if err := cat.Refresh(context.Background(), "k", true); err != nil {
 		t.Fatal(err)
 	}
-	openRouterModels = cat
-	if !cat.get("v/eyes").Vision || cat.get("v/blind").Vision {
+	llm.OpenRouterModels = cat
+	if !cat.Get("v/eyes").Vision || cat.Get("v/blind").Vision {
 		t.Fatal("vision flag not parsed from input_modalities")
 	}
 	c := &Controller{}
