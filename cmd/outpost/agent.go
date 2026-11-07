@@ -38,80 +38,6 @@ var errAgentUnsupported = errors.New("tool calling is not supported here")
 
 // ---------- neutral and wire types ----------
 
-type agentTool struct {
-	Name        string
-	Description string
-	Params      map[string]any // JSON schema
-}
-
-type toolCall struct {
-	ID   string
-	Name string
-	Args string // JSON object as text
-}
-
-// agentMsg is one turn of the loop. Role is user, assistant or tool.
-type agentMsg struct {
-	Role   string
-	Text   string
-	Calls  []toolCall // assistant: the tools it asked for
-	CallID string     // tool: which call this answers
-}
-
-// ToolDef, WireToolCall are the OpenAI shapes used between the controller, the
-// node and llama-server.
-type ToolDef struct {
-	Type     string `json:"type"`
-	Function struct {
-		Name        string         `json:"name"`
-		Description string         `json:"description"`
-		Parameters  map[string]any `json:"parameters"`
-	} `json:"function"`
-}
-
-type WireToolCall struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	} `json:"function"`
-}
-
-func toolDefs(tools []agentTool) []ToolDef {
-	out := make([]ToolDef, len(tools))
-	for i, t := range tools {
-		out[i].Type = "function"
-		out[i].Function.Name, out[i].Function.Description, out[i].Function.Parameters = t.Name, t.Description, t.Params
-	}
-	return out
-}
-
-func wireCalls(calls []toolCall) []WireToolCall {
-	out := make([]WireToolCall, len(calls))
-	for i, c := range calls {
-		out[i].ID, out[i].Type = c.ID, "function"
-		out[i].Function.Name, out[i].Function.Arguments = c.Name, c.Args
-	}
-	return out
-}
-
-func fromWireCalls(in []WireToolCall) []toolCall {
-	var out []toolCall
-	for i, w := range in {
-		id := w.ID
-		if id == "" {
-			id = fmt.Sprintf("call_%d", i)
-		}
-		args := strings.TrimSpace(w.Function.Arguments)
-		if args == "" {
-			args = "{}"
-		}
-		out = append(out, toolCall{ID: id, Name: w.Function.Name, Args: args})
-	}
-	return out
-}
-
 // openAIMessages converts neutral messages to the OpenAI chat format.
 func openAIMessages(msgs []agentMsg) []ChatMessage {
 	var out []ChatMessage
@@ -126,68 +52,6 @@ func openAIMessages(msgs []agentMsg) []ChatMessage {
 		}
 	}
 	return out
-}
-
-// claudeMessages converts neutral messages to Messages API content blocks.
-// Consecutive tool results share one user turn, as the API requires. The last
-// block is marked for caching so a long loop does not pay for the whole
-// conversation again on every step.
-func claudeMessages(msgs []agentMsg) []map[string]any {
-	var out []map[string]any
-	for _, m := range msgs {
-		switch m.Role {
-		case "assistant":
-			var blocks []map[string]any
-			if strings.TrimSpace(m.Text) != "" {
-				blocks = append(blocks, map[string]any{"type": "text", "text": m.Text})
-			}
-			for _, c := range m.Calls {
-				var in json.RawMessage = json.RawMessage(c.Args)
-				if !json.Valid(in) {
-					in = json.RawMessage("{}")
-				}
-				blocks = append(blocks, map[string]any{"type": "tool_use", "id": c.ID, "name": c.Name, "input": in})
-			}
-			out = append(out, map[string]any{"role": "assistant", "content": blocks})
-		case "tool":
-			blk := map[string]any{"type": "tool_result", "tool_use_id": m.CallID, "content": m.Text}
-			if n := len(out); n > 0 && out[n-1]["role"] == "user" {
-				if prev, ok := out[n-1]["content"].([]map[string]any); ok && len(prev) > 0 && prev[0]["type"] == "tool_result" {
-					out[n-1]["content"] = append(prev, blk)
-					continue
-				}
-			}
-			out = append(out, map[string]any{"role": "user", "content": []map[string]any{blk}})
-		default:
-			out = append(out, map[string]any{"role": "user", "content": []map[string]any{{"type": "text", "text": m.Text}}})
-		}
-	}
-	if n := len(out); n > 0 {
-		if blocks, ok := out[n-1]["content"].([]map[string]any); ok && len(blocks) > 0 {
-			blocks[len(blocks)-1]["cache_control"] = map[string]string{"type": "ephemeral"}
-		}
-	}
-	return out
-}
-
-func claudeTools(tools []agentTool) []map[string]any {
-	var out []map[string]any
-	for _, t := range tools {
-		out = append(out, map[string]any{"name": t.Name, "description": t.Description, "input_schema": t.Params})
-	}
-	return out
-}
-
-// size is the request's input length in characters, for cost estimates.
-func (r llmRequest) size() int {
-	n := len(r.System) + len(r.User) + imageTokenChars*len(r.Images)
-	for _, m := range r.Msgs {
-		n += len(m.Text)
-		for _, c := range m.Calls {
-			n += len(c.Args) + len(c.Name)
-		}
-	}
-	return n
 }
 
 // toolsUnsupported recognises the errors servers give when they cannot do
@@ -231,22 +95,22 @@ func objSchema(required []string, props map[string]any) map[string]any {
 func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 
 var (
-	toolReadFile = agentTool{"read_file", "Read a text file from the project. Use start_line and end_line to read part of a large file.",
-		objSchema([]string{"path"}, map[string]any{"path": str("path relative to the project root"),
+	toolReadFile = agentTool{Name: "read_file", Description: "Read a text file from the project. Use start_line and end_line to read part of a large file.",
+		Params: objSchema([]string{"path"}, map[string]any{"path": str("path relative to the project root"),
 			"start_line": map[string]any{"type": "integer", "description": "first line to return (1-based, optional)"},
 			"end_line":   map[string]any{"type": "integer", "description": "last line to return (optional)"}})}
-	toolListFiles = agentTool{"list_files", "List the project's files with their sizes, optionally only below one directory.",
-		objSchema(nil, map[string]any{"dir": str("directory relative to the project root (optional)")})}
-	toolSearch = agentTool{"search", "Search the project's text files for a regular expression (or plain text). Returns file:line: text.",
-		objSchema([]string{"pattern"}, map[string]any{"pattern": str("regular expression or plain text"), "dir": str("limit to this directory (optional)")})}
-	toolWriteFile = agentTool{"write_file", "Create or replace a project file with its complete new content.",
-		objSchema([]string{"path", "content"}, map[string]any{"path": str("path relative to the project root"), "content": str("the complete file content")})}
-	toolAppendFile = agentTool{"append_file", "Add text to the end of a project file (created if missing). Use it to write a long file in several short calls: write_file the first part, then append_file the rest in order.",
-		objSchema([]string{"path", "content"}, map[string]any{"path": str("path relative to the project root"), "content": str("the text to add after the existing content")})}
-	toolRun = agentTool{"run", "Run a shell command on a build node with a fresh copy of the project, and return its exit code and output. Nothing persists between runs, so chain steps with && (for example the setup command, then the tests).",
-		objSchema([]string{"command"}, map[string]any{"command": str("the command line")})}
-	toolAskUser = agentTool{"ask_user", "Ask the person who started this task a question when you cannot continue without a decision. Work on other parts continues while you wait.",
-		objSchema([]string{"question"}, map[string]any{"question": str("one short question"),
+	toolListFiles = agentTool{Name: "list_files", Description: "List the project's files with their sizes, optionally only below one directory.",
+		Params: objSchema(nil, map[string]any{"dir": str("directory relative to the project root (optional)")})}
+	toolSearch = agentTool{Name: "search", Description: "Search the project's text files for a regular expression (or plain text). Returns file:line: text.",
+		Params: objSchema([]string{"pattern"}, map[string]any{"pattern": str("regular expression or plain text"), "dir": str("limit to this directory (optional)")})}
+	toolWriteFile = agentTool{Name: "write_file", Description: "Create or replace a project file with its complete new content.",
+		Params: objSchema([]string{"path", "content"}, map[string]any{"path": str("path relative to the project root"), "content": str("the complete file content")})}
+	toolAppendFile = agentTool{Name: "append_file", Description: "Add text to the end of a project file (created if missing). Use it to write a long file in several short calls: write_file the first part, then append_file the rest in order.",
+		Params: objSchema([]string{"path", "content"}, map[string]any{"path": str("path relative to the project root"), "content": str("the text to add after the existing content")})}
+	toolRun = agentTool{Name: "run", Description: "Run a shell command on a build node with a fresh copy of the project, and return its exit code and output. Nothing persists between runs, so chain steps with && (for example the setup command, then the tests).",
+		Params: objSchema([]string{"command"}, map[string]any{"command": str("the command line")})}
+	toolAskUser = agentTool{Name: "ask_user", Description: "Ask the person who started this task a question when you cannot continue without a decision. Work on other parts continues while you wait.",
+		Params: objSchema([]string{"question"}, map[string]any{"question": str("one short question"),
 			"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "suggested answers (optional)"}})}
 )
 

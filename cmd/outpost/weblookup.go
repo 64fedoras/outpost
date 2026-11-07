@@ -26,10 +26,6 @@ const (
 	webTimeout     = 15 * time.Second
 	webMaxRedirect = 4
 	webCacheTTL    = 10 * time.Minute
-
-	// webSearchUSD is the price of one Claude web search ($10 per 1,000 searches).
-	webSearchUSD  = 0.01
-	webSearchUses = 3 // searches Claude may make in one planning call
 )
 
 var urlRe = regexp.MustCompile(`https?://[^\s<>"'\x60)\]]+`)

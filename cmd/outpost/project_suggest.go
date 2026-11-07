@@ -61,9 +61,9 @@ func (c *Controller) suggestFromFailure(t *Task) {
 		req.String(), cmd, out, firstNonEmpty(instr, "(none)"))
 	lr := llmRequest{System: suggestSystem, User: user, MaxTokens: 300, Temperature: 0.2, Label: "Suggesting a project rule"}
 	if isCloudPlanner(planner) {
-		est := estimateCost(model, lr.size(), lr.MaxTokens)
+		est := estimateCost(model, lr.Size(), lr.MaxTokens)
 		if planner == "openrouter" {
-			est = openRouterEstimate(orModel, lr.size(), lr.MaxTokens)
+			est = openRouterEstimate(orModel, lr.Size(), lr.MaxTokens)
 		}
 		if cost+est > capUSD {
 			t.logf("info", "No project rule suggested: the call would pass the cost cap.")
