@@ -54,7 +54,7 @@ as that user. A machine that already joined becomes a service with `sudo outpost
 
 Nodes need nothing else installed. The controller fetches llama.cpp and models once and copies
 them to nodes, and the Outpost binary carries the small system library llama.cpp needs that minimal
-Linux installs lack (`libgomp`), dropping it next to llama.cpp only when the machine is missing it.
+Linux installs lack (`libgomp`), dropping it next to llama.cpp and stable-diffusion.cpp (images and video) only when the machine is missing it.
 The one exception is GPU drivers: GPU nodes use llama.cpp's Vulkan build, which needs the system's
 Vulkan driver (`sudo apt install libvulkan1 mesa-vulkan-drivers`). The node card tells you if it is
 missing.

@@ -126,26 +126,10 @@ func (n *Node) installSDRuntime(ri RuntimeInstall) {
 	n.resendHello()
 }
 
-// checkSDRuns starts sd-server once with --version, the way llama-server is checked.
+// checkSDRuns starts sd-server once with --version, the way llama-server is checked,
+// supplying bundled libraries (libgomp) the system lacks.
 func checkSDRuns(server string) string {
-	dir := filepath.Dir(server)
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, server, "--version")
-	cmd.Dir = dir
-	cmd.Env = llamaEnv(dir)
-	out, err := cmd.CombinedOutput()
-	if err == nil || bytes.Contains(bytes.ToLower(out), []byte("version")) {
-		return ""
-	}
-	if m := missingLibRe.FindSubmatch(out); m != nil {
-		lib := string(m[1])
-		if pkg, ok := aptPackage[lib]; ok {
-			return fmt.Sprintf("stable-diffusion.cpp needs %s, which this machine does not have. Install it with: sudo apt install -y %s", lib, pkg)
-		}
-		return fmt.Sprintf("stable-diffusion.cpp needs the system library %s, which this machine does not have.", lib)
-	}
-	return fmt.Sprintf("sd-server does not run here: %v %s", err, strings.TrimSpace(lastLines(string(out), 3)))
+	return checkBinaryRuns(server, "sd-server", "stable-diffusion.cpp", "version")
 }
 
 // ---------- the server process ----------

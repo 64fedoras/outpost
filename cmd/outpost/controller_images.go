@@ -361,7 +361,24 @@ func (c *Controller) prepLock(nodeID string) *sync.Mutex {
 
 // ensureSDOnNode installs stable-diffusion.cpp and downloads the model files on a
 // node when they are missing. One preparation per node at a time.
-func (c *Controller) ensureSDOnNode(ctx context.Context, id string, d *ImageModelDef) error {
+func (c *Controller) ensureSDOnNode(ctx context.Context, id string, d *ImageModelDef) (err error) {
+	// A failure before the node reports back (download error, node offline, send
+	// error) used to leave the node's "preparing" or "downloading" status in place, so
+	// the page kept showing a spinner. Mark any unfinished status failed instead.
+	defer func() {
+		if err == nil {
+			return
+		}
+		c.mu.Lock()
+		st := c.nodeOps[id]
+		stuck := st != nil && (st.Op == "runtime.sd" || st.Op == "model.fetch") && st.State != "failed" && st.State != "done" && st.State != "ready"
+		if stuck {
+			op := st.OpStatus
+			op.State, op.Error = "failed", err.Error()
+			c.recordNodeOpLocked(id, op)
+		}
+		c.mu.Unlock()
+	}()
 	lk := c.prepLock(id)
 	lk.Lock()
 	defer lk.Unlock()
