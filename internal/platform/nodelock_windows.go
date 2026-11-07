@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package platform
 
 import (
 	"fmt"
@@ -11,9 +11,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// acquireNodeLock takes an exclusive lock on <data>/node.lock. Windows drops
+// AcquireNodeLock takes an exclusive lock on <data>/node.lock. Windows drops
 // the lock when the process exits, however it exits.
-func acquireNodeLock(dataDir string, wait time.Duration) (func(), error) {
+func AcquireNodeLock(dataDir string, wait time.Duration) (func(), error) {
 	f, err := os.OpenFile(filepath.Join(dataDir, "node.lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err

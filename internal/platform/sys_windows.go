@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package platform
 
 import (
 	"os"
@@ -15,7 +15,7 @@ var (
 	procGlobalMemoryStatusEx = kernel32.NewProc("GlobalMemoryStatusEx")
 )
 
-func diskFree(path string) uint64 {
+func DiskFree(path string) uint64 {
 	p, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
 		return 0
@@ -28,8 +28,8 @@ func diskFree(path string) uint64 {
 	return free
 }
 
-// diskTotal is the size of the volume holding path.
-func diskTotal(path string) uint64 {
+// DiskTotal is the size of the volume holding path.
+func DiskTotal(path string) uint64 {
 	p, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
 		return 0
@@ -54,22 +54,36 @@ type memoryStatusEx struct {
 	AvailExtendedVirtual uint64
 }
 
-func windowsRAM() uint64 {
-	var m memoryStatusEx
-	m.Length = uint32(unsafe.Sizeof(m))
-	r, _, _ := procGlobalMemoryStatusEx.Call(uintptr(unsafe.Pointer(&m)))
+// Memory is the machine's physical memory and page file, in bytes.
+type Memory struct {
+	TotalPhys, AvailPhys, TotalPageFile, AvailPageFile uint64
+}
+
+// MemoryStatus reads GlobalMemoryStatusEx. ok is false when the call fails.
+func MemoryStatus() (m Memory, ok bool) {
+	var x memoryStatusEx
+	x.Length = uint32(unsafe.Sizeof(x))
+	r, _, _ := procGlobalMemoryStatusEx.Call(uintptr(unsafe.Pointer(&x)))
 	if r == 0 {
+		return Memory{}, false
+	}
+	return Memory{x.TotalPhys, x.AvailPhys, x.TotalPageFile, x.AvailPageFile}, true
+}
+
+func WindowsRAM() uint64 {
+	m, ok := MemoryStatus()
+	if !ok {
 		return 0
 	}
 	return m.TotalPhys
 }
 
-func setProcGroup(cmd *exec.Cmd) {
+func SetProcGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
 }
 
 // Windows cannot deliver SIGTERM; Kill stops llama-server.
-func osInterrupt() os.Signal { return os.Kill }
+func OSInterrupt() os.Signal { return os.Kill }
 
-// killProcGroup is a no-op on Windows for now (job objects come with the Windows sandbox).
-func killProcGroup(cmd *exec.Cmd) {}
+// KillProcGroup is a no-op on Windows for now (job objects come with the Windows sandbox).
+func KillProcGroup(cmd *exec.Cmd) {}

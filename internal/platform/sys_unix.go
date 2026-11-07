@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package platform
 
 import (
 	"os"
@@ -8,7 +8,7 @@ import (
 	"syscall"
 )
 
-func diskFree(path string) uint64 {
+func DiskFree(path string) uint64 {
 	var st syscall.Statfs_t
 	if err := syscall.Statfs(path, &st); err != nil {
 		return 0
@@ -16,8 +16,8 @@ func diskFree(path string) uint64 {
 	return uint64(st.Bavail) * uint64(st.Bsize)
 }
 
-// diskTotal is the size of the file system holding path.
-func diskTotal(path string) uint64 {
+// DiskTotal is the size of the file system holding path.
+func DiskTotal(path string) uint64 {
 	var st syscall.Statfs_t
 	if err := syscall.Statfs(path, &st); err != nil {
 		return 0
@@ -25,9 +25,9 @@ func diskTotal(path string) uint64 {
 	return uint64(st.Blocks) * uint64(st.Bsize)
 }
 
-// setProcGroup runs the command in its own process group so cancelling a job
+// SetProcGroup runs the command in its own process group so cancelling a job
 // also stops anything it spawned (for example the children of sh -c).
-func setProcGroup(cmd *exec.Cmd) {
+func SetProcGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
@@ -38,12 +38,12 @@ func setProcGroup(cmd *exec.Cmd) {
 	}
 }
 
-func windowsRAM() uint64 { return 0 }
+func WindowsRAM() uint64 { return 0 }
 
-func osInterrupt() os.Signal { return syscall.SIGTERM }
+func OSInterrupt() os.Signal { return syscall.SIGTERM }
 
-// killProcGroup kills whatever is left of the command's process group.
-func killProcGroup(cmd *exec.Cmd) {
+// KillProcGroup kills whatever is left of the command's process group.
+func KillProcGroup(cmd *exec.Cmd) {
 	if cmd.Process != nil {
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
