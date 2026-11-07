@@ -1,4 +1,4 @@
-package main
+package sandbox
 
 const seccompArch = 0xC00000B7 // AUDIT_ARCH_AARCH64
 

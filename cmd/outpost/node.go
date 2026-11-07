@@ -829,7 +829,7 @@ func (n *Node) runJob(jd JobDispatch) {
 	netOn := true
 	if mode != sandboxOff {
 		pol := buildSandboxPolicy(sandboxInput{Mode: mode, Dir: dir, ToolDir: n.toolchainDir(), CacheDir: n.sandboxCacheDir(),
-			GoBin: n.goBinDirIfAny(), HostEnv: os.Environ(), ExtraRO: filepath.SplitList(os.Getenv("OUTPOST_SANDBOX_EXTRA_RO")), Spec: spec})
+			GoBin: n.goBinDirIfAny(), HostEnv: os.Environ(), ExtraRO: filepath.SplitList(os.Getenv("OUTPOST_SANDBOX_EXTRA_RO")), Argv: spec.Argv, Env: spec.Env, Network: spec.Network})
 		_ = os.MkdirAll(n.sandboxCacheDir(), 0o700)
 		_ = os.MkdirAll(pol.Tmp, 0o700)
 		if e := sandboxWrap(cmd, pol); e != nil {

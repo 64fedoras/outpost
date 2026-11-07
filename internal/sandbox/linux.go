@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package sandbox
 
 import (
 	"encoding/binary"
@@ -86,9 +86,9 @@ func setNetNS(cmd *exec.Cmd) {
 	cmd.SysProcAttr.GidMappingsEnableSetgroups = false
 }
 
-// sandboxLayers lists what a job in the given mode gets on this machine.
-func sandboxLayers(mode string) []string {
-	if mode == sandboxOff {
+// Layers lists what a job in the given mode gets on this machine.
+func Layers(mode string) []string {
+	if mode == Off {
 		return nil
 	}
 	c := sandboxProbe()
@@ -96,7 +96,7 @@ func sandboxLayers(mode string) []string {
 	if c.ABI > 0 {
 		l = append(l, fmt.Sprintf("landlock-v%d", c.ABI))
 	}
-	if mode == sandboxStrict {
+	if mode == Strict {
 		if c.UserNetNS {
 			l = append(l, "netns")
 		} else if c.ABI >= 4 {
@@ -109,14 +109,14 @@ func sandboxLayers(mode string) []string {
 	return l
 }
 
-// sandboxWrap rewrites cmd so it starts the sandbox child with the policy. The
+// Wrap rewrites cmd so it starts the sandbox child with the policy. The
 // returned note says what was enforced.
-func sandboxWrap(cmd *exec.Cmd, p *sandboxPolicy) *ErrInfo {
+func Wrap(cmd *exec.Cmd, p *Policy) error {
 	c := sandboxProbe()
 	p.Landlock = c.ABI > 0
-	if p.Mode == sandboxStrict {
+	if p.Mode == Strict {
 		if !p.Landlock {
-			return errf("sandbox_unavailable", false, "strict sandbox needs Landlock (Linux 5.13 or newer); this node's kernel has none. Set the node's sandbox to basic or off")
+			return unavailable("strict sandbox needs Landlock (Linux 5.13 or newer); this node's kernel has none. Set the node's sandbox to basic or off")
 		}
 		if !p.Net {
 			switch {
@@ -125,17 +125,17 @@ func sandboxWrap(cmd *exec.Cmd, p *sandboxPolicy) *ErrInfo {
 			case c.ABI >= 4:
 				p.LLNet = true
 			default:
-				return errf("sandbox_unavailable", false, "strict sandbox cannot turn the network off here (user namespaces are blocked and the kernel is older than 6.7). Set the node's sandbox to basic or off")
+				return unavailable("strict sandbox cannot turn the network off here (user namespaces are blocked and the kernel is older than 6.7). Set the node's sandbox to basic or off")
 			}
 		}
 		p.Seccomp = c.Seccomp
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		return errf("sandbox_unavailable", false, "cannot find the node binary: %v", err)
+		return unavailable("cannot find the node binary: %v", err)
 	}
 	exe = strings.TrimSuffix(exe, " (deleted)")
-	cmd.Path, cmd.Args = exe, []string{exe, "sandbox-child", p.encode()}
+	cmd.Path, cmd.Args = exe, []string{exe, "sandbox-child", p.Encode()}
 	cmd.Env = []string{}
 	if p.NetNS {
 		setNetNS(cmd)
@@ -143,12 +143,12 @@ func sandboxWrap(cmd *exec.Cmd, p *sandboxPolicy) *ErrInfo {
 	return nil
 }
 
-func sandboxAttach(cmd *exec.Cmd, mode string) func() { return func() {} }
+func Attach(cmd *exec.Cmd, mode string, ramBytes uint64) func() { return func() {} }
 
-func sandboxPlatformMode(mode string) string { return mode }
+func PlatformMode(mode string) string { return mode }
 
-// runSandboxChild is the hidden "sandbox-child" mode: lock this process in, then exec.
-func runSandboxChild(args []string) {
+// RunChild is the hidden "sandbox-child" mode: lock this process in, then exec.
+func RunChild(args []string) {
 	if len(args) > 0 && args[0] == "--probe" {
 		// Some distros (Ubuntu 24.04) let the namespace be created but strip its capabilities.
 		// Bringing loopback up proves they are there.
@@ -165,7 +165,7 @@ func runSandboxChild(args []string) {
 	if len(args) != 1 {
 		die(125, "missing policy")
 	}
-	p, err := decodeSandboxPolicy(args[0])
+	p, err := DecodePolicy(args[0])
 	if err != nil {
 		die(125, "bad policy: %v", err)
 	}
@@ -293,7 +293,7 @@ func llFSMask(abi int) uint64 {
 	return m
 }
 
-func applyLandlock(p *sandboxPolicy) error {
+func applyLandlock(p *Policy) error {
 	abi := sandboxProbe().ABI
 	if abi < 1 {
 		return fmt.Errorf("not supported")
