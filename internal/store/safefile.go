@@ -1,8 +1,8 @@
-package main
+package store
 
 // Safe saves for state files (settings, nodes, sessions, tokens, tasks, models).
 //
-// writeFileAtomic writes to a temporary file in the same folder, flushes it to
+// WriteFileAtomic writes to a temporary file in the same folder, flushes it to
 // disk, renames it over the target and flushes the folder, so a power cut, a
 // crash or a full disk leaves either the old file or the new one, never half
 // of each. Plain os.WriteFile truncates the target first, so a crash in the
@@ -15,16 +15,16 @@ import (
 	"runtime"
 )
 
-// writeFileAtomic replaces path with b. The file gets mode (subject to umask
+// WriteFileAtomic replaces path with b. The file gets mode (subject to umask
 // on creation, then set exactly with Chmod).
-func writeFileAtomic(path string, b []byte, mode os.FileMode) error {
+func WriteFileAtomic(path string, b []byte, mode os.FileMode) error {
 	return writeAtomic(path, b, mode, false)
 }
 
-// writeFileAtomicBackup is writeFileAtomic that first keeps the current file as
+// WriteFileAtomicBackup is WriteFileAtomic that first keeps the current file as
 // path+".bak", so a file damaged later (by the disk, or a bug) can still be
 // recovered from the previous save. See loadJSONWithBackup.
-func writeFileAtomicBackup(path string, b []byte, mode os.FileMode) error {
+func WriteFileAtomicBackup(path string, b []byte, mode os.FileMode) error {
 	return writeAtomic(path, b, mode, true)
 }
 
@@ -90,12 +90,12 @@ func syncDir(dir string) {
 	}
 }
 
-// errBothDamaged is returned when neither a file nor its .bak could be parsed.
-var errBothDamaged = errors.New("file and its backup are both unreadable")
+// ErrBothDamaged is returned when neither a file nor its .bak could be parsed.
+var ErrBothDamaged = errors.New("file and its backup are both unreadable")
 
-// readWithBackup reads path, and if parse fails on it (or it is missing while
+// ReadWithBackup reads path, and if parse fails on it (or it is missing while
 // a backup exists) tries path+".bak". usedBackup says which one was used.
-func readWithBackup(path string, parse func([]byte) error) (usedBackup bool, err error) {
+func ReadWithBackup(path string, parse func([]byte) error) (usedBackup bool, err error) {
 	b, rerr := os.ReadFile(path)
 	if rerr == nil {
 		if perr := parse(b); perr == nil {
@@ -111,7 +111,7 @@ func readWithBackup(path string, parse func([]byte) error) (usedBackup bool, err
 		return false, err
 	}
 	if parse(bb) != nil {
-		return false, errBothDamaged
+		return false, ErrBothDamaged
 	}
 	return true, nil
 }

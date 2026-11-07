@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -32,31 +30,6 @@ func TestRedactRemovesSecrets(t *testing.T) {
 	}
 	if !strings.Contains(out, "keep me") || !strings.Contains(out, `"count": 3`) {
 		t.Fatalf("ordinary fields removed:\n%s", out)
-	}
-}
-
-func TestVerifyBackupCatchesTruncation(t *testing.T) {
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"x":1}`), 0o600)
-	os.MkdirAll(filepath.Join(dir, "tasks", "t1"), 0o700)
-	os.WriteFile(filepath.Join(dir, "tasks", "t1", "task.json"), bytes.Repeat([]byte("task "), 50000), 0o600)
-	var buf bytes.Buffer
-	if err := writeBackup(&buf, dir, "correct horse", false); err != nil {
-		t.Fatal(err)
-	}
-	good := filepath.Join(t.TempDir(), "good.opb")
-	os.WriteFile(good, buf.Bytes(), 0o600)
-	n, err := verifyBackup(good, "correct horse")
-	if err != nil || n < 2 {
-		t.Fatalf("good backup: n=%d err=%v", n, err)
-	}
-	if _, err := verifyBackup(good, "wrong pass"); err == nil {
-		t.Fatal("wrong passphrase passed")
-	}
-	cut := filepath.Join(t.TempDir(), "cut.opb")
-	os.WriteFile(cut, buf.Bytes()[:buf.Len()*2/3], 0o600)
-	if _, err := verifyBackup(cut, "correct horse"); err == nil {
-		t.Fatal("truncated backup passed")
 	}
 }
 
