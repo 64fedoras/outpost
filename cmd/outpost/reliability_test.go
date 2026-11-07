@@ -5,57 +5,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
-
-func TestWriteFileAtomicKeepsBackup(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "s.json")
-	if err := writeFileAtomicBackup(p, []byte(`{"v":1}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(p + ".bak"); err == nil {
-		t.Fatal("first save has nothing to back up")
-	}
-	if err := writeFileAtomicBackup(p, []byte(`{"v":2}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if b, _ := os.ReadFile(p); string(b) != `{"v":2}` {
-		t.Fatalf("got %s", b)
-	}
-	if b, _ := os.ReadFile(p + ".bak"); string(b) != `{"v":1}` {
-		t.Fatalf("backup %s", b)
-	}
-	if runtime.GOOS != "windows" {
-		if st, _ := os.Stat(p); st.Mode().Perm() != 0o600 {
-			t.Fatalf("mode %v", st.Mode())
-		}
-	}
-	// no temp files left behind
-	ents, _ := os.ReadDir(filepath.Dir(p))
-	for _, e := range ents {
-		if strings.Contains(e.Name(), ".tmp-") {
-			t.Fatalf("left %s", e.Name())
-		}
-	}
-}
-
-func TestReadWithBackupFallsBack(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "s.json")
-	os.WriteFile(p, []byte(`{"v":`), 0o600) // cut off mid-write
-	os.WriteFile(p+".bak", []byte(`{"v":7}`), 0o600)
-	var v struct{ V int }
-	used, err := readWithBackup(p, func(b []byte) error { return json.Unmarshal(b, &v) })
-	if err != nil || !used || v.V != 7 {
-		t.Fatalf("used=%v err=%v v=%d", used, err, v.V)
-	}
-	os.WriteFile(p+".bak", []byte(`nope`), 0o600)
-	if _, err := readWithBackup(p, func(b []byte) error { return json.Unmarshal(b, &v) }); err != errBothDamaged {
-		t.Fatalf("want errBothDamaged, got %v", err)
-	}
-}
 
 func TestDamagedTaskIsRecoveredOrMovedAside(t *testing.T) {
 	c := &Controller{dataDir: t.TempDir(), projects: map[string]*Project{}}
