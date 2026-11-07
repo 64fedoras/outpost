@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package sandbox
 
 import (
 	"os"
@@ -20,24 +20,24 @@ const winMaxProcs = 512
 
 func windowsSandboxOn() bool { return os.Getenv("OUTPOST_EXPERIMENTAL_WINDOWS_SANDBOX") == "1" }
 
-func sandboxPlatformMode(mode string) string {
+func PlatformMode(mode string) string {
 	if windowsSandboxOn() {
 		return mode
 	}
-	return sandboxOff
+	return Off
 }
 
-func sandboxLayers(mode string) []string {
-	if mode == sandboxOff {
+func Layers(mode string) []string {
+	if mode == Off {
 		return nil
 	}
 	return []string{"job-object"}
 }
 
-// sandboxWrap changes nothing on Windows: the limits are applied by sandboxAttach.
-func sandboxWrap(cmd *exec.Cmd, p *sandboxPolicy) *ErrInfo { return nil }
+// Wrap changes nothing on Windows: the limits are applied by Attach.
+func Wrap(cmd *exec.Cmd, p *Policy) error { return nil }
 
-func runSandboxChild(args []string) {}
+func RunChild(args []string) {}
 
 // jobLimits are the Job Object limits for a job on a machine with ramBytes of RAM.
 func jobLimits(ramBytes uint64) windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
@@ -51,19 +51,19 @@ func jobLimits(ramBytes uint64) windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
 	return info
 }
 
-// sandboxAttach puts the started command in a Job Object. There is a short gap
+// Attach puts the started command in a Job Object. There is a short gap
 // between the start and the assignment in which a child could escape; closing
 // it needs CREATE_SUSPENDED handling that is not built yet.
-func sandboxAttach(cmd *exec.Cmd, mode string) func() {
+func Attach(cmd *exec.Cmd, mode string, ramBytes uint64) func() {
 	noop := func() {}
-	if mode == sandboxOff || cmd.Process == nil {
+	if mode == Off || cmd.Process == nil {
 		return noop
 	}
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return noop
 	}
-	info := jobLimits(windowsRAM())
+	info := jobLimits(ramBytes)
 	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
 		windows.CloseHandle(job)
 		return noop

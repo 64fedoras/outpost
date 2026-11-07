@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package sandbox
 
 import (
 	"os/exec"
@@ -11,11 +11,11 @@ import (
 
 func TestWindowsSandboxIsOffByDefault(t *testing.T) {
 	t.Setenv("OUTPOST_EXPERIMENTAL_WINDOWS_SANDBOX", "")
-	if got := sandboxPlatformMode(sandboxStrict); got != sandboxOff {
+	if got := PlatformMode(Strict); got != Off {
 		t.Fatalf("Windows sandbox must be off unless the experimental switch is set, got %q", got)
 	}
 	t.Setenv("OUTPOST_EXPERIMENTAL_WINDOWS_SANDBOX", "1")
-	if got := sandboxPlatformMode(sandboxBasic); got != sandboxBasic {
+	if got := PlatformMode(Basic); got != Basic {
 		t.Fatalf("switch ignored: %q", got)
 	}
 }
@@ -41,7 +41,7 @@ func TestJobObjectKillsLeftovers(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Skip(err)
 	}
-	release := sandboxAttach(cmd, sandboxBasic)
+	release := Attach(cmd, Basic, 0)
 	release() // closing the job kills the process
 	if err := cmd.Wait(); err == nil {
 		t.Error("process should have been killed by the job object")
