@@ -1,4 +1,4 @@
-package main
+package sandbox
 
 import (
 	"strings"
@@ -10,18 +10,18 @@ func TestEffectiveSandbox(t *testing.T) {
 		{"", "", "basic"}, {"strict", "", "strict"}, {"strict", "off", "off"}, {"bogus", "", "basic"}, {"off", "strict", "strict"}, {" STRICT ", "", "strict"},
 	}
 	for _, c := range cases {
-		if got := effectiveSandbox(c.g, c.n); got != c.want {
-			t.Errorf("effectiveSandbox(%q,%q)=%q want %q", c.g, c.n, got, c.want)
+		if got := Effective(c.g, c.n); got != c.want {
+			t.Errorf("Effective(%q,%q)=%q want %q", c.g, c.n, got, c.want)
 		}
 	}
 }
 
 func TestBuildSandboxPolicy(t *testing.T) {
-	in := sandboxInput{Mode: sandboxStrict, Dir: "/data/work/ws1", ToolDir: "/data/toolchains", CacheDir: "/data/sandbox-cache",
+	in := Input{Mode: Strict, Dir: "/data/work/ws1", ToolDir: "/data/toolchains", CacheDir: "/data/sandbox-cache",
 		GoBin:   "/data/toolchains/go/bin",
 		HostEnv: []string{"PATH=/x", "ANTHROPIC_API_KEY=secret", "HTTPS_PROXY=http://p:3128", "HOME=/root", "GOFLAGS=-v"},
-		Spec:    ExecSpec{Argv: []string{"go", "test"}, Env: map[string]string{"FOO": "1", "GOFLAGS": "-race"}}}
-	p := buildSandboxPolicy(in)
+		Argv:    []string{"go", "test"}, Env: map[string]string{"FOO": "1", "GOFLAGS": "-race"}}
+	p := Build(in)
 	env := strings.Join(p.Env, "\n")
 	if strings.Contains(env, "secret") || strings.Contains(env, "/root") {
 		t.Fatalf("host secrets leaked into the job env:\n%s", env)
@@ -47,23 +47,23 @@ func TestBuildSandboxPolicy(t *testing.T) {
 			t.Errorf("too broad a readable path: %s", ro)
 		}
 	}
-	in.Spec.Network = "allow"
-	if p2 := buildSandboxPolicy(in); !p2.Net || strings.Contains(strings.Join(p2.Env, " "), "GOPROXY=off") {
+	in.Network = "allow"
+	if p2 := Build(in); !p2.Net || strings.Contains(strings.Join(p2.Env, " "), "GOPROXY=off") {
 		t.Errorf("network allow not honoured: %+v", p2.Env)
 	}
-	in.Mode, in.Spec.Network = sandboxBasic, ""
-	if p3 := buildSandboxPolicy(in); !p3.Net || p3.Seccomp {
+	in.Mode, in.Network = Basic, ""
+	if p3 := Build(in); !p3.Net || p3.Seccomp {
 		t.Errorf("basic should keep the network and skip seccomp")
 	}
 }
 
 func TestSandboxPolicyRoundTrip(t *testing.T) {
-	p := &sandboxPolicy{Mode: "basic", Dir: "/w", Argv: []string{"ls"}, Env: []string{"A=1"}, RO: []string{"/usr"}}
-	q, err := decodeSandboxPolicy(p.encode())
+	p := &Policy{Mode: "basic", Dir: "/w", Argv: []string{"ls"}, Env: []string{"A=1"}, RO: []string{"/usr"}}
+	q, err := DecodePolicy(p.Encode())
 	if err != nil || q.Dir != "/w" || q.Argv[0] != "ls" || q.RO[0] != "/usr" {
 		t.Fatalf("round trip: %+v %v", q, err)
 	}
-	if _, err := decodeSandboxPolicy("!!"); err == nil {
+	if _, err := DecodePolicy("!!"); err == nil {
 		t.Error("garbage accepted")
 	}
 }
@@ -72,32 +72,28 @@ func TestNeedsNetwork(t *testing.T) {
 	yes := []string{"go mod download", "cd x && npm ci", "pip install -r requirements.txt", "git clone https://x/y", "sh -c go get example.com/x"}
 	no := []string{"go test ./...", "go build ./...", "pytest -q", "ls", "make test"}
 	for _, c := range yes {
-		if !needsNetwork([]string{c}) {
+		if !NeedsNetwork([]string{c}) {
 			t.Errorf("%q should need network", c)
 		}
 	}
 	for _, c := range no {
-		if needsNetwork([]string{c}) {
+		if NeedsNetwork([]string{c}) {
 			t.Errorf("%q should not need network", c)
 		}
 	}
-	if execNetwork([]string{"go test"}) != "" || execNetwork([]string{"npm install"}) != "allow" {
-		t.Error("execNetwork")
+	if ExecNetwork([]string{"go test"}) != "" || ExecNetwork([]string{"npm install"}) != "allow" {
+		t.Error("ExecNetwork")
 	}
 }
 
 func TestSandboxNotes(t *testing.T) {
-	if sandboxNote(sandboxOff, true) != "" {
+	if Note(Off, true) != "" {
 		t.Error("off has no note")
 	}
-	if !strings.Contains(sandboxNote(sandboxStrict, false), "network was OFF") {
+	if !strings.Contains(Note(Strict, false), "network was OFF") {
 		t.Error("strict note should say the network was off")
 	}
-	if !looksSandboxDenied(1, "", "dial tcp: lookup proxy.golang.org: no such host") || looksSandboxDenied(0, "permission denied", "") || looksSandboxDenied(1, "FAIL TestX", "") {
-		t.Error("looksSandboxDenied")
-	}
-	out := &ExecOutput{SandboxDenied: true, SandboxNote: "net off"}
-	if got := withSandboxNote("boom", out); !strings.Contains(got, "net off") || withSandboxNote("boom", &ExecOutput{}) != "boom" {
-		t.Errorf("withSandboxNote: %q", got)
+	if !LooksDenied(1, "", "dial tcp: lookup proxy.golang.org: no such host") || LooksDenied(0, "permission denied", "") || LooksDenied(1, "FAIL TestX", "") {
+		t.Error("LooksDenied")
 	}
 }

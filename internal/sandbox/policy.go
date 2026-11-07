@@ -1,8 +1,9 @@
-package main
+package sandbox
 
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -21,34 +22,34 @@ import (
 // The Linux implementation is in sandbox_linux.go. Other systems run jobs unsandboxed
 // and say so in the node's Hello (sandbox_other.go).
 const (
-	sandboxOff    = "off"
-	sandboxBasic  = "basic"
-	sandboxStrict = "strict"
+	Off    = "off"
+	Basic  = "basic"
+	Strict = "strict"
 )
 
-// normSandbox returns a valid mode or "" (meaning: use the default).
-func normSandbox(s string) string {
+// Norm returns a valid mode or "" (meaning: use the default).
+func Norm(s string) string {
 	switch s = strings.ToLower(strings.TrimSpace(s)); s {
-	case sandboxOff, sandboxBasic, sandboxStrict:
+	case Off, Basic, Strict:
 		return s
 	}
 	return ""
 }
 
-// effectiveSandbox is the node's own choice, else the global one, else basic.
-func effectiveSandbox(global, node string) string {
-	if m := normSandbox(node); m != "" {
+// Effective is the node's own choice, else the global one, else basic.
+func Effective(global, node string) string {
+	if m := Norm(node); m != "" {
 		return m
 	}
-	if m := normSandbox(global); m != "" {
+	if m := Norm(global); m != "" {
 		return m
 	}
-	return sandboxBasic
+	return Basic
 }
 
-// sandboxPolicy is what the sandbox-child process applies to itself before it
+// Policy is what the sandbox-child process applies to itself before it
 // execs the job's command. It travels as base64 JSON in argv.
-type sandboxPolicy struct {
+type Policy struct {
 	Mode     string   `json:"mode"`
 	Dir      string   `json:"dir"`      // job workspace, read/write
 	Tmp      string   `json:"tmp"`      // private TMPDIR and HOME, read/write
@@ -64,17 +65,17 @@ type sandboxPolicy struct {
 	Seccomp  bool     `json:"seccomp"`
 }
 
-func (p *sandboxPolicy) encode() string {
+func (p *Policy) Encode() string {
 	b, _ := json.Marshal(p)
 	return base64.StdEncoding.EncodeToString(b)
 }
 
-func decodeSandboxPolicy(s string) (*sandboxPolicy, error) {
+func DecodePolicy(s string) (*Policy, error) {
 	b, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
 		return nil, err
 	}
-	var p sandboxPolicy
+	var p Policy
 	if err := json.Unmarshal(b, &p); err != nil {
 		return nil, err
 	}
@@ -112,28 +113,30 @@ var sandboxPassEnv = []string{
 	"LANG", "LC_ALL", "TZ",
 }
 
-type sandboxInput struct {
+type Input struct {
 	Mode     string
-	Dir      string   // workspace
-	GoDir    string   // Outpost-installed Go (bin folder's parent); may not exist
-	ToolDir  string   // toolchains folder, read-only
-	CacheDir string   // shared build cache, read/write
-	HostEnv  []string // the node's environment
-	ExtraRO  []string // OUTPOST_SANDBOX_EXTRA_RO
-	Spec     ExecSpec
+	Dir      string            // workspace
+	GoDir    string            // Outpost-installed Go (bin folder's parent); may not exist
+	ToolDir  string            // toolchains folder, read-only
+	CacheDir string            // shared build cache, read/write
+	HostEnv  []string          // the node's environment
+	ExtraRO  []string          // OUTPOST_SANDBOX_EXTRA_RO
+	Argv     []string          // the command
+	Env      map[string]string // extra variables the job asked for
+	Network  string            // "allow" opens the network for this command in a strict sandbox
 	GoBin    string
 }
 
-// buildSandboxPolicy turns the job into the rules the child applies. It does not
+// Build turns the job into the rules the child applies. It does not
 // touch the system, so it is the same on every OS and easy to test.
-func buildSandboxPolicy(in sandboxInput) *sandboxPolicy {
+func Build(in Input) *Policy {
 	tmp := filepath.Join(in.Dir, ".outpost-tmp")
-	p := &sandboxPolicy{Mode: in.Mode, Dir: in.Dir, Tmp: tmp, FSize: defaultFSize, Argv: in.Spec.Argv}
+	p := &Policy{Mode: in.Mode, Dir: in.Dir, Tmp: tmp, FSize: defaultFSize, Argv: in.Argv}
 	p.RO = append(append([]string{}, sandboxSystemRO...), in.ToolDir)
 	p.RO = append(p.RO, in.ExtraRO...)
 	p.RW = []string{in.Dir, tmp, in.CacheDir, "/dev"}
-	p.Net = in.Mode != sandboxStrict || in.Spec.Network == "allow"
-	p.Seccomp = in.Mode == sandboxStrict
+	p.Net = in.Mode != Strict || in.Network == "allow"
+	p.Seccomp = in.Mode == Strict
 
 	path := "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 	if in.GoBin != "" {
@@ -155,13 +158,13 @@ func buildSandboxPolicy(in sandboxInput) *sandboxPolicy {
 	if !p.Net { // fail fast instead of waiting on a network that is not there
 		env = append(env, "GOTOOLCHAIN=local", "GOPROXY=off")
 	}
-	keys := make([]string, 0, len(in.Spec.Env))
-	for k := range in.Spec.Env {
+	keys := make([]string, 0, len(in.Env))
+	for k := range in.Env {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		env = append(env, k+"="+in.Spec.Env[k])
+		env = append(env, k+"="+in.Env[k])
 	}
 	p.Env = dedupeEnv(env)
 	return p
@@ -183,11 +186,11 @@ func dedupeEnv(env []string) []string {
 	return out
 }
 
-// sandboxNote is the one line the fixer gets so it does not "fix" correct code
+// Note is the one line the fixer gets so it does not "fix" correct code
 // that the sandbox blocked.
-func sandboxNote(mode string, net bool) string {
+func Note(mode string, net bool) string {
 	switch {
-	case mode == sandboxOff || mode == "" || runtime.GOOS != "linux": // only Linux confines files and network
+	case mode == Off || mode == "" || runtime.GOOS != "linux": // only Linux confines files and network
 		return ""
 	case net:
 		return "this command ran in the Outpost sandbox (" + mode + "): it can only change files in its job folder; the network was open"
@@ -197,8 +200,8 @@ func sandboxNote(mode string, net bool) string {
 
 var sandboxDeniedRe = regexp.MustCompile(`(?i)permission denied|operation not permitted|network is unreachable|temporary failure in name resolution|no such host|could not resolve|dial tcp|connection refused|read-only file system|name or service not known|cannot (?:fetch|download)`)
 
-// looksSandboxDenied is a best-effort guess from the output of a failed run.
-func looksSandboxDenied(exit int, stdout, stderr string) bool {
+// LooksDenied is a best-effort guess from the output of a failed run.
+func LooksDenied(exit int, stdout, stderr string) bool {
 	return exit != 0 && sandboxDeniedRe.MatchString(stdout+"\n"+stderr)
 }
 
@@ -206,23 +209,24 @@ func looksSandboxDenied(exit int, stdout, stderr string) bool {
 // controller to turn the network on for those steps only.
 var networkCommandRe = regexp.MustCompile(`(?i)\b(go (get|mod download|mod tidy|install|work sync)|npm (i|install|ci|add|update)|npx |pnpm (i|install|add)|yarn( install| add)?|pip3? (install|download)|python3? -m pip|poetry install|cargo (fetch|build|install|add)|apt(-get)? |git (clone|fetch|pull|ls-remote)|curl |wget |bundle install|composer install|mvn |gradle|dotnet restore)\b`)
 
-func needsNetwork(argv []string) bool {
+func NeedsNetwork(argv []string) bool {
 	return networkCommandRe.MatchString(strings.Join(argv, " "))
 }
 
-// execNetwork is the ExecSpec.Network value for a command the controller builds.
-func execNetwork(argv []string) string {
-	if needsNetwork(argv) {
+// ExecNetwork is the ExecSpec.Network value (in package main) for a command the controller builds.
+func ExecNetwork(argv []string) string {
+	if NeedsNetwork(argv) {
 		return "allow"
 	}
 	return ""
 }
 
-// withSandboxNote adds the sandbox line to a failed command's output when the
-// failure looks like the sandbox blocked it, so the fixer is not misled.
-func withSandboxNote(text string, out *ExecOutput) string {
-	if out != nil && out.SandboxDenied && out.SandboxNote != "" {
-		return text + "\n[Outpost: " + out.SandboxNote + ". If the error above is about permissions or the network, the code may be fine; do not rewrite it for that.]"
-	}
-	return text
+// Unavailable means the requested sandbox cannot be set up on this machine.
+// The node reports it as the job's error instead of running unconfined.
+type Unavailable struct{ Message string }
+
+func (e *Unavailable) Error() string { return e.Message }
+
+func unavailable(format string, a ...any) *Unavailable {
+	return &Unavailable{Message: fmt.Sprintf(format, a...)}
 }

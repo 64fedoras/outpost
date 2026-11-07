@@ -1,11 +1,11 @@
 //go:build !linux && !windows
 
-package main
+package sandbox
 
 import "testing"
 
 func TestSandboxOffOutsideLinux(t *testing.T) {
-	if sandboxPlatformMode(sandboxStrict) != sandboxOff || sandboxLayers(sandboxBasic) != nil {
+	if PlatformMode(Strict) != Off || Layers(Basic) != nil {
 		t.Fatal("only Linux (and, experimentally, Windows) sandboxes")
 	}
 }

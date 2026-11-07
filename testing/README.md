@@ -1,7 +1,7 @@
 # Testing
 
 ## Unit tests
-The Linux sandbox tests (`cmd/outpost/sandbox_linux_test.go`) run real sandboxed commands and skip themselves on kernels without Landlock.
+The Linux sandbox tests (`internal/sandbox/linux_test.go`) run real sandboxed commands and skip themselves on kernels without Landlock.
     go vet ./... && go test ./...
     CGO_ENABLED=1 go test -race ./...     # also run on every pull request
 
