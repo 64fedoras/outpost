@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -33,5 +36,22 @@ func TestRecordHealthWhileLocked(t *testing.T) {
 	c.recordHealth("n1", "problem")
 	if s, _, _ := c.healthOf("n1"); s != 2 {
 		t.Fatalf("score %d", s)
+	}
+}
+
+func TestResetHealth(t *testing.T) {
+	c := &Controller{dataDir: t.TempDir(), nodes: map[string]*NodeRec{"n1": {ID: "n1"}}}
+	for i := 0; i < 6; i++ {
+		c.recordHealth("n1", "problem")
+	}
+	if _, col, _ := c.healthOf("n1"); col == "green" {
+		t.Fatal("expected amber before reset")
+	}
+	c.resetHealth("n1")
+	if s, col, _ := c.healthOf("n1"); s != 0 || col != "green" {
+		t.Fatalf("after reset: %d %s", s, col)
+	}
+	if b, err := os.ReadFile(filepath.Join(c.dataDir, "health.json")); err != nil || strings.Contains(string(b), "problem") {
+		t.Fatalf("reset not saved: %v %s", err, b)
 	}
 }

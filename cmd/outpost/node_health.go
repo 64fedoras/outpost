@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -108,4 +109,31 @@ func scoreHealth(ev []healthEvent, now time.Time) (int, string, string) {
 		note = fmt.Sprintf("Unreliable this week: %d disconnect(s), %d time(s) it could not take or finish work.", disc, prob)
 	}
 	return score, colour, note
+}
+
+// resetHealth forgets a node's recent events, so its badge goes back to green.
+func (c *Controller) resetHealth(node string) {
+	h := c.healthLog()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.events, node)
+	if b, err := json.Marshal(h.events); err == nil {
+		if err := writeFileAtomic(h.path, b, 0o600); err != nil {
+			log.Printf("saving health.json: %v", err)
+		}
+	}
+	h.saved = time.Now()
+}
+
+func (c *Controller) handleResetHealth(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	c.mu.Lock()
+	_, ok := c.nodes[id]
+	c.mu.Unlock()
+	if !ok {
+		writeJSON(w, 404, map[string]string{"error": "no such node"})
+		return
+	}
+	c.resetHealth(id)
+	writeJSON(w, 200, map[string]bool{"ok": true})
 }

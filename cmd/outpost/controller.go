@@ -302,6 +302,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/nodes/{id}/load-options", c.auth(c.handleLoadOptions))
 	mux.HandleFunc("POST /api/nodes/{id}/load", c.auth(c.handleLoadModel))
 	mux.HandleFunc("POST /api/nodes/{id}/benchmark", c.auth(c.handleBenchmarkNode))
+	mux.HandleFunc("POST /api/nodes/{id}/health/reset", c.auth(c.handleResetHealth))
 	mux.HandleFunc("POST /api/nodes/{id}/unload", c.auth(c.handleUnloadModel))
 	mux.HandleFunc("DELETE /api/nodes/{id}/models/{name}", c.auth(c.handleRemoveNodeModel))
 	mux.HandleFunc("POST /api/nodes/{id}/models/cleanup", c.auth(c.handleCleanupNodeModels))
