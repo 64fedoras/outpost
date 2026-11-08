@@ -1,6 +1,6 @@
 // New image page and the Pictures card in Settings. Loaded after app.js (uses its helpers).
 // No inline styles anywhere (the CSP forbids them): sizes and progress use the w0..w100 classes.
-let imgModels = null, imgGens = [], imgTimer = null, imgBusyNow = false, imgSet = null, imgKind = 'image';
+let imgQuery = '', imgModels = null, imgGens = [], imgTimer = null, imgBusyNow = false, imgSet = null, imgKind = 'image';
 const imgSizes = { image: [['512x512', '512 × 512'], ['768x768', '768 × 768'], ['1024x1024', '1024 × 1024'], ['1024x768', '1024 × 768 wide'], ['768x1024', '768 × 1024 tall']],
   video: [['832x480', '832 × 480 wide'], ['480x832', '480 × 832 tall'], ['640x360', '640 × 360 small']] };
 const imgCounts = { image: [[1, '1 picture'], [2, '2 pictures'], [4, '4 pictures'], [8, '8 pictures']], video: [[1, '1 clip'], [2, '2 clips']] };
@@ -18,7 +18,7 @@ async function imgPoll() {
   clearTimeout(imgTimer);
   if (page !== 'image') return;
   try {
-    const [m, g] = await Promise.all([api('/api/images/models'), api('/api/images?limit=60')]);
+    const [m, g] = await Promise.all([api('/api/images/models'), api('/api/images?limit=60' + (imgQuery ? '&q=' + encodeURIComponent(imgQuery) : ''))]);
     imgModels = m.models; imgGens = g.generations || [];
     imgRender();
   } catch (e) { /* the login screen or a hiccup: try again below */ }
@@ -77,6 +77,8 @@ function imgRender() {
       ? `<a class="gen-shot" href="/api/images/${esc(g.id)}/files/${i.index}" target="_blank" rel="noopener" title="${esc(g.prompt)}"><video src="/api/images/${esc(g.id)}/files/${i.index}#t=0.1" muted preload="metadata"></video></a>`
       : `<a class="gen-shot" href="/api/images/${esc(g.id)}/files/${i.index}" target="_blank" rel="noopener" title="${esc(g.prompt)}"><img src="/api/images/${esc(g.id)}/files/${i.index}" alt="${esc(g.prompt)}" loading="lazy"></a>`).join('')).join('') + '</div>' : '');
 
+  $('img-search').classList.toggle('hidden', !imgGens.length && !imgQuery);
+  if (!fin.length && imgQuery) setHTML('img-results', '<p class="muted">No pictures match.</p>');
   imgModelsCard();
 }
 
@@ -183,12 +185,13 @@ async function imgLoadSettings() {
   try { imgSet = await api('/api/images/settings'); } catch (e) { return; }
   if (document.activeElement !== $('set-img-days')) $('set-img-days').value = imgSet.retention_days;
   if (document.activeElement !== $('set-img-gb')) $('set-img-gb').value = imgSet.max_gb;
+  if (document.activeElement !== $('set-img-pause')) $('set-img-pause').checked = !!imgSet.pause_for_tasks;
   if (document.activeElement !== $('set-img-api')) $('set-img-api').checked = !!imgSet.api_enabled;
   $('set-img-used').textContent = `Using ${bytes(imgSet.used_bytes)} now.`;
 }
 $('set-img-save').onclick = async () => {
   try {
-    imgSet = await post('/api/images/settings', { retention_days: +$('set-img-days').value || 0, max_gb: +$('set-img-gb').value || 0, api_enabled: $('set-img-api').checked });
+    imgSet = await post('/api/images/settings', { retention_days: +$('set-img-days').value || 0, max_gb: +$('set-img-gb').value || 0, api_enabled: $('set-img-api').checked, pause_for_tasks: $('set-img-pause').checked });
     toast('Picture limits saved'); imgLoadSettings();
   } catch (e) { toast(e.message); }
 };
@@ -211,3 +214,9 @@ function imgSetKind(k) {
 $('img-k-image').onclick = () => imgSetKind('image');
 $('img-k-video').onclick = () => imgSetKind('video');
 imgSetKind('image');
+
+let imgSearchTimer = null;
+$('img-search').addEventListener('input', () => {
+  clearTimeout(imgSearchTimer);
+  imgSearchTimer = setTimeout(() => { imgQuery = $('img-search').value.trim(); imgPoll(); }, 300);
+});
