@@ -148,6 +148,7 @@
         <div class="error-msg hidden" id="img-err"></div>
         <div id="img-accept"></div>
         <div id="img-busy"></div>
+        <input type="search" id="img-search" class="img-neg hidden" placeholder="Search your pictures: prompt, model or seed" aria-label="Search pictures" autocomplete="off">
         <div id="img-results"></div>
         <div id="img-earlier"></div>
         <div class="section-head"><h2>Image and video models</h2></div>
@@ -352,6 +353,7 @@
             <label class="chip-input">keep for <input id="set-img-days" type="number" min="0" max="3650" aria-label="Days to keep pictures"> days</label>
             <label class="chip-input">at most <input id="set-img-gb" type="number" min="0" max="100000" aria-label="Gigabytes of pictures"> GB</label>
           </div>
+          <label class="check"><input type="checkbox" id="set-img-pause"> Hold back new pictures and clips while a coding task is working</label>
           <label class="check"><input type="checkbox" id="set-img-api"> Allow the image API (<code>POST /v1/images/generations</code>) for API tokens with full or picture access</label>
           <div class="hint" id="set-img-used"></div>
           <div class="modal-foot"><button class="primary" id="set-img-save">Save</button></div>
@@ -541,6 +543,10 @@
   <div class="modal">
     <h3>Load a model on <span id="load-node"></span></h3>
     <p class="hint">Outpost installs llama.cpp on the node if needed, gets the model onto the node (from Hugging Face or the controller, depending on the model), and starts it. Large models take a while the first time.</p>
+    <div id="load-prof-wrap" class="row2 hidden">
+      <div><label for="load-prof">Saved settings for this node</label><select id="load-prof"></select></div>
+      <div class="prof-btns"><button type="button" class="small" id="load-prof-del">Delete</button></div>
+    </div>
     <label for="load-model">Model</label>
     <select id="load-model"></select>
     <div id="load-fit" class="note hidden"></div>
@@ -576,7 +582,7 @@
       <p class="hint u6" id="load-draft-hint">A small model of the same family (same tokenizer) guesses ahead and the main model checks its guesses: often 1.5 to 2 times faster for code on a GPU. Use a model under a fifth of the main one's size, for example a 0.5B or 1.5B of the same family. Watch the tok/s on the node card; if it is not faster, load again without it.</p>
     </details>
     <div class="error-msg hidden" id="load-err"></div>
-    <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="load-go">Load</button></div>
+    <div class="modal-foot"><button data-close>Cancel</button><button id="load-prof-save" type="button">Save these settings…</button><button class="primary" id="load-go">Load</button></div>
   </div>
 </div>
 

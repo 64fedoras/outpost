@@ -114,6 +114,7 @@ type genSettings struct {
 	RetentionDays int                  `json:"retention_days"`        // 0 = keep forever
 	MaxGB         int                  `json:"max_gb"`                // 0 = no cap
 	APIEnabled    bool                 `json:"api_enabled,omitempty"` // allow /v1/images/generations for tokens
+	PauseForTasks bool                 `json:"pause_for_tasks,omitempty"` // start no picture or clip while a coding task is working (gen_priority.go)
 	Accepted      map[string]time.Time `json:"accepted,omitempty"`
 	Observed      map[string]int64     `json:"observed,omitempty"` // compute buffer a node measured: model|node|WxH
 }
@@ -598,6 +599,12 @@ func (c *Controller) dispatchGens() {
 		def  *ImageModelDef
 	}
 	var start []todo
+	c.gens.mu.Lock()
+	pause := c.gens.settings.PauseForTasks
+	c.gens.mu.Unlock()
+	if pause && c.anyTaskWorking() {
+		return // picture work waits for the coding tasks (gen_priority.go)
+	}
 	c.mu.Lock()
 	c.gens.mu.Lock()
 	ids := make([]string, 0, len(c.gens.recs))

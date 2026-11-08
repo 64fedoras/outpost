@@ -110,6 +110,8 @@ func runNode(args []string) error {
 		}
 		log.Printf("joined controller %s as %s; config saved to %s", cfg.Controller, cfg.NodeID, cfgPath)
 	}
+	checkTrial(n.agentDir(), n.args)   // roll back if a fresh update keeps crashing (update_trial.go)
+	go trialHealthy(n.agentDir())
 	launchNewest(n.agentDir(), n.args) // switch to an installed update, if newer
 	// One node per data folder. During an update or restart the old process
 	// may take a moment to exit, so wait for it rather than run alongside it.
@@ -486,6 +488,7 @@ func (n *Node) applySettings(s NodeSettings) {
 		n.hbSeconds = s.HeartbeatS
 	}
 	n.llama.setIdleAfter(time.Duration(s.IdleUnloadS) * time.Second)
+	n.llama.setYield(s.YieldGPU)
 }
 
 func (n *Node) runningIDs() []string {
@@ -572,6 +575,10 @@ func (n *Node) buildHeartbeat() Heartbeat {
 	if cold := n.llama.coldModel(); cold != "" {
 		// Unloaded for idleness: still this node's model, available, but cold.
 		hb.LoadedModel, hb.InferenceRdy, hb.IdleUnloaded = cold, true, true
+	}
+	n.llama.yieldObserve(hb.GPUUtilPct, time.Now())
+	if n.llama.isYielding() {
+		hb.InferenceRdy, hb.GPUYielding = false, true
 	}
 	hb.RPCEndpoint = n.rpc.current()
 	hb.Paused, hb.PausedBy, hb.PausedUntil = n.pauseInfo()

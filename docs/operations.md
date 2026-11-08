@@ -72,6 +72,17 @@ Every machine keeps the last few Outpost versions it has run in its data folder 
 stays there across reboots until you install an update. Each node also keeps its previous llama.cpp
 build on disk.
 
+**Automatic rollback.** A freshly installed update is on trial for its first 90 seconds. If it starts more
+than three times without staying up that long (it crashes on start), it rolls back to the version that
+installed it by itself, as if you had pressed Roll back. A hang, or a node that cannot reach its controller,
+does not trigger it. Before updating a node the controller also checks that the node has about three times
+the release size free, and refuses with the reason if not. The node's OS version and C library are not
+reported, so they are not checked.
+
+**Safe mode.** If the controller starts three times within five minutes it comes up with automatic resume
+and scheduled tasks switched off and says so in the banner at the top of the web UI, so one damaged task
+cannot keep it crash-looping. Restart it after fixing the cause (see the controller log) to leave safe mode.
+
 ## Passwords
 
 - Change it in **Settings → Admin password** (8+ characters; other browsers are signed out).
@@ -126,9 +137,11 @@ notification (once per distinct failure). Saving the schedule makes the first co
 ## Notifications
 
 **Settings → Notifications** sends a message when the planner asks a question, a plan is ready to approve,
-a task finishes or fails, the spending cap pauses a task, a node has been offline for 5 minutes, a nightly
+a task finishes or fails, the spending cap pauses a task, a task makes no progress for 15 minutes (it is flagged in its log, not stopped), a node has been offline for 5 minutes, a nightly
 backup fails its check, the controller's disk is nearly full, a node update or rollback fails, or a model
-download, copy or load fails. Each event can be switched off. The **morning summary** (off until ticked, at
+download, copy or load fails. Each event can be switched off. A **weekly report** (off until ticked; Mondays at the
+morning-summary hour) lists the week's finished and failed tasks, cloud planner cost, the busiest nodes by subtasks
+written, offline nodes and the controller's free disk. The **morning summary** (off until ticked, at
 08:00 controller time by default) sends one message a day listing tasks that finished or failed since the
 last one, tasks waiting for you and offline nodes; on a quiet day it sends nothing. Every message links to the task (or the Nodes page).
 
