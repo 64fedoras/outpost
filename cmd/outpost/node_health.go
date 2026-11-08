@@ -35,6 +35,29 @@ type healthLog struct {
 	path   string
 	events map[string][]healthEvent
 	saved  time.Time
+	amber  int // points for amber and red, from Settings (healthAmberOf, healthRedOf)
+	red    int
+}
+
+func healthAmberOf(s Settings) int {
+	if s.HealthAmber > 0 {
+		return s.HealthAmber
+	}
+	return healthAmber
+}
+
+func healthRedOf(s Settings) int {
+	if s.HealthRed > 0 {
+		return s.HealthRed
+	}
+	return healthRed
+}
+
+// setThresholds changes the colour rule; the next score uses it.
+func (h *healthLog) setThresholds(amber, red int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.amber, h.red = amber, red
 }
 
 func (c *Controller) healthPath() string { return filepath.Join(c.dataDir, "health.json") }
@@ -43,7 +66,7 @@ func (c *Controller) healthPath() string { return filepath.Join(c.dataDir, "heal
 // call with c.mu held.
 func (c *Controller) healthLog() *healthLog {
 	c.healthOnce.Do(func() {
-		h := &healthLog{path: c.healthPath(), events: map[string][]healthEvent{}}
+		h := &healthLog{path: c.healthPath(), events: map[string][]healthEvent{}, amber: healthAmber, red: healthRed}
 		if b, err := os.ReadFile(h.path); err == nil {
 			_ = json.Unmarshal(b, &h.events)
 		}
@@ -83,10 +106,10 @@ func (c *Controller) healthOf(node string) (int, string, string) {
 	h := c.healthLog()
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return scoreHealth(h.events[node], time.Now())
+	return scoreHealth(h.events[node], time.Now(), h.amber, h.red)
 }
 
-func scoreHealth(ev []healthEvent, now time.Time) (int, string, string) {
+func scoreHealth(ev []healthEvent, now time.Time, amber, red int) (int, string, string) {
 	score, disc, prob := 0, 0, 0
 	for _, e := range trimHealth(ev, now) {
 		score += healthWeights[e.Kind]
@@ -99,9 +122,9 @@ func scoreHealth(ev []healthEvent, now time.Time) (int, string, string) {
 	}
 	colour := "green"
 	switch {
-	case score >= healthRed:
+	case score >= red:
 		colour = "red"
-	case score >= healthAmber:
+	case score >= amber:
 		colour = "amber"
 	}
 	note := ""
