@@ -84,6 +84,8 @@ type nodeView struct {
 	OffHours    bool          `json:"off_hours,omitempty"`   // outside its working hours now (hours.go)
 	CanWake     bool          `json:"can_wake,omitempty"`    // offline with a known MAC (wol.go)
 	Update      *UpdateStatus `json:"update,omitempty"`
+	Health      string        `json:"health,omitempty"` // amber or red when unreliable this week (node_health.go)
+	HealthNote  string        `json:"health_note,omitempty"`
 }
 
 type jobSummary struct {
@@ -137,6 +139,9 @@ func (c *Controller) stateView() map[string]any {
 		}
 		v.Heartbeat = c.lastHB[id]
 		v.OffHours = !n.Hours.open(time.Now())
+		if _, col, note := c.healthOf(id); col != "green" {
+			v.Health, v.HealthNote = col, note
+		}
 		v.CanWake = !v.Online && n.Hello != nil && len(n.Hello.MACs) > 0
 		if rel := c.updateCandidateLocked(n); rel != nil {
 			v.UpdateTo = rel.Version

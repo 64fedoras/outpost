@@ -339,6 +339,15 @@
         </section>
         <section class="set-sec" id="set-modelsec">
           <h2 class="set-sec-title">Model settings</h2>
+        <div class="section-head"><h2>Node health colours</h2></div>
+        <div class="card">
+          <p class="hint">A node's health score adds up its disconnects (1 point each) and failed calls (2 points each) over the last 7 days. It turns <b>amber</b> at the first number and <b>red</b> at the second. Red nodes are given work last. The defaults are 5 and 15.</p>
+          <div class="row2">
+            <div><label for="set-health-amber">Amber from (points)</label><input id="set-health-amber" type="number" min="1" step="1" autocomplete="off"></div>
+            <div><label for="set-health-red">Red from (points)</label><input id="set-health-red" type="number" min="2" step="1" autocomplete="off"></div>
+          </div>
+          <div class="modal-foot"><button id="set-health-default">Use defaults</button><button class="primary" id="set-health-save">Save</button></div>
+        </div>
         <div class="section-head"><h2>Idle unload</h2></div>
         <div class="card">
           <p class="hint">A node stops its model after it has served nothing for this long, to give back its RAM or VRAM. The next request loads it again, which takes as long as a normal load. Pooled models are never unloaded. Type a time such as <code>30s</code>, <code>5m</code>, <code>1hr</code> or <code>2d</code>, or <code>0</code> for never. Empty means 1 hour. Each node can override this on its card.</p>
@@ -471,6 +480,12 @@
           <label for="tls-cert">Certificate (PEM, leaf first)</label><textarea id="tls-cert" rows="3" spellcheck="false"></textarea>
           <label for="tls-key">Private key (PEM)</label><textarea id="tls-key" rows="3" spellcheck="false"></textarea>
           <div class="modal-foot"><button class="primary" id="tls-save">Use this certificate</button></div>
+        </div>
+        <div class="section-head"><h2>Config file</h2></div>
+        <div class="card">
+          <p class="hint">Settings, saved and scheduled tasks and node labels as one readable JSON file, without any keys, tokens or passwords. Use it to compare changes or to copy a setup to a second cluster. Importing keeps the secrets already on this controller; it does not restore tasks, models or nodes (that is the backup below).</p>
+          <div class="modal-foot"><button id="cfg-import">Import config…</button><button class="primary" id="cfg-export">Download config</button></div>
+          <input type="file" id="cfg-file" accept=".json,application/json" class="hidden">
         </div>
         <div class="section-head"><h2>Model scorecard</h2></div>
         <div class="card">

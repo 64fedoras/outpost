@@ -43,6 +43,8 @@ type Settings struct {
 	GitHubTokenEnc    string         `json:"github_token_enc,omitempty"`    // optional read-only token for a private repo; controller only
 	GitHubHoldVersion string         `json:"github_hold_version,omitempty"` // set by a rollback: auto-install skips this version and older
 	Sandbox           string         `json:"sandbox,omitempty"`             // default sandbox for exec jobs on nodes: off | basic | strict; empty = basic
+	HealthAmber       int            `json:"health_amber,omitempty"`        // node health: points for amber (0 = default 5)
+	HealthRed         int            `json:"health_red,omitempty"`          // node health: points for red (0 = default 15)
 	IdleUnload        string         `json:"idle_unload,omitempty"`         // default idle unload wait for nodes, as typed ("1hr", "30m", "0" = never); empty = 1 hour
 	CleanupDays       int            `json:"cleanup_days,omitempty"`        // remove old round copies, screenshots and result zips of tasks finished this many days ago (0 = never)
 	CleanupBuilds     bool           `json:"cleanup_builds,omitempty"`      // also remove their build outputs
@@ -56,6 +58,7 @@ func defaultSettings() Settings {
 func (c *Controller) settingsPath() string { return filepath.Join(c.dataDir, "settings.json") }
 
 func (c *Controller) loadSettings() {
+	defer func() { c.healthLog().setThresholds(healthAmberOf(c.settings), healthRedOf(c.settings)) }()
 	c.settings = defaultSettings()
 	if usedBak, err := readWithBackup(c.settingsPath(), func(b []byte) error {
 		c.settings = defaultSettings()
@@ -176,7 +179,8 @@ func (c *Controller) settingsView() map[string]any {
 		"auto_free": !c.settings.AutoFreeOff, "pooling_enabled": c.poolingOnLocked(), "pooling_notice": c.settings.PoolingNotice,
 		"github_repo": c.ghRepoLocked(), "github_repo_default": ghDefaultRepo, "github_token_set": c.settings.GitHubTokenEnc != "",
 		"github_updates": !c.settings.GitHubUpdatesOff, "github_auto_install": c.settings.GitHubAutoInstall,
-		"sandbox":     effectiveSandbox(c.settings.Sandbox, ""),
+		"sandbox":      effectiveSandbox(c.settings.Sandbox, ""),
+		"health_amber": healthAmberOf(c.settings), "health_red": healthRedOf(c.settings),
 		"idle_unload": c.settings.IdleUnload, "idle_unload_effective": formatIdleDuration(idleUnloadFor(c.settings.IdleUnload, "")),
 		"instructions": c.settings.Instructions, "backup_enabled": c.settings.BackupEnabled, "last_backup": c.lastBackup, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
@@ -198,6 +202,8 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		DefaultCapUSD   *float64 `json:"default_cap_usd"`
 		WakeForWork     *bool    `json:"wake_for_work"`
 		DefaultPlanner  *string  `json:"default_planner"`
+		HealthAmber     *int     `json:"health_amber"`
+		HealthRed       *int     `json:"health_red"`
 		OpenRouterKey   *string  `json:"openrouter_key"`
 		OpenRouterModel *string  `json:"openrouter_model"`
 		Notify          *struct {
@@ -393,6 +399,22 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.GitHubAuto != nil {
 		c.settings.GitHubAutoInstall = *req.GitHubAuto
+	}
+	if req.HealthAmber != nil || req.HealthRed != nil {
+		a, r := c.settings.HealthAmber, c.settings.HealthRed
+		if req.HealthAmber != nil {
+			a = *req.HealthAmber
+		}
+		if req.HealthRed != nil {
+			r = *req.HealthRed
+		}
+		if a < 1 || r <= a || r > 1000 {
+			c.mu.Unlock()
+			writeJSON(w, 400, map[string]string{"error": "red must be more points than amber, and amber at least 1"})
+			return
+		}
+		c.settings.HealthAmber, c.settings.HealthRed = a, r
+		c.healthLog().setThresholds(a, r)
 	}
 	idleChanged := false
 	if req.IdleUnload != nil {
