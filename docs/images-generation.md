@@ -30,7 +30,15 @@ Download, **Variations** (same settings, new seeds), **Use prompt**, **Keep** (n
 **Retry failed** and Delete; older ones sit in a compact grid. **Image models** at the bottom lists the models,
 their licence and which nodes they fit, and downloads one to a node of your choice. A model with a restricted
 licence asks for an accept click first. **Settings, Model settings, Pictures** sets how long (default 30 days)
-and how much (default 5 GB) to keep. The page was checked in a headless browser against stand-in data only.
+and how much (default 5 GB) to keep. The **search box** above the results finds pictures by prompt, negative
+prompt, model, source or exact seed, among everything still kept (up to 500).
+
+**Priority over coding tasks.** A node that is rendering a picture or clip is not given coding calls until it
+finishes (the renderer and llama-server would compete for its memory). *Settings, Model settings, Pictures*
+also has *Hold back new pictures and clips while a coding task is working*, off by default: with it on, nothing
+new starts rendering while any task is planning, writing, testing or fixing; renders already running are
+never interrupted. (The *Allow the image API* tick on the same card was not being saved before; it is now.)
+The page was checked in a headless browser against stand-in data only.
 
 ## The OpenAI-style image API
 
