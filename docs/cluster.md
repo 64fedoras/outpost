@@ -129,5 +129,5 @@ for games, the model is unloaded when the node is not answering anything and the
 for 30 seconds, and loaded again after five minutes below 10%. While unloaded the card says *GPU in use* and the
 controller sends the node no work. It uses the utilisation the node already reports, so it cannot tell a game
 from any other program, and image generation on the same node counts as another program. The reading comes
-from the hardware sample (amdgpu sysfs on Linux, performance counters on Windows); neither has been tried
-with a real game.
+from the hardware sample (amdgpu sysfs on Linux, performance counters on Windows). NVIDIA cards on Linux report no
+utilisation, so it never yields there. Neither reading has been tried with a real game.
