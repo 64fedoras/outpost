@@ -74,6 +74,8 @@ type SubtaskState struct {
 	Report     string     `json:"report,omitempty"`       // investigate subtasks: what the agent found
 	AgentCalls int        `json:"agent_calls,omitempty"`  // tool calls so far in agent mode
 	Waiting    bool       `json:"waiting,omitempty"`      // the agent asked the user something
+	Model      string     `json:"model,omitempty"`        // library model that wrote it (scorecard.go)
+	Scored     bool       `json:"scored,omitempty"`       // already counted in the scorecard
 	BestOf     string     `json:"best_of,omitempty"`      // best-of-N: which node's copy won and why
 	Prefer     string     `json:"prefer,omitempty"`       // Redo: "strongest", "planner" or a node id (tasks_redo.go)
 	RedoNote   string     `json:"redo_note,omitempty"`    // Redo: the user's note, added to the instructions
@@ -133,6 +135,7 @@ type Task struct {
 	Seeded       bool            `json:"seeded,omitempty"`       // the repo started with files (project or attached zip)
 	Attachments  []Attachment    `json:"attachments,omitempty"`
 	Mockup       bool            `json:"mockup,omitempty"`         // plan 2 or 3 design variants first (visual.go)
+	TestFirst    bool            `json:"test_first,omitempty"`     // the plan starts with a subtask that writes the tests (tasks_testfirst.go)
 	MaxFix       int             `json:"max_fix_rounds,omitempty"` // fix rounds after failing tests; 0 = maxFixRounds
 	TestMinutes  int             `json:"test_minutes,omitempty"`   // time limit for one test run; 0 = testTimeout
 	// AutoResume: interrupted by a restart and waiting to resume on its own

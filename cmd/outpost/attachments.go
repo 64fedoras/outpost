@@ -51,6 +51,7 @@ type createReq struct {
 	Review      *bool         `json:"review"`
 	Project     string        `json:"project"`
 	Mockup      bool          `json:"mockup"`       // plan design variants to pick from first (visual.go)
+	TestFirst   bool          `json:"test_first"`   // the plan starts with a subtask that writes the tests (tasks_testfirst.go)
 	FixRounds   int           `json:"fix_rounds"`   // 0 = project or default
 	TestMinutes int           `json:"test_minutes"` // 0 = project or default
 	Images      []imageUpload `json:"images"`       // screenshots for the planner (tasks_images.go)

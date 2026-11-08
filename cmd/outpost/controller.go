@@ -154,7 +154,9 @@ type Controller struct {
 	poolStale  map[string]time.Time // main node -> when a helper reconnected
 	woken      map[string]time.Time // Wake-on-LAN packets sent, by node (wol.go)
 	templates  []*Template          // saved tasks and schedules (templates.go), guarded by mu
-	stateHub   stateHub             // pushed /api/state (state_stream.go)
+	card       *scoreCard           // per-model results (scorecard.go)
+	cardOnce   sync.Once
+	stateHub   stateHub // pushed /api/state (state_stream.go)
 }
 
 func runController(args []string) error {
@@ -248,6 +250,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/state/events", c.authSession(c.handleStateEvents))
 	mux.HandleFunc("POST /api/recovered/dismiss", c.auth(c.handleDismissRecovered))
 	mux.HandleFunc("POST /api/diagnostics", c.authSession(c.handleDiagnostics))
+	mux.HandleFunc("GET /api/scorecard", c.auth(c.handleScorecard))
 	mux.HandleFunc("GET /api/storage", c.auth(c.handleStorage))
 	mux.HandleFunc("POST /api/storage", c.authSession(c.handleStorageSettings))
 	mux.HandleFunc("GET /api/nodes/{id}/logs", c.auth(c.handleNodeLogs))

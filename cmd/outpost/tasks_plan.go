@@ -60,6 +60,7 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 	indexed := t.roundHasFiles() && repoNeedsIndex(t.repoDir(), budget)
 	t.mu.Lock()
 	mockup := t.Mockup
+	testFirst := t.TestFirst && t.Round == 1 && !t.Seeded
 	t.mu.Unlock()
 	fetched := false
 	var plan *Plan
@@ -159,6 +160,16 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 		if err := validatePlan(p); err != nil {
 			lastErr = err
 			continue
+		}
+		if testFirst && !mockup {
+			if err := enforceTestFirst(p); err != nil {
+				lastErr = err
+				continue
+			}
+			if err := validatePlan(p); err != nil { // the new dependencies must still make a valid plan
+				lastErr = err
+				continue
+			}
 		}
 		if mockup {
 			p.Mockup, p.SetupCommand, p.TestCommand = true, "", ""
