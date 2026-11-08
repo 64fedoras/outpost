@@ -120,6 +120,9 @@ func (l *llamaMgr) wake(model string) *ErrInfo {
 	if cold == nil || (model != "" && model != cold.Name) {
 		return nil
 	}
+	if l.isYielding() {
+		return errf("inference_unavailable", true, "the GPU is in use by another program; the model loads again when it is free")
+	}
 	l.wakeMu.Lock()
 	defer l.wakeMu.Unlock()
 	l.mu.Lock()
