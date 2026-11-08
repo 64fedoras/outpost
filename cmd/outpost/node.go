@@ -110,6 +110,8 @@ func runNode(args []string) error {
 		}
 		log.Printf("joined controller %s as %s; config saved to %s", cfg.Controller, cfg.NodeID, cfgPath)
 	}
+	checkTrial(n.agentDir(), n.args)   // roll back if a fresh update keeps crashing (update_trial.go)
+	go trialHealthy(n.agentDir())
 	launchNewest(n.agentDir(), n.args) // switch to an installed update, if newer
 	// One node per data folder. During an update or restart the old process
 	// may take a moment to exit, so wait for it rather than run alongside it.

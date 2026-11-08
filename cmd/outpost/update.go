@@ -159,6 +159,7 @@ func installRelease(src, agentDir, version, wantSHA string) (string, error) {
 	os.Remove(pinPath(agentDir))
 	os.RemoveAll(heldDir(agentDir))
 	pruneAgentDir(agentDir, 3)
+	beginTrial(agentDir, Version, version)
 	return dst, nil
 }
 
@@ -329,6 +330,7 @@ func prepareRollback(agentDir, version string) (agentCopy, error) {
 			}
 		}
 	}
+	os.Remove(trialPath(agentDir)) // a deliberate rollback ends any trial
 	if err := writeFileAtomic(pinPath(agentDir), []byte(version+"\n"), 0o644); err != nil {
 		return agentCopy{}, err
 	}
