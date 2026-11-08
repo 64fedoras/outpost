@@ -367,6 +367,8 @@ func (c *Controller) templateLoop() {
 	for {
 		now := time.Now()
 		time.Sleep(time.Until(now.Truncate(time.Minute).Add(time.Minute + time.Second)))
-		c.runDue(time.Now())
+		if !c.safeMode {
+			c.runDue(time.Now())
+		}
 	}
 }

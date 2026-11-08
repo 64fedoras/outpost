@@ -145,6 +145,9 @@ type Task struct {
 	// plan is approved on its own (templates.go). Template is the saved task.
 	Unattended bool   `json:"unattended,omitempty"`
 	Template   string `json:"template,omitempty"`
+	// Stalled: no sign of life for stallAfter (tasks_stalled.go); memory only.
+	Stalled   bool      `json:"-"`
+	stallNote time.Time // time of the stall warning event, so it is not counted as life
 
 	saveTimer *time.Timer // pending delayed save (saveSoonLocked)
 	mu        sync.Mutex

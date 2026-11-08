@@ -390,3 +390,11 @@ func (h *liveHub) idleFor(taskID string) time.Duration {
 	}
 	return idle
 }
+
+// hasCalls says whether any model call of the task is running.
+func (h *liveHub) hasCalls(taskID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	lt := h.tasks[taskID]
+	return lt != nil && len(lt.calls) > 0
+}
