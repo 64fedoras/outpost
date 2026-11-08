@@ -80,6 +80,7 @@ function renderOptLine() {
   if (paid) parts.push('cap $' + ($('nt-cap').value || 0));
   parts.push($('nt-review').checked ? 'peer review on' : 'peer review off');
   if ($('nt-mockup').checked) parts.push('mockups first');
+  if ($('nt-testfirst').checked) parts.push('tests first');
   if (+$('nt-fix').value) parts.push(`${$('nt-fix').value} fix round${$('nt-fix').value === '1' ? '' : 's'}`);
   if (+$('nt-testmin').value) parts.push(`tests up to ${$('nt-testmin').value} min`);
   if ($('nt-label').value) parts.push(`only nodes labelled ${$('nt-label').value}`);
@@ -91,7 +92,7 @@ $('nt-opt-toggle').addEventListener('click', () => {
   $('nt-opt-toggle').setAttribute('aria-expanded', show);
   $('nt-opt-toggle').textContent = show ? 'Hide options' : 'Change options';
 });
-['nt-model', 'nt-cap', 'nt-review', 'nt-mockup', 'nt-fix', 'nt-testmin', 'nt-label'].forEach((id) => $(id).addEventListener('change', renderOptLine));
+['nt-model', 'nt-cap', 'nt-review', 'nt-mockup', 'nt-testfirst', 'nt-fix', 'nt-testmin', 'nt-label'].forEach((id) => $(id).addEventListener('change', renderOptLine));
 $('nt-cap').addEventListener('input', renderOptLine);
 $('nt-planner').addEventListener('change', () => { renderNew(); ntImg.refresh(); });
 $('nt-project').addEventListener('change', () => { try { localStorage.setItem('nt-project', $('nt-project').value); } catch (e) {} });
@@ -101,7 +102,7 @@ $('nt-files').addEventListener('change', () => {
 });
 async function startTask() {
   $('nt-err').classList.add('hidden');
-  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, mockup: $('nt-mockup').checked, fix_rounds: +$('nt-fix').value, test_minutes: +$('nt-testmin').value, project: $('nt-project').value, node_label: $('nt-label').value, images: ntImg.payload() };
+  const body = { prompt: $('nt-prompt').value, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, mockup: $('nt-mockup').checked, test_first: $('nt-testfirst').checked, fix_rounds: +$('nt-fix').value, test_minutes: +$('nt-testmin').value, project: $('nt-project').value, node_label: $('nt-label').value, images: ntImg.payload() };
   if (!body.prompt.trim()) { $('nt-prompt').focus(); return; }
   $('nt-go').disabled = true;
   try {
@@ -146,7 +147,7 @@ $('nt-save-tpl').onclick = async () => {
   if (!prompt0) { $('nt-prompt').focus(); toast('Write the request first'); return; }
   const name = prompt('Name for this saved task', prompt0.split('\n')[0].slice(0, 60));
   if (name === null) return;
-  const request = { prompt: prompt0, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, mockup: $('nt-mockup').checked, fix_rounds: +$('nt-fix').value, test_minutes: +$('nt-testmin').value, project: $('nt-project').value, node_label: $('nt-label').value };
+  const request = { prompt: prompt0, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, mockup: $('nt-mockup').checked, test_first: $('nt-testfirst').checked, fix_rounds: +$('nt-fix').value, test_minutes: +$('nt-testmin').value, project: $('nt-project').value, node_label: $('nt-label').value };
   try { await post('/api/templates', { name, request }); toast(ntFiles.length || ntImg.payload().length ? 'Saved (attachments and images are not kept)' : 'Saved under Saved tasks'); refresh(); } catch (e) { toast(e.message); }
 };
 let schedTpl = null;
@@ -178,7 +179,7 @@ async function templateAction(act, id) {
     const q = t.request;
     $('nt-prompt').value = q.prompt; $('nt-project').value = q.project || '';
     if (q.planner && [...$('nt-planner').options].some((o) => o.value === q.planner)) $('nt-planner').value = q.planner;
-    $('nt-review').checked = q.review !== false; $('nt-mockup').checked = !!q.mockup;
+    $('nt-review').checked = q.review !== false; $('nt-mockup').checked = !!q.mockup; $('nt-testfirst').checked = !!q.test_first;
     $('nt-fix').value = String(q.fix_rounds || 0); $('nt-testmin').value = String(q.test_minutes || 0);
     if (q.cap_usd) $('nt-cap').value = q.cap_usd;
     $('nt-label').value = q.node_label || '';

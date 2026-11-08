@@ -257,6 +257,19 @@ not add testify"). The rule appears on the project's card as a suggestion: **Add
 **Dismiss**; nothing changes until you choose. The last 5 suggestions are kept. With Claude or OpenRouter
 this is one small call counted in the task's cost, and it is skipped if it would pass the cap.
 
+### Tests first, context warnings and the model scorecard
+
+- **Tests first** (an option chip on the new-task form, first round of a new project only): the planner is told to
+  make the first subtask write only the test files and to give a test command. Outpost then makes every other
+  subtask depend on that one, so each worker is given the tests it must satisfy. If the plan has no test-only
+  subtask or no test command, the planner is asked again. Saved tasks remember the option.
+- **Context warnings:** when a worker's prompt had to be cut to fit the model's context window, the task log
+  now says so (once per subtask), and before the first model call it lists subtasks whose existing files alone
+  will not fit. The fix is a bigger context on the Nodes page; Outpost does not split the subtask for you.
+- **Model scorecard** (Settings): per model and language, how many subtasks it wrote, how many were *clean*
+  (accepted on the first try, not changed by the reviewer, and the task's tests passed without a fix round),
+  retries and reviewer changes. Counted when a task finishes. It is for your information; routing does not use it.
+
 ## Saved and scheduled tasks
 
 **Save for later** (next to *Change options* on the New task page) keeps the request and its options

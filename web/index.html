@@ -101,6 +101,7 @@
             <select id="nt-model" class="opt-field" aria-label="Claude model"></select>
             <label class="chip-input" id="nt-cap-wrap" title="Spending cap for Claude on this task">cap $<input id="nt-cap" type="number" min="0.05" step="0.25" aria-label="Spending cap in US dollars"></label>
             <label class="toggle" title="A second node checks each subtask and fixes mistakes"><input type="checkbox" id="nt-review" checked> peer review</label>
+            <label class="toggle" title="The plan starts with a subtask that writes the tests, and every other subtask must make them pass. Gives the fix rounds a fixed target."><input type="checkbox" id="nt-testfirst"> tests first</label>
             <label class="toggle" title="Plan 2 or 3 design variants of the page first, rendered side by side, and build the real code from the one you pick. Needs a node with exec and Chromium."><input type="checkbox" id="nt-mockup"> mockups first</label>
             <label class="chip-input" title="How many times the planner tries to fix failing tests before giving you the result">fix rounds <select id="nt-fix" aria-label="Fix rounds"><option value="0">default</option><option>1</option><option>2</option><option>3</option><option>5</option><option>8</option></select></label>
             <label class="chip-input" title="How long one test run may take">test limit <select id="nt-testmin" aria-label="Test time limit"><option value="0">default</option><option value="5">5 min</option><option value="10">10 min</option><option value="30">30 min</option><option value="60">60 min</option></select></label>
@@ -470,6 +471,11 @@
           <label for="tls-cert">Certificate (PEM, leaf first)</label><textarea id="tls-cert" rows="3" spellcheck="false"></textarea>
           <label for="tls-key">Private key (PEM)</label><textarea id="tls-key" rows="3" spellcheck="false"></textarea>
           <div class="modal-foot"><button class="primary" id="tls-save">Use this certificate</button></div>
+        </div>
+        <div class="section-head"><h2>Model scorecard</h2></div>
+        <div class="card">
+          <p class="hint">How each model's subtasks turned out, counted when a task finishes. <b>Clean</b> means accepted on the first try, not changed by the reviewer, and the task's tests passed without a fix round. It only informs you; routing does not use it.</p>
+          <div id="scorecard"><span class="muted">No finished tasks counted yet.</span></div>
         </div>
         <div class="section-head"><h2>Backup</h2></div>
         <div class="card">
