@@ -355,6 +355,7 @@ func runController(args []string) error {
 	go c.backupLoop()
 	go c.storageLoop()
 	go c.digestLoop()
+	go c.weeklyLoop()
 	go c.ghLoop()
 	go c.benchLoop()
 	go c.catalogShapeLoop()
