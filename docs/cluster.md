@@ -116,3 +116,18 @@ waiting for a worker. Wake-on-LAN must be on in the machine's firmware and OS, a
 on the same network segment: the packet is a broadcast (to `255.255.255.255` and the node's last /24) and
 does not cross routers.
 
+
+## Saved load settings and yielding the GPU
+
+**Saved settings.** In the Load dialog, *Save these settings…* stores the model, context size, GPU layers, cache
+type, flash attention, draft model, calls at once, experts-in-RAM choice and extra arguments under a name for
+that node (up to 20). A *Saved settings for this node* list then appears at the top of the dialog; picking one
+fills the form, and *Delete* removes it. Pool helpers are not part of a saved setting.
+
+**Yield GPU to other programs** (per node, off by default; on the node card). On a desktop that is also used
+for games, the model is unloaded when the node is not answering anything and the GPU stays more than 35% busy
+for 30 seconds, and loaded again after five minutes below 10%. While unloaded the card says *GPU in use* and the
+controller sends the node no work. It uses the utilisation the node already reports, so it cannot tell a game
+from any other program, and image generation on the same node counts as another program. The reading comes
+from the hardware sample (amdgpu sysfs on Linux, performance counters on Windows); neither has been tried
+with a real game.

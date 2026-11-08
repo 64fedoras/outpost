@@ -136,6 +136,7 @@ function nodeStatus(n, f) {
   if (n.lending_to) return ['Lending memory', 'busy'];
   if (opActive(n)) return ['Setting up', 'busy'];
   if (!f.loaded) return ['No model', 'idle'];
+  if (f.hb.gpu_yielding) return ['GPU in use', 'idle'];
   if (f.hb.idle_unloaded) return ['Idle, unloaded', 'idle'];
   if (!f.ready) return ['Starting', 'busy'];
   return f.hb.inference_busy ? ['Working', 'on'] : ['Ready', 'on'];
@@ -303,11 +304,12 @@ function nodeCard(n) {
       <div class="sub wrap u15">Its RAM${(h.gpus || []).length ? ' and VRAM' : ''} hold part of ${esc(n.lending_to)}'s model. Unload that model to get this node back.</div>
       ${opView(n)}
     </div>` : `<div class="model-box">
-      <div class="row"><span class="dot ${ready ? 'on' : loaded ? 'busy' : ''}"></span><span class="grow">${loaded ? `<b>${esc(loaded)}</b> · ${hb.idle_unloaded ? '<span title="Stopped after sitting idle to free memory. It loads again on the next request.">idle, unloaded</span>' : ready ? (hb.inference_busy ? 'working' : 'ready') : 'starting'}` : '<span class="muted">No model loaded</span>'}</span>
+      <div class="row"><span class="dot ${ready ? 'on' : loaded ? 'busy' : ''}"></span><span class="grow">${loaded ? `<b>${esc(loaded)}</b> · ${hb.gpu_yielding ? '<span title="Unloaded because another program is using the GPU. It loads again after five quiet minutes.">GPU in use by another program</span>' : hb.idle_unloaded ? '<span title="Stopped after sitting idle to free memory. It loads again on the next request.">idle, unloaded</span>' : ready ? (hb.inference_busy ? 'working' : 'ready') : 'starting'}` : '<span class="muted">No model loaded</span>'}</span>
         ${n.online ? `<button class="small" data-act="load" data-id="${n.id}">${loaded ? 'Change' : 'Load model'}…</button>${loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : ''}</div>
       ${recRow(n, loaded)}
       ${h.freed_note && Date.now() / 1000 - h.freed_at < 86400 ? `<div class="sub wrap u15" title="Removed automatically to make room for a model; it can be copied or downloaded again.">${esc(h.freed_note)} · ${ago(new Date(h.freed_at * 1000).toISOString())}</div>` : ''}
       ${n.online ? `<div class="sub u15">Unloads when idle: ${esc(n.idle_unload_effective || '1h')}${n.idle_unload ? '' : ' (default)'} · <a href="#" data-act="idle" data-id="${n.id}">change</a></div>` : ''}
+      ${n.online ? `<div class="sub u15" title="Unloads the model while a game or other program keeps the GPU busy, and loads it again after five quiet minutes.">Yield GPU to other programs: ${n.yield_gpu ? 'on' : 'off'} · <a href="#" data-act="yield" data-id="${n.id}">${n.yield_gpu ? 'turn off' : 'turn on'}</a></div>` : ''}
       ${benchLine(n, loaded, ready)}
       ${n.pool_names && n.pool_names.length ? `<div class="sub wrap u15">Pooled with <b>${n.pool_names.map(esc).join(', ')}</b></div>` : ''}
       <div class="sub u15">${h.runtime ? `llama.cpp ${esc(h.runtime.build)} · ${esc(h.runtime.variant)}` : 'llama.cpp installs on first load'}${stored.length ? ' · stored: ' + stored.map((m) => `${esc(m.name)}${inUse.has(m.name) ? '' : ` <a href="#" data-act="rm-node-model" data-id="${n.id}" data-name="${esc(m.name)}" title="Delete from this node">×</a>`}`).join(', ') + (n.online ? ` · <a href="#" data-act="clean" data-id="${n.id}">clean up…</a>` : '') : ''}</div>
@@ -409,6 +411,11 @@ async function setNodeIdle(id) {
   try { await post(`/api/nodes/${id}/settings`, { idle_unload: v }); toast(v.trim() ? 'Saved' : 'Using the default'); } catch (e) { toast(e.message); }
   refresh();
 }
+async function toggleYield(id) {
+  const n = nodeById(id);
+  try { await post(`/api/nodes/${id}/settings`, { yield_gpu: !n.yield_gpu }); toast(n.yield_gpu ? 'Off' : 'On: the model unloads while another program keeps the GPU busy'); } catch (e) { toast(e.message); }
+  refresh();
+}
 async function removeNode(id) {
   const n = nodeById(id);
   if (!confirm(`Remove ${nodeName(n)}? Its key is revoked; if it is online it wipes its work directory and config and stops. Downloaded models stay on its disk.`)) return;
@@ -445,13 +452,14 @@ $('clean-go').onclick = async () => {
 };
 
 // Load-model dialog
-function openLoad(id) {
+function openLoad(id, prefOverride) {
   loadNodeId = id;
   const n = nodeById(id);
   $('load-node').textContent = nodeName(n);
   $('load-err').classList.add('hidden');
   const ready = (models && models.models || []).filter((m) => m.status === 'ready');
-  const pref = n.load_prefs || {};
+  const pref = prefOverride || n.load_prefs || {};
+  fillProfiles(n);
   $('load-model').innerHTML = ready.length ? ready.map((m) => `<option value="${esc(m.name)}" ${pref.name === m.name ? 'selected' : ''}>${esc(m.label || m.name)} · ${bytes(m.bytes_total)} · ${isDirect(m) ? 'node downloads' : 'from controller'}</option>`).join('')
     : '<option value="">No models in the library yet; add one on the Models tab</option>';
   $('load-ngl').value = pref.gpu_layers || '';
@@ -644,4 +652,28 @@ $('load-go').onclick = async () => {
   if (!body.name) return;
   try { await post(`/api/nodes/${loadNodeId}/load`, body); close('modal-load'); toast('Setting up the model; progress shows on the node card'); refresh(); }
   catch (e) { $('load-err').textContent = e.message; $('load-err').classList.remove('hidden'); }
+};
+
+// Saved load settings per node (load_profiles.go)
+function fillProfiles(n) {
+  const list = n.load_profiles || [];
+  $('load-prof-wrap').classList.toggle('hidden', !list.length);
+  $('load-prof').innerHTML = '<option value="">Choose…</option>' + list.map((p) => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+}
+$('load-prof').onchange = () => {
+  const p = (nodeById(loadNodeId).load_profiles || []).find((x) => x.name === $('load-prof').value);
+  if (p) { openLoad(loadNodeId, p.load); $('load-prof').value = p.name; }
+};
+$('load-prof-del').onclick = async () => {
+  const name = $('load-prof').value;
+  if (!name) return;
+  try { await fetch(`/api/nodes/${loadNodeId}/profiles/${encodeURIComponent(name)}`, { method: 'DELETE', credentials: 'same-origin' }); await refresh(); fillProfiles(nodeById(loadNodeId)); toast('Deleted'); } catch (e) { toast(e.message); }
+};
+$('load-prof-save').onclick = async () => {
+  const name = prompt('Name for these settings (for example "32K, experts in RAM"):');
+  if (!name || !name.trim()) return;
+  const body = { name: name.trim(), model: $('load-model').value, ctx: parseInt($('load-ctx').value, 10) || 0, gpu_layers: $('load-ngl').value,
+    threads: parseInt($('load-threads').value, 10) || 0, extra_args: $('load-extra').value, cpu_moe: moeMode(),
+    cache_type: $('load-cache').value, flash_attn: $('load-fa').value, draft: $('load-draft').value, parallel: parseInt($('load-slots').value, 10) || 0 };
+  try { await post(`/api/nodes/${loadNodeId}/profiles`, body); await refresh(); fillProfiles(nodeById(loadNodeId)); $('load-prof').value = body.name; toast('Saved'); } catch (e) { toast(e.message); }
 };
