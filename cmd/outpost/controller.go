@@ -155,6 +155,7 @@ type Controller struct {
 	woken      map[string]time.Time // Wake-on-LAN packets sent, by node (wol.go)
 	templates  []*Template          // saved tasks and schedules (templates.go), guarded by mu
 	stateHub   stateHub             // pushed /api/state (state_stream.go)
+	safeMode   bool                 // crash-loop start: auto-resume and schedules off (safemode.go)
 }
 
 func runController(args []string) error {
@@ -184,6 +185,8 @@ func runController(args []string) error {
 		pipelines: map[string]*pipeline{}, reserved: map[string]int{}, cooldown: map[string]time.Time{}, restarts: map[string]time.Time{}, poolStale: map[string]time.Time{},
 		resumeWake: make(chan struct{}, 1),
 	}
+	checkTrial(c.agentDir(), os.Args[1:]) // roll back if a fresh update keeps crashing (update_trial.go)
+	go trialHealthy(c.agentDir())
 	launchNewest(c.agentDir(), os.Args[1:]) // switch to an installed update, if newer
 	c.loadReleases()
 	c.loadSessions()
@@ -196,6 +199,7 @@ func runController(args []string) error {
 	c.loadChats()
 	c.loadTemplates()
 	c.loadSavedCatalog()
+	c.checkSafeMode()
 	c.loadTasks()
 	go c.autoResumeInterrupted(autoResumeWait, time.Second)
 	c.advertise = *advertise
@@ -361,6 +365,7 @@ func runController(args []string) error {
 	go c.hoursLoop()
 	go c.genLoop()
 	go c.templateLoop()
+	go c.stallLoop()
 
 	log.Printf("outpost controller %s listening on %s", Version, *listen)
 	log.Printf("web UI:           %s", c.advertise)

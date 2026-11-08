@@ -39,6 +39,7 @@ var notifyEvents = []struct {
 	{"done", "A task finished"},
 	{"failed", "A task failed"},
 	{"cap", "The spending cap paused a task"},
+	{"stalled", "A task has made no progress for 15 minutes"},
 	{"node_offline", "A node has been offline for 5 minutes"},
 	{"backup_failed", "A nightly backup failed its check"},
 	{"disk_low", "The controller's disk is nearly full"},

@@ -172,6 +172,10 @@ func (c *Controller) startNodeUpdate(id string) error {
 		c.mu.Unlock()
 		return errors.New("node has running jobs; try again when it is idle")
 	}
+	if probs := updatePreflight(n.Hello, rel); len(probs) > 0 {
+		c.mu.Unlock()
+		return errors.New("not updating: " + strings.Join(probs, "; "))
+	}
 	c.updates[id] = &UpdateStatus{Version: rel.Version, State: "sent", BytesTotal: rel.Bytes, Updated: time.Now()}
 	msg := NodeUpdate{Version: rel.Version, Platform: rel.Platform, SHA256: rel.SHA256, Bytes: rel.Bytes}
 	c.mu.Unlock()
