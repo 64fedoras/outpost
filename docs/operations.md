@@ -139,7 +139,9 @@ notification (once per distinct failure). Saving the schedule makes the first co
 **Settings → Notifications** sends a message when the planner asks a question, a plan is ready to approve,
 a task finishes or fails, the spending cap pauses a task, a task makes no progress for 15 minutes (it is flagged in its log, not stopped), a node has been offline for 5 minutes, a nightly
 backup fails its check, the controller's disk is nearly full, a node update or rollback fails, or a model
-download, copy or load fails. Each event can be switched off. The **morning summary** (off until ticked, at
+download, copy or load fails. Each event can be switched off. A **weekly report** (off until ticked; Mondays at the
+morning-summary hour) lists the week's finished and failed tasks, cloud planner cost, the busiest nodes by subtasks
+written, offline nodes and the controller's free disk. The **morning summary** (off until ticked, at
 08:00 controller time by default) sends one message a day listing tasks that finished or failed since the
 last one, tasks waiting for you and offline nodes; on a quiet day it sends nothing. Every message links to the task (or the Nodes page).
 
