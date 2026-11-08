@@ -148,6 +148,9 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 		}
 		c.mu.Unlock()
 		log.Printf("node %s disconnected", n.ID)
+		if !controllerClosing.Load() {
+			c.recordHealth(n.ID, "disconnect")
+		}
 	}()
 
 	for {

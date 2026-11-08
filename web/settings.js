@@ -44,6 +44,8 @@ async function loadSettings() {
   $('set-ghtoken-state').innerHTML = settings.github_token_set ? '<span class="st-done">· token set</span>' : '<span class="muted">· not set</span>';
   $('set-ghupd').checked = settings.github_updates !== false; $('set-ghauto').checked = !!settings.github_auto_install;
   $('set-idle').value = settings.idle_unload || '';
+  if (document.activeElement !== $('set-health-amber')) $('set-health-amber').value = settings.health_amber || 5;
+  if (document.activeElement !== $('set-health-red')) $('set-health-red').value = settings.health_red || 15;
   $('set-wake').checked = !!settings.wake_for_work;
   $('set-sandbox').value = settings.sandbox || 'basic';
   $('set-idle-now').textContent = settings.idle_unload_effective ? 'Nodes unload after: ' + settings.idle_unload_effective + (settings.idle_unload ? '' : ' (default)') : '';
@@ -222,6 +224,26 @@ $('pw-form').onsubmit = async (e) => {
     toast('Password changed. Other browsers were signed out.', 4000);
   } catch (x) { err.textContent = x.message; err.classList.remove('hidden'); }
 };
+
+$('cfg-export').onclick = () => { location.href = '/api/config/export'; };
+$('cfg-import').onclick = () => $('cfg-file').click();
+$('cfg-file').onchange = async () => {
+  const f = $('cfg-file').files[0]; $('cfg-file').value = '';
+  if (!f) return;
+  try {
+    const body = JSON.parse(await f.text());
+    if (!confirm('Replace the settings, saved tasks and node labels in this file on this controller? Keys and passwords stay as they are.')) return;
+    const r = await post('/api/config/import', body);
+    toast(`Imported ${r.settings} settings, ${r.templates} saved tasks, ${r.labels} node labels`);
+  } catch (e) { toast(e.message); }
+};
+
+$('set-health-save').onclick = () => {
+  const a = parseInt($('set-health-amber').value, 10), r = parseInt($('set-health-red').value, 10);
+  if (!(a >= 1) || !(r > a)) return toast('Red must be more points than amber, and amber at least 1');
+  saveSettings({ health_amber: a, health_red: r }, 'Health colours saved');
+};
+$('set-health-default').onclick = () => saveSettings({ health_amber: 5, health_red: 15 }, 'Health colours reset to 5 and 15');
 
 async function loadScorecard() {
   const r = await api('/api/scorecard').catch(() => null);

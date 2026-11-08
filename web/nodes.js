@@ -47,6 +47,7 @@ function nodeFacts(n) {
   const b = n.bench && loaded && n.bench.model === loaded ? n.bench : null;
   const issues = [];
   const o = state.ops && state.ops[n.id];
+  if (n.health) issues.push({ lvl: n.health === 'red' ? 'bad' : 'warn', short: n.health === 'red' ? 'Unreliable' : 'Shaky', text: n.health_note, act: 'health-reset', fix: 'Reset health' });
   if (!n.online) issues.push({ lvl: 'off', short: 'Offline', text: n.last_seen ? `Last seen ${ago(n.last_seen)}.` : 'Never connected.', ...(n.can_wake ? { act: 'wake', fix: 'Wake' } : {}) });
   else {
     if (n.off_hours) issues.push({ lvl: 'info', short: 'Off hours', text: `Outside its working hours (${hoursText(n.hours)}): takes no new work.`, act: 'hours', fix: 'Hours…' });
@@ -653,6 +654,12 @@ $('load-go').onclick = async () => {
   try { await post(`/api/nodes/${loadNodeId}/load`, body); close('modal-load'); toast('Setting up the model; progress shows on the node card'); refresh(); }
   catch (e) { $('load-err').textContent = e.message; $('load-err').classList.remove('hidden'); }
 };
+
+async function resetHealth(id) {
+  if (!confirm('Reset this node\'s health to green? Its recent disconnects and failed calls are forgotten.')) return;
+  try { await post(`/api/nodes/${id}/health/reset`, {}); toast('Health reset'); } catch (e) { toast(e.message); }
+  refresh();
+}
 
 // Saved load settings per node (load_profiles.go)
 function fillProfiles(n) {

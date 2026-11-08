@@ -156,7 +156,9 @@ type Controller struct {
 	poolStale  map[string]time.Time // main node -> when a helper reconnected
 	woken      map[string]time.Time // Wake-on-LAN packets sent, by node (wol.go)
 	templates  []*Template          // saved tasks and schedules (templates.go), guarded by mu
-	card       *scoreCard           // per-model results (scorecard.go)
+	health     *healthLog           // node health score (node_health.go)
+	healthOnce sync.Once
+	card       *scoreCard // per-model results (scorecard.go)
 	cardOnce   sync.Once
 	stateHub   stateHub // pushed /api/state (state_stream.go)
 	safeMode   bool     // crash-loop start: auto-resume and schedules off (safemode.go)
@@ -248,6 +250,8 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/tls", c.authSession(c.handleTLSInfo))
 	mux.HandleFunc("POST /api/tls", c.authSession(c.handleSetTLS))
 	mux.HandleFunc("POST /api/backup", c.authSession(c.handleBackup))
+	mux.HandleFunc("GET /api/config/export", c.authSession(c.handleConfigExport))
+	mux.HandleFunc("POST /api/config/import", c.authSession(c.handleConfigImport))
 	mux.HandleFunc("POST /api/backup/schedule", c.authSession(c.handleBackupSchedule))
 	mux.HandleFunc("GET /api/apitokens", c.authSession(c.handleListAPITokens))
 	mux.HandleFunc("POST /api/apitokens", c.authSession(c.handleNewAPIToken))
@@ -307,6 +311,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/nodes/{id}/load-options", c.auth(c.handleLoadOptions))
 	mux.HandleFunc("POST /api/nodes/{id}/load", c.auth(c.handleLoadModel))
 	mux.HandleFunc("POST /api/nodes/{id}/benchmark", c.auth(c.handleBenchmarkNode))
+	mux.HandleFunc("POST /api/nodes/{id}/health/reset", c.auth(c.handleResetHealth))
 	mux.HandleFunc("POST /api/nodes/{id}/profiles", c.auth(c.handleSaveLoadProfile))
 	mux.HandleFunc("DELETE /api/nodes/{id}/profiles/{name}", c.auth(c.handleDeleteLoadProfile))
 	mux.HandleFunc("POST /api/nodes/{id}/unload", c.auth(c.handleUnloadModel))
@@ -373,6 +378,7 @@ func runController(args []string) error {
 	go c.hoursLoop()
 	go c.genLoop()
 	go c.templateLoop()
+	go c.modelVerifyLoop()
 	go c.stallLoop()
 
 	log.Printf("outpost controller %s listening on %s", Version, *listen)

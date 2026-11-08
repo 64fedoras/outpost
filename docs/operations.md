@@ -155,6 +155,20 @@ Links use the address you were browsing when you saved or tested, or the *Addres
 you fill it in (set it if you reach the controller by a name or IP different from the one nodes use).
 *Send test* checks the channels. Notifications are not stored: the controller keeps only the last 50 in memory for browsers.
 
+## Config file, store check and node health
+
+- **Config file** (Settings → Config file): downloads settings, saved and scheduled tasks and node labels as one
+  readable JSON file with no keys, tokens or passwords. Import merges a file back in and keeps the secrets
+  already on that controller. It is not a backup: tasks, models and node keys are not in it.
+- **Model store check:** about five minutes after start and then weekly, the controller hashes every stored
+  model file again and compares it with the checksum recorded at download. A damaged or missing file raises a
+  banner and a *model download/load failed* notification; **Retry** on the Models page downloads it again.
+  It finds damage after the download, not a bad download.
+- **Node health:** a node's card shows *Shaky* (amber) or *Unreliable* (red) when, in the last 7 days, it
+  disconnected or could not take or finish work often (1 point per disconnect, 2 per refused or lost call;
+  5 points amber, 15 red; **Settings → Node health colours** changes the two numbers). Red nodes are handed work after all others. The record is `health.json` in the
+  controller's data folder. A node's card has a **Reset health** button that forgets its recent events.
+
 ## Where things live
 
 | | Controller (`/var/lib/outpost/controller`) | Node (`~/.outpost/node`) |

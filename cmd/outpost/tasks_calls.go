@@ -196,7 +196,16 @@ func (c *Controller) workerNodes() []string {
 	for _, id := range out {
 		size[id] = c.loadedModelBytesLocked(id)
 	}
+	red := map[string]bool{}
+	for _, id := range out {
+		if sc, col, _ := c.healthOf(id); sc > 0 && col == "red" {
+			red[id] = true // unreliable this week: after the others (node_health.go)
+		}
+	}
 	sort.Slice(out, func(i, j int) bool {
+		if red[out[i]] != red[out[j]] {
+			return !red[out[i]]
+		}
 		if size[out[i]] != size[out[j]] {
 			return size[out[i]] > size[out[j]]
 		}
@@ -247,6 +256,7 @@ func isNodeProblem(err error) bool {
 }
 
 func (c *Controller) coolDown(node string, d time.Duration) {
+	c.recordHealth(node, "problem")
 	c.mu.Lock()
 	c.cooldown[node] = time.Now().Add(d)
 	c.mu.Unlock()
