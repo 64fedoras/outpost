@@ -158,6 +158,8 @@ type Controller struct {
 	templates  []*Template          // saved tasks and schedules (templates.go), guarded by mu
 	health     *healthLog           // node health score (node_health.go)
 	healthOnce sync.Once
+	card       *scoreCard // per-model results (scorecard.go)
+	cardOnce   sync.Once
 	stateHub   stateHub // pushed /api/state (state_stream.go)
 	safeMode   bool     // crash-loop start: auto-resume and schedules off (safemode.go)
 }
@@ -258,6 +260,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/state/events", c.authSession(c.handleStateEvents))
 	mux.HandleFunc("POST /api/recovered/dismiss", c.auth(c.handleDismissRecovered))
 	mux.HandleFunc("POST /api/diagnostics", c.authSession(c.handleDiagnostics))
+	mux.HandleFunc("GET /api/scorecard", c.auth(c.handleScorecard))
 	mux.HandleFunc("GET /api/storage", c.auth(c.handleStorage))
 	mux.HandleFunc("POST /api/storage", c.authSession(c.handleStorageSettings))
 	mux.HandleFunc("GET /api/nodes/{id}/logs", c.auth(c.handleNodeLogs))

@@ -296,6 +296,12 @@ func (c *Controller) plannerPrompt(t *Task, budget int, want []string) string {
 		prev, _ := json.MarshalIndent(roundPlan, "", "  ")
 		b.WriteString("\nYour latest plan:\n" + string(prev) + "\n\nRevise it to follow the user's messages after it.\n")
 	}
+	t.mu.Lock()
+	testFirst := t.TestFirst && round == 1 && !seeded
+	t.mu.Unlock()
+	if testFirst {
+		b.WriteString(testFirstRules)
+	}
 	return b.String()
 }
 
