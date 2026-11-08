@@ -33,7 +33,7 @@ func (c *Controller) autoResumeInterrupted(wait, tick time.Duration) {
 	deadline := time.Now().Add(wait)
 	for {
 		c.mu.Lock()
-		off := c.settings.AutoResumeOff
+		off := c.settings.AutoResumeOff || c.safeMode
 		var cands []*Task
 		for _, t := range c.tasks {
 			t.mu.Lock()

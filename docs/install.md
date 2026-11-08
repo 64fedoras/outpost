@@ -130,6 +130,16 @@ its file-sharing port, free disk on the models folder (warns under 10 GB), its c
 a command to fix it (for example opening the firewall port or turning on time sync). Offline nodes are listed but
 not tested. The check changes nothing and only the last run is kept, in memory.
 
+### Checking a machine with `outpost doctor`
+
+On the machine that will be (or already is) a node, `outpost doctor --controller https://192.0.2.10:8443`
+checks, in plain words with a fix for each problem: that the data folder is writable and has room, that the
+controller's address accepts connections and answers over HTTPS, its certificate fingerprint (add
+`--fingerprint SHA256` to compare), the clock against the controller's, that the model-sharing port (8444) is free,
+and the CPU, RAM, GPU and Vulkan loader it can see. On a machine that has already joined, `--controller` can be left
+out. It only looks at the machine it runs on and changes nothing; after joining, use **Check cluster** on the Nodes
+page. Tried on Linux only; the Windows and macOS fixes it suggests are untested.
+
 ### Tray icon (desktop machines)
 
 Desktop nodes get a tent icon in the system tray (notification area): **green** while taking work,

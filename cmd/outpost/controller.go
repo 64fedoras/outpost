@@ -32,23 +32,25 @@ const (
 )
 
 type NodeRec struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	KeyHash     string     `json:"key_hash"`
-	ExecEnabled bool       `json:"exec_enabled"`
-	MaxJobs     int        `json:"max_jobs_override"`     // 0 = use the node's own value
-	Sandbox     string     `json:"sandbox,omitempty"`     // this node's sandbox mode; empty = the global setting
-	IdleUnload  string     `json:"idle_unload,omitempty"` // idle unload wait typed by the owner ("30m", "0"); empty = the global setting
-	Added       time.Time  `json:"added"`
-	Hello       *Hello     `json:"hello,omitempty"`
-	LoadPrefs   *ModelLoad `json:"load_prefs,omitempty"` // last model loaded from the UI
-	Pool        []string   `json:"pool,omitempty"`       // helper nodes lending memory to this node's model
-	Bench       *NodeBench `json:"bench,omitempty"`      // measured speed of the loaded model
-	BenchFail   *BenchFail `json:"bench_fail,omitempty"` // why the last benchmark did not finish
-	Benching    bool       `json:"benching,omitempty"`   // a benchmark is running
-	Labels      []string   `json:"labels,omitempty"`     // owner's tags ("gpu", "office"); tasks can ask for one (labels.go)
-	Hours       *WorkHours `json:"hours,omitempty"`      // when the node takes work; nil = always (hours.go)
-	LastAddr    string     `json:"last_addr,omitempty"`  // address it last connected from, for Wake-on-LAN (wol.go)
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	KeyHash     string        `json:"key_hash"`
+	ExecEnabled bool          `json:"exec_enabled"`
+	MaxJobs     int           `json:"max_jobs_override"`     // 0 = use the node's own value
+	Sandbox     string        `json:"sandbox,omitempty"`     // this node's sandbox mode; empty = the global setting
+	IdleUnload  string        `json:"idle_unload,omitempty"` // idle unload wait typed by the owner ("30m", "0"); empty = the global setting
+	Added       time.Time     `json:"added"`
+	Hello       *Hello        `json:"hello,omitempty"`
+	LoadPrefs   *ModelLoad    `json:"load_prefs,omitempty"`    // last model loaded from the UI
+	YieldGPU    bool          `json:"yield_gpu,omitempty"`     // unload the model while another program uses the GPU (gpu_yield.go)
+	Profiles    []LoadProfile `json:"load_profiles,omitempty"` // named load settings (load_profiles.go)
+	Pool        []string      `json:"pool,omitempty"`          // helper nodes lending memory to this node's model
+	Bench       *NodeBench    `json:"bench,omitempty"`         // measured speed of the loaded model
+	BenchFail   *BenchFail    `json:"bench_fail,omitempty"`    // why the last benchmark did not finish
+	Benching    bool          `json:"benching,omitempty"`      // a benchmark is running
+	Labels      []string      `json:"labels,omitempty"`        // owner's tags ("gpu", "office"); tasks can ask for one (labels.go)
+	Hours       *WorkHours    `json:"hours,omitempty"`         // when the node takes work; nil = always (hours.go)
+	LastAddr    string        `json:"last_addr,omitempty"`     // address it last connected from, for Wake-on-LAN (wol.go)
 }
 
 type nodeConn struct {
@@ -157,6 +159,7 @@ type Controller struct {
 	health     *healthLog           // node health score (node_health.go)
 	healthOnce sync.Once
 	stateHub   stateHub // pushed /api/state (state_stream.go)
+	safeMode   bool     // crash-loop start: auto-resume and schedules off (safemode.go)
 }
 
 func runController(args []string) error {
@@ -186,6 +189,8 @@ func runController(args []string) error {
 		pipelines: map[string]*pipeline{}, reserved: map[string]int{}, cooldown: map[string]time.Time{}, restarts: map[string]time.Time{}, poolStale: map[string]time.Time{},
 		resumeWake: make(chan struct{}, 1),
 	}
+	checkTrial(c.agentDir(), os.Args[1:]) // roll back if a fresh update keeps crashing (update_trial.go)
+	go trialHealthy(c.agentDir())
 	launchNewest(c.agentDir(), os.Args[1:]) // switch to an installed update, if newer
 	c.loadReleases()
 	c.loadSessions()
@@ -198,6 +203,7 @@ func runController(args []string) error {
 	c.loadChats()
 	c.loadTemplates()
 	c.loadSavedCatalog()
+	c.checkSafeMode()
 	c.loadTasks()
 	go c.autoResumeInterrupted(autoResumeWait, time.Second)
 	c.advertise = *advertise
@@ -303,6 +309,8 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/nodes/{id}/load", c.auth(c.handleLoadModel))
 	mux.HandleFunc("POST /api/nodes/{id}/benchmark", c.auth(c.handleBenchmarkNode))
 	mux.HandleFunc("POST /api/nodes/{id}/health/reset", c.auth(c.handleResetHealth))
+	mux.HandleFunc("POST /api/nodes/{id}/profiles", c.auth(c.handleSaveLoadProfile))
+	mux.HandleFunc("DELETE /api/nodes/{id}/profiles/{name}", c.auth(c.handleDeleteLoadProfile))
 	mux.HandleFunc("POST /api/nodes/{id}/unload", c.auth(c.handleUnloadModel))
 	mux.HandleFunc("DELETE /api/nodes/{id}/models/{name}", c.auth(c.handleRemoveNodeModel))
 	mux.HandleFunc("POST /api/nodes/{id}/models/cleanup", c.auth(c.handleCleanupNodeModels))
@@ -360,6 +368,7 @@ func runController(args []string) error {
 	go c.backupLoop()
 	go c.storageLoop()
 	go c.digestLoop()
+	go c.weeklyLoop()
 	go c.ghLoop()
 	go c.benchLoop()
 	go c.catalogShapeLoop()
@@ -367,6 +376,7 @@ func runController(args []string) error {
 	go c.genLoop()
 	go c.templateLoop()
 	go c.modelVerifyLoop()
+	go c.stallLoop()
 
 	log.Printf("outpost controller %s listening on %s", Version, *listen)
 	log.Printf("web UI:           %s", c.advertise)

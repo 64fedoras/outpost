@@ -261,7 +261,7 @@ func (c *Controller) nodeSettingsLocked(n *NodeRec) NodeSettings {
 		idle = minIdleUnload // outside working hours: free the memory soon after the last call
 	}
 	return NodeSettings{HeartbeatS: heartbeatSeconds, ExecEnabled: n.ExecEnabled,
-		IdleUnloadS: int(idle / time.Second),
+		IdleUnloadS: int(idle / time.Second), YieldGPU: n.YieldGPU,
 		Sandbox:     effectiveSandbox(c.settings.Sandbox, n.Sandbox)}
 }
 
@@ -293,6 +293,7 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 		IdleUnload  *string    `json:"idle_unload"` // "" = use the global setting
 		Sandbox     *string    `json:"sandbox"`     // "" = use the global setting; off | basic | strict
 		Labels      *[]string  `json:"labels"`
+		YieldGPU    *bool      `json:"yield_gpu"`
 		Hours       *WorkHours `json:"hours"` // {} or from == to... see hours.go; "clear_hours" removes them
 		ClearHours  bool       `json:"clear_hours"`
 	}
@@ -340,6 +341,9 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.Labels != nil {
 		n.Labels = normLabels(*req.Labels)
+	}
+	if req.YieldGPU != nil {
+		n.YieldGPU = *req.YieldGPU
 	}
 	if req.ClearHours {
 		n.Hours = nil

@@ -39,12 +39,14 @@ var notifyEvents = []struct {
 	{"done", "A task finished"},
 	{"failed", "A task failed"},
 	{"cap", "The spending cap paused a task"},
+	{"stalled", "A task has made no progress for 15 minutes"},
 	{"node_offline", "A node has been offline for 5 minutes"},
 	{"backup_failed", "A nightly backup failed its check"},
 	{"disk_low", "The controller's disk is nearly full"},
 	{"update_failed", "A node update or rollback failed"},
 	{"model_failed", "A model download or load failed"},
 	{"digest", "Morning summary of what finished overnight"},
+	{"weekly", "Weekly report on Mondays (tasks, cost, busiest nodes, disk)"},
 }
 
 func (n NotifySettings) digestHour() int {
@@ -58,10 +60,10 @@ func (n NotifySettings) digestHour() int {
 }
 
 // offByDefault lists events that stay off until ticked.
-var offByDefault = map[string]bool{"digest": true}
+var offByDefault = map[string]bool{"digest": true, "weekly": true}
 
 // eventPage is where a notification without a task links to.
-var eventPage = map[string]string{"disk_low": "settings", "backup_failed": "settings", "update_failed": "updates", "model_failed": "models", "digest": "tasks"}
+var eventPage = map[string]string{"disk_low": "settings", "backup_failed": "settings", "update_failed": "updates", "model_failed": "models", "digest": "tasks", "weekly": "tasks"}
 
 const nodeOfflineAfter = 5 * time.Minute
 

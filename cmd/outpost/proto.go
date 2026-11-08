@@ -172,8 +172,9 @@ type NodeRollback struct {
 type NodeSettings struct {
 	HeartbeatS  int    `json:"heartbeat_s"`
 	ExecEnabled bool   `json:"exec_enabled"`
-	IdleUnloadS int    `json:"idle_unload_s"`     // unload the model after this many idle seconds; 0 = never
-	Sandbox     string `json:"sandbox,omitempty"` // off | basic | strict; empty = the node's default (basic)
+	IdleUnloadS int    `json:"idle_unload_s"`       // unload the model after this many idle seconds; 0 = never
+	YieldGPU    bool   `json:"yield_gpu,omitempty"` // unload while another program uses the GPU (gpu_yield.go)
+	Sandbox     string `json:"sandbox,omitempty"`   // off | basic | strict; empty = the node's default (basic)
 }
 
 type Welcome struct {
@@ -201,6 +202,7 @@ type Heartbeat struct {
 	Paused        bool       `json:"paused,omitempty"`        // no new work (set from the tray icon or the web UI)
 	PausedBy      string     `json:"paused_by,omitempty"`     // tray | web
 	PausedUntil   *time.Time `json:"paused_until,omitempty"`  // a timed pause ends on its own then
+	GPUYielding   bool       `json:"gpu_yielding,omitempty"`  // the model is unloaded because another program is using the GPU
 	IdleUnloaded  bool       `json:"idle_unloaded,omitempty"` // LoadedModel was stopped for idleness; the next request loads it again
 }
 

@@ -43,6 +43,8 @@ Run in the foreground:
                                         (node: trust the controller's new TLS certificate)
   outpost licenses                      (show the AGPL-3.0 licence, source link and third-party notices)
   outpost hwinfo                        (show the CPU, RAM and GPUs this machine reports)
+  outpost doctor [--controller URL] [--fingerprint SHA256] [--data DIR]
+                                        (check this machine before or after joining: folder, controller, clock, ports, GPU)
 `, Version)
 }
 
@@ -82,6 +84,8 @@ func main() {
 		runCatalogJSON()
 	case "hwinfo":
 		runHWInfo()
+	case "doctor":
+		err = runDoctor(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println(versionString())
 	default:
