@@ -32,23 +32,25 @@ const (
 )
 
 type NodeRec struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	KeyHash     string     `json:"key_hash"`
-	ExecEnabled bool       `json:"exec_enabled"`
-	MaxJobs     int        `json:"max_jobs_override"`     // 0 = use the node's own value
-	Sandbox     string     `json:"sandbox,omitempty"`     // this node's sandbox mode; empty = the global setting
-	IdleUnload  string     `json:"idle_unload,omitempty"` // idle unload wait typed by the owner ("30m", "0"); empty = the global setting
-	Added       time.Time  `json:"added"`
-	Hello       *Hello     `json:"hello,omitempty"`
-	LoadPrefs   *ModelLoad `json:"load_prefs,omitempty"` // last model loaded from the UI
-	Pool        []string   `json:"pool,omitempty"`       // helper nodes lending memory to this node's model
-	Bench       *NodeBench `json:"bench,omitempty"`      // measured speed of the loaded model
-	BenchFail   *BenchFail `json:"bench_fail,omitempty"` // why the last benchmark did not finish
-	Benching    bool       `json:"benching,omitempty"`   // a benchmark is running
-	Labels      []string   `json:"labels,omitempty"`     // owner's tags ("gpu", "office"); tasks can ask for one (labels.go)
-	Hours       *WorkHours `json:"hours,omitempty"`      // when the node takes work; nil = always (hours.go)
-	LastAddr    string     `json:"last_addr,omitempty"`  // address it last connected from, for Wake-on-LAN (wol.go)
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	KeyHash     string        `json:"key_hash"`
+	ExecEnabled bool          `json:"exec_enabled"`
+	MaxJobs     int           `json:"max_jobs_override"`     // 0 = use the node's own value
+	Sandbox     string        `json:"sandbox,omitempty"`     // this node's sandbox mode; empty = the global setting
+	IdleUnload  string        `json:"idle_unload,omitempty"` // idle unload wait typed by the owner ("30m", "0"); empty = the global setting
+	Added       time.Time     `json:"added"`
+	Hello       *Hello        `json:"hello,omitempty"`
+	LoadPrefs   *ModelLoad    `json:"load_prefs,omitempty"`    // last model loaded from the UI
+	YieldGPU    bool          `json:"yield_gpu,omitempty"`     // unload the model while another program uses the GPU (gpu_yield.go)
+	Profiles    []LoadProfile `json:"load_profiles,omitempty"` // named load settings (load_profiles.go)
+	Pool        []string      `json:"pool,omitempty"`          // helper nodes lending memory to this node's model
+	Bench       *NodeBench    `json:"bench,omitempty"`         // measured speed of the loaded model
+	BenchFail   *BenchFail    `json:"bench_fail,omitempty"`    // why the last benchmark did not finish
+	Benching    bool          `json:"benching,omitempty"`      // a benchmark is running
+	Labels      []string      `json:"labels,omitempty"`        // owner's tags ("gpu", "office"); tasks can ask for one (labels.go)
+	Hours       *WorkHours    `json:"hours,omitempty"`         // when the node takes work; nil = always (hours.go)
+	LastAddr    string        `json:"last_addr,omitempty"`     // address it last connected from, for Wake-on-LAN (wol.go)
 }
 
 type nodeConn struct {
@@ -302,6 +304,8 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/nodes/{id}/load-options", c.auth(c.handleLoadOptions))
 	mux.HandleFunc("POST /api/nodes/{id}/load", c.auth(c.handleLoadModel))
 	mux.HandleFunc("POST /api/nodes/{id}/benchmark", c.auth(c.handleBenchmarkNode))
+	mux.HandleFunc("POST /api/nodes/{id}/profiles", c.auth(c.handleSaveLoadProfile))
+	mux.HandleFunc("DELETE /api/nodes/{id}/profiles/{name}", c.auth(c.handleDeleteLoadProfile))
 	mux.HandleFunc("POST /api/nodes/{id}/unload", c.auth(c.handleUnloadModel))
 	mux.HandleFunc("DELETE /api/nodes/{id}/models/{name}", c.auth(c.handleRemoveNodeModel))
 	mux.HandleFunc("POST /api/nodes/{id}/models/cleanup", c.auth(c.handleCleanupNodeModels))

@@ -263,6 +263,7 @@ document.addEventListener('click', async (e) => {
       case 'logs': openLogs(id); break;
       case 'node-resume': await pauseNode(id, 'resume'); break;
       case 'idle': setNodeIdle(id); break;
+      case 'yield': toggleYield(id); break;
       case 'restart': {
         const n = nodeById(id);
         const jobs = n.running_jobs ? ` ${n.running_jobs} running job(s) will be cancelled.` : '';

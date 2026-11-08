@@ -488,6 +488,7 @@ func (n *Node) applySettings(s NodeSettings) {
 		n.hbSeconds = s.HeartbeatS
 	}
 	n.llama.setIdleAfter(time.Duration(s.IdleUnloadS) * time.Second)
+	n.llama.setYield(s.YieldGPU)
 }
 
 func (n *Node) runningIDs() []string {
@@ -574,6 +575,10 @@ func (n *Node) buildHeartbeat() Heartbeat {
 	if cold := n.llama.coldModel(); cold != "" {
 		// Unloaded for idleness: still this node's model, available, but cold.
 		hb.LoadedModel, hb.InferenceRdy, hb.IdleUnloaded = cold, true, true
+	}
+	n.llama.yieldObserve(hb.GPUUtilPct, time.Now())
+	if n.llama.isYielding() {
+		hb.InferenceRdy, hb.GPUYielding = false, true
 	}
 	hb.RPCEndpoint = n.rpc.current()
 	hb.Paused, hb.PausedBy, hb.PausedUntil = n.pauseInfo()

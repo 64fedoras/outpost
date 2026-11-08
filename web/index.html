@@ -537,6 +537,10 @@
   <div class="modal">
     <h3>Load a model on <span id="load-node"></span></h3>
     <p class="hint">Outpost installs llama.cpp on the node if needed, gets the model onto the node (from Hugging Face or the controller, depending on the model), and starts it. Large models take a while the first time.</p>
+    <div id="load-prof-wrap" class="row2 hidden">
+      <div><label for="load-prof">Saved settings for this node</label><select id="load-prof"></select></div>
+      <div class="prof-btns"><button type="button" class="small" id="load-prof-del">Delete</button></div>
+    </div>
     <label for="load-model">Model</label>
     <select id="load-model"></select>
     <div id="load-fit" class="note hidden"></div>
@@ -572,7 +576,7 @@
       <p class="hint u6" id="load-draft-hint">A small model of the same family (same tokenizer) guesses ahead and the main model checks its guesses: often 1.5 to 2 times faster for code on a GPU. Use a model under a fifth of the main one's size, for example a 0.5B or 1.5B of the same family. Watch the tok/s on the node card; if it is not faster, load again without it.</p>
     </details>
     <div class="error-msg hidden" id="load-err"></div>
-    <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="load-go">Load</button></div>
+    <div class="modal-foot"><button data-close>Cancel</button><button id="load-prof-save" type="button">Save these settings…</button><button class="primary" id="load-go">Load</button></div>
   </div>
 </div>
 

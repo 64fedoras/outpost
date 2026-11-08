@@ -199,6 +199,8 @@ type llamaMgr struct {
 	lastUsed  time.Time
 	cold      *ModelLoad
 	wakeMu    sync.Mutex // one reload at a time
+	yieldMu   sync.Mutex // guards yield (gpu_yield.go)
+	yield     gpuYield
 }
 
 func newLlamaMgr(n *Node) *llamaMgr { return &llamaMgr{n: n} }
