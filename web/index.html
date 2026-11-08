@@ -469,6 +469,12 @@
           <label for="tls-key">Private key (PEM)</label><textarea id="tls-key" rows="3" spellcheck="false"></textarea>
           <div class="modal-foot"><button class="primary" id="tls-save">Use this certificate</button></div>
         </div>
+        <div class="section-head"><h2>Config file</h2></div>
+        <div class="card">
+          <p class="hint">Settings, saved and scheduled tasks and node labels as one readable JSON file, without any keys, tokens or passwords. Use it to compare changes or to copy a setup to a second cluster. Importing keeps the secrets already on this controller; it does not restore tasks, models or nodes (that is the backup below).</p>
+          <div class="modal-foot"><button id="cfg-import">Import config…</button><button class="primary" id="cfg-export">Download config</button></div>
+          <input type="file" id="cfg-file" accept=".json,application/json" class="hidden">
+        </div>
         <div class="section-head"><h2>Backup</h2></div>
         <div class="card">
           <p class="hint">One encrypted file with settings, the Claude key, node keys, the HTTPS certificate and all tasks. Restore on a fresh machine with <code>outpost install controller --restore FILE</code>. Keep the passphrase safe: it cannot be recovered.</p>

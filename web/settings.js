@@ -221,3 +221,16 @@ $('pw-form').onsubmit = async (e) => {
     toast('Password changed. Other browsers were signed out.', 4000);
   } catch (x) { err.textContent = x.message; err.classList.remove('hidden'); }
 };
+
+$('cfg-export').onclick = () => { location.href = '/api/config/export'; };
+$('cfg-import').onclick = () => $('cfg-file').click();
+$('cfg-file').onchange = async () => {
+  const f = $('cfg-file').files[0]; $('cfg-file').value = '';
+  if (!f) return;
+  try {
+    const body = JSON.parse(await f.text());
+    if (!confirm('Replace the settings, saved tasks and node labels in this file on this controller? Keys and passwords stay as they are.')) return;
+    const r = await post('/api/config/import', body);
+    toast(`Imported ${r.settings} settings, ${r.templates} saved tasks, ${r.labels} node labels`);
+  } catch (e) { toast(e.message); }
+};

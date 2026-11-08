@@ -154,7 +154,9 @@ type Controller struct {
 	poolStale  map[string]time.Time // main node -> when a helper reconnected
 	woken      map[string]time.Time // Wake-on-LAN packets sent, by node (wol.go)
 	templates  []*Template          // saved tasks and schedules (templates.go), guarded by mu
-	stateHub   stateHub             // pushed /api/state (state_stream.go)
+	health     *healthLog           // node health score (node_health.go)
+	healthOnce sync.Once
+	stateHub   stateHub // pushed /api/state (state_stream.go)
 }
 
 func runController(args []string) error {
@@ -240,6 +242,8 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/tls", c.authSession(c.handleTLSInfo))
 	mux.HandleFunc("POST /api/tls", c.authSession(c.handleSetTLS))
 	mux.HandleFunc("POST /api/backup", c.authSession(c.handleBackup))
+	mux.HandleFunc("GET /api/config/export", c.authSession(c.handleConfigExport))
+	mux.HandleFunc("POST /api/config/import", c.authSession(c.handleConfigImport))
 	mux.HandleFunc("POST /api/backup/schedule", c.authSession(c.handleBackupSchedule))
 	mux.HandleFunc("GET /api/apitokens", c.authSession(c.handleListAPITokens))
 	mux.HandleFunc("POST /api/apitokens", c.authSession(c.handleNewAPIToken))
@@ -361,6 +365,7 @@ func runController(args []string) error {
 	go c.hoursLoop()
 	go c.genLoop()
 	go c.templateLoop()
+	go c.modelVerifyLoop()
 
 	log.Printf("outpost controller %s listening on %s", Version, *listen)
 	log.Printf("web UI:           %s", c.advertise)

@@ -47,6 +47,7 @@ function nodeFacts(n) {
   const b = n.bench && loaded && n.bench.model === loaded ? n.bench : null;
   const issues = [];
   const o = state.ops && state.ops[n.id];
+  if (n.health) issues.push({ lvl: n.health === 'red' ? 'bad' : 'warn', short: n.health === 'red' ? 'Unreliable' : 'Shaky', text: n.health_note });
   if (!n.online) issues.push({ lvl: 'off', short: 'Offline', text: n.last_seen ? `Last seen ${ago(n.last_seen)}.` : 'Never connected.', ...(n.can_wake ? { act: 'wake', fix: 'Wake' } : {}) });
   else {
     if (n.off_hours) issues.push({ lvl: 'info', short: 'Off hours', text: `Outside its working hours (${hoursText(n.hours)}): takes no new work.`, act: 'hours', fix: 'Hours…' });
