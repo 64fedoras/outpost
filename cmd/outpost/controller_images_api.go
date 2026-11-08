@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -114,7 +115,9 @@ func (c *Controller) handleImageSettings(w http.ResponseWriter, r *http.Request)
 	if r.Method == http.MethodPost {
 		var req struct {
 			RetentionDays *int `json:"retention_days"`
-			MaxGB         *int `json:"max_gb"`
+			MaxGB         *int  `json:"max_gb"`
+			APIEnabled    *bool `json:"api_enabled"`
+			PauseForTasks *bool `json:"pause_for_tasks"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 			writeJSON(w, 400, map[string]string{"error": "bad request"})
@@ -131,6 +134,12 @@ func (c *Controller) handleImageSettings(w http.ResponseWriter, r *http.Request)
 		if req.MaxGB != nil {
 			c.gens.settings.MaxGB = *req.MaxGB
 		}
+		if req.APIEnabled != nil {
+			c.gens.settings.APIEnabled = *req.APIEnabled
+		}
+		if req.PauseForTasks != nil {
+			c.gens.settings.PauseForTasks = *req.PauseForTasks
+		}
 		c.saveGenSettingsLocked()
 		c.gens.mu.Unlock()
 		go c.pruneGens()
@@ -139,7 +148,7 @@ func (c *Controller) handleImageSettings(w http.ResponseWriter, r *http.Request)
 	set := c.gens.settings
 	c.gens.mu.Unlock()
 	used := dirBytes(c.genDir())
-	writeJSON(w, 200, map[string]any{"retention_days": set.RetentionDays, "max_gb": set.MaxGB, "api_enabled": set.APIEnabled, "used_bytes": used})
+	writeJSON(w, 200, map[string]any{"retention_days": set.RetentionDays, "max_gb": set.MaxGB, "api_enabled": set.APIEnabled, "pause_for_tasks": set.PauseForTasks, "used_bytes": used})
 }
 
 func (c *Controller) handleListGens(w http.ResponseWriter, r *http.Request) {
@@ -147,10 +156,16 @@ func (c *Controller) handleListGens(w http.ResponseWriter, r *http.Request) {
 	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n <= 500 {
 		limit = n
 	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q != "" && limit < 500 {
+		limit = 500 // searching: look through everything kept
+	}
 	c.writeGenJSON(w, 200, func() any {
 		recs := make([]*GenRec, 0, len(c.gens.recs))
 		for _, g := range c.gens.recs {
-			recs = append(recs, g)
+			if q == "" || g.matches(q) {
+				recs = append(recs, g)
+			}
 		}
 		sort.Slice(recs, func(i, j int) bool { return recs[i].Created.After(recs[j].Created) })
 		if len(recs) > limit {

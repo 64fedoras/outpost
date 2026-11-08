@@ -185,6 +185,9 @@ func (c *Controller) workerNodes() []string {
 		if until, ok := c.cooldown[id]; ok && time.Now().Before(until) {
 			continue
 		}
+		if c.nodeMakingPicture(id) {
+			continue // a picture or clip is rendering there (gen_priority.go)
+		}
 		out = append(out, id)
 	}
 	// Strongest first: the node with the biggest loaded model gets work (and
