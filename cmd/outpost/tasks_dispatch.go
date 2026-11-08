@@ -40,6 +40,7 @@ func (c *Controller) executeTask(ctx context.Context, t *Task) {
 		}
 	}
 	t.mu.Unlock()
+	c.warnPlanFit(t, plan)
 	type doneMsg struct {
 		id  string
 		err error
@@ -308,9 +309,13 @@ func (c *Controller) generateSubtask(ctx context.Context, t *Task, spec PlanSubt
 	}
 	budget := (ctxTokens-maxOut)*3 - len(workerSystem) - 1500
 	feedback := ""
+	cutWarned := map[string]bool{}
 	var lastErr error
 	for attempt := 1; attempt <= workerAttempts; attempt++ {
 		user := c.subtaskPrompt(t, spec, budget) + feedback
+		if attempt == 1 && promptWasCut(user) {
+			c.warnContextCut(t, cutWarned, spec, node, ctxTokens)
+		}
 		label := fmt.Sprintf("%s · %s%s (attempt %d)", t.Title, spec.ID, extra, attempt)
 		t.logf("info", "%s: %s → %s (attempt %d)", spec.ID, spec.Title, c.nodeLabel(node), attempt)
 		resp, err := c.nodeCall(ctx, t, node, llmRequest{System: workerSystem, User: user, MaxTokens: maxOut, Temperature: 0.2, Label: label, Sub: spec.ID}, false)
@@ -370,6 +375,7 @@ func (c *Controller) commitSubtask(t *Task, spec PlanSubtask, node string, res *
 	st := t.subtask(spec.ID)
 	now := time.Now()
 	st.Status, st.Ended, st.TokPerSec = "written", &now, resp.TokensPerSec
+	st.Model = c.loadedModelName(node)
 	t.saveLocked()
 	t.mu.Unlock()
 	c.recordSpeed(node, resp.TokensPerSec)

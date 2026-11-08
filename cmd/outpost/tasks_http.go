@@ -173,7 +173,7 @@ func (c *Controller) createTask(req createReq, files []attachedFile, opt createO
 	var t *Task
 	review := req.Review == nil || *req.Review
 	t = &Task{ProjectID: req.Project, ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, ORModel: req.ORModel, Review: review,
-		Instructions: joinInstructions(set.Instructions, projectInstructions(proj)), Mockup: req.Mockup, MaxFix: clampFixRounds(req.FixRounds), TestMinutes: clampTestMinutes(req.TestMinutes), CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1,
+		Instructions: joinInstructions(set.Instructions, projectInstructions(proj)), Mockup: req.Mockup, TestFirst: req.TestFirst, MaxFix: clampFixRounds(req.FixRounds), TestMinutes: clampTestMinutes(req.TestMinutes), CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1,
 		NodeLabel: normLabel(req.NodeLabel), Unattended: opt.Unattended, Template: opt.Template}
 	t.dir = filepath.Join(c.tasksDir(), t.ID)
 	if proj != nil {

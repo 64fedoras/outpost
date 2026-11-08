@@ -280,6 +280,7 @@ func (c *Controller) finishTask(t *Task) {
 	}
 	t.mu.Unlock()
 	t.setStatus("done")
+	c.recordScorecard(t)
 	stats := c.roundStats(t)
 	t.mu.Lock()
 	cost := t.CostUSD

@@ -56,6 +56,7 @@ async function loadSettings() {
   loadNotifySettings();
   loadSecurity();
   loadStorage();
+  loadScorecard();
   Guard.settingsReset();
 }
 let orLoaded = false;
@@ -221,3 +222,11 @@ $('pw-form').onsubmit = async (e) => {
     toast('Password changed. Other browsers were signed out.', 4000);
   } catch (x) { err.textContent = x.message; err.classList.remove('hidden'); }
 };
+
+async function loadScorecard() {
+  const r = await api('/api/scorecard').catch(() => null);
+  const rows = (r && r.rows) || [];
+  if (!rows.length) { setHTML('scorecard', '<span class="muted">No finished tasks counted yet.</span>'); return; }
+  setHTML('scorecard', `<div class="table-wrap"><table><thead><tr><th>Model</th><th>Language</th><th>Subtasks</th><th>Clean</th><th>Retries</th><th>Reviewer changed</th></tr></thead><tbody>${rows.map((x) =>
+    `<tr><td>${esc(x.model)}</td><td>${esc(x.language || '—')}</td><td>${x.subtasks}</td><td>${Math.round(100 * x.clean / x.subtasks)}%</td><td>${x.retries}</td><td>${x.review_fixed}</td></tr>`).join('')}</tbody></table></div>`);
+}
