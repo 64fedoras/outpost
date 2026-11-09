@@ -81,19 +81,25 @@ type ghRelease struct {
 	} `json:"assets"`
 }
 
+type blockedBuild struct {
+	msg string
+	at  time.Time
+}
+
 type runtimeCache struct {
 	mu       sync.Mutex
 	checked  time.Time
 	releases []ghRelease
 	locks    map[string]*sync.Mutex
 	ceiling  map[string]string // node|variant -> newest build known to run on that node (older glibc)
+	blocked  map[string]blockedBuild // node|variant|build -> this build needs a newer glibc and no older release can help
 }
 
 func (c *Controller) runtimeDir() string { return filepath.Join(c.dataDir, "runtime") }
 
 func (c *Controller) loadRuntimes() {
 	c.runtimes = map[string]*RuntimeRec{}
-	c.rtCache = &runtimeCache{locks: map[string]*sync.Mutex{}, ceiling: map[string]string{}}
+	c.rtCache = &runtimeCache{locks: map[string]*sync.Mutex{}, ceiling: map[string]string{}, blocked: map[string]blockedBuild{}}
 	entries, _ := os.ReadDir(c.runtimeDir())
 	for _, e := range entries {
 		b, err := os.ReadFile(filepath.Join(c.runtimeDir(), e.Name(), "runtime.json"))
@@ -181,6 +187,30 @@ func (c *Controller) setRuntimeCeiling(node, variant, build string) {
 	c.rtCache.ceiling[node+"|"+variant] = build
 	c.rtCache.mu.Unlock()
 }
+
+func (c *Controller) runtimeBlocked(node, variant, build string) string {
+	c.rtCache.mu.Lock()
+	defer c.rtCache.mu.Unlock()
+	b := c.rtCache.blocked[node+"|"+variant+"|"+build]
+	if time.Since(b.at) > 10*time.Minute { // the OS may have been upgraded since
+		return ""
+	}
+	return b.msg
+}
+
+func (c *Controller) setRuntimeBlocked(node, variant, build, msg string) {
+	c.rtCache.mu.Lock()
+	if c.rtCache.blocked == nil {
+		c.rtCache.blocked = map[string]blockedBuild{}
+	}
+	c.rtCache.blocked[node+"|"+variant+"|"+build] = blockedBuild{msg, time.Now()}
+	c.rtCache.mu.Unlock()
+}
+
+// oldBuildsCannotHelp reports whether stepping back to an older llama.cpp
+// release is pointless for variant. The Ubuntu arm64 binaries have only ever
+// been built on Ubuntu 24.04 (glibc 2.39), so every release needs a new glibc.
+func oldBuildsCannotHelp(variant string) bool { return strings.HasPrefix(variant, "linux-arm64") }
 
 // assetFor finds variant's binary in a specific release.
 func assetFor(rels []ghRelease, variant, build string) (name, url string, size int64) {
