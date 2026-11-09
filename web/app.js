@@ -110,7 +110,7 @@ $('setup-form').onsubmit = async (e) => {
 };
 $('btn-logout').onclick = async () => { await post('/api/logout').catch(() => {}); showLogin(); };
 
-const PAGES = ['new', 'image', 'task', 'chat', 'projects', 'nodes', 'models', 'updates', 'settings'];
+const PAGES = ['new', 'image', 'task', 'chat', 'projects', 'nodes', 'models', 'updates', 'spending', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
   ntDraft.flush(); tmDraft.flush();
@@ -119,7 +119,7 @@ function route() {
   pageArg = page === 'task' || page === 'chat' ? m[2] || null : null;
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
   document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === page));
-  document.querySelector('.page-plain').classList.toggle('hidden', !['chat', 'projects', 'nodes', 'models', 'updates', 'settings'].includes(page));
+  document.querySelector('.page-plain').classList.toggle('hidden', !['chat', 'projects', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image' }[page] || page[0].toUpperCase() + page.slice(1));
   document.body.classList.toggle('on-task', page === 'task');
   closeSide();
@@ -128,6 +128,7 @@ function route() {
   if (page === 'task') { taskDetail = null; threadReset(); tmDraft.restore('task:' + pageArg); autoGrow($('tm-text')); liveOpen(pageArg); pollTask(); }
   if (page === 'new') { ntDraft.restore('new'); setTimeout(() => $('nt-prompt').focus(), 0); }
   if (page === 'settings') loadSettings();
+  if (page === 'spending') loadSpending();
   if (page === 'chat') chatOpen(pageArg);
   if (typeof imgRoute === 'function') imgRoute(page);
   renderSideTasks();
@@ -220,6 +221,7 @@ function renderAll() {
   if (page === 'nodes') { renderNodes(); renderJobs(); }
   if (page === 'models') renderModels();
   if (page === 'updates') renderUpdates();
+  if (page === 'spending' && Date.now() - spendAt > 10000) loadSpending();
 }
 
 const ACTIVE = ['queued', 'planning', 'awaiting_answers', 'awaiting_approval', 'running', 'testing', 'building', 'fixing', 'paused_cap'];

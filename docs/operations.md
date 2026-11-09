@@ -119,7 +119,7 @@ connection attempt. Update nodes to 0.7.0 before replacing the certificate.
 
 **Settings → Backup.** *Download backup* gives one encrypted `.opb` file (AES-256-GCM, key from your
 passphrase with PBKDF2) holding settings, the encrypted Claude key and `secret.key`, node keys, the
-TLS certificate, API tokens and all tasks. Models, runtimes and releases are left out unless you tick
+TLS certificate, API tokens, the spending ledger and all tasks. Models, runtimes and releases are left out unless you tick
 the box. The passphrase cannot be recovered. On a fresh machine:
 
 ```sh
@@ -137,7 +137,7 @@ notification (once per distinct failure). Saving the schedule makes the first co
 ## Notifications
 
 **Settings → Notifications** sends a message when the planner asks a question, a plan is ready to approve,
-a task finishes or fails, the spending cap pauses a task, a task makes no progress for 15 minutes (it is flagged in its log, not stopped), a node has been offline for 5 minutes, a nightly
+a task finishes or fails, the spending cap (the task's or the monthly one) pauses a task, a task makes no progress for 15 minutes (it is flagged in its log, not stopped), a node has been offline for 5 minutes, a nightly
 backup fails its check, the controller's disk is nearly full, a node update or rollback fails, or a model
 download, copy or load fails. Each event can be switched off. A **weekly report** (off until ticked; Mondays at the
 morning-summary hour) lists the week's finished and failed tasks, cloud planner cost, the busiest nodes by subtasks
@@ -173,7 +173,7 @@ you fill it in (set it if you reach the controller by a name or IP different fro
 
 | | Controller (`/var/lib/outpost/controller`) | Node (`~/.outpost/node`) |
 | --- | --- | --- |
-| Config | `tls.crt/key`, `admin.json`, `api_tokens.json`, `settings.json` (secrets encrypted with `secret.key`), `nodes.json` | `node.json` (node key) |
+| Config | `tls.crt/key`, `admin.json`, `api_tokens.json`, `settings.json` (secrets encrypted with `secret.key`), `nodes.json`, `spend.json` (cloud spending ledger) | `node.json` (node key) |
 | Models | `models/<name>/` (only for models stored on the controller) | `models/<name>/` (from Hugging Face or the controller) |
 | llama.cpp | `runtime/<variant>/` (from GitHub releases) | `llama/<build>-<variant>/` |
 | Work | `tasks/<id>/` (conversation, `result.zip`, `artifacts/`, attachments; `repo/` unless the task is in a project), `projects/<id>/` (`project.json`, `repo/`) | `work/` — deleted after every job |

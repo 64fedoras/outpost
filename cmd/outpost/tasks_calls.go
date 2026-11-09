@@ -36,8 +36,14 @@ func (c *Controller) plannerCall(ctx context.Context, t *Task, req llmRequest) (
 				est += webSearchUses * webSearchUSD
 			}
 		}
+		if limit, spent := c.monthlyCap(); limit > 0 && (spent+est > limit || (est == 0 && spent >= limit)) {
+			if err := c.pauseForCap(ctx, t, est, "monthly"); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if cost+est > cap || (est == 0 && cost >= cap) {
-			if err := c.pauseForCap(ctx, t, est); err != nil {
+			if err := c.pauseForCap(ctx, t, est, ""); err != nil {
 				return nil, err
 			}
 			continue
@@ -75,6 +81,7 @@ func (c *Controller) plannerCall(ctx context.Context, t *Task, req llmRequest) (
 		total := t.CostUSD
 		t.saveLocked()
 		t.mu.Unlock()
+		c.recordSpend(t, planner, resp)
 		t.logf("cost", "%s: %s in / %s out tokens, $%.4f (task total $%.4f)", req.Label, fmtInt(resp.InTokens+resp.CacheRead+resp.CacheWrite), fmtInt(resp.OutTokens), resp.CostUSD, total)
 		if resp.WebSearches > 0 {
 			t.logf("cost", "%s: %d web search(es), %s of that call", req.Label, resp.WebSearches, fmtUSD(float64(resp.WebSearches)*webSearchUSD))
@@ -99,23 +106,40 @@ func fmtInt(n int) string {
 	return s
 }
 
-func (c *Controller) pauseForCap(ctx context.Context, t *Task, est float64) error {
+// pauseForCap waits until the cap is raised or the planner switched. kind is ""
+// for the task's own cap and "monthly" for the monthly cap of all cloud calls
+// (spend.go), which also lifts on its own when the next month starts.
+func (c *Controller) pauseForCap(ctx context.Context, t *Task, est float64, kind string) error {
 	t.mu.Lock()
 	from := t.Status
-	t.PausedFrom, t.Status = from, "paused_cap"
+	if from == "paused_cap" { // already paused (woken but still over a cap): keep where it came from
+		from = t.PausedFrom
+	}
+	t.PausedFrom, t.Status, t.CapKind = from, "paused_cap", kind
 	ch := t.resume
 	cost, cap := t.CostUSD, t.CapUSD
 	t.saveLocked()
 	t.mu.Unlock()
-	c.notifyTask(t, "cap", fmt.Sprintf("Paused at %s of the %s cap. Raise the cap or switch planner to continue.", fmtUSD(cost), fmtUSD(cap)))
-	t.logf("warn", "Paused: the next cloud model call (about %s) would pass the %s cap (spent %s). Raise the cap or switch to a local planner to continue.", fmtUSD(est), fmtUSD(cap), fmtUSD(cost))
+	var nextMonth <-chan time.Time
+	if kind == "monthly" {
+		limit, spent := c.monthlyCap()
+		c.notifyTask(t, "cap", fmt.Sprintf("Paused at the monthly cap: %s of %s spent this month. Raise it on the Spending page or switch to a local planner.", fmtUSD(spent), fmtUSD(limit)))
+		t.logf("warn", "Paused: the next cloud model call (about %s) would pass the %s monthly cap (spent %s this month). Raise it on the Spending page, switch to a local planner, or wait for next month.", fmtUSD(est), fmtUSD(limit), fmtUSD(spent))
+		tm := time.NewTimer(untilNextMonth(time.Now()) + time.Second)
+		defer tm.Stop()
+		nextMonth = tm.C
+	} else {
+		c.notifyTask(t, "cap", fmt.Sprintf("Paused at %s of the %s cap. Raise the cap or switch planner to continue.", fmtUSD(cost), fmtUSD(cap)))
+		t.logf("warn", "Paused: the next cloud model call (about %s) would pass the %s cap (spent %s). Raise the cap or switch to a local planner to continue.", fmtUSD(est), fmtUSD(cap), fmtUSD(cost))
+	}
 	select {
 	case <-ctx.Done():
 		return errCancelled
 	case <-ch:
+	case <-nextMonth:
 	}
 	t.mu.Lock()
-	t.Status, t.PausedFrom = from, ""
+	t.Status, t.PausedFrom, t.CapKind = from, "", ""
 	t.saveLocked()
 	t.mu.Unlock()
 	t.logf("info", "Continuing with a %s cap.", fmtUSD(t.CapUSD))

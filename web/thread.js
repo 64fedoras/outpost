@@ -502,6 +502,11 @@ function statusCard(t) {
     case 'planning':
       return { key: 'tail-planning', cls: 'from-planner', html: `<div class="said thinking">Thinking it through with ${esc(t.planner_label)}<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></div>` };
     case 'paused_cap':
+      if (t.cap_kind === 'monthly') {
+        return { key: 'tail-mcap', cls: 'card-row', html: `<div class="card-msg warn"><div class="card-head">Paused at the monthly cap</div>
+        <p>This month's cloud spend for all tasks has reached the monthly cap. Raise it on the <a href="#/spending">Spending page</a> to keep going with the cloud model, finish with a local planner, or leave it: it continues on its own when the next month starts.</p>
+        ${locals ? `<div class="card-actions"><select id="ta-local" class="chip-select">${locals}</select><button data-act="task-local">Finish with this local planner</button></div>` : ''}</div>` };
+      }
       return { key: 'tail-cap', cls: 'card-row', html: `<div class="card-msg warn"><div class="card-head">Paused at the spending cap</div>
         <p>Spent ${usd(t.cost_usd)} of ${usd(t.cap_usd)}. Raise the cap to keep going with the cloud model, or finish with a local planner.</p>
         <div class="card-actions"><label class="chip-input">new cap $<input id="ta-newcap" type="number" min="0.05" step="0.25" value="${(Math.ceil((t.cap_usd * 2) * 4) / 4).toFixed(2)}"></label><button class="primary" data-act="task-raise">Raise cap and continue</button></div>

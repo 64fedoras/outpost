@@ -65,6 +65,7 @@
         <a href="#/nodes" data-tab="nodes">Nodes <span class="badge hidden" id="badge-nodes"></span></a>
         <a href="#/models" data-tab="models">Models</a>
         <a href="#/updates" data-tab="updates">Updates <span class="badge hidden" id="badge-updates"></span></a>
+        <a href="#/spending" data-tab="spending">Spending</a>
         <a href="#/settings" data-tab="settings">Settings</a>
       </nav>
       <div class="side-meta"><span id="hdr-meta"></span><button class="link-btn" id="pal-open" aria-keyshortcuts="Control+K" title="Go to a task, node or page (Ctrl+K)">Search ⌃K</button><button class="link-btn" id="btn-logout">Sign out</button></div>
@@ -242,6 +243,23 @@
       </label>
       <div class="u4" id="releases"></div>
       <p class="sub wrap u5" id="ctl-info"></p>
+    </section>
+
+    <!-- SPENDING -->
+    <section data-page="spending" class="hidden">
+      <div class="section-head"><h2>Spending</h2><span class="sub u2">Claude and OpenRouter, from every cloud planner call</span><span class="spacer"></span>
+        <label class="chip-input">month <select id="sp-month" aria-label="Month"></select></label></div>
+      <div class="note warn hidden" id="sp-paused" role="status"></div>
+      <div class="tiles" id="sp-tiles"></div>
+      <div class="card sp-chart-card"><div class="sp-legend"><span class="sp-key sp-claude">Claude</span><span class="sp-key sp-or">OpenRouter</span><span class="spacer"></span><span class="sub" id="sp-peak"></span></div>
+        <div id="sp-chart" class="sp-chart"></div></div>
+      <div class="section-head"><h2>Most expensive tasks</h2></div>
+      <div id="sp-top"></div>
+      <div class="card settings-form sp-cap" id="sp-cap-card">
+        <label for="sp-cap">Monthly cap for all tasks <span class="hint">(dollars; 0 or empty turns it off)</span></label>
+        <div class="sp-cap-row"><input id="sp-cap" type="number" min="0" step="1" inputmode="decimal" placeholder="off"><button class="primary" id="sp-cap-save">Save</button><span class="sub" id="sp-cap-msg" role="status"></span></div>
+        <p class="hint">When the month's cloud spend would pass the cap, tasks pause before their next Claude or OpenRouter call and wait until you raise the cap, switch them to a local planner, or the next month starts. Tasks on local planners keep running. Each task's own cap still applies too.</p>
+      </div>
     </section>
 
     <!-- CHAT -->
@@ -798,6 +816,7 @@
 <script src="nodes.js"></script>
 <script src="models.js"></script>
 <script src="updates.js"></script>
+<script src="spending.js"></script>
 <script src="settings.js"></script>
 <script src="dialogs.js"></script>
 <script src="tools.js"></script>

@@ -101,6 +101,8 @@ type Controller struct {
 	inferStub   func(ctx context.Context, nodeID string, spec InferenceSpec) (*InferenceOutput, error)           // tests: stands in for node inference
 	execStub    func(ctx context.Context, nodeID string, argv []string, inputs []FileEntry) (*ExecOutput, error) // tests: stands in for the best-of-N syntax check
 	dataDir     string
+	spend       *spendLedger // cloud spending ledger (spend.go); use spendLedger()
+	spendOnce   sync.Once
 	catShapes   map[string]*ModelShape // GGUF headers of catalog models, read from Hugging Face in the background
 	advertise   string
 	fingerprint string
@@ -207,6 +209,7 @@ func runController(args []string) error {
 	c.loadSavedCatalog()
 	c.checkSafeMode()
 	c.loadTasks()
+	c.spendLedger() // load spend.json, or start it from the tasks on disk
 	go c.autoResumeInterrupted(autoResumeWait, time.Second)
 	c.advertise = *advertise
 	if c.advertise == "" {
@@ -326,6 +329,8 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/tasks", c.auth(c.handleCreateTask))
 	mux.HandleFunc("GET /api/tasks/{id}", c.auth(c.handleGetTask))
 	mux.HandleFunc("DELETE /api/tasks/{id}", c.auth(c.handleDeleteTask))
+	mux.HandleFunc("GET /api/spending", c.auth(c.handleSpending))
+	mux.HandleFunc("POST /api/spending/cap", c.authSession(c.handleSpendingCap))
 	mux.HandleFunc("POST /api/tasks/{id}/meta", c.auth(c.handleTaskMeta))
 	mux.HandleFunc("POST /api/tasks/{id}/approve", c.auth(c.handleApproveTask))
 	mux.HandleFunc("POST /api/tasks/{id}/difficulty", c.auth(c.handleSetDifficulty))
