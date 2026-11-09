@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"sort"
@@ -52,6 +53,21 @@ func openRouterBaseURL() string {
 		return strings.TrimRight(u, "/")
 	}
 	return "https://openrouter.ai/api"
+}
+
+// orBatchSuffix marks OpenRouter's batch variants (for example
+// "anthropic/claude-opus-5-5:batch"). They are served by a batch adapter and
+// the chat/completions endpoint rejects them with a 404, so Outpost never
+// offers them and falls back to the base model if one was saved.
+const orBatchSuffix = ":batch"
+
+// OpenRouterBaseModel returns the model ID chat/completions can serve: the ID
+// without a ":batch" suffix. changed is true when the suffix was removed.
+func OpenRouterBaseModel(id string) (base string, changed bool) {
+	if strings.HasSuffix(id, orBatchSuffix) {
+		return strings.TrimSuffix(id, orBatchSuffix), true
+	}
+	return id, false
 }
 
 func parsePrice(s string) float64 {
@@ -166,6 +182,7 @@ func (cat *ORCatalog) List() ([]ORModel, error) {
 // Unknown prices (list not loaded yet) estimate as zero; the reported cost of
 // the call still counts against the cap, so the next call pauses.
 func OpenRouterEstimate(model string, inputChars, maxOut int) float64 {
+	model, _ = OpenRouterBaseModel(model)
 	m := OpenRouterModels.Get(model)
 	if m == nil {
 		return 0
@@ -174,6 +191,7 @@ func OpenRouterEstimate(model string, inputChars, maxOut int) float64 {
 }
 
 func OpenRouterLabel(model string) string {
+	model, _ = OpenRouterBaseModel(model)
 	if m := OpenRouterModels.Get(model); m != nil && m.Name != "" {
 		return m.Name + " via OpenRouter"
 	}
@@ -192,6 +210,10 @@ func CallOpenRouter(ctx context.Context, key, model string, req Request) (*Respo
 	}
 	if model == "" {
 		return nil, errors.New("no OpenRouter model chosen; pick one in Settings")
+	}
+	if base, changed := OpenRouterBaseModel(model); changed {
+		log.Printf("OpenRouter: %s is a batch variant that chat/completions cannot serve; using %s instead. Pick the base model in Settings to stop this message.", model, base)
+		model = base
 	}
 	var system any = req.System
 	if strings.HasPrefix(model, "anthropic/") {
