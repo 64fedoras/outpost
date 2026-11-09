@@ -341,14 +341,23 @@ function readPlanEditor() {
   });
 }
 
+// Minutes for the plan card's time estimate (estimate.go); always "about".
+function estMin(sec) { return sec < 90 ? '1 min' : Math.round(sec / 60) + ' min'; }
+
 function planCard(t, m, live) {
   if (planEdit && planEdit.id === m.id && canEditPlan(t, m)) return planEditor(t, m);
   const p = m.plan || {};
+  const est = live && t.estimate ? t.estimate : null;
+  const subEst = (s) => {
+    const e = est && est.subtasks && est.subtasks[s.id];
+    return e ? `<span class="st-est" title="Estimated time for this subtask on its likely node">~${estMin(e.seconds)} on ${esc(e.node_name)}</span>` : '';
+  };
   const diffSel = (s) => live ? `<select class="small" data-diff="${esc(s.id)}" aria-label="Difficulty of ${esc(s.title)}" title="Hard subtasks go to the strongest model; easy ones to the fastest node">${['easy', 'normal', 'hard'].map((d) => `<option value="${d}" ${(s.difficulty || 'normal') === d ? 'selected' : ''}>${d}</option>`).join('')}</select>`
     : (s.difficulty && s.difficulty !== 'normal' ? `<span class="tag">${esc(s.difficulty)}</span>` : '');
-  const subs = (p.subtasks || []).map((s) => `<li><details><summary><span class="st-title">${esc(s.title)}</span>${diffSel(s)}<span class="st-files">${s.kind === 'investigate' ? 'investigates, writes no files' : s.files.map(esc).join(', ')}</span></summary>
+  const subs = (p.subtasks || []).map((s) => `<li><details><summary><span class="st-title">${esc(s.title)}</span>${diffSel(s)}<span class="st-files">${s.kind === 'investigate' ? 'investigates, writes no files' : s.files.map(esc).join(', ')}</span>${subEst(s)}</summary>
       <p class="st-ins">${esc(s.instructions)}</p>${s.depends_on && s.depends_on.length ? `<p class="st-dep">Starts after ${s.depends_on.map(esc).join(', ')}</p>` : ''}</details></li>`).join('');
-  const facts = [p.language ? esc(p.language) : '', p.test_command ? `tests: <code>${esc(p.test_command)}</code>` : 'no automated tests', p.build_command ? `build: <code>${esc(p.build_command)}</code>` : '', `${(p.subtasks || []).length} subtasks`].filter(Boolean).join(' · ');
+  const facts = [p.language ? esc(p.language) : '', p.test_command ? `tests: <code>${esc(p.test_command)}</code>` : 'no automated tests', p.build_command ? `build: <code>${esc(p.build_command)}</code>` : '', `${(p.subtasks || []).length} subtasks`,
+    est ? `<span class="plan-est" title="${esc(`From each node's measured speed and the expected size of the files${est.rough ? '; some nodes have no measured speed yet, so this is rough' : ''}. Fix rounds after failing tests are not included.`)}">about ${estMin(est.seconds)} on ${est.nodes} node${est.nodes === 1 ? '' : 's'}${est.seconds - est.write_seconds > 1 ? ` (writing ${estMin(est.write_seconds)}, tests ${estMin(est.seconds - est.write_seconds)})` : ''}${est.rough ? ', rough' : ''}</span>` : ''].filter(Boolean).join(' · ');
   let actions = '';
   if (live) {
     const warn = [];
