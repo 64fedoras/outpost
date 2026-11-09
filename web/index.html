@@ -290,21 +290,46 @@
     <section data-page="settings" class="hidden">
       <div class="settings set-layout">
         <nav class="set-nav" id="set-nav" aria-label="Settings sections">
-          <a href="#set-plan" data-sec="plan">Planning</a>
+          <a href="#set-tasks" data-sec="tasks">Tasks</a>
           <a href="#set-keys" data-sec="keys">API keys</a>
-          <a href="#set-modelsec" data-sec="model">Model settings</a>
-          <a href="#set-app" data-sec="app">Application</a>
-          <a href="#set-sec" data-sec="sec">Security and backup</a>
+          <a href="#set-modelsec" data-sec="model">Models</a>
+          <a href="#set-nodes" data-sec="nodes">Nodes</a>
+          <a href="#set-pics" data-sec="pics">Pictures</a>
+          <a href="#set-ui" data-sec="ui">Display and alerts</a>
+          <a href="#set-upd" data-sec="upd">Updates</a>
+          <a href="#set-sec" data-sec="sec">Security</a>
+          <a href="#set-maint" data-sec="maint">Storage and backup</a>
         </nav>
         <div class="set-main">
-        <section class="set-sec" id="set-plan">
-          <h2 class="set-sec-title">Planning</h2>
+        <section class="set-sec" id="set-tasks">
+          <h2 class="set-sec-title">Tasks</h2>
         <div class="section-head"><h2>Planner</h2></div>
         <div class="card">
           <label for="set-planner">Default planner</label><select id="set-planner"></select>
           <label class="check"><input type="checkbox" id="set-websearch"> Let the Claude planner search the web (about $0.01 per search, counted against the task cap)</label>
           <label class="check"><input type="checkbox" id="set-webprivate"> Allow pasted links to reach internal addresses (loopback, LAN). Off blocks them.</label>
           <div class="modal-foot"><button class="primary" id="set-save">Save defaults</button></div>
+        </div>
+        <div class="section-head"><h2>Running tasks</h2></div>
+        <div class="card">
+          <label class="check"><input type="checkbox" id="set-autoresume"> Resume interrupted tasks on their own after a restart (local planner only; starts as soon as the task's node is back, waits up to 10 minutes)</label>
+          <label for="set-bestofn">Best of N on local nodes</label>
+          <select id="set-bestofn"><option value="hard">Hard subtasks (default)</option><option value="all">All subtasks</option><option value="off">Off</option></select>
+          <p class="hint">When a subtask starts and two or more other nodes are idle with nothing waiting for them, up to two of them also write it. Copies that fail a quick syntax check are dropped and a judge node picks the best of the rest. Spare copies give up their node as soon as other work needs it. Local nodes only, so no Claude cost.</p>
+          <label class="check"><input type="checkbox" id="set-agent"> Agent mode: fixers and investigators read files, search, run commands and ask you questions, up to 30 tool calls and 20 minutes each. Off uses one request per fix.</label>
+          <div class="modal-foot"><button class="primary" id="set-run-save">Save</button></div>
+        </div>
+        <div class="section-head"><h2>Project instructions</h2></div>
+        <div class="card">
+          <p class="hint">Standing rules (like <code>CLAUDE.md</code>) put at the top of every planner, worker, reviewer and fix prompt of tasks you create from now on. A file named <code>OUTPOST.md</code> at the root of a task's files is added too. Keep it short; it is cut at 8,000 characters.</p>
+          <textarea id="set-instr" rows="6" maxlength="8000" placeholder="e.g. Vendor all dependencies. No cgo. Keep the web UI vanilla JS."></textarea>
+          <div class="modal-foot"><button class="primary" id="set-instr-save">Save instructions</button></div>
+        </div>
+        <div class="section-head"><h2>Command sandbox</h2></div>
+        <div class="card">
+          <p class="hint">How nodes run the commands tasks send them (tests, builds, fixes). <b>Basic</b>: a command can only change files in its own job folder, sees a cleaned-up environment and has no special rights; the network stays open. <b>Strict</b>: basic, with the network off unless the step downloads packages, and a deny list for dangerous system calls. <b>Off</b>: commands run with the node's own rights, as before. Linux nodes only for now; Windows and macOS nodes run commands unsandboxed. A node can override this on its card. If a build breaks and you suspect the sandbox, set it to Off to compare.</p>
+          <select id="set-sandbox"><option value="basic">Basic (recommended)</option><option value="strict">Strict</option><option value="off">Off</option></select>
+          <div class="modal-foot"><button class="primary" id="set-sandbox-save">Save</button></div>
         </div>
         </section>
         <section class="set-sec" id="set-keys">
@@ -337,16 +362,29 @@
         </div>
         </section>
         <section class="set-sec" id="set-modelsec">
-          <h2 class="set-sec-title">Model settings</h2>
-        <div class="section-head"><h2>Running tasks</h2></div>
+          <h2 class="set-sec-title">Models</h2>
+        <div class="section-head"><h2>Idle unload</h2></div>
         <div class="card">
-          <label class="check"><input type="checkbox" id="set-autoresume"> Resume interrupted tasks on their own after a restart (local planner only; starts as soon as the task's node is back, waits up to 10 minutes)</label>
-          <label for="set-bestofn">Best of N on local nodes</label>
-          <select id="set-bestofn"><option value="hard">Hard subtasks (default)</option><option value="all">All subtasks</option><option value="off">Off</option></select>
-          <p class="hint">When a subtask starts and two or more other nodes are idle with nothing waiting for them, up to two of them also write it. Copies that fail a quick syntax check are dropped and a judge node picks the best of the rest. Spare copies give up their node as soon as other work needs it. Local nodes only, so no Claude cost.</p>
-          <label class="check"><input type="checkbox" id="set-agent"> Agent mode: fixers and investigators read files, search, run commands and ask you questions, up to 30 tool calls and 20 minutes each. Off uses one request per fix.</label>
-          <div class="modal-foot"><button class="primary" id="set-run-save">Save</button></div>
+          <p class="hint">A node stops its model after it has served nothing for this long, to give back its RAM or VRAM. The next request loads it again, which takes as long as a normal load. Pooled models are never unloaded. Type a time such as <code>30s</code>, <code>5m</code>, <code>1hr</code> or <code>2d</code>, or <code>0</code> for never. Empty means 1 hour. Each node can override this on its card.</p>
+          <input id="set-idle" type="text" placeholder="1hr" autocomplete="off" spellcheck="false">
+          <div class="hint" id="set-idle-now"></div>
+          <div class="modal-foot"><button class="primary" id="set-idle-save">Save</button></div>
         </div>
+        <div class="section-head"><h2>Memory pooling</h2></div>
+        <div class="card">
+          <p class="hint"><b>Off by default. Trusted home or lab networks only.</b> Pooling lets nodes lend RAM and VRAM to a model on another node through llama.cpp's RPC mode. That traffic (model data and activations) crosses the LAN <b>unencrypted</b>, and the lending node has <b>no authentication</b> beyond allowing only the main node's IP address, which a hostile device on the same network can spoof. A lending node opens its pool port only while a pool is running and closes it when the pool ends. Turning pooling off dissolves every pool and unloads the pooled models.</p>
+          <div id="set-pooling-notice" class="note warn hidden">A pool was already set up on this controller, so pooling was left switched on when you upgraded. Switch it off here if you no longer need it.</div>
+          <label class="check"><input type="checkbox" id="set-pooling"> Allow memory pooling (adds <em>Pool memory from other nodes</em> to Load model)</label>
+          <div class="modal-foot"><button class="primary" id="set-pooling-save">Save</button></div>
+        </div>
+        <div class="section-head"><h2>Model scorecard</h2></div>
+        <div class="card">
+          <p class="hint">How each model's subtasks turned out, counted when a task finishes. <b>Clean</b> means accepted on the first try, not changed by the reviewer, and the task's tests passed without a fix round. It only informs you; routing does not use it.</p>
+          <div id="scorecard"><span class="muted">No finished tasks counted yet.</span></div>
+        </div>
+        </section>
+        <section class="set-sec" id="set-nodes">
+          <h2 class="set-sec-title">Nodes</h2>
         <div class="section-head"><h2>Node health colours</h2></div>
         <div class="card">
           <p class="hint">A node's health score adds up its disconnects (1 point each) and failed calls (2 points each) over the last 7 days. It turns <b>amber</b> at the first number and <b>red</b> at the second. Red nodes are given work last. The defaults are 5 and 15.</p>
@@ -355,25 +393,6 @@
             <div><label for="set-health-red">Red from (points)</label><input id="set-health-red" type="number" min="2" step="1" autocomplete="off"></div>
           </div>
           <div class="modal-foot"><button id="set-health-default">Use defaults</button><button class="primary" id="set-health-save">Save</button></div>
-        </div>
-        <div class="section-head"><h2>Idle unload</h2></div>
-        <div class="card">
-          <p class="hint">A node stops its model after it has served nothing for this long, to give back its RAM or VRAM. The next request loads it again, which takes as long as a normal load. Pooled models are never unloaded. Type a time such as <code>30s</code>, <code>5m</code>, <code>1hr</code> or <code>2d</code>, or <code>0</code> for never. Empty means 1 hour. Each node can override this on its card.</p>
-          <input id="set-idle" type="text" placeholder="1hr" autocomplete="off" spellcheck="false">
-          <div class="hint" id="set-idle-now"></div>
-          <div class="modal-foot"><button class="primary" id="set-idle-save">Save</button></div>
-        </div>
-        <div class="section-head"><h2>Pictures</h2></div>
-        <div class="card">
-          <p class="hint">Pictures and clips made on the New image page are stored on this controller, never on the nodes. Old ones are deleted when they pass the age or the size limit below, whichever comes first. Pictures you mark Keep are never deleted automatically. Use <code>0</code> for no limit.</p>
-          <div class="opts-grid">
-            <label class="chip-input">keep for <input id="set-img-days" type="number" min="0" max="3650" aria-label="Days to keep pictures"> days</label>
-            <label class="chip-input">at most <input id="set-img-gb" type="number" min="0" max="100000" aria-label="Gigabytes of pictures"> GB</label>
-          </div>
-          <label class="check"><input type="checkbox" id="set-img-pause"> Hold back new pictures and clips while a coding task is working</label>
-          <label class="check"><input type="checkbox" id="set-img-api"> Allow the image API (<code>POST /v1/images/generations</code>) for API tokens with full or picture access</label>
-          <div class="hint" id="set-img-used"></div>
-          <div class="modal-foot"><button class="primary" id="set-img-save">Save</button></div>
         </div>
         <div class="section-head"><h2>Wake sleeping nodes</h2></div>
         <div class="card">
@@ -386,58 +405,29 @@
           <label class="check"><input type="checkbox" id="set-autofree"> Free disk space automatically when a node runs out</label>
           <div class="modal-foot"><button class="primary" id="set-autofree-save">Save</button></div>
         </div>
-        <div class="section-head"><h2>Command sandbox</h2></div>
+        </section>
+        <section class="set-sec" id="set-pics">
+          <h2 class="set-sec-title">Pictures</h2>
+        <div class="section-head"><h2>Pictures</h2></div>
         <div class="card">
-          <p class="hint">How nodes run the commands tasks send them (tests, builds, fixes). <b>Basic</b>: a command can only change files in its own job folder, sees a cleaned-up environment and has no special rights; the network stays open. <b>Strict</b>: basic, with the network off unless the step downloads packages, and a deny list for dangerous system calls. <b>Off</b>: commands run with the node's own rights, as before. Linux nodes only for now; Windows and macOS nodes run commands unsandboxed. A node can override this on its card. If a build breaks and you suspect the sandbox, set it to Off to compare.</p>
-          <select id="set-sandbox"><option value="basic">Basic (recommended)</option><option value="strict">Strict</option><option value="off">Off</option></select>
-          <div class="modal-foot"><button class="primary" id="set-sandbox-save">Save</button></div>
-        </div>
-        <div class="section-head"><h2>Project instructions</h2></div>
-        <div class="card">
-          <p class="hint">Standing rules (like <code>CLAUDE.md</code>) put at the top of every planner, worker, reviewer and fix prompt of tasks you create from now on. A file named <code>OUTPOST.md</code> at the root of a task's files is added too. Keep it short; it is cut at 8,000 characters.</p>
-          <textarea id="set-instr" rows="6" maxlength="8000" placeholder="e.g. Vendor all dependencies. No cgo. Keep the web UI vanilla JS."></textarea>
-          <div class="modal-foot"><button class="primary" id="set-instr-save">Save instructions</button></div>
-        </div>
-        <div class="section-head"><h2>Memory pooling</h2></div>
-        <div class="card">
-          <p class="hint"><b>Off by default. Trusted home or lab networks only.</b> Pooling lets nodes lend RAM and VRAM to a model on another node through llama.cpp's RPC mode. That traffic (model data and activations) crosses the LAN <b>unencrypted</b>, and the lending node has <b>no authentication</b> beyond allowing only the main node's IP address, which a hostile device on the same network can spoof. A lending node opens its pool port only while a pool is running and closes it when the pool ends. Turning pooling off dissolves every pool and unloads the pooled models.</p>
-          <div id="set-pooling-notice" class="note warn hidden">A pool was already set up on this controller, so pooling was left switched on when you upgraded. Switch it off here if you no longer need it.</div>
-          <label class="check"><input type="checkbox" id="set-pooling"> Allow memory pooling (adds <em>Pool memory from other nodes</em> to Load model)</label>
-          <div class="modal-foot"><button class="primary" id="set-pooling-save">Save</button></div>
+          <p class="hint">Pictures and clips made on the New image page are stored on this controller, never on the nodes. Old ones are deleted when they pass the age or the size limit below, whichever comes first. Pictures you mark Keep are never deleted automatically. Use <code>0</code> for no limit.</p>
+          <div class="opts-grid">
+            <label class="chip-input">keep for <input id="set-img-days" type="number" min="0" max="3650" aria-label="Days to keep pictures"> days</label>
+            <label class="chip-input">at most <input id="set-img-gb" type="number" min="0" max="100000" aria-label="Gigabytes of pictures"> GB</label>
+          </div>
+          <label class="check"><input type="checkbox" id="set-img-pause"> Hold back new pictures and clips while a coding task is working</label>
+          <label class="check"><input type="checkbox" id="set-img-api"> Allow the image API (<code>POST /v1/images/generations</code>) for API tokens with full or picture access</label>
+          <div class="hint" id="set-img-used"></div>
+          <div class="modal-foot"><button class="primary" id="set-img-save">Save</button></div>
         </div>
         </section>
-        <section class="set-sec" id="set-app">
-          <h2 class="set-sec-title">Application</h2>
+        <section class="set-sec" id="set-ui">
+          <h2 class="set-sec-title">Display and alerts</h2>
         <div class="section-head"><h2>Appearance</h2></div>
         <div class="card">
           <label class="chip-input">theme <select id="set-theme" aria-label="Theme"><option value="">same as the system</option><option value="light">light</option><option value="dark">dark</option></select></label>
           <label class="check"><input type="checkbox" id="set-detailed"> Show the "Detailed list" view on the Nodes page (off by default; clicking a node in the List view already opens all its controls underneath)</label>
           <p class="hint">Kept in this browser only. On a phone, use the browser's <i>Add to Home screen</i> (Safari: Share → Add to Home Screen) to open Outpost like an app; with the controller's self-signed certificate, Chrome may only offer a bookmark-style shortcut.</p>
-        </div>
-        <div class="section-head"><h2>Storage</h2></div>
-        <div class="card" id="storage-card">
-          <p class="hint">How the controller's disk is used. Below 10% (or 5 GB) free, a warning shows at the top of every page and a <i>disk low</i> notification is sent.</p>
-          <div id="st-bar" class="st-bar" role="img" aria-label="Disk use"></div>
-          <div id="st-legend" class="st-legend"></div>
-          <label class="check u5"><input type="checkbox" id="st-on"> Clean up tasks that finished more than <input id="st-days" type="number" min="1" max="3650" value="30" class="st-days" aria-label="Days"> days ago</label>
-          <p class="hint">Removes their per-round copies (so their rounds can no longer be undone), screenshots and the cached result zip (made again when you download). Conversations, files, attachments and the download itself stay. Runs once a day.</p>
-          <label class="check"><input type="checkbox" id="st-builds"> Also remove their build outputs (the files a build step produced)</label>
-          <p class="hint" id="st-status"></p>
-          <div class="modal-foot"><button id="st-run">Clean up now</button><button class="primary" id="st-save">Save</button></div>
-        </div>
-        <div class="section-head"><h2>Updates from GitHub</h2></div>
-        <div class="card">
-          <p class="hint">Outpost can look at a GitHub repository's releases every 6 hours and download newer binaries for the controller and the platforms of your nodes. Each file is checked against the release's <code>SHA256SUMS</code> and must be an Outpost binary of that version before it is kept; it then appears in the Updates tab like an uploaded one. <code>SHA256SUMS</code> catches damaged downloads, not a tampered repository, since the releases are unsigned. Only the version check and downloads go to GitHub; nothing about your cluster is sent. Rollback works as before.</p>
-          <label for="set-ghrepo">Repository to trust for updates <span class="hint">(a github.com address or owner/repo; empty uses the default)</span></label>
-          <input id="set-ghrepo" placeholder="https://github.com/64fedoras/outpost" autocomplete="off" spellcheck="false">
-          <div class="note warn"><b>Whoever controls this repository can supply the code that runs on your controller and every node.</b> Only enter a repository you own or fully trust.</div>
-          <label for="set-ghtoken">Access token for a private repository <span class="hint">(optional) <span id="set-ghtoken-state"></span></span></label>
-          <div class="btns u3"><input id="set-ghtoken" type="password" placeholder="github_pat_… (read-only)" autocomplete="new-password"><button id="set-ghtest">Test connection</button><button id="set-ghtoken-clear" class="danger">Clear</button></div>
-          <p class="hint">A fine-grained token limited to that one repository with read-only <em>Contents</em> access. It is stored encrypted on the controller, never sent to nodes, and only ever sent to <code>api.github.com</code>. It is not shown again after saving. Leave it empty for a public repository.</p>
-          <div id="set-ghtest-out" class="hint"></div>
-          <label class="check"><input type="checkbox" id="set-ghupd"> Check GitHub for new releases and download them (on by default)</label>
-          <label class="check"><input type="checkbox" id="set-ghauto"> Install them automatically: idle nodes update first, then the controller once no task is working. Off means you click Update in the Updates tab. After a rollback, the version you left is skipped.</label>
-          <div class="modal-foot"><button class="primary" id="set-ghupd-save">Save</button></div>
         </div>
         <div class="section-head"><h2>Notifications</h2></div>
         <div class="card">
@@ -452,8 +442,25 @@
           <div class="modal-foot"><button id="nf-test">Send test</button><button class="primary" id="nf-save">Save</button></div>
         </div>
         </section>
+        <section class="set-sec" id="set-upd">
+          <h2 class="set-sec-title">Updates</h2>
+        <div class="section-head"><h2>Updates from GitHub</h2></div>
+        <div class="card">
+          <p class="hint">Outpost can look at a GitHub repository's releases every 6 hours and download newer binaries for the controller and the platforms of your nodes. Each file is checked against the release's <code>SHA256SUMS</code> and must be an Outpost binary of that version before it is kept; it then appears in the Updates tab like an uploaded one. <code>SHA256SUMS</code> catches damaged downloads, not a tampered repository, since the releases are unsigned. Only the version check and downloads go to GitHub; nothing about your cluster is sent. Rollback works as before.</p>
+          <label for="set-ghrepo">Repository to trust for updates <span class="hint">(a github.com address or owner/repo; empty uses the default)</span></label>
+          <input id="set-ghrepo" placeholder="https://github.com/64fedoras/outpost" autocomplete="off" spellcheck="false">
+          <div class="note warn"><b>Whoever controls this repository can supply the code that runs on your controller and every node.</b> Only enter a repository you own or fully trust.</div>
+          <label for="set-ghtoken">Access token for a private repository <span class="hint">(optional) <span id="set-ghtoken-state"></span></span></label>
+          <div class="btns u3"><input id="set-ghtoken" type="password" placeholder="github_pat_… (read-only)" autocomplete="new-password"><button id="set-ghtest">Test connection</button><button id="set-ghtoken-clear" class="danger">Clear</button></div>
+          <p class="hint">A fine-grained token limited to that one repository with read-only <em>Contents</em> access. It is stored encrypted on the controller, never sent to nodes, and only ever sent to <code>api.github.com</code>. It is not shown again after saving. Leave it empty for a public repository.</p>
+          <div id="set-ghtest-out" class="hint"></div>
+          <label class="check"><input type="checkbox" id="set-ghupd"> Check GitHub for new releases and download them (on by default)</label>
+          <label class="check"><input type="checkbox" id="set-ghauto"> Install them automatically: idle nodes update first, then the controller once no task is working. Off means you click Update in the Updates tab. After a rollback, the version you left is skipped.</label>
+          <div class="modal-foot"><button class="primary" id="set-ghupd-save">Save</button></div>
+        </div>
+        </section>
         <section class="set-sec" id="set-sec">
-          <h2 class="set-sec-title">Security and backup</h2>
+          <h2 class="set-sec-title">Security</h2>
         <div class="section-head"><h2>Admin password</h2></div>
         <div class="card">
           <form id="pw-form">
@@ -489,16 +496,19 @@
           <label for="tls-key">Private key (PEM)</label><textarea id="tls-key" rows="3" spellcheck="false"></textarea>
           <div class="modal-foot"><button class="primary" id="tls-save">Use this certificate</button></div>
         </div>
-        <div class="section-head"><h2>Config file</h2></div>
-        <div class="card">
-          <p class="hint">Settings, saved and scheduled tasks and node labels as one readable JSON file, without any keys, tokens or passwords. Use it to compare changes or to copy a setup to a second cluster. Importing keeps the secrets already on this controller; it does not restore tasks, models or nodes (that is the backup below).</p>
-          <div class="modal-foot"><button id="cfg-import">Import config…</button><button class="primary" id="cfg-export">Download config</button></div>
-          <input type="file" id="cfg-file" accept=".json,application/json" class="hidden">
-        </div>
-        <div class="section-head"><h2>Model scorecard</h2></div>
-        <div class="card">
-          <p class="hint">How each model's subtasks turned out, counted when a task finishes. <b>Clean</b> means accepted on the first try, not changed by the reviewer, and the task's tests passed without a fix round. It only informs you; routing does not use it.</p>
-          <div id="scorecard"><span class="muted">No finished tasks counted yet.</span></div>
+        </section>
+        <section class="set-sec" id="set-maint">
+          <h2 class="set-sec-title">Storage and backup</h2>
+        <div class="section-head"><h2>Storage</h2></div>
+        <div class="card" id="storage-card">
+          <p class="hint">How the controller's disk is used. Below 10% (or 5 GB) free, a warning shows at the top of every page and a <i>disk low</i> notification is sent.</p>
+          <div id="st-bar" class="st-bar" role="img" aria-label="Disk use"></div>
+          <div id="st-legend" class="st-legend"></div>
+          <label class="check u5"><input type="checkbox" id="st-on"> Clean up tasks that finished more than <input id="st-days" type="number" min="1" max="3650" value="30" class="st-days" aria-label="Days"> days ago</label>
+          <p class="hint">Removes their per-round copies (so their rounds can no longer be undone), screenshots and the cached result zip (made again when you download). Conversations, files, attachments and the download itself stay. Runs once a day.</p>
+          <label class="check"><input type="checkbox" id="st-builds"> Also remove their build outputs (the files a build step produced)</label>
+          <p class="hint" id="st-status"></p>
+          <div class="modal-foot"><button id="st-run">Clean up now</button><button class="primary" id="st-save">Save</button></div>
         </div>
         <div class="section-head"><h2>Backup</h2></div>
         <div class="card">
@@ -511,6 +521,12 @@
           <label for="bk-sched-pass">Passphrase for scheduled backups <span class="muted" id="bk-pass-state"></span></label><input id="bk-sched-pass" type="password" autocomplete="new-password" placeholder="leave blank to keep the saved one">
           <div class="modal-foot"><button id="bk-sched-save">Save schedule</button></div>
           <p class="hint hidden" id="bk-last"></p>
+        </div>
+        <div class="section-head"><h2>Config file</h2></div>
+        <div class="card">
+          <p class="hint">Settings, saved and scheduled tasks and node labels as one readable JSON file, without any keys, tokens or passwords. Use it to compare changes or to copy a setup to a second cluster. Importing keeps the secrets already on this controller; it does not restore tasks, models or nodes (that is the backup below).</p>
+          <div class="modal-foot"><button id="cfg-import">Import config…</button><button class="primary" id="cfg-export">Download config</button></div>
+          <input type="file" id="cfg-file" accept=".json,application/json" class="hidden">
         </div>
         <div class="section-head"><h2>Diagnostics</h2></div>
         <div class="card">
