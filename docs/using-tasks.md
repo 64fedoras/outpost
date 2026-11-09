@@ -31,7 +31,7 @@ second line. Pinned tasks sit above the groups. **Projects** sits right under **
 
 Right-click a task in the sidebar (or press its **⋯** button, which is always shown on a phone) for
 **Open in new tab**, **Rename**, **Pin to top**, **Copy prompt**, **Copy link**, **Duplicate as new
-task** (fills the new-task box with the same prompt; options are not copied), **Stop** (while it
+task** (fills the new-task box with the same prompt and options: planner, Claude model, cap, peer review, mockups-first, tests-first, fix rounds, test time limit, project and node label; attachments and pasted images are not copied, and a planner, project or label that no longer exists falls back to the current choice), **Stop** (while it
 runs), **Try again** (when it failed or was interrupted) and **Delete** (asks first; removes the
 task's conversation and files from the controller, nodes keep none). From the keyboard, focus a task
 and press Shift+F10 or the menu key for the menu, F2 to rename, or Delete to delete.
