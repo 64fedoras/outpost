@@ -99,6 +99,14 @@ func localGlibc() string {
 // checkLlamaRuns runs llama-server --version, supplying bundled libraries the
 // system is missing. It returns "" on success or a message saying what to do.
 func checkLlamaRuns(server string) string {
+	return checkBinaryRuns(server, "llama-server", "llama.cpp", "version:")
+}
+
+// checkBinaryRuns runs `server --version`, supplying bundled libraries the system
+// is missing (written next to the binary; llamaEnv puts that folder on the library
+// path). okMarker is text in the output that shows the program started even though
+// it exited non-zero. It returns "" on success or a message saying what to do.
+func checkBinaryRuns(server, exeName, product, okMarker string) string {
 	dir := filepath.Dir(server)
 	for attempt := 0; attempt < 6; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -107,7 +115,7 @@ func checkLlamaRuns(server string) string {
 		cmd.Env = llamaEnv(dir)
 		out, err := cmd.CombinedOutput()
 		cancel()
-		if err == nil || bytes.Contains(out, []byte("version:")) {
+		if err == nil || bytes.Contains(bytes.ToLower(out), []byte(okMarker)) {
 			return ""
 		}
 		if msg := glibcTooOld(string(out), localGlibc()); msg != "" {
@@ -115,7 +123,7 @@ func checkLlamaRuns(server string) string {
 		}
 		m := missingLibRe.FindSubmatch(out)
 		if m == nil {
-			return fmt.Sprintf("llama-server does not run here: %v %s", err, strings.TrimSpace(lastLines(string(out), 3)))
+			return fmt.Sprintf("%s does not run here: %v %s", exeName, err, strings.TrimSpace(lastLines(string(out), 3)))
 		}
 		lib := string(m[1])
 		gz, ok := bundledLibs[lib]
@@ -130,11 +138,11 @@ func checkLlamaRuns(server string) string {
 			}
 		}
 		if pkg, ok := aptPackage[lib]; ok {
-			return fmt.Sprintf("llama.cpp needs %s, which this machine does not have. Install it with: sudo apt install -y %s", lib, pkg)
+			return fmt.Sprintf("%s needs %s, which this machine does not have. Install it with: sudo apt install -y %s", product, lib, pkg)
 		}
-		return fmt.Sprintf("llama.cpp needs the system library %s, which this machine does not have.", lib)
+		return fmt.Sprintf("%s needs the system library %s, which this machine does not have.", product, lib)
 	}
-	return "llama-server still fails to start after supplying bundled libraries"
+	return exeName + " still fails to start after supplying bundled libraries"
 }
 
 func writeGunzip(dst string, gz []byte) error {
