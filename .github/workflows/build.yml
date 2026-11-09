@@ -56,6 +56,9 @@ jobs:
         with:
           name: outpost-${{ steps.build.outputs.version }}
           path: dist/outpost-${{ steps.build.outputs.version }}/
+          # The release keeps the binaries for good; this copy is a short-lived backup (default is 90 days,
+          # which filled the Actions storage quota). cleanup-actions-storage.yml also sweeps old ones.
+          retention-days: 3
       - name: Publish release (once per version)
         if: github.event_name == 'push'
         env:
