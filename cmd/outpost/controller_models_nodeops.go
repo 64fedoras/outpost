@@ -18,6 +18,17 @@ import (
 type nodeOpView struct {
 	OpStatus
 	Updated time.Time `json:"updated"`
+	// LastFailure survives the "preparing" and "downloading" states of the
+	// retries that follow a failure, so the node card keeps showing one steady
+	// message (and stays under "Needs attention") until a load succeeds.
+	LastFailure *opFailure `json:"last_failure,omitempty"`
+}
+
+type opFailure struct {
+	Op    string    `json:"op"`
+	Error string    `json:"error"`
+	At    time.Time `json:"at"`
+	Count int       `json:"count"`
 }
 
 func (c *Controller) setNodeOp(nodeID string, st OpStatus) {
@@ -30,7 +41,21 @@ func (c *Controller) setNodeOp(nodeID string, st OpStatus) {
 // download or load first fails.
 func (c *Controller) recordNodeOpLocked(nodeID string, st OpStatus) {
 	prev := c.nodeOps[nodeID]
-	c.nodeOps[nodeID] = &nodeOpView{OpStatus: st, Updated: time.Now()}
+	view := &nodeOpView{OpStatus: st, Updated: time.Now()}
+	if prev != nil {
+		view.LastFailure = prev.LastFailure
+	}
+	switch {
+	case st.State == "failed" && (st.Op == "model.load" || st.Op == "model.push" || st.Op == "runtime" || st.Op == "model.fetch"):
+		f := &opFailure{Op: st.Op, Error: st.Error, At: time.Now(), Count: 1}
+		if view.LastFailure != nil {
+			f.Count = view.LastFailure.Count + 1
+		}
+		view.LastFailure = f
+	case st.Op == "model.load" && (st.State == "ready" || st.State == "done"), st.Op == "model.unload", st.Op == "model.remove":
+		view.LastFailure = nil
+	}
+	c.nodeOps[nodeID] = view
 	if st.State != "failed" || !(st.Op == "model.load" || st.Op == "model.push" || st.Op == "runtime") {
 		return
 	}

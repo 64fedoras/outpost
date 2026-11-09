@@ -36,3 +36,25 @@ func TestOlderBuild(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestOpFailureSticksThroughRetries(t *testing.T) {
+	c := &Controller{nodeOps: map[string]*nodeOpView{}, nodes: map[string]*NodeRec{}}
+	c.setNodeOp("n", OpStatus{Op: "model.load", Target: "m", State: "failed", Error: "boom"})
+	c.setNodeOp("n", OpStatus{Op: "runtime", Target: "v", State: "preparing"})
+	c.setNodeOp("n", OpStatus{Op: "model.load", Target: "m", State: "failed", Error: "boom"})
+	c.setNodeOp("n", OpStatus{Op: "runtime", Target: "v", State: "preparing"})
+	lf := c.nodeOps["n"].LastFailure
+	if lf == nil || lf.Count != 2 {
+		t.Fatalf("failure should persist and count tries, got %+v", lf)
+	}
+	c.setNodeOp("n", OpStatus{Op: "model.load", Target: "m", State: "ready"})
+	if c.nodeOps["n"].LastFailure != nil {
+		t.Fatal("a successful load should clear the failure")
+	}
+}
+
+func TestOldBuildsCannotHelpArm64(t *testing.T) {
+	if !oldBuildsCannotHelp("linux-arm64-cpu") || oldBuildsCannotHelp("linux-x64-cpu") {
+		t.Fatal("only Ubuntu arm64 builds are glibc 2.39 only")
+	}
+}
