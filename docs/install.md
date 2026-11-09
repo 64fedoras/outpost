@@ -235,7 +235,7 @@ can check detection without joining.
    Needs attention, Healthy and Offline; click a row (or **Details**) and the node's full card opens right
    below it (every control: idle unload, benchmark, stored models, tools, exec and sandbox, Pause, Restart,
    Logs, Rename, Remove, Run). An optional **Detailed list** view (a short list on the left, the full card
-   and recent jobs on the right) is off by default; turn it on in **Settings → Application → Appearance**
+   and recent jobs on the right) is off by default; turn it on in **Settings → Display and alerts → Appearance**
    (kept in this browser only). **Details** on a Grid card opens the node in the List view.
    The full card shows **Recommended**: the best coding model that fits that
    node (fully in VRAM first, then VRAM plus RAM, then RAM; skipped if the node's disk is too small, or
