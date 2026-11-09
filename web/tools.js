@@ -151,12 +151,28 @@ $('dg-download').onclick = async () => {
 
 // ---- Storage (storage.go) ----
 const ST_PARTS = [['tasks', 'Tasks'], ['models', 'Models'], ['releases', 'Releases and updates'], ['runtime', 'llama.cpp builds'], ['projects', 'Projects'], ['other', 'Settings, logs and keys']];
+// Hover, keyboard focus or tap on a bar segment shows a tooltip (native title is slow and absent on touch).
+(function () {
+  const bar = $('st-bar'), host = bar.parentElement; host.classList.add('st-host');
+  const tip = document.createElement('div'); tip.className = 'st-tip hidden'; host.appendChild(tip);
+  const show = (e) => {
+    const sp = e.target.closest && e.target.closest('#st-bar > span'); if (!sp) return;
+    tip.textContent = sp.dataset.tip; tip.classList.remove('hidden');
+    const h = host.getBoundingClientRect(), r = sp.getBoundingClientRect(), w = tip.offsetWidth;
+    tip.style.left = Math.max(0, Math.min(h.width - w, r.left - h.left + r.width / 2 - w / 2)) + 'px';
+    tip.style.top = (bar.offsetTop - tip.offsetHeight - 6) + 'px';
+  };
+  const hide = () => tip.classList.add('hidden');
+  bar.addEventListener('mouseover', show); bar.addEventListener('focusin', show); bar.addEventListener('click', show);
+  bar.addEventListener('mouseleave', hide); bar.addEventListener('focusout', hide);
+  document.addEventListener('click', (e) => { if (!bar.contains(e.target)) hide(); });
+})();
 function renderStorage(s) {
   const used = s.total ? s.total - s.free : 0, ours = Object.values(s.parts || {}).reduce((a, b) => a + b, 0);
   const others = Math.max(0, used - ours);
   const segs = ST_PARTS.map(([k, l], i) => [l, (s.parts || {})[k] || 0, `st-c${i}`]).concat([['Other files on this disk', others, 'st-cx'], ['Free', s.free, 'st-free']]);
   const pct = (b) => s.total ? (100 * b / s.total) : 0;
-  setHTML('st-bar', segs.filter(([, b]) => b > 0).map(([l, b, c]) => `<span class="${c} w${Math.max(1, Math.round(pct(b)))}" title="${esc(l)}: ${bytes(b)}"></span>`).join(''));
+  setHTML('st-bar', segs.filter(([, b]) => b > 0).map(([l, b, c]) => `<span class="${c} w${Math.max(1, Math.round(pct(b)))}" tabindex="0" data-tip="${esc(l)}: ${bytes(b)} (${pct(b) < 1 ? '<1' : pct(b).toFixed(0)}% of disk)"></span>`).join(''));
   setHTML('st-legend', `<span class="${s.low ? 'st-failed' : ''}"><b>${bytes(s.free)}</b> free of ${bytes(s.total)} (${pct(s.free).toFixed(0)}%)</span>` +
     segs.slice(0, -1).filter(([, b]) => b > 0).map(([l, b, c]) => `<span><i class="st-dot ${c}"></i>${esc(l)} ${bytes(b)}</span>`).join(''));
   $('st-on').checked = s.cleanup_days > 0; $('st-days').value = s.cleanup_days || 30; $('st-builds').checked = !!s.cleanup_builds;
