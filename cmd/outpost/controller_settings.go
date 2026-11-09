@@ -21,8 +21,9 @@ type Settings struct {
 	HFTokenEnc        string         `json:"hf_token_enc,omitempty"`
 	ClaudeModel       string         `json:"claude_model"`
 	DefaultCapUSD     float64        `json:"default_cap_usd"`
-	WakeForWork       bool           `json:"wake_for_work,omitempty"` // Wake-on-LAN offline nodes when a task waits for a worker (wol.go)
-	DefaultPlanner    string         `json:"default_planner"`         // "claude", "openrouter" or "node:<id>"
+	MonthlyCapUSD     float64        `json:"monthly_cap_usd,omitempty"` // all cloud planner calls in a calendar month; 0 = off (spend.go)
+	WakeForWork       bool           `json:"wake_for_work,omitempty"`   // Wake-on-LAN offline nodes when a task waits for a worker (wol.go)
+	DefaultPlanner    string         `json:"default_planner"`           // "claude", "openrouter" or "node:<id>"
 	OpenRouterKeyEnc  string         `json:"openrouter_key_enc,omitempty"`
 	OpenRouterModel   string         `json:"openrouter_model,omitempty"`
 	WebSearch         bool           `json:"web_search,omitempty"`        // Claude planner may use the web search tool (paid per search)
@@ -171,7 +172,7 @@ func (c *Controller) settingsView() map[string]any {
 		"has_hf_token": hf != "", "claude_model": c.settings.ClaudeModel,
 		"has_openrouter_key": ork != "", "openrouter_key_hint": keyHint(ork), "openrouter_model": c.settings.OpenRouterModel,
 		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
-		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner,
+		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner, "monthly_cap_usd": c.settings.MonthlyCapUSD,
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
 		"wake_for_work": c.settings.WakeForWork,
 		"auto_resume":   !c.settings.AutoResumeOff, "best_of_n": normBestOf(c.settings.BestOfN),

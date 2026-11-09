@@ -195,8 +195,9 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 		return
 	}
 	t.Plan = plan
-	if t.Title == "" {
+	if t.Title == "" && plan.Title != "" {
 		t.Title = plan.Title
+		go c.spendRename(t.ID, plan.Title) // the Spending page shows the same name as the sidebar
 	}
 	t.Subtasks = make([]*SubtaskState, len(plan.Subtasks))
 	for i, s := range plan.Subtasks {
