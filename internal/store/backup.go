@@ -37,7 +37,7 @@ const (
 // Small state files always included; the big directories only on request.
 var (
 	backupFiles = []string{"admin.json", "settings.json", "nodes.json", "sessions.json", "sessions.json.meta",
-		"api_tokens.json", "secret.key", "tls.crt", "tls.key", "tls_repin.json"}
+		"api_tokens.json", "secret.key", "tls.crt", "tls.key", "tls_repin.json", "spend.json"}
 	backupDirs    = []string{"tasks", "projects"}
 	backupBigDirs = []string{"models", "runtimes", "releases"}
 )

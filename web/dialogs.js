@@ -132,7 +132,7 @@ function palSource() {
     { t: 'New task', k: 'page', run: go('#/new') }, { t: 'New image', k: 'page', run: go('#/image') }, { t: 'Chat', k: 'page', run: go('#/chat') },
     { t: 'New chat', k: 'action', run: () => $('chat-new').click() },
     { t: 'Projects', k: 'page', run: go('#/projects') }, { t: 'Nodes', k: 'page', run: go('#/nodes') },
-    { t: 'Models', k: 'page', run: go('#/models') }, { t: 'Updates', k: 'page', run: go('#/updates') },
+    { t: 'Models', k: 'page', run: go('#/models') }, { t: 'Updates', k: 'page', run: go('#/updates') }, { t: 'Spending', k: 'page', run: go('#/spending') },
     { t: 'Settings', k: 'page', run: go('#/settings') },
     ...[...document.querySelectorAll('#set-nav a')].map((a) => ({ t: 'Settings: ' + a.textContent, k: 'page', run: sec(a.getAttribute('href')) })),
     { t: 'Check cluster', k: 'action', run: () => { location.hash = '#/nodes'; setTimeout(() => $('btn-check').click(), 150); } },

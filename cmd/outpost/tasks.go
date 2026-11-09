@@ -96,8 +96,9 @@ type Task struct {
 	Pinned       bool            `json:"pinned,omitempty"` // kept above the other groups in the sidebar
 	Status       string          `json:"status"`
 	PausedFrom   string          `json:"paused_from,omitempty"`
-	Planner      string          `json:"planner"` // "claude", "openrouter" or "node:<id>"
-	Review       bool            `json:"review"`  // a second node reviews each subtask
+	CapKind      string          `json:"cap_kind,omitempty"` // while paused_cap: "" = this task's cap, "monthly" = the monthly cap (spend.go)
+	Planner      string          `json:"planner"`            // "claude", "openrouter" or "node:<id>"
+	Review       bool            `json:"review"`             // a second node reviews each subtask
 	ClaudeModel  string          `json:"claude_model"`
 	ORModel      string          `json:"openrouter_model,omitempty"`
 	CapUSD       float64         `json:"cap_usd"`

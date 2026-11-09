@@ -55,8 +55,25 @@ routine code writing runs on your nodes. Every Claude call is metered live on th
 
 - **Soft cap per task** (default $2, set when you approve the plan): before a call that would pass
   the cap, the task **pauses**. Raise the cap, or finish with a local planner. Nothing is thrown away.
+- **Monthly cap for all tasks** (off by default): set it on the **Spending** page (sidebar, under
+  Updates). When this month's Claude and OpenRouter spend, across every task, would pass it, a task
+  pauses before its next cloud call with *Paused at the monthly cap*. Raise the cap, finish that task
+  with a local planner, or leave it: it continues on its own when the next calendar month starts
+  (the controller's time zone). Tasks on local planners keep running. The per-task cap still applies too.
 - **Backstop:** use a separate API key for Outpost and set a monthly spend limit on it in the
   Claude Console.
+
+### Spending page
+
+**Spending** in the sidebar (or *Spending* in Ctrl+K search) shows, per month: the total and how much
+of the monthly cap it uses, how many tasks used a cloud planner, the average per task, the Claude and
+OpenRouter split, a bar chart per day, and the most expensive tasks (planner, calls, tokens in and out,
+cost; click a row to open the task). The figures come from a small ledger, `spend.json` on the
+controller, which every Claude and OpenRouter call adds to as it happens. Deleting a task keeps its
+cost on the page, marked *deleted*, so the month's total stays right. The first time a controller with
+this page starts, it fills the ledger from the tasks on disk, counting each task's whole cost on the day
+it was created (earlier per-call times were never recorded), so days before the update are approximate.
+The ledger keeps 24 months, is part of backups, and is in the controller's time zone.
 - The key is stored encrypted on the controller and never sent to nodes.
 
 ### Web lookups

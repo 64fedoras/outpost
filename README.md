@@ -38,7 +38,7 @@ It is a single self-contained binary with two modes, and no other software to in
 - **Smart routing.** The biggest, fastest loaded model gets the hardest work; benchmarks, best-of-N on spare nodes, and optional memory pooling across machines (experimental, off by default).
 - **Model management.** Browse and download models from Hugging Face, with per-node fit estimates, context-size sizing and automatic disk clean-up.
 - **Chat and an OpenAI-compatible `/v1` API** so editors and agents (aider, Open WebUI and others) can use your cluster.
-- **Hands-off operation.** Saved and scheduled tasks, working hours, Wake-on-LAN, notifications, a spending cap for cloud planners, and tasks that resume after a controller restart.
+- **Hands-off operation.** Saved and scheduled tasks, working hours, Wake-on-LAN, notifications, a spending cap per task and per month for cloud planners (with a Spending page), and tasks that resume after a controller restart.
 - **Safe to run.** Lockout and API tokens, encrypted backups, Linux command sandbox, and in-UI updates with rollback. See [SECURITY.md](SECURITY.md).
 
 ## Install
