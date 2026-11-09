@@ -40,11 +40,12 @@ type taskSummary struct {
 	Updated     time.Time  `json:"updated"`
 	Pinned      bool       `json:"pinned,omitempty"`
 	AutoResume  bool       `json:"auto_resume,omitempty"` // interrupted, resuming on its own once its node is back
+	CapKind     string     `json:"cap_kind,omitempty"`    // paused_cap: "monthly" when the monthly cap stopped it
 }
 
 func (t *Task) summaryLocked() taskSummary {
 	s := taskSummary{ID: t.ID, Title: t.Title, Status: t.Status, Planner: t.Planner, CostUSD: t.CostUSD, CapUSD: t.CapUSD,
-		ProjectID: t.ProjectID, Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created, Pinned: t.Pinned, AutoResume: t.AutoResume}
+		ProjectID: t.ProjectID, Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created, Pinned: t.Pinned, AutoResume: t.AutoResume, CapKind: t.CapKind}
 	switch {
 	case t.Status == "interrupted" && t.AutoResume:
 		s.NeedsYou = false // resuming on its own
@@ -534,6 +535,7 @@ func (c *Controller) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 	delete(c.tasks, t.ID)
 	c.mu.Unlock()
 	os.RemoveAll(t.dir)
+	c.spendDeleted(t.ID) // its cost stays on the Spending page, marked deleted
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -576,6 +578,9 @@ func (c *Controller) handleTaskMeta(w http.ResponseWriter, r *http.Request) {
 	t.saveLocked()
 	s := t.summaryLocked()
 	t.mu.Unlock()
+	if req.Title != nil {
+		c.spendRename(t.ID, title)
+	}
 	writeJSON(w, 200, s)
 }
 
