@@ -36,3 +36,7 @@ See also [SECURITY.md](../SECURITY.md) for the security model and its limits (th
   Claude and OpenRouter servers and fake llama-server and Chromium. The live OpenRouter API was never
   called.
 
+
+## Linux arm64 needs Ubuntu 24.04 or newer
+
+llama.cpp publishes its Linux arm64 binaries built on Ubuntu 24.04 (glibc 2.39), and has done so since they were first offered, so stepping back to an older release does not help. A node on an older system (for example a Jetson on JetPack 6, Ubuntu 22.04, glibc 2.35) shows "glibc too old" when llama.cpp is installed. Outpost stops after the first try instead of downloading older builds, and remembers the answer for ten minutes. Upgrade the node to Ubuntu 24.04 or newer (JetPack 7 for a Jetson), or build llama.cpp from source. Linux x64 nodes still step back to an older release automatically.

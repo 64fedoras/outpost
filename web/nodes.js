@@ -51,7 +51,8 @@ function nodeFacts(n) {
   if (!n.online) issues.push({ lvl: 'off', short: 'Offline', text: n.last_seen ? `Last seen ${ago(n.last_seen)}.` : 'Never connected.', ...(n.can_wake ? { act: 'wake', fix: 'Wake' } : {}) });
   else {
     if (n.off_hours) issues.push({ lvl: 'info', short: 'Off hours', text: `Outside its working hours (${hoursText(n.hours)}): takes no new work.`, act: 'hours', fix: 'Hours…' });
-    if (o && o.state === 'failed' && (Date.now() - new Date(o.updated)) < 3600000) issues.push({ lvl: 'bad', short: 'Failed', text: o.error || 'The last model operation failed.', act: 'load', fix: 'Load model…' });
+    const lf = o && o.last_failure && (Date.now() - new Date(o.last_failure.at)) < 3600000 ? o.last_failure : null;
+    if (lf) issues.push({ lvl: 'bad', short: 'Failed', text: lf.error || 'The last model operation failed.', act: 'load', fix: 'Load model…' });
     else if (hb && hb.llama_error && !ready) issues.push({ lvl: 'bad', short: 'Model error', text: hb.llama_error, act: 'load', fix: 'Load model…' });
     if (hb && hb.paused) issues.push({ lvl: 'warn', short: 'Paused', text: pauseText(n), ...(canPause(n) ? { act: 'node-resume', fix: 'Resume' } : {}) });
     if (h.os === 'linux' && (h.gpus || []).some((x) => x.vendor !== 'apple') && !h.vulkan_available) issues.push({ lvl: 'warn', short: 'No Vulkan', text: 'GPU found, but no Vulkan driver, so models run on CPU.' });
@@ -230,6 +231,13 @@ function opView(n) {
   const age = (Date.now() - new Date(o.updated)) / 1000;
   const what = { runtime: 'llama.cpp', toolchain: 'Installing Go', 'model.push': 'Copying model from controller', 'model.fetch': 'Downloading from Hugging Face', rpc: 'Lending memory', 'model.load': 'Loading model', 'model.unload': 'Unloading', 'model.remove': 'Removing model', 'model.cleanup': 'Cleaning up models' }[o.op] || o.op;
   if (o.op === 'model.cleanup' && o.state === 'done') return age < 600 && o.detail ? `<div class="sub u17">Cleanup: ${esc(o.detail)}</div>` : '';
+  const lf = o.last_failure && (Date.now() - new Date(o.last_failure.at)) < 3600000 ? o.last_failure : null;
+  if (lf) {
+    // One steady message: it names the failed step, counts the tries and does not change while retries run.
+    const lwhat = { runtime: 'llama.cpp', 'model.load': 'Loading model', 'model.push': 'Copying model from controller', 'model.fetch': 'Downloading from Hugging Face' }[lf.op] || lf.op;
+    const tries = lf.count > 1 ? ` (${lf.count} tries, last ${new Date(lf.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : '';
+    return `<div class="note bad u17">${esc(lwhat)} failed${tries}: ${esc(lf.error)}</div>`;
+  }
   if (o.state === 'failed') return age < 3600 ? `<div class="note bad u17">${esc(what)} failed: ${esc(o.error)}</div>` : '';
   if (['done', 'ready'].includes(o.state)) return '';
   const pct = o.bytes_total ? 100 * o.bytes_done / o.bytes_total : (o.state === 'loading' ? 100 : 0);

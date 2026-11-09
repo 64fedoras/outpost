@@ -44,6 +44,9 @@ func (c *Controller) installRuntimeOn(ctx context.Context, id, build string) err
 		if err != nil {
 			return fmt.Errorf("llama.cpp: %w", err)
 		}
+		if msg := c.runtimeBlocked(id, variant, rt.Build); msg != "" {
+			return errors.New(msg)
+		}
 		if hello.Runtime != nil && hello.Runtime.Build == rt.Build && hello.Runtime.Variant == variant {
 			return nil
 		}
@@ -59,6 +62,11 @@ func (c *Controller) installRuntimeOn(ctx context.Context, id, build string) err
 		}
 		if explicit || attempt >= 8 || !strings.HasPrefix(err.Error(), glibcTooOldMarker) {
 			return fmt.Errorf("installing llama.cpp on %s: %w", c.nodeLabel(id), err)
+		}
+		if oldBuildsCannotHelp(variant) {
+			msg := fmt.Sprintf("installing llama.cpp on %s: %v. llama.cpp builds its Linux arm64 binaries on Ubuntu 24.04 (glibc 2.39), so no release runs on an older system; this machine needs Ubuntu 24.04 or newer (for a Jetson, JetPack 7), or a llama.cpp built from source", c.nodeLabel(id), err)
+			c.setRuntimeBlocked(id, variant, rt.Build, msg)
+			return errors.New(msg)
 		}
 		rels, relErr := c.latestReleases(ctx, false)
 		next := ""
