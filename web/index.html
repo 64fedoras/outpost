@@ -299,6 +299,16 @@
         <div class="set-main">
         <section class="set-sec" id="set-plan">
           <h2 class="set-sec-title">Planning</h2>
+        <div class="section-head"><h2>Planner</h2></div>
+        <div class="card">
+          <label for="set-planner">Default planner</label><select id="set-planner"></select>
+          <label class="check"><input type="checkbox" id="set-websearch"> Let the Claude planner search the web (about $0.01 per search, counted against the task cap)</label>
+          <label class="check"><input type="checkbox" id="set-webprivate"> Allow pasted links to reach internal addresses (loopback, LAN). Off blocks them.</label>
+          <div class="modal-foot"><button class="primary" id="set-save">Save defaults</button></div>
+        </div>
+        </section>
+        <section class="set-sec" id="set-keys">
+          <h2 class="set-sec-title">API keys</h2>
         <div class="section-head"><h2>Claude</h2></div>
         <div class="card">
           <p class="hint">Claude plans tasks, writes anything the local models cannot, and fixes failing tests. Use a separate API key for Outpost and set a monthly limit on it in the Claude Console as a backstop.</p>
@@ -308,22 +318,11 @@
             <div><label for="set-model">Default Claude model</label><select id="set-model"></select></div>
             <div><label for="set-cap">Default spending cap per task (USD)</label><input id="set-cap" type="number" min="0.05" step="0.25"></div>
           </div>
-          <label for="set-planner">Default planner</label><select id="set-planner"></select>
-          <label class="check"><input type="checkbox" id="set-autoresume"> Resume interrupted tasks on their own after a restart (local planner only; starts as soon as the task's node is back, waits up to 10 minutes)</label>
-          <label for="set-bestofn">Best of N on local nodes</label>
-          <select id="set-bestofn"><option value="hard">Hard subtasks (default)</option><option value="all">All subtasks</option><option value="off">Off</option></select>
-          <p class="hint">When a subtask starts and two or more other nodes are idle with nothing waiting for them, up to two of them also write it. Copies that fail a quick syntax check are dropped and a judge node picks the best of the rest. Spare copies give up their node as soon as other work needs it. Local nodes only, so no Claude cost.</p>
-          <label class="check"><input type="checkbox" id="set-agent"> Agent mode: fixers and investigators read files, search, run commands and ask you questions, up to 30 tool calls and 20 minutes each. Off uses one request per fix.</label>
-          <label class="check"><input type="checkbox" id="set-websearch"> Let the Claude planner search the web (about $0.01 per search, counted against the task cap)</label>
-          <label class="check"><input type="checkbox" id="set-webprivate"> Allow pasted links to reach internal addresses (loopback, LAN). Off blocks them.</label>
-          <div class="modal-foot"><button class="primary" id="set-save">Save defaults</button></div>
+          <div class="modal-foot"><button class="primary" id="set-claude-save">Save model and cap</button></div>
         </div>
-        </section>
-        <section class="set-sec" id="set-keys">
-          <h2 class="set-sec-title">API keys</h2>
         <div class="section-head"><h2>OpenRouter</h2></div>
         <div class="card">
-          <p class="hint">Optional second cloud provider. Pick OpenRouter as the planner to plan, write what the nodes cannot, and fix failing tests with any model it offers. It shares the per-task spending cap above, using the cost OpenRouter reports for each call. Use a separate key and set a credit limit on it at openrouter.ai.</p>
+          <p class="hint">Optional second cloud provider. Pick OpenRouter as the planner to plan, write what the nodes cannot, and fix failing tests with any model it offers. It shares the per-task spending cap set in the Claude card above, using the cost OpenRouter reports for each call. Use a separate key and set a credit limit on it at openrouter.ai.</p>
           <label for="set-or-key">API key <span id="set-or-key-state"></span></label>
           <div class="btns u3"><input id="set-or-key" type="password" placeholder="sk-or-…" autocomplete="off"><button id="set-or-key-save">Save</button><button id="set-or-key-clear" class="danger">Remove</button></div>
           <label for="set-or-model">Model <span id="set-or-model-state" class="muted"></span></label>
@@ -339,6 +338,15 @@
         </section>
         <section class="set-sec" id="set-modelsec">
           <h2 class="set-sec-title">Model settings</h2>
+        <div class="section-head"><h2>Running tasks</h2></div>
+        <div class="card">
+          <label class="check"><input type="checkbox" id="set-autoresume"> Resume interrupted tasks on their own after a restart (local planner only; starts as soon as the task's node is back, waits up to 10 minutes)</label>
+          <label for="set-bestofn">Best of N on local nodes</label>
+          <select id="set-bestofn"><option value="hard">Hard subtasks (default)</option><option value="all">All subtasks</option><option value="off">Off</option></select>
+          <p class="hint">When a subtask starts and two or more other nodes are idle with nothing waiting for them, up to two of them also write it. Copies that fail a quick syntax check are dropped and a judge node picks the best of the rest. Spare copies give up their node as soon as other work needs it. Local nodes only, so no Claude cost.</p>
+          <label class="check"><input type="checkbox" id="set-agent"> Agent mode: fixers and investigators read files, search, run commands and ask you questions, up to 30 tool calls and 20 minutes each. Off uses one request per fix.</label>
+          <div class="modal-foot"><button class="primary" id="set-run-save">Save</button></div>
+        </div>
         <div class="section-head"><h2>Node health colours</h2></div>
         <div class="card">
           <p class="hint">A node's health score adds up its disconnects (1 point each) and failed calls (2 points each) over the last 7 days. It turns <b>amber</b> at the first number and <b>red</b> at the second. Red nodes are given work last. The defaults are 5 and 15.</p>
