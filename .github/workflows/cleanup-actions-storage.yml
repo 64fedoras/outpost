@@ -1,0 +1,58 @@
+name: Clean up Actions storage
+
+# Build artifacts (about 30 MB per merge) and caches count against the Actions storage quota.
+# Releases already hold every binary, so old workflow artifacts are redundant. Nightly, this
+# deletes artifacts older than KEEP_DAYS and caches not used for KEEP_DAYS.
+# It never touches releases, tags, branches or source. Run it by hand with dry_run=true to list
+# what would go without deleting anything.
+
+on:
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List what would be deleted, delete nothing
+        type: boolean
+        default: true
+      keep_days:
+        description: Keep artifacts and caches newer than this many days
+        default: "3"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Delete old artifacts and caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          KEEP_DAYS: ${{ github.event.inputs.keep_days || '3' }}
+        run: |
+          set -eu
+          case "$KEEP_DAYS" in ''|*[!0-9]*) echo "keep_days must be a number"; exit 1 ;; esac
+          cutoff=$(date -u -d "$KEEP_DAYS days ago" +%Y-%m-%dT%H:%M:%SZ)
+          echo "Cutoff $cutoff (dry run: $DRY_RUN)"
+          repo="repos/$GITHUB_REPOSITORY"
+
+          gh api --paginate "$repo/actions/artifacts?per_page=100" \
+            --jq ".artifacts[] | select(.created_at < \"$cutoff\") | \"\(.id) \(.size_in_bytes) \(.name)\"" > old-artifacts.txt
+          gh api --paginate "$repo/actions/caches?per_page=100" \
+            --jq ".actions_caches[] | select(.last_accessed_at < \"$cutoff\") | \"\(.id) \(.size_in_bytes) \(.key)\"" > old-caches.txt
+
+          del() { # file, api path, label
+            n=0; bytes=0
+            while read -r id size name; do
+              n=$((n+1)); bytes=$((bytes+size))
+              if [ "$DRY_RUN" = true ]; then echo "would delete $3 $id $name"; continue; fi
+              gh api -X DELETE "$repo/actions/$2/$id" >/dev/null || echo "failed to delete $3 $id"
+            done < "$1"
+            echo "$3: $n item(s), $((bytes/1048576)) MB"
+          }
+          del old-artifacts.txt artifacts artifact
+          del old-caches.txt caches cache
