@@ -10,7 +10,7 @@ Part of the [Outpost user guide](USER-GUIDE.md).
   Settings section, and runs actions such as *Check cluster*, *Add node*, *New chat*, a saved task or a
   theme. Type a few letters, use the arrow keys and Enter. The *Search* link at the bottom of the
   sidebar opens it too.
-- **Theme:** Settings → Application → Appearance picks light, dark or the system's setting, kept in this
+- **Theme:** Settings → Display and alerts → Appearance picks light, dark or the system's setting, kept in this
   browser.
 - **On a phone:** add the page to the home screen (Safari: Share → Add to Home Screen; Chrome: menu →
   Add to Home screen) and it opens full screen with the Outpost icon. With the controller's self-signed
@@ -37,8 +37,11 @@ task's conversation and files from the controller, nodes keep none). From the ke
 and press Shift+F10 or the menu key for the menu, F2 to rename, or Delete to delete.
 
 On a phone, the task page has one top bar with the menu button in it. Cluster pages (Nodes, Models, Updates, Settings) are at
-the bottom of the sidebar. Settings is one long page in five sections (Planning, API keys, Model settings, Application,
-Security and backup); the list on its left follows your scroll position and jumps to a section when clicked.
+the bottom of the sidebar. Settings is one long page in nine sections: Tasks (planner, running tasks,
+project instructions, command sandbox), API keys (Claude, OpenRouter, Hugging Face), Models (idle unload, memory
+pooling, model scorecard), Nodes (health colours, Wake-on-LAN, free disk space), Pictures, Display and
+alerts (appearance, notifications), Updates, Security (password, sign-in, HTTPS certificate) and Storage and backup (storage, backup,
+config file, diagnostics). The list on its left follows your scroll position and jumps to a section when clicked.
 
 Each task is a conversation:
 
@@ -315,5 +318,5 @@ the old controller is cancelled when it reconnects, since nobody is waiting for 
 the resumed task does not queue behind it. If the node does not come back within 10 minutes, the
 task waits for your Resume click. Tasks planned with Claude or OpenRouter, and tasks stopped at the
 spending cap, always wait for your Resume click so a restart never spends money. Turn automatic
-resuming off under Settings → Defaults.
+resuming off under Settings → Tasks → Running tasks.
 

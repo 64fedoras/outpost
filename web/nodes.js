@@ -25,7 +25,7 @@ function benchLine(n, loaded, ready) {
 const NODE_VIEWS = ['grid', 'list', 'detail'];
 let nodeView = 'grid', nodeSel = null, nodeLabel = '';
 const nodeOpen = new Set(); // nodes expanded under their List row
-// The Detailed list is optional (Settings → Application); kept in this browser only.
+// The Detailed list is optional (Settings → Display and alerts); kept in this browser only.
 let showDetailed = false;
 try { showDetailed = localStorage.getItem('outpost.detailedList') === '1'; } catch (e) { /* storage blocked */ }
 try { const v = localStorage.getItem('outpost.nodeView'); if (NODE_VIEWS.includes(v)) nodeView = v; } catch (e) { /* storage blocked */ }
