@@ -175,16 +175,27 @@ async function templateAction(act, id) {
   if (act === 'tpl-run') { const r = await post(`/api/templates/${id}/run`, {}); location.hash = '#/tasks/' + r.id; refresh(); }
   else if (act === 'tpl-sched') openSched(id);
   else if (act === 'tpl-del') { if (confirm(`Delete the saved task "${t.name}"${t.schedule ? ' and its schedule' : ''}?`)) { await api('/api/templates/' + id, { method: 'DELETE' }); toast('Deleted'); refresh(); } }
-  else if (act === 'tpl-use') {
-    const q = t.request;
-    $('nt-prompt').value = q.prompt; $('nt-project').value = q.project || '';
-    if (q.planner && [...$('nt-planner').options].some((o) => o.value === q.planner)) $('nt-planner').value = q.planner;
-    $('nt-review').checked = q.review !== false; $('nt-mockup').checked = !!q.mockup; $('nt-testfirst').checked = !!q.test_first;
-    $('nt-fix').value = String(q.fix_rounds || 0); $('nt-testmin').value = String(q.test_minutes || 0);
-    if (q.cap_usd) $('nt-cap').value = q.cap_usd;
-    $('nt-label').value = q.node_label || '';
-    renderNew(); $('nt-prompt').focus(); window.scrollTo(0, 0);
-  }
+  else if (act === 'tpl-use') ntFill(t.request);
+}
+
+// ntFill puts a whole request (a saved task, or a task being duplicated) into the
+// new-task form: prompt and every option. A planner, project or label that no
+// longer exists falls back to the form's current choice. Returns what was not kept.
+function ntFill(q) {
+  renderNew(); // first visit: set the defaults before overwriting them
+  const has = (id, v) => v && [...$(id).options].some((o) => o.value === v);
+  const missed = [];
+  const box = $('nt-prompt'); box.value = q.prompt || ''; autoGrow(box);
+  if (has('nt-planner', q.planner)) $('nt-planner').value = q.planner; else if (q.planner) missed.push('planner');
+  renderNew(); // the model and cap boxes follow the planner
+  if (has('nt-model', q.claude_model)) $('nt-model').value = q.claude_model;
+  if (q.project && has('nt-project', q.project)) $('nt-project').value = q.project; else { $('nt-project').value = ''; if (q.project) missed.push('project'); }
+  $('nt-review').checked = q.review !== false; $('nt-mockup').checked = !!q.mockup; $('nt-testfirst').checked = !!q.test_first;
+  $('nt-fix').value = String(q.fix_rounds || 0); $('nt-testmin').value = String(q.test_minutes || 0);
+  if (q.cap_usd) $('nt-cap').value = q.cap_usd;
+  if (!q.node_label || has('nt-label', q.node_label)) $('nt-label').value = q.node_label || ''; else missed.push('node label');
+  renderNew(); box.focus(); window.scrollTo(0, 0);
+  return missed;
 }
 $('nt-prompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) startTask(); });
 

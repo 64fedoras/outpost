@@ -394,10 +394,16 @@ async function runTaskMenu(act, id) {
       case 'copy-link': await copyText(taskLink(id)); toast('Link copied'); break;
       case 'duplicate': {
         const d = await api(`/api/tasks/${id}`);
-        const fill = () => { const box = $('nt-prompt'); box.value = d.prompt || ''; autoGrow(box); box.focus(); };
+        // The same request with the same options; attachments and pasted images are not copied.
+        const q = { prompt: d.prompt, planner: d.planner, claude_model: d.claude_model, cap_usd: d.cap_usd, review: d.review, mockup: d.mockup,
+          test_first: d.test_first, fix_rounds: d.max_fix_rounds, test_minutes: d.test_minutes, project: d.project_id, node_label: d.node_label };
+        const fill = () => {
+          const missed = ntFill(q);
+          const extra = (d.attachments || []).length ? ' (attachments are not copied)' : '';
+          toast(missed.length ? `Copied; the ${missed.join(' and ')} no longer exist${missed.length === 1 ? 's' : ''}, so the current choice is used` : 'Copied with its options' + extra + '; press Plan it to start');
+        };
         if (page === 'new') fill();
-        else { window.addEventListener('hashchange', fill, { once: true }); location.hash = '#/new'; }
-        toast('Prompt copied into a new task; check the options and press Start');
+        else { window.addEventListener('hashchange', () => setTimeout(fill, 0), { once: true }); location.hash = '#/new'; }
         break;
       }
       case 'stop':
