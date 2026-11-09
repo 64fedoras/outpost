@@ -194,7 +194,7 @@ until you dismiss it.
 controller exits. Tasks that were running resume when it is back (local planners on their own, Claude and OpenRouter
 tasks with Resume, as before).
 
-**Controller disk.** *Settings → Application → Storage* shows what uses the controller's disk (tasks,
+**Controller disk.** *Settings → Storage and backup → Storage* shows what uses the controller's disk (tasks,
 models, releases, llama.cpp builds, projects) and how much is free. Below 10% or 5 GB free, a red line at
 the top of every page says so and a *disk low* notification is sent once (it clears above 15%). Optionally,
 **Clean up tasks that finished more than N days ago** removes, once a day, their per-round copies (those
@@ -212,7 +212,7 @@ that node's Outpost log, its llama-server output or its tray log, and follows ne
 works on every platform, including Linux nodes whose log otherwise only goes to journald. Nodes older than
 this feature cannot answer; update them first.
 
-**Diagnostics for a bug report.** *Settings → Security and backup → Download diagnostics* builds one zip in your
+**Diagnostics for a bug report.** *Settings → Storage and backup → Download diagnostics* builds one zip in your
 browser: `summary.txt` (versions, nodes, uptime), the controller's recent log, settings, nodes and models
 (every key, token, password, hash and URL replaced by `(removed)`), the event log of the 20 newest tasks and,
 if ticked, the node, llama-server and tray logs of every online node. Task prompts are left out unless you tick
