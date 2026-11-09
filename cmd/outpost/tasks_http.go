@@ -270,12 +270,13 @@ func (c *Controller) plannerLabel(p, model, orModel string) string {
 
 type taskDetail struct {
 	*Task
-	Files         []repoFile `json:"files"`
-	PlannerLabel  string     `json:"planner_label"`
-	ClaudeKeySet  bool       `json:"claude_key_set"`
-	WorkersOnline int        `json:"workers_online"`
-	ExecNodes     int        `json:"exec_nodes"`
-	Activity      *actDetail `json:"activity,omitempty"`
+	Files         []repoFile    `json:"files"`
+	PlannerLabel  string        `json:"planner_label"`
+	ClaudeKeySet  bool          `json:"claude_key_set"`
+	WorkersOnline int           `json:"workers_online"`
+	ExecNodes     int           `json:"exec_nodes"`
+	Activity      *actDetail    `json:"activity,omitempty"`
+	Estimate      *planEstimate `json:"estimate,omitempty"` // while the plan waits for approval (estimate.go)
 }
 
 type repoFile struct {
@@ -312,12 +313,16 @@ func (c *Controller) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	workers, execs := c.workerCounts()
 	t.mu.Lock()
 	b, _ := json.Marshal(t)
-	planner, model, orModel := t.Planner, t.ClaudeModel, t.ORModel
+	planner, model, orModel, status := t.Planner, t.ClaudeModel, t.ORModel, t.Status
 	t.mu.Unlock()
+	var est *planEstimate
+	if status == "awaiting_approval" {
+		est = c.estimatePlan(t)
+	}
 	var copyT Task
 	_ = json.Unmarshal(b, &copyT)
 	writeJSON(w, 200, taskDetail{Task: &copyT, Files: listRepo(t.repoDir()), PlannerLabel: c.plannerLabel(planner, model, orModel),
-		ClaudeKeySet: c.anthropicKey() != "", WorkersOnline: workers, ExecNodes: execs, Activity: c.activityFor(t)})
+		ClaudeKeySet: c.anthropicKey() != "", WorkersOnline: workers, ExecNodes: execs, Activity: c.activityFor(t), Estimate: est})
 }
 
 func (c *Controller) handleTaskFile(w http.ResponseWriter, r *http.Request) {

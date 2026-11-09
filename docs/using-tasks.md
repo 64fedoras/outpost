@@ -53,6 +53,13 @@ Each task is a conversation:
    once per request; clear requests go straight to a plan.
 3. **The plan appears as a card.** Approve it, adjust the cap, or reply with changes ("use SQLite
    instead", "drop the web UI") and it revises the plan. Nothing runs until you approve.
+   The card also says roughly how long the first pass will take, for example "about 9 min on 4
+   nodes (writing 8 min, tests 1 min)", and each subtask shows "~3 min on gpu-desktop". The estimate
+   assumes each subtask goes to the node where it would finish first (hard ones only to the strongest
+   model), uses each node's measured speed, and expects as much output as the files' current size
+   (or a guess by difficulty for new files), plus about 20 seconds per call and one minute for a test run.
+   Fix rounds after failing tests are not included. A node that has not been benchmarked yet counts
+   as slow (8 tokens a second) and the estimate says *rough*.
 4. **Progress is live.** A strip fills in as subtasks finish, with which node wrote and checked each. Each running subtask has a "live output" pane showing what the model is writing; it starts collapsed, click to expand. An expanded pane stays open and keeps its scroll position, and keeps showing the last call's output (marked "finished") until the next call starts, so it no longer goes blank between the fixer's calls. The pane names the node (and "checking" during a review) and says "waiting for output" until the first token; a thinking model's reasoning is shown there too. While a node is still reading a long prompt, its pane header says how far it has got, for example "reading the prompt: 7,420 of 18,950 tokens, about 2 min left", so a slow CPU node does not look stuck (needs a llama.cpp build that reports prompt progress; older builds just show "waiting for output").
    While the tests run and the fixer works, a **Tests and fixes** card under the subtasks lists each step: the test run and which node ran it with a count such as "4 failing of 12" (when the runner prints one), what the fixer read, ran and edited, and how long the current step has been going. If the node is offline or paused, or a model has produced no text for two minutes, a warning says so instead of the card looking busy. If the planner's node restarts or is updated in the middle of a fix round, the controller waits (up to 10 minutes) for it to come back and repeats that round without using one up. The "The controller restarted, so this task resumed automatically" line in the thread appears only after the controller restarts; a node restart shows up on this card instead.
    A running subtask expands to show the text its node is writing, with tokens per second, and
