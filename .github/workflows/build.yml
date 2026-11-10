@@ -53,6 +53,9 @@ jobs:
           ./dist/outpost-$V/bin/outpost-linux-amd64 version | grep -F "$V"
           grep -aF "OUTPOST_BUILD_INFO|$V|" dist/outpost-$V/bin/outpost-linux-amd64 >/dev/null
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        # Optional backup copy: if the Actions storage quota is full the upload fails, and that must
+        # not stop the release below (the release is what the Updates tab and auto-update use).
+        continue-on-error: true
         with:
           name: outpost-${{ steps.build.outputs.version }}
           path: dist/outpost-${{ steps.build.outputs.version }}/
