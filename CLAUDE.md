@@ -57,7 +57,7 @@ although it is imported directly; harmless.
 3. `go vet ./... && go test ./...`; run the e2e rig for anything touching tasks, the UI or updates.
 4. `sh build.sh`; copy README and source next to `bin/`; zip as `outpost-<version>.zip`.
    GitHub Actions (`.github/workflows/build.yml`) does this on every push to `main`: it runs vet and
-   tests, builds the five binaries (unsigned), uploads them as a workflow artifact, and creates release
+   tests, builds the five binaries (unsigned) and creates release
    `v<version>` with the zip and binaries the first time a version appears. It bumps nothing.
 5. The owner uploads the five binaries in the web UI's Updates tab, updates the controller, then each node.
    Rollback is a button there. The controller finds the version of an uploaded binary through the
