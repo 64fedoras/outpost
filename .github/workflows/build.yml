@@ -1,6 +1,8 @@
 name: Build binaries
 
-# Builds the five platform binaries after every merge to main (and on demand).
+# Builds the five platform binaries after every merge to main (and on demand) and publishes them
+# as release v<version>. No workflow artifact is uploaded: the release holds the binaries, and
+# artifacts only filled the Actions storage quota.
 # Every push gets the next patch version (see .github/next-version.sh), stamped into the build
 # workspace only; nothing is committed back, so there is no push loop and no merge conflict.
 on:
@@ -52,16 +54,6 @@ jobs:
           # The stamped binary must report the stamped version, and the updater must be able to read it.
           ./dist/outpost-$V/bin/outpost-linux-amd64 version | grep -F "$V"
           grep -aF "OUTPOST_BUILD_INFO|$V|" dist/outpost-$V/bin/outpost-linux-amd64 >/dev/null
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        # Optional backup copy: if the Actions storage quota is full the upload fails, and that must
-        # not stop the release below (the release is what the Updates tab and auto-update use).
-        continue-on-error: true
-        with:
-          name: outpost-${{ steps.build.outputs.version }}
-          path: dist/outpost-${{ steps.build.outputs.version }}/
-          # The release keeps the binaries for good; this copy is a short-lived backup (default is 90 days,
-          # which filled the Actions storage quota). cleanup-actions-storage.yml also sweeps old ones.
-          retention-days: 3
       - name: Publish release (once per version)
         if: github.event_name == 'push'
         env:
@@ -69,7 +61,7 @@ jobs:
           V: ${{ steps.build.outputs.version }}
         run: |
           if gh release view "v$V" >/dev/null 2>&1; then
-            echo "Release v$V already exists; artifact only."
+            echo "Release v$V already exists; nothing to publish."
           else
             # Retry a few times: a transient API error (seen once as HTTP 403) must not lose a release.
             for i in 1 2 3; do
