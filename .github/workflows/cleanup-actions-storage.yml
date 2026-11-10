@@ -1,7 +1,8 @@
 name: Clean up Actions storage
 
-# Build artifacts (about 30 MB per merge) and caches count against the Actions storage quota.
-# Releases already hold every binary, so old workflow artifacts are redundant. Nightly, this
+# Workflow artifacts and caches count against the Actions storage quota. The build no longer
+# uploads artifacts (releases hold every binary), so this mostly sweeps old caches and any stray
+# artifact a future workflow adds. Nightly, this
 # deletes artifacts older than KEEP_DAYS and caches not used for KEEP_DAYS.
 # It never touches releases, tags, branches or source. Run it by hand with dry_run=true to list
 # what would go without deleting anything.
