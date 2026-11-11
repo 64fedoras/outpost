@@ -375,7 +375,7 @@ function startRename(id) {
 }
 
 async function deleteTask(id) {
-  if (!confirm('Delete this task, its conversation and its files?')) return;
+  if (!await askConfirm('Delete this task, its conversation and its files?')) return;
   try {
     await api(`/api/tasks/${id}`, { method: 'DELETE' }); Drafts.clear('task:' + id); Drafts.clearPrefix('ans:' + id + ':');
     tasksSeq++; tasks = tasks.filter((t) => t.id !== id); renderSideTasks();
@@ -411,7 +411,7 @@ async function runTaskMenu(act, id) {
         break;
       }
       case 'stop':
-        if (!confirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return;
+        if (!await askConfirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return;
         await post(`/api/tasks/${id}/cancel`); toast('Stopped'); refresh(); break;
       case 'retry': await post(`/api/tasks/${id}/resume`); toast('Trying again'); refresh(); break;
       case 'delete': await deleteTask(id); break;

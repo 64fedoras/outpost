@@ -983,3 +983,9 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .pj-card-name .pin-mark { margin-right: 6px; }
 .side-task, .side-pin, .pj-card-wrap, .pj-title { -webkit-touch-callout: none; }
 @media (hover: none) { .side-task, .side-pin, .pj-card-wrap { -webkit-user-select: none; user-select: none; } }
+
+/* Styled confirm/prompt dialog (confirm.js): above every other dialog, narrow, centred */
+.overlay.ask-overlay { z-index: 80; align-items: center; padding: 16px; }
+.ask-modal { width: min(440px, 100%); }
+.ask-modal .hint { font-size: 13.5px; line-height: 1.45; margin: 6px 0 0; }
+.ask-modal input { width: 100%; margin-top: 10px; box-sizing: border-box; }

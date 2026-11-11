@@ -135,8 +135,8 @@ async function loadSecurity() {
   } catch (e) {}
 }
 $('sessions-list').onclick = async (e) => { const id = e.target.dataset.sess; if (id) { await api('/api/sessions/' + id, { method: 'DELETE' }).catch((x) => toast(x.message)); loadSecurity(); } };
-$('tokens-list').onclick = async (e) => { const id = e.target.dataset.tok; if (id && confirm('Revoke this token? Scripts using it stop working.')) { await api('/api/apitokens/' + id, { method: 'DELETE' }).catch((x) => toast(x.message)); loadSecurity(); } };
-$('sess-all').onclick = async () => { if (confirm('Sign out every browser, including this one?')) { await post('/api/sessions/logout-all'); location.reload(); } };
+$('tokens-list').onclick = async (e) => { const id = e.target.dataset.tok; if (id && await askConfirm('Revoke this token? Scripts using it stop working.')) { await api('/api/apitokens/' + id, { method: 'DELETE' }).catch((x) => toast(x.message)); loadSecurity(); } };
+$('sess-all').onclick = async () => { if (await askConfirm('Sign out every browser, including this one?')) { await post('/api/sessions/logout-all'); location.reload(); } };
 $('tok-create').onclick = async () => {
   const name = $('tok-name').value.trim(); if (!name) return;
   try {
@@ -149,7 +149,7 @@ $('tok-create').onclick = async () => {
   } catch (e) { toast(e.message); }
 };
 $('tls-save').onclick = async () => {
-  if (!confirm('Replace the HTTPS certificate? Connected nodes are re-pinned automatically; the page will reload.')) return;
+  if (!await askConfirm('Replace the HTTPS certificate? Connected nodes are re-pinned automatically; the page will reload.')) return;
   try { const r = await post('/api/tls', { cert: $('tls-cert').value, key: $('tls-key').value }); $('tls-cert').value = ''; $('tls-key').value = ''; toast((r.needs_repin || []).length ? 'Certificate changed; some nodes need a re-pin' : 'Certificate changed'); loadSecurity(); } catch (e) { toast(e.message); }
 };
 $('bk-download').onclick = async () => {
@@ -170,17 +170,17 @@ async function saveSettings(body, msg) {
   try { settings = await post('/api/settings', body); Guard.settingsSaved(); toast(msg); loadSettings(); refresh(); } catch (e) { toast(e.message); }
 }
 $('set-key-save').onclick = () => { const v = $('set-key').value.trim(); if (!v) return; $('set-key').value = ''; saveSettings({ anthropic_key: v }, 'API key saved'); };
-$('set-key-clear').onclick = () => { if (confirm('Remove the Claude API key?')) saveSettings({ anthropic_key: '' }, 'API key removed'); };
+$('set-key-clear').onclick = async () => { if (await askConfirm('Remove the Claude API key?')) saveSettings({ anthropic_key: '' }, 'API key removed'); };
 $('set-or-key-save').onclick = () => { const v = $('set-or-key').value.trim(); if (!v) return; $('set-or-key').value = ''; orLoaded = false; saveSettings({ openrouter_key: v }, 'OpenRouter key saved'); };
-$('set-or-key-clear').onclick = () => { if (confirm('Remove the OpenRouter API key?')) saveSettings({ openrouter_key: '' }, 'OpenRouter key removed'); };
+$('set-or-key-clear').onclick = async () => { if (await askConfirm('Remove the OpenRouter API key?')) saveSettings({ openrouter_key: '' }, 'OpenRouter key removed'); };
 $('set-or-model-save').onclick = () => saveSettings({ openrouter_model: $('set-or-model').value.trim() }, 'OpenRouter model saved');
 $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-instr-save').onclick = () => saveSettings({ instructions: $('set-instr').value }, 'Instructions saved');
-$('set-ghupd-save').onclick = () => {
+$('set-ghupd-save').onclick = async () => {
   const body = { github_updates: $('set-ghupd').checked, github_auto_install: $('set-ghauto').checked, github_repo: $('set-ghrepo').value.trim() };
   const cur = settings.github_repo || settings.github_repo_default || '';
-  if (body.github_repo && !body.github_repo.toLowerCase().endsWith('/' + cur.toLowerCase()) && !confirm('Trust ' + body.github_repo + ' to supply updates for this controller and all nodes?')) return;
+  if (body.github_repo && !body.github_repo.toLowerCase().endsWith('/' + cur.toLowerCase()) && !await askConfirm('Trust ' + body.github_repo + ' to supply updates for this controller and all nodes?')) return;
   const tok = $('set-ghtoken').value.trim();
   if (tok) body.github_token = tok;
   $('set-ghtoken').value = '';
@@ -234,7 +234,7 @@ $('cfg-file').onchange = async () => {
   if (!f) return;
   try {
     const body = JSON.parse(await f.text());
-    if (!confirm('Replace the settings, saved tasks and node labels in this file on this controller? Keys and passwords stay as they are.')) return;
+    if (!await askConfirm('Replace the settings, saved tasks and node labels in this file on this controller? Keys and passwords stay as they are.')) return;
     const r = await post('/api/config/import', body);
     toast(`Imported ${r.settings} settings, ${r.templates} saved tasks, ${r.labels} node labels`);
   } catch (e) { toast(e.message); }
