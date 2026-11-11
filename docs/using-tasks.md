@@ -311,7 +311,7 @@ resolved); **＋ New project** opens the form in a dialog. Click a card to open 
 top of the project page), press its **⋯** button, hold a finger on it for half a second on a phone, or
 press Shift+F10 / the menu key on a focused one. It has **Open in new tab**, **Edit** (F2; the
 project's name, its instructions box and any suggested rules),
-**Pin to sidebar** / **Unpin from sidebar**, **New task in this project**, **Copy link**, **Download
+**Pin to sidebar** / **Unpin from sidebar**, **New task in this project**, **Duplicate** (a new project named "… (copy)" with the same files, git history, settings and instructions; tasks, the conversation, suggested rules and the pin are not copied, pushing and pull requests start off, and it is refused while a task is working in the project), **Copy link**, **Download
 files (.zip)**, **Settings**, **Clear conversation** and **Delete** (Del; only for a project with no
 tasks left). Pinned projects are listed under **Projects** in the sidebar, with an amber count when
 something in them is waiting on you; the pin is stored on the controller, so it shows on every device.
