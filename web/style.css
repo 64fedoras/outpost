@@ -1036,3 +1036,5 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
   .group-sub .sub-title { display: block; padding: 4px 10px 8px; font-weight: 600; }
   .group-sub button { padding: 11px 10px; font-size: 15px; }
 }
+.ao-row { display: flex; align-items: center; gap: 6px; }
+.ao-row .check { flex: 1; margin: 2px 0; }

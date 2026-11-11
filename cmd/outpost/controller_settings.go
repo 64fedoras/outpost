@@ -24,6 +24,7 @@ type Settings struct {
 	MonthlyCapUSD     float64        `json:"monthly_cap_usd,omitempty"` // all cloud planner calls in a calendar month; 0 = off (spend.go)
 	WakeForWork       bool           `json:"wake_for_work,omitempty"`   // Wake-on-LAN offline nodes when a task waits for a worker (wol.go)
 	DefaultPlanner    string         `json:"default_planner"`           // "claude", "openrouter" or "node:<id>"
+	AutoOrder         []string       `json:"auto_order,omitempty"`      // providers "Auto (local + API)" tries, in order: local, claude, openrouter; empty = all three in that order
 	OpenRouterKeyEnc  string         `json:"openrouter_key_enc,omitempty"`
 	OpenRouterModel   string         `json:"openrouter_model,omitempty"`
 	WebSearch         bool           `json:"web_search,omitempty"`        // Claude planner may use the web search tool (paid per search)
@@ -172,7 +173,7 @@ func (c *Controller) settingsView() map[string]any {
 		"has_hf_token": hf != "", "claude_model": c.settings.ClaudeModel,
 		"has_openrouter_key": ork != "", "openrouter_key_hint": keyHint(ork), "openrouter_model": c.settings.OpenRouterModel,
 		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
-		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner, "monthly_cap_usd": c.settings.MonthlyCapUSD,
+		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner, "auto_order": normAutoOrder(c.settings.AutoOrder), "monthly_cap_usd": c.settings.MonthlyCapUSD,
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
 		"wake_for_work": c.settings.WakeForWork,
 		"auto_resume":   !c.settings.AutoResumeOff, "best_of_n": normBestOf(c.settings.BestOfN),
@@ -197,16 +198,17 @@ func (c *Controller) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		AnthropicKey    *string  `json:"anthropic_key"`
-		HFToken         *string  `json:"hf_token"`
-		ClaudeModel     *string  `json:"claude_model"`
-		DefaultCapUSD   *float64 `json:"default_cap_usd"`
-		WakeForWork     *bool    `json:"wake_for_work"`
-		DefaultPlanner  *string  `json:"default_planner"`
-		HealthAmber     *int     `json:"health_amber"`
-		HealthRed       *int     `json:"health_red"`
-		OpenRouterKey   *string  `json:"openrouter_key"`
-		OpenRouterModel *string  `json:"openrouter_model"`
+		AnthropicKey    *string   `json:"anthropic_key"`
+		HFToken         *string   `json:"hf_token"`
+		ClaudeModel     *string   `json:"claude_model"`
+		DefaultCapUSD   *float64  `json:"default_cap_usd"`
+		WakeForWork     *bool     `json:"wake_for_work"`
+		DefaultPlanner  *string   `json:"default_planner"`
+		AutoOrder       *[]string `json:"auto_order"`
+		HealthAmber     *int      `json:"health_amber"`
+		HealthRed       *int      `json:"health_red"`
+		OpenRouterKey   *string   `json:"openrouter_key"`
+		OpenRouterModel *string   `json:"openrouter_model"`
 		Notify          *struct {
 			Browser    *bool           `json:"browser"`
 			NtfyURL    *string         `json:"ntfy_url"`
@@ -365,6 +367,9 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	if req.DefaultPlanner != nil {
 		c.settings.DefaultPlanner = *req.DefaultPlanner
 	}
+	if req.AutoOrder != nil {
+		c.settings.AutoOrder = normAutoOrder(*req.AutoOrder)
+	}
 	if req.Instructions != nil {
 		c.settings.Instructions = clipInstructions(*req.Instructions)
 	}
@@ -452,4 +457,21 @@ func (c *Controller) ghRepoLocked() string {
 		return r
 	}
 	return ghDefaultRepo
+}
+
+// normAutoOrder keeps the known providers of "Auto (local + API)" once each, in
+// the given order; nothing valid means the default order.
+func normAutoOrder(in []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, p := range in {
+		if (p == "local" || p == "claude" || p == "openrouter") && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"local", "claude", "openrouter"}
+	}
+	return out
 }
