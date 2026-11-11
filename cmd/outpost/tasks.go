@@ -94,6 +94,7 @@ type Task struct {
 	Prompt       string          `json:"prompt"`
 	Title        string          `json:"title"`
 	Pinned       bool            `json:"pinned,omitempty"`      // kept above the other groups in the sidebar
+	GroupID      string          `json:"group_id,omitempty"`    // sidebar group (groups.go)
 	ResolvedAt   *time.Time      `json:"resolved_at,omitempty"` // marked resolved on the project page; see resolvedLocked
 	Status       string          `json:"status"`
 	PausedFrom   string          `json:"paused_from,omitempty"`

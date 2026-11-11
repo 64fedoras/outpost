@@ -39,6 +39,7 @@ type taskSummary struct {
 	ProjectID   string     `json:"project_id,omitempty"`
 	Updated     time.Time  `json:"updated"`
 	Pinned      bool       `json:"pinned,omitempty"`
+	GroupID     string     `json:"group_id,omitempty"`
 	AutoResume  bool       `json:"auto_resume,omitempty"` // interrupted, resuming on its own once its node is back
 	CapKind     string     `json:"cap_kind,omitempty"`    // paused_cap: "monthly" when the monthly cap stopped it
 	// Resolved: marked resolved and nothing happened since (no new message,
@@ -48,7 +49,7 @@ type taskSummary struct {
 
 func (t *Task) summaryLocked() taskSummary {
 	s := taskSummary{ID: t.ID, Title: t.Title, Status: t.Status, Planner: t.Planner, CostUSD: t.CostUSD, CapUSD: t.CapUSD,
-		ProjectID: t.ProjectID, Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created, Pinned: t.Pinned, AutoResume: t.AutoResume, CapKind: t.CapKind}
+		ProjectID: t.ProjectID, Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created, Pinned: t.Pinned, GroupID: t.GroupID, AutoResume: t.AutoResume, CapKind: t.CapKind}
 	switch {
 	case t.Status == "interrupted" && t.AutoResume:
 		s.NeedsYou = false // resuming on its own
@@ -610,9 +611,14 @@ func (c *Controller) handleTaskMeta(w http.ResponseWriter, r *http.Request) {
 		Title    *string `json:"title"`
 		Pinned   *bool   `json:"pinned"`
 		Resolved *bool   `json:"resolved"`
+		Group    *string `json:"group"` // sidebar group id; "" takes the task out of its group
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad request"})
+		return
+	}
+	if req.Group != nil && *req.Group != "" && !c.groupExists(*req.Group) {
+		writeJSON(w, 400, map[string]string{"error": "no such group"})
 		return
 	}
 	var title string
@@ -632,6 +638,9 @@ func (c *Controller) handleTaskMeta(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Pinned != nil {
 		t.Pinned = *req.Pinned
+	}
+	if req.Group != nil {
+		t.GroupID = *req.Group
 	}
 	if req.Resolved != nil {
 		if *req.Resolved {
