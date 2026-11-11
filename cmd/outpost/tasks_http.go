@@ -41,6 +41,9 @@ type taskSummary struct {
 	Pinned      bool       `json:"pinned,omitempty"`
 	AutoResume  bool       `json:"auto_resume,omitempty"` // interrupted, resuming on its own once its node is back
 	CapKind     string     `json:"cap_kind,omitempty"`    // paused_cap: "monthly" when the monthly cap stopped it
+	// Resolved: marked resolved and nothing happened since (no new message,
+	// no later end, not running and not waiting on the person).
+	Resolved bool `json:"resolved,omitempty"`
 }
 
 func (t *Task) summaryLocked() taskSummary {
@@ -65,7 +68,25 @@ func (t *Task) summaryLocked() taskSummary {
 	if s.Title == "" {
 		s.Title = firstLine(t.Prompt, 80)
 	}
+	s.Resolved = t.resolvedLocked(s.Updated, s.NeedsYou)
 	return s
+}
+
+// resolvedLocked reports whether the resolved mark still holds: a follow-up,
+// a retry or anything that needs the person clears it without a write.
+func (t *Task) resolvedLocked(updated time.Time, needsYou bool) bool {
+	if t.ResolvedAt == nil || needsYou {
+		return false
+	}
+	switch t.Status {
+	case "done", "failed", "cancelled":
+	default:
+		return false // working, queued or resuming
+	}
+	if updated.After(*t.ResolvedAt) || (t.Ended != nil && t.Ended.After(*t.ResolvedAt)) {
+		return false
+	}
+	return true
 }
 
 func firstLine(s string, max int) string {
@@ -546,7 +567,7 @@ func (c *Controller) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 
 const maxTaskTitle = 120
 
-// handleTaskMeta renames or pins a task. Either field may be left out. An
+// handleTaskMeta renames, pins or resolves a task. Either field may be left out. An
 // empty title is refused; the planner never overwrites a title that is set.
 func (c *Controller) handleTaskMeta(w http.ResponseWriter, r *http.Request) {
 	t := c.getTask(r.PathValue("id"))
@@ -555,8 +576,9 @@ func (c *Controller) handleTaskMeta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Title  *string `json:"title"`
-		Pinned *bool   `json:"pinned"`
+		Title    *string `json:"title"`
+		Pinned   *bool   `json:"pinned"`
+		Resolved *bool   `json:"resolved"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad request"})
@@ -579,6 +601,14 @@ func (c *Controller) handleTaskMeta(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Pinned != nil {
 		t.Pinned = *req.Pinned
+	}
+	if req.Resolved != nil {
+		if *req.Resolved {
+			now := time.Now()
+			t.ResolvedAt = &now
+		} else {
+			t.ResolvedAt = nil
+		}
 	}
 	t.saveLocked()
 	s := t.summaryLocked()

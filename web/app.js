@@ -110,18 +110,18 @@ $('setup-form').onsubmit = async (e) => {
 };
 $('btn-logout').onclick = async () => { await post('/api/logout').catch(() => {}); showLogin(); };
 
-const PAGES = ['new', 'image', 'task', 'chat', 'projects', 'nodes', 'models', 'updates', 'spending', 'settings'];
+const PAGES = ['new', 'image', 'task', 'chat', 'projects', 'project', 'nodes', 'models', 'updates', 'spending', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
   ntDraft.flush(); tmDraft.flush();
   const m = location.hash.match(/^#\/(\w+)(?:\/([\w-]+))?/) || [];
-  page = m[1] === 'tasks' && m[2] ? 'task' : PAGES.includes(m[1]) ? m[1] : 'new';
-  pageArg = page === 'task' || page === 'chat' ? m[2] || null : null;
+  page = m[1] === 'tasks' && m[2] ? 'task' : m[1] === 'projects' && m[2] ? 'project' : m[1] === 'project' ? 'projects' : PAGES.includes(m[1]) ? m[1] : 'new';
+  pageArg = page === 'task' || page === 'chat' || page === 'project' ? m[2] || null : null;
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
-  document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === page));
+  document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === (page === 'project' ? 'projects' : page)));
   document.querySelector('.page-plain').classList.toggle('hidden', !['chat', 'projects', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image' }[page] || page[0].toUpperCase() + page.slice(1));
-  document.body.classList.toggle('on-task', page === 'task');
+  document.body.classList.toggle('on-task', page === 'task' || page === 'project');
   closeSide();
   clearTimeout(taskTimer);
   liveClose();
@@ -130,6 +130,7 @@ function route() {
   if (page === 'settings') loadSettings();
   if (page === 'spending') loadSpending();
   if (page === 'chat') chatOpen(pageArg);
+  if (page === 'project') projectRoute();
   if (typeof imgRoute === 'function') imgRoute(page);
   renderSideTasks();
   if (state) refresh();
@@ -216,7 +217,7 @@ function renderAll() {
   renderSideTasks();
   renderSideCluster();
   if (page === 'new') renderNew();
-  if (page === 'projects') renderProjects();
+  if (page === 'projects' || page === 'project') renderProjects();
   if (page === 'chat' && document.activeElement !== $('chat-node')) fillChatNodes();
   if (page === 'nodes') { renderNodes(); renderJobs(); }
   if (page === 'models') renderModels();
@@ -303,6 +304,7 @@ function openTaskMenu(id, x, y, from) {
     item('open-tab', 'Open in new tab'),
     item('rename', 'Rename…<span class="kbd">F2</span>'),
     item('pin', t.pinned ? 'Unpin' : 'Pin to top'),
+    t.project_id && (canResolve(t) || t.resolved) ? item('resolve', t.resolved ? 'Reopen' : 'Mark resolved') : '',
     '<hr>',
     item('copy-prompt', 'Copy prompt'),
     item('copy-link', 'Copy link'),
@@ -389,6 +391,7 @@ async function runTaskMenu(act, id) {
     switch (act) {
       case 'open-tab': window.open('#/tasks/' + id, '_blank', 'noopener'); break;
       case 'rename': startRename(id); break;
+      case 'resolve': Object.assign(t, await post(`/api/tasks/${id}/meta`, { resolved: !t.resolved })); tasksSeq++; renderSideTasks(); if (page === 'project') renderProjectPage(); toast(t.resolved ? 'Resolved' : 'Moved back to Idle'); break;
       case 'pin': Object.assign(t, await post(`/api/tasks/${id}/meta`, { pinned: !t.pinned })); tasksSeq++; renderSideTasks(); toast(t.pinned ? 'Pinned' : 'Unpinned'); break;
       case 'copy-prompt': { const d = await api(`/api/tasks/${id}`); await copyText(d.prompt || ''); toast('Prompt copied'); break; }
       case 'copy-link': await copyText(taskLink(id)); toast('Link copied'); break;

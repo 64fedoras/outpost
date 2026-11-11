@@ -245,6 +245,7 @@ func (c *Controller) projectRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/projects/{id}", c.auth(c.handleDeleteProject))
 	mux.HandleFunc("POST /api/projects/{id}/suggestions/{sid}/{act}", c.auth(c.handleProjectSuggestion))
 	mux.HandleFunc("GET /api/projects/{id}/download", c.auth(c.handleDownloadProject))
+	mux.HandleFunc("GET /api/projects/{id}/overview", c.auth(c.handleProjectOverview))
 }
 
 type projectReq struct {

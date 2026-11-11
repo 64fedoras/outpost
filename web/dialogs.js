@@ -312,7 +312,8 @@ document.addEventListener('click', async (e) => {
       case 'label-filter': nodeLabel = el.dataset.label; renderNodes(); return;
       case 'starter': $('nt-prompt').value = STARTERS[+el.dataset.i][1]; $('nt-prompt').focus(); return;
       case 'project-delete': case 'project-save': case 'project-use': case 'project-suggest': await projectAction(act, el); break;
-      default: if (act.startsWith('task-')) { await taskAction(act, el); return; }
+      default: if (act.startsWith('proj-')) { await projPageAction(act, el); return; }
+        if (act.startsWith('task-')) { await taskAction(act, el); return; }
     }
   } catch (x) { toast(x.message, 4000); }
   refresh();
