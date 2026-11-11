@@ -242,10 +242,10 @@ $('pj-files-btn').onclick = openPjFiles;
 
 function openPjSettings(id = pageArg) {
   const p = projectById(id); if (!p) return;
-  const sel = (k, opts, cur, word) => `<select data-pf="${k}" data-id="${esc(p.id)}">${opts.map((v) => `<option value="${v}" ${(cur || 0) === v ? 'selected' : ''}>${v ? word(v) : 'default'}</option>`).join('')}</select>`;
+  const sel = (k, opts, cur, word, dflt) => `<select data-pf="${k}" data-id="${esc(p.id)}">${opts.map((v) => `<option value="${v}" ${(cur || 0) === v ? 'selected' : ''}>${v ? word(v) : 'Default (' + word(dflt) + ')'}</option>`).join('')}</select>`;
   setHTML('pj-set-body', `<p class="hint">Defaults for tasks started in <b>${esc(p.name)}</b>. A task's own options still win.</p>
     <label>Test command</label><input data-pf="test_command" data-id="${esc(p.id)}" value="${esc(p.test_command)}" placeholder="none, e.g. go test ./...">
-    <div class="row2"><div><label>Fix rounds</label>${sel('fix_rounds', [0, 1, 2, 3, 5, 8], p.fix_rounds, (v) => v)}</div><div><label>Test time limit</label>${sel('test_minutes', [0, 5, 10, 30, 60], p.test_minutes, (v) => v + ' min')}</div></div>
+    <div class="row2"><div><label>Fix rounds</label>${sel('fix_rounds', [0, 1, 2, 3, 5, 8], p.fix_rounds, (v) => v, (state && state.default_fix_rounds) || 3)}</div><div><label>Test time limit</label>${sel('test_minutes', [0, 5, 10, 30, 60], p.test_minutes, (v) => v + ' min', (state && state.default_test_minutes) || 10)}</div></div>
     <label>Nodes <span class="hint">(tasks run only on nodes with this label; empty = any node)</span></label><input data-pf="node_label" data-id="${esc(p.id)}" value="${esc(p.node_label || '')}" placeholder="any label">
     <label class="toggle"><input type="checkbox" data-pf="review" data-id="${esc(p.id)}" ${p.review === false ? '' : 'checked'}> peer review</label>
     ${p.git_url ? `<h4 class="pj-h4">Git</h4><p class="hint"><code>${esc(p.git_url)}</code> → branch <code>${esc(p.git_branch)}</code>${p.last_push ? ' · last push ' + ago(p.last_push) : ''}${p.last_pr ? ` · <a href="${esc(p.last_pr)}" target="_blank" rel="noopener">last pull request</a>` : ''}</p>
@@ -254,6 +254,8 @@ function openPjSettings(id = pageArg) {
     <h4 class="pj-h4">Conversation</h4><p class="hint">The project conversation is answered by the project's planner (or the default planner in Settings). With Claude or OpenRouter each answer is a small paid call, shown on the Spending page as "${esc(p.name)} · project chat".</p>
     <button class="small" data-act="proj-chat-clear" data-id="${esc(p.id)}">Clear conversation…</button>
     <div class="modal-foot"><button class="danger" data-act="project-delete" data-id="${esc(p.id)}">Delete project…</button><span class="spacer"></span><button data-close>Cancel</button><button class="primary" data-act="project-save" data-id="${esc(p.id)}">Save</button></div>`);
+  // The dialog body is built here, after the page-load binding of [data-close], so bind Cancel now.
+  $('pj-set-body').querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => close('modal-pj-settings'); });
   open('modal-pj-settings');
 }
 $('pj-set-btn').onclick = () => openPjSettings();
