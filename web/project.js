@@ -5,7 +5,7 @@
 // and the Threads panel on the right (artifacts, then the project's tasks grouped
 // as Waiting on you, Working, Idle and Resolved). Files and settings open as dialogs.
 
-let pjData = null, pjDataFor = '', pjFetchedAt = 0, pjFetching = false, pjResolvedOpen = false, pjNewDraft = '';
+let pjTimer = 0, pjData = null, pjDataFor = '', pjFetchedAt = 0, pjFetching = false, pjResolvedOpen = false, pjNewDraft = '';
 const pjWide = () => matchMedia('(min-width: 1100px)').matches;
 function pjPanelPref() { try { const v = localStorage.getItem('pj-panel'); return v === null ? null : v === '1'; } catch (e) { return null; } }
 let pjPanelOpen = pjPanelPref() ?? pjWide();
@@ -47,7 +47,11 @@ async function pjFetch(force) {
   pjFetching = true;
   try {
     const d = await api(`/api/projects/${encodeURIComponent(id)}/overview`);
-    if (pageArg === id) { pjData = d; pjDataFor = id; pjFetchedAt = Date.now(); renderProjectPage(); }
+    if (pageArg === id) {
+      pjData = d; pjDataFor = id; pjFetchedAt = Date.now(); renderProjectPage();
+      clearTimeout(pjTimer);
+      if (d.chat && d.chat.busy) pjTimer = setTimeout(() => { if (page === 'project' && pageArg === id) pjFetch(true); }, 1200);
+    }
   } catch (e) { if (pageArg === id) { pjData = null; pjDataFor = id; pjFetchedAt = Date.now(); renderProjectPage(); } }
   pjFetching = false;
 }
@@ -82,20 +86,41 @@ function pjTaskCard(t, f) {
     <div class="pj-tact">${act}</div></div>`;
 }
 
+// The middle of the page: the project conversation, with each task it started
+// as a live card under the message, plus tasks started elsewhere (the New task
+// page, a schedule) as their request and card, all in time order.
 function renderPjFeed(p) {
   const list = projectTasks(p.id);
   const byId = {}; list.forEach((t) => { byId[t.id] = t; });
-  const feed = pjData && pjDataFor === p.id ? pjData.feed : null;
-  if (!feed) return `<div class="pj-empty">${pjDataFor === p.id ? 'Could not load this project.' : 'Loading…'}</div>`;
-  const shown = feed.filter((f) => byId[f.id] && (pjResolvedOpen || !byId[f.id].resolved));
-  const hidden = feed.length - shown.length;
-  const items = shown.map((f) => {
-    const t = byId[f.id];
-    return `<div class="pj-item">${f.requests.map((r) => `<div class="pj-ask"><div class="bubble">${esc(r.text)}</div><span class="pj-when">${ago(r.time)}</span></div>`).join('')}${pjTaskCard(t, f)}</div>`;
-  }).join('');
-  const more = hidden > 0 ? `<button class="link-btn pj-showres" data-act="proj-show-resolved">${hidden} resolved task${hidden === 1 ? '' : 's'} hidden. Show them</button>` : '';
-  if (!feed.length) return `<div class="pj-empty"><h3>Start the first task in ${esc(p.name)}</h3><p class="hint">Every task here starts from the project's current files, and one task works in the project at a time; the rest wait their turn.</p></div>`;
-  return more + items;
+  const ov = pjData && pjDataFor === p.id ? pjData : null;
+  if (!ov) return `<div class="pj-empty">${pjDataFor === p.id ? 'Could not load this project.' : 'Loading…'}</div>`;
+  const feedById = {}; ov.feed.forEach((f) => { feedById[f.id] = f; });
+  const msgs = (ov.chat && ov.chat.messages) || [];
+  const inChat = new Set(); msgs.forEach((m) => (m.tasks || []).forEach((id) => inChat.add(id)));
+  const showTask = (id) => byId[id] && (pjResolvedOpen || !byId[id].resolved);
+  const cards = (ids) => (ids || []).filter(showTask).map((id) => pjTaskCard(byId[id], feedById[id])).join('');
+  const items = [];
+  msgs.forEach((m) => {
+    let html;
+    if (m.role === 'user') html = `<div class="pj-ask"><div class="bubble">${esc(m.text)}</div><span class="pj-when">${(m.tasks || []).length ? 'started as a task · ' : ''}${ago(m.time)}</span></div>${cards(m.tasks)}`;
+    else {
+      const meta = [m.who && esc(m.who), m.cost_usd ? usd(m.cost_usd) : '', ago(m.time)].filter(Boolean).join(' · ');
+      html = `<div class="pj-answer">${m.text ? `<div class="pj-answer-text">${esc(m.text)}</div>` : ''}${m.error ? `<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>` : ''}${cards(m.tasks)}<div class="pj-when">${meta}</div></div>`;
+    }
+    items.push({ time: new Date(m.time).getTime(), html });
+  });
+  let hidden = 0;
+  ov.feed.forEach((f) => {
+    if (inChat.has(f.id) || !byId[f.id]) return;
+    if (!showTask(f.id)) { hidden++; return; }
+    items.push({ time: new Date(f.created).getTime(), html: f.requests.map((r) => `<div class="pj-ask"><div class="bubble">${esc(r.text)}</div><span class="pj-when">${ago(r.time)}</span></div>`).join('') + pjTaskCard(byId[f.id], f) });
+  });
+  inChat.forEach((id) => { if (byId[id] && !showTask(id)) hidden++; });
+  items.sort((x, y) => x.time - y.time);
+  if (ov.chat && ov.chat.busy) items.push({ html: `<div class="pj-answer pj-thinking"><span class="dots" aria-label="Thinking"><i></i><i></i><i></i></span> <span class="muted">Thinking…</span> <button class="small" data-act="proj-chat-stop">Stop</button></div>` });
+  const more = hidden > 0 ? `<button class="link-btn pj-showres" data-act="proj-show-resolved">${pjResolvedOpen ? 'Hide resolved tasks' : `${hidden} resolved task${hidden === 1 ? '' : 's'} hidden. Show them`}</button>` : '';
+  if (!items.length) return `${more}<div class="pj-empty"><h3>What should ${esc(p.name)} do next?</h3><p class="hint">Ask about the project, or describe work to do: the planner answers here and starts tasks for it. <b>Start as task</b> skips the conversation and starts your message as a task. Every task starts from the project's current files, and one task works in the project at a time.</p></div>`;
+  return more + items.map((i) => `<div class="pj-item">${i.html}</div>`).join('');
 }
 
 function pjRow(t, f) {
@@ -175,22 +200,24 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && page === 'project' && pjPanelOpen && !pjWide() && !document.querySelector('.overlay:not(.hidden)')) setPjPanel(false);
 });
 
-// Start a task in this project from the box under the feed. The project's own
-// defaults (planner, review, fix rounds, node label) apply on the controller.
-async function pjStart() {
-  const prompt = $('pj-text').value;
-  if (!prompt.trim()) { $('pj-text').focus(); return; }
-  $('pj-go').disabled = true;
+// Send a message to the project conversation, or (asTask) start it as a task at
+// once. The project's own defaults (planner, review, fix rounds, node label) apply.
+async function pjSend(asTask) {
+  const text = $('pj-text').value;
+  if (!text.trim()) { $('pj-text').focus(); return; }
+  $('pj-go').disabled = $('pj-task').disabled = true;
   try {
-    await post('/api/tasks', { prompt, project: pageArg });
+    await post(`/api/projects/${encodeURIComponent(pageArg)}/chat`, { text, mode: asTask ? 'task' : '' });
     $('pj-text').value = ''; autoGrow($('pj-text'));
-    toast('Task started'); tasksSeq++;
-    await refresh(); pjFetch(true);
+    if (asTask) { toast('Task started'); tasksSeq++; await refresh(); }
+    await pjFetch(true);
+    $('pj-feed').scrollTop = $('pj-feed').scrollHeight;
   } catch (e) { toast(e.message, 4000); }
-  $('pj-go').disabled = false;
+  $('pj-go').disabled = $('pj-task').disabled = false;
 }
-$('pj-go').onclick = pjStart;
-$('pj-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) pjStart(); });
+$('pj-go').onclick = () => pjSend(false);
+$('pj-task').onclick = () => pjSend(true);
+$('pj-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) pjSend(false); });
 $('pj-text').addEventListener('input', () => autoGrow($('pj-text')));
 $('pj-more').onclick = (e) => {
   e.preventDefault();
@@ -227,6 +254,8 @@ function openPjSettings() {
     <label class="toggle"><input type="checkbox" data-pf="git_push" data-id="${esc(p.id)}" ${p.git_push ? 'checked' : ''}> push each finished round to the branch</label>
     <label class="toggle"><input type="checkbox" data-pf="git_pr" data-id="${esc(p.id)}" ${p.git_pr ? 'checked' : ''}> also open a GitHub pull request</label>` : ''}
     <textarea class="hidden" data-pf="instructions" data-id="${esc(p.id)}">${esc(p.instructions || '')}</textarea>
+    <h4 class="pj-h4">Conversation</h4><p class="hint">The project conversation is answered by the project's planner (or the default planner in Settings). With Claude or OpenRouter each answer is a small paid call, shown on the Spending page as "${esc(p.name)} · project chat".</p>
+    <button class="small" data-act="proj-chat-clear" data-id="${esc(p.id)}">Clear conversation…</button>
     <div class="modal-foot"><button class="danger" data-act="project-delete" data-id="${esc(p.id)}">Delete project…</button><span class="spacer"></span><button data-close>Cancel</button><button class="primary" data-act="project-save" data-id="${esc(p.id)}">Save</button></div>`);
   open('modal-pj-settings');
 }
@@ -281,6 +310,10 @@ async function projPageAction(act, el) {
       await Promise.all(list.map((t) => post(`/api/tasks/${t.id}/meta`, { resolved: true }).then((s) => Object.assign(t, s))));
       tasksSeq++; renderProjectPage(); toast(`Resolved ${list.length} task${list.length === 1 ? '' : 's'}`); return;
     }
+    case 'proj-chat-stop': await post(`/api/projects/${encodeURIComponent(pageArg)}/chat/stop`); pjFetch(true); return;
+    case 'proj-chat-clear':
+      if (!confirm('Clear this project\'s conversation? The tasks it started are kept.')) return;
+      await api(`/api/projects/${encodeURIComponent(id)}/chat`, { method: 'DELETE' }); close('modal-pj-settings'); toast('Conversation cleared'); pjFetch(true); return;
     case 'proj-save-instr': {
       const box = document.querySelector(`#modal-pj-files [data-pf="instructions"][data-id="${id}"]`);
       await post(`/api/projects/${id}`, { instructions: box.value }); toast('Instructions saved'); refresh(); return;
