@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -262,5 +263,48 @@ func TestProjectHTTP(t *testing.T) {
 	c.handleCreateProject(w, httptest.NewRequest("POST", "/api/projects", strings.NewReader(`{"name":"bad","git_url":"file:///etc"}`)))
 	if w.Code != 400 || len(c.projects) != 1 {
 		t.Fatalf("local git URL accepted: %d %s", w.Code, w.Body)
+	}
+}
+
+// The project menu renames, pins and edits instructions through POST /api/projects/{id};
+// fields left out of the request keep their value.
+func TestProjectPinRename(t *testing.T) {
+	c := testController(t)
+	w := httptest.NewRecorder()
+	c.handleCreateProject(w, httptest.NewRequest("POST", "/api/projects", strings.NewReader(`{"name":"first","test_command":"go test"}`)))
+	if w.Code != 200 {
+		t.Fatalf("create: %d %s", w.Code, w.Body)
+	}
+	id := c.projectViews()[0].ID
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/projects/{id}", c.handleUpdateProject)
+	post := func(body string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/projects/"+id, strings.NewReader(body)))
+		if w.Code != 200 {
+			t.Fatalf("update %s: %d %s", body, w.Code, w.Body)
+		}
+	}
+	post(`{"pinned":true}`)
+	v := c.projectViews()[0]
+	if !v.Pinned || v.Name != "first" || v.TestCommand != "go test" {
+		t.Fatalf("after pin: %+v", v)
+	}
+	post(`{"name":"  second  ","instructions":"use pytest"}`)
+	v = c.projectViews()[0]
+	if !v.Pinned || v.Name != "second" || v.Instr != "use pytest" {
+		t.Fatalf("after rename: %+v", v)
+	}
+	post(`{"name":"","pinned":false}`)
+	v = c.projectViews()[0]
+	if v.Pinned || v.Name != "second" {
+		t.Fatalf("after unpin: %+v", v)
+	}
+	// the pin survives a restart
+	post(`{"pinned":true}`)
+	c.loadProjects()
+	if v := c.projectViews(); len(v) != 1 || !v[0].Pinned || v[0].Name != "second" {
+		t.Fatalf("after reload: %+v", v)
 	}
 }
