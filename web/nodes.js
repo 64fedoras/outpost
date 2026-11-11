@@ -267,7 +267,7 @@ function hoursText(w) {
 const labelChips = (n) => (n.labels || []).length ? `<div class="label-row">${n.labels.map((l) => `<span class="label-chip">${esc(l)}</span>`).join('')}</div>` : '';
 async function editLabels(id) {
   const n = nodeById(id);
-  const v = prompt(`Labels for ${nodeName(n)}, separated by commas (for example gpu, fast, office). A task or project can ask for one label.`, (n.labels || []).join(', '));
+  const v = await askText(`Labels for ${nodeName(n)}`, (n.labels || []).join(', '), { body: 'Separated by commas, for example gpu, fast, office. A task or project can ask for one label.' });
   if (v === null) return;
   try { await post(`/api/nodes/${id}/settings`, { labels: v.split(',').map((x) => x.trim()).filter(Boolean) }); toast('Labels saved'); } catch (e) { toast(e.message); }
   refresh();
@@ -372,7 +372,7 @@ function pausePicker(n) {
 async function pauseNode(id, v) {
   const [mode, mins] = v.split(':');
   const n = nodeById(id);
-  if (mode === 'now' && n.running_jobs && !confirm(`Pause ${nodeName(n)} now? Its ${n.running_jobs} running job(s) stop and go to other nodes.`)) { renderNodes(); return; }
+  if (mode === 'now' && n.running_jobs && !await askConfirm(`Pause ${nodeName(n)} now? Its ${n.running_jobs} running job(s) stop and go to other nodes.`)) { renderNodes(); return; }
   try { await post(`/api/nodes/${id}/pause`, { mode, minutes: parseInt(mins || '0', 10) }); toast(mode === 'resume' ? 'Resumed' : 'Paused'); refresh(); }
   catch (e) { toast(e.message); renderNodes(); }
 }
@@ -416,14 +416,14 @@ async function setExec(id, on) {
 }
 async function renameNode(id) {
   const n = nodeById(id);
-  const name = prompt('Node name', nodeName(n));
+  const name = await askText('Node name', nodeName(n));
   if (name === null) return;
   await post(`/api/nodes/${id}/settings`, { name }).catch((e) => toast(e.message));
   refresh();
 }
 async function setNodeIdle(id) {
   const n = nodeById(id);
-  const v = prompt('Unload this node\'s model after it has been idle for (30s, 5m, 1hr, 2d; 0 = never; leave empty for the default in Settings)', n.idle_unload || '');
+  const v = await askText('Unload this node\'s model after it has been idle for', n.idle_unload || '', { body: 'For example 30s, 5m, 1hr or 2d. 0 means never; leave it empty for the default in Settings.' });
   if (v === null) return;
   try { await post(`/api/nodes/${id}/settings`, { idle_unload: v }); toast(v.trim() ? 'Saved' : 'Using the default'); } catch (e) { toast(e.message); }
   refresh();
@@ -435,7 +435,7 @@ async function toggleYield(id) {
 }
 async function removeNode(id) {
   const n = nodeById(id);
-  if (!confirm(`Remove ${nodeName(n)}? Its key is revoked; if it is online it wipes its work directory and config and stops. Downloaded models stay on its disk.`)) return;
+  if (!await askConfirm(`Remove ${nodeName(n)}? Its key is revoked; if it is online it wipes its work directory and config and stops. Downloaded models stay on its disk.`)) return;
   await api(`/api/nodes/${id}`, { method: 'DELETE' }).catch((e) => toast(e.message));
   refresh();
 }
@@ -672,7 +672,7 @@ $('load-go').onclick = async () => {
 };
 
 async function resetHealth(id) {
-  if (!confirm('Reset this node\'s health to green? Its recent disconnects and failed calls are forgotten.')) return;
+  if (!await askConfirm('Reset this node\'s health to green? Its recent disconnects and failed calls are forgotten.')) return;
   try { await post(`/api/nodes/${id}/health/reset`, {}); toast('Health reset'); } catch (e) { toast(e.message); }
   refresh();
 }
@@ -693,7 +693,7 @@ $('load-prof-del').onclick = async () => {
   try { await fetch(`/api/nodes/${loadNodeId}/profiles/${encodeURIComponent(name)}`, { method: 'DELETE', credentials: 'same-origin' }); await refresh(); fillProfiles(nodeById(loadNodeId)); toast('Deleted'); } catch (e) { toast(e.message); }
 };
 $('load-prof-save').onclick = async () => {
-  const name = prompt('Name for these settings (for example "32K, experts in RAM"):');
+  const name = await askText('Name for these settings', '', { body: 'For example "32K, experts in RAM".' });
   if (!name || !name.trim()) return;
   const body = { name: name.trim(), model: $('load-model').value, ctx: parseInt($('load-ctx').value, 10) || 0, gpu_layers: $('load-ngl').value,
     threads: parseInt($('load-threads').value, 10) || 0, extra_args: $('load-extra').value, cpu_moe: moeMode(),

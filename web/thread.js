@@ -573,7 +573,7 @@ async function sendTaskMessage() {
 }
 $('tm-send').onclick = sendTaskMessage;
 $('tm-stop').onclick = async () => {
-  if (!pageArg || !confirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return;
+  if (!pageArg || !await askConfirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return;
   try { await post(`/api/tasks/${pageArg}/cancel`); toast('Stopped'); } catch (e) { toast(e.message, 4000); }
   pollTask(); refresh();
 };
@@ -728,7 +728,7 @@ async function taskAction(act, el) {
       }
       case 'task-pe-save': case 'task-pe-run': {
         readPlanEditor();
-        if (act === 'task-pe-run' && taskDetail.status !== 'awaiting_approval' && !confirm('Put the files back as they were before the last run and run this plan from the start?')) return;
+        if (act === 'task-pe-run' && taskDetail.status !== 'awaiting_approval' && !await askConfirm('Put the files back as they were before the last run and run this plan from the start?')) return;
         await post(`/api/tasks/${id}/plan/edit`, { plan: planEdit.plan, run: act === 'task-pe-run', cap_usd: parseFloat(($('ta-cap') || {}).value) || 0 });
         planEdit = null;
         toast(act === 'task-pe-run' ? 'Running the edited plan' : 'Plan saved');
@@ -736,7 +736,7 @@ async function taskAction(act, el) {
       }
       case 'task-rerun': {
         const whole = el.dataset.mode !== 'failed';
-        if (whole && !confirm('Put the files back as they were before the last run and run the same plan from the start?')) return;
+        if (whole && !await askConfirm('Put the files back as they were before the last run and run the same plan from the start?')) return;
         await post(`/api/tasks/${id}/rerun`, { mode: whole ? 'all' : 'failed' });
         toast(whole ? 'Re-running the plan' : 'Retrying');
         break;
@@ -768,14 +768,14 @@ async function taskAction(act, el) {
         toast(`${(r.published || []).length} published to Updates` + (bad.length ? `. Refused: ${bad.join('; ')}` : '. Update the controller and nodes from the Updates tab.'), bad.length ? 9000 : 4000);
         return;
       }
-      case 'task-cancel': if (!confirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return; await post(`/api/tasks/${id}/cancel`); break;
+      case 'task-cancel': if (!await askConfirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return; await post(`/api/tasks/${id}/cancel`); break;
       case 'task-raise': await post(`/api/tasks/${id}/resume`, { cap_usd: parseFloat($('ta-newcap').value) || 0 }); toast('Continuing'); break;
       case 'task-local': await post(`/api/tasks/${id}/resume`, { planner: $('ta-local').value }); toast('Continuing with the local planner'); break;
       case 'task-resume': await post(`/api/tasks/${id}/resume`); toast('Resumed'); break;
-      case 'task-delete': if (!confirm('Delete this task, its conversation and its files?')) return; await api(`/api/tasks/${id}`, { method: 'DELETE' }); Drafts.clear('task:' + id); Drafts.clearPrefix('ans:' + id + ':'); location.hash = '#/new'; refresh(); return;
+      case 'task-delete': if (!await askConfirm('Delete this task, its conversation and its files?')) return; await api(`/api/tasks/${id}`, { method: 'DELETE' }); Drafts.clear('task:' + id); Drafts.clearPrefix('ans:' + id + ':'); location.hash = '#/new'; refresh(); return;
       case 'task-activity': if (taskDetail) { renderActivity(taskDetail); open('modal-activity'); } return;
       case 'show-changes': showChanges(parseInt(el.dataset.round, 10)); return;
-      case 'undo-round': if (!confirm('Put the files back as they were before this request?')) return; await post(`/api/tasks/${id}/undo?round=${changesRound}`); close('modal-changes'); toast('Round undone'); break;
+      case 'undo-round': if (!await askConfirm('Put the files back as they were before this request?')) return; await post(`/api/tasks/${id}/undo?round=${changesRound}`); close('modal-changes'); toast('Round undone'); break;
       case 'task-files': if (taskDetail) { renderFiles(taskDetail); open('modal-files'); } return;
     }
   } catch (e) { toast(e.message, 4000); }
