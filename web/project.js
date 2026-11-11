@@ -378,7 +378,7 @@ function renderSidePins() {
 // ---------- project context menu ----------
 // Right-click a project (its card, its pinned row in the sidebar, or the title
 // on its page), press its ⋯ button, hold a finger on it, or press Shift+F10 /
-// the menu key on a focused one. F2 renames and Delete deletes directly.
+// the menu key on a focused one. F2 opens Edit and Delete deletes directly.
 let ctxProjId = null, ctxProjReturn = null;
 function openProjMenu(id, x, y, from) {
   const p = projectById(id);
@@ -389,8 +389,7 @@ function openProjMenu(id, x, y, from) {
   const m = $('proj-ctx');
   m.innerHTML = [
     item('open-tab', 'Open in new tab'),
-    item('edit', 'Edit name and instructions…'),
-    item('rename', 'Rename…<span class="kbd">F2</span>'),
+    item('edit', 'Edit…<span class="kbd">F2</span>'),
     item('pin', p.pinned ? 'Unpin from sidebar' : 'Pin to sidebar'),
     '<hr>',
     item('new-task', 'New task in this project'),
@@ -436,13 +435,12 @@ async function deleteProject(id) {
 
 async function runProjMenu(act, id) {
   const p = projectById(id);
-  closeProjMenu(!['edit', 'rename', 'settings'].includes(act));
+  closeProjMenu(!['edit', 'settings'].includes(act));
   if (!p) return;
   try {
     switch (act) {
       case 'open-tab': window.open('#/projects/' + id, '_blank', 'noopener'); break;
       case 'edit': openPjEdit(id, false); break;
-      case 'rename': openPjEdit(id, true); break;
       case 'pin':
         await post(`/api/projects/${id}`, { pinned: !p.pinned }); p.pinned = !p.pinned;
         renderSidePins(); if (page === 'projects') renderProjects();

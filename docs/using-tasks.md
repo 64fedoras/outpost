@@ -309,8 +309,8 @@ resolved); **＋ New project** opens the form in a dialog. Click a card to open 
 
 **Project menu.** Right-click a project (its card, its pinned row in the sidebar, or its name at the
 top of the project page), press its **⋯** button, hold a finger on it for half a second on a phone, or
-press Shift+F10 / the menu key on a focused one. It has **Open in new tab**, **Edit name and
-instructions** (the project's instructions box and any suggested rules live here), **Rename** (F2),
+press Shift+F10 / the menu key on a focused one. It has **Open in new tab**, **Edit** (F2; the
+project's name, its instructions box and any suggested rules),
 **Pin to sidebar** / **Unpin from sidebar**, **New task in this project**, **Copy link**, **Download
 files (.zip)**, **Settings**, **Clear conversation** and **Delete** (Del; only for a project with no
 tasks left). Pinned projects are listed under **Projects** in the sidebar, with an amber count when
