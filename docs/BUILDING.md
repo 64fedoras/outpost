@@ -30,7 +30,7 @@ published it (`SHA256SUMS` is not signed either). If you would rather not trust 
 
 ## Build from source
 
-You need **Go 1.26.10 or newer** (the `go` line in `go.mod`) and nothing else. There is no cgo, and every
+You need **Go 1.26.11 or newer** (the `go` line in `go.mod`) and nothing else. There is no cgo, and every
 dependency is committed in `vendor/`, so the build needs no network after Go itself is installed (the
 scripts turn off module and toolchain downloads on purpose). Get the source with `git clone` or from the
 release zip.
