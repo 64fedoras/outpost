@@ -74,6 +74,14 @@ or `outpost-windows-amd64.exe`. Release binaries are unsigned; see [docs/BUILDIN
 
 ### Controller (Linux, systemd)
 
+One paste that downloads the latest release for this machine (amd64 or arm64), checks it against the published `SHA256SUMS` and installs the controller:
+
+```bash
+A=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); B=https://github.com/64fedoras/outpost/releases/latest/download; cd ~ && curl -fsSLO $B/outpost-linux-$A && curl -fsSL $B/SHA256SUMS | grep " outpost-linux-$A\$" | sha256sum -c - && sudo chmod +x ~/outpost-linux-$A && sudo ~/outpost-linux-$A install controller --advertise https://192.0.2.10:8443
+```
+
+Or, with the binary already on the machine (downloaded by hand or copied over):
+
 ```bash
 sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install controller --advertise https://192.0.2.10:8443
 ```
