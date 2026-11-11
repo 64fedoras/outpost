@@ -139,7 +139,7 @@ document.addEventListener('click', async (e) => {
       case 'cancel': await post(`/api/images/${id}/cancel`); break;
       case 'retry': await post(`/api/images/${id}/retry`); break;
       case 'keep': await post(`/api/images/${id}/keep`, { keep: !!b.dataset.keep }); break;
-      case 'del': if (!confirm('Delete these pictures?')) return; await api(`/api/images/${id}`, { method: 'DELETE' }); break;
+      case 'del': if (!await askConfirm('Delete these pictures?')) return; await api(`/api/images/${id}`, { method: 'DELETE' }); break;
       case 'again': if (g) { await post('/api/images', { model: g.model, prompt: g.prompt, negative: g.negative, width: g.width, height: g.height, steps: g.steps, cfg: g.cfg, sampler: g.sampler, count: g.count, frames: g.frames, fps: g.fps }); toast('Queued'); } break;
       case 'reuse': if (g) {
         $('img-prompt').value = g.prompt; $('img-neg').value = g.negative || '';

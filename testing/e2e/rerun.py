@@ -41,7 +41,8 @@ async def main():
         txt = await pg.inner_text("#thread")
         assert "Edited counter" in txt and "edited" in txt, txt[-500:]
         # 2. re-run the unchanged plan
-        pg.on("dialog", lambda d: asyncio.ensure_future(d.accept()))
+        # The UI's own confirm dialog (confirm.js) replaced the native one: accept it as it appears.
+        await pg.add_init_script("new MutationObserver(() => { const b = document.querySelector('#modal-ask:not(.hidden) #ask-yes'); if (b) b.click(); }).observe(document, {subtree: true, childList: true, attributes: true, attributeFilter: ['class']})")
         await pg.click("[data-act=task-rerun][data-mode=all]")
         await wait_status(pg, ["Working"])
         await wait_status(pg, ["Done"], 240)

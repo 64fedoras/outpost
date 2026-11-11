@@ -70,13 +70,13 @@ async function ghAction(path, msg) {
   refresh();
 }
 $('btn-gh-check').onclick = () => ghAction('/api/github-updates/check', 'Checked GitHub');
-$('btn-gh-install').onclick = () => { if (confirm('Check GitHub and update idle nodes and the controller to the latest release now?')) ghAction('/api/github-updates/install', 'Installing from GitHub'); };
+$('btn-gh-install').onclick = async () => { if (await askConfirm('Check GitHub and update idle nodes and the controller to the latest release now?')) ghAction('/api/github-updates/install', 'Installing from GitHub'); };
 $('btn-upd-all').onclick = async () => {
   try { const r = await post('/api/update-all'); toast(r.waiting ? `Updating ${r.canary} first; ${r.waiting} more follow once it passes` : `Updating ${r.canary}`, 6000); refresh(); } catch (e) { toast(e.message); }
 };
 async function rollbackController() {
   const to = state.controller_rollback_to;
-  if (!confirm(`Roll the controller back to v${to}? It restarts on that version and stays there until you install an update.`)) return;
+  if (!await askConfirm(`Roll the controller back to v${to}? It restarts on that version and stays there until you install an update.`)) return;
   try { await post('/api/controller/rollback'); } catch (e) { toast(e.message); return; }
   ctlUpdating = true; renderUpdates(); toast('Controller restarting…');
   for (let i = 0; i < 60; i++) {
@@ -91,7 +91,7 @@ async function rollbackController() {
 }
 
 async function updateController() {
-  if (!confirm(`Update the controller to v${state.controller_update_to} and restart it? Working tasks on a local planner pick up where they stopped once their node is back; Claude and OpenRouter tasks wait for you to press Resume.`)) return;
+  if (!await askConfirm(`Update the controller to v${state.controller_update_to} and restart it? Working tasks on a local planner pick up where they stopped once their node is back; Claude and OpenRouter tasks wait for you to press Resume.`)) return;
   const target = state.controller_update_to;
   try { await post('/api/controller/update'); } catch (e) { toast(e.message); return; }
   ctlUpdating = true; renderUpdates(); toast('Controller restarting…');
