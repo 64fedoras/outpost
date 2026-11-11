@@ -179,6 +179,7 @@ async function refresh() {
     api('/api/projects').then((p) => { projects = p; }).catch(() => {}),
   ]);
   renderAll();
+  refreshGroups();
 }
 let modelsAt = 0, pushSeq = 0;
 // applyPushed takes one pushed payload: state, task list and projects together.
@@ -193,6 +194,7 @@ async function applyPushed(d) {
     if (mine !== pushSeq) return; // a newer payload already rendered
   }
   renderAll();
+  refreshGroups();
 }
 // Screen readers hear a task's status change (Plan ready, Done, Failed) without visiting it.
 let lastStatuses = null;
@@ -260,33 +262,19 @@ function taskTone(t) {
   return 'idle';
 }
 
-function sideTaskHTML(t, projectName) {
+function sideTaskHTML(t, projectName, tagGroup) {
   const cls = [page === 'task' && pageArg === t.id ? 'active' : '', ctxTaskId === t.id ? 'menu-open' : ''].join(' ');
   const title = renamingId === t.id
     ? `<input class="side-rename" id="side-rename" value="${esc(t.title)}" maxlength="120" aria-label="New name for this task">`
     : `<span class="side-task-title">${t.pinned ? '<span class="pin-mark" aria-label="Pinned">📌</span>' : ''}${esc(t.title)}</span>`;
-  return `<div class="side-task ${cls}" data-task="${esc(t.id)}">
-    <a href="#/tasks/${esc(t.id)}" class="side-task-link" aria-keyshortcuts="Shift+F10 F2 Delete">
+  return `<div class="side-task ${cls}" draggable="true" data-task="${esc(t.id)}">
+    <a href="#/tasks/${esc(t.id)}" class="side-task-link" draggable="false" aria-keyshortcuts="Shift+F10 F2 Delete">
       <span class="tdot ${taskTone(t)}" aria-hidden="true"></span>
       <span class="side-task-text">${title}
-      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${projectName ? esc(projectName) + ' · ' : ''}${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>
+      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${groupTag(tagGroup)}${projectName ? esc(projectName) + ' · ' : ''}${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>
     <button class="side-task-more" data-task-menu="${esc(t.id)}" aria-haspopup="menu" aria-expanded="${ctxTaskId === t.id}" aria-label="Actions for ${esc(t.title)}" title="Actions">⋯</button></div>`;
 }
-// Tasks are grouped by what the person needs to do: answer, watch, or nothing.
-// Pinned tasks sit above all groups.
-function renderSideTasks(force) {
-  if (!tasks || (renamingId && !force)) return; // a rename in progress must survive polling
-  if (!tasks.length) { setHTML('side-tasks', `<p class="side-empty">Tasks you start show up here.</p>`); return; }
-  const names = {};
-  (projects || []).forEach((p) => { names[p.id] = p.name; });
-  const groups = [['Pinned', []], ['Needs you', []], ['Running', []], ['Earlier', []]];
-  tasks.forEach((t) => {
-    const tone = taskTone(t);
-    groups[t.pinned ? 0 : tone === 'needs' ? 1 : ACTIVE.includes(t.status) ? 2 : 3][1].push(t);
-  });
-  setHTML('side-tasks', groups.filter(([, list]) => list.length).map(([name, list]) =>
-    `<div class="side-group">${name}</div>` + list.map((t) => sideTaskHTML(t, names[t.project_id])).join('')).join(''));
-}
+// renderSideTasks (the sidebar list, By status or By group) is in groups.js.
 
 // ---------- task context menu (sidebar) ----------
 // Right-click a task, press its ⋯ button, or press Shift+F10 / the menu key on a
@@ -298,13 +286,14 @@ const canRetry = (t) => t.status === 'failed' || t.status === 'interrupted';
 function openTaskMenu(id, x, y, from) {
   const t = taskById(id);
   if (!t) return;
-  closeTaskMenu(false); closeProjMenu(false);
+  closeTaskMenu(false); closeProjMenu(false); closeGroupCtx(false);
   ctxTaskId = id; ctxReturn = from || null;
   const item = (act, text, extra = '') => `<button role="menuitem" tabindex="-1" data-ctx="${act}" ${extra}>${text}</button>`;
   const html = [
     item('open-tab', 'Open in new tab'),
     item('rename', 'Rename…<span class="kbd">F2</span>'),
     item('pin', t.pinned ? 'Unpin' : 'Pin to top'),
+    item('group', 'Move to group<span class="hint-r">▸</span>', 'aria-haspopup="menu" aria-expanded="false"'),
     t.project_id && (canResolve(t) || t.resolved) ? item('resolve', t.resolved ? 'Reopen' : 'Mark resolved') : '',
     '<hr>',
     item('copy-prompt', 'Copy prompt'),
@@ -327,6 +316,7 @@ function openTaskMenu(id, x, y, from) {
 function closeTaskMenu(restoreFocus = true) {
   const m = $('task-ctx');
   if (!m || m.classList.contains('hidden')) return;
+  closeGroupSub();
   m.classList.add('hidden'); m.innerHTML = '';
   ctxTaskId = null;
   renderSideTasks();
@@ -463,7 +453,7 @@ function longPress(root, sel, cb) {
   const side = $('side-tasks'), m = $('task-ctx');
   side.addEventListener('contextmenu', (e) => {
     const row = e.target.closest('.side-task');
-    if (!row || renamingId) return;
+    if (!row || !row.dataset.task || renamingId) return;
     e.preventDefault();
     const link = row.querySelector('.side-task-link');
     // A keyboard-opened menu (menu key, Shift+F10) has no pointer position.
@@ -481,17 +471,19 @@ function longPress(root, sel, cb) {
   side.addEventListener('keydown', (e) => {
     if (renamingId || e.target.tagName === 'INPUT') return;
     const row = e.target.closest('.side-task');
-    if (!row) return;
+    if (!row || !row.dataset.task) return;
     if (e.key === 'F2') { e.preventDefault(); startRename(row.dataset.task); }
     else if (e.key === 'Delete' && e.target.classList.contains('side-task-link')) { e.preventDefault(); deleteTask(row.dataset.task); }
   });
   m.addEventListener('click', (e) => {
     const b = e.target.closest('[data-ctx]');
-    if (b) runTaskMenu(b.dataset.ctx, ctxTaskId);
+    if (!b) return;
+    if (b.dataset.ctx === 'group') { openGroupSub('task', ctxTaskId, m, true); return; }
+    runTaskMenu(b.dataset.ctx, ctxTaskId);
   });
   menuKeys(m, closeTaskMenu);
-  longPress(side, '.side-task', (row, x, y) => openTaskMenu(row.dataset.task, x, y, row.querySelector('.side-task-link')));
-  document.addEventListener('pointerdown', (e) => { if (ctxTaskId && !m.contains(e.target) && !e.target.closest('[data-task-menu]')) closeTaskMenu(false); });
+  longPress(side, '.side-task:not(.side-chat)', (row, x, y) => openTaskMenu(row.dataset.task, x, y, row.querySelector('.side-task-link')));
+  document.addEventListener('pointerdown', (e) => { if (ctxTaskId && !m.contains(e.target) && !$('group-sub').contains(e.target) && !e.target.closest('[data-task-menu]')) closeTaskMenu(false); });
   side.addEventListener('scroll', () => closeTaskMenu(false));
   window.addEventListener('resize', () => closeTaskMenu(false));
   window.addEventListener('hashchange', () => closeTaskMenu(false));

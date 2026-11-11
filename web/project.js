@@ -392,7 +392,7 @@ let ctxProjId = null, ctxProjReturn = null;
 function openProjMenu(id, x, y, from) {
   const p = projectById(id);
   if (!p) return;
-  closeTaskMenu(false); closeProjMenu(false);
+  closeTaskMenu(false); closeProjMenu(false); closeGroupCtx(false);
   ctxProjId = id; ctxProjReturn = from || null;
   const item = (act, text, extra = '') => `<button role="menuitem" tabindex="-1" data-pctx="${act}" ${extra}>${text}</button>`;
   const m = $('proj-ctx');

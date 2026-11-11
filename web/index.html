@@ -59,7 +59,8 @@
     <a class="new-task side-projects" href="#/projects" data-tab="projects"><span aria-hidden="true">▤</span> Projects</a>
     <nav class="side-pins hidden" id="side-pins" aria-label="Pinned projects"></nav>
     <a class="new-task side-projects" href="#/chat" data-tab="chat"><span aria-hidden="true">💬</span> Chat</a>
-    <nav class="side-tasks" id="side-tasks" aria-label="Tasks"></nav>
+    <div class="side-groupbar" id="side-groupbar"></div>
+    <nav class="side-tasks" id="side-tasks" aria-label="Tasks and chats"></nav>
     <div class="side-foot">
       <div class="cluster" id="side-cluster"></div>
       <nav class="side-nav" aria-label="Cluster">
@@ -877,6 +878,9 @@
 <div id="toast" class="hidden"></div>
 <div id="task-ctx" class="ctx-menu hidden" role="menu"></div>
 <div id="proj-ctx" class="ctx-menu hidden" role="menu"></div>
+<div id="group-ctx" class="ctx-menu hidden" role="menu"></div>
+<div id="group-sub-scrim" class="scrim hidden"></div>
+<div id="group-sub" class="ctx-menu group-sub hidden" role="menu" aria-label="Move to group"></div>
 <div id="sr-status" class="sr-only" role="status" aria-live="polite"></div>
 
 <div id="modal-palette" class="overlay hidden palette-ov">
@@ -889,6 +893,7 @@
 
 <script src="guard.js"></script>
 <script src="app.js"></script>
+<script src="groups.js"></script>
 <script src="new-task.js"></script>
 <script src="project.js"></script>
 <script src="chat.js"></script>
