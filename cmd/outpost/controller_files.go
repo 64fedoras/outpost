@@ -134,6 +134,23 @@ func (c *Controller) runExecJobFiles(ctx context.Context, nodeID string, argv []
 	}
 }
 
+// releaseJobFiles tells the node to delete a job's workspace when the job
+// left big files there that the controller is not going to fetch, so no job
+// data waits on the node for the 30-minute janitor.
+func (c *Controller) releaseJobFiles(nodeID string, res *JobResult) {
+	if res == nil {
+		return
+	}
+	for _, f := range res.Files {
+		if f.Blob {
+			if nc := c.connOf(nodeID); nc != nil {
+				_ = nc.send("ws.close", WSClose{WorkspaceID: "ws_" + res.JobID})
+			}
+			return
+		}
+	}
+}
+
 // peerFor returns where to fetch files from a node: its address and pinned certificate.
 func (c *Controller) peerFor(nodeID string) (transfer.Peer, *nodeConn, error) {
 	c.mu.Lock()
@@ -300,6 +317,7 @@ func (c *Controller) runBuild(ctx context.Context, t *Task) bool {
 	}
 	output := strings.TrimSpace(out.StdoutTail + "\n" + out.StderrTail)
 	if out.ExitCode != 0 {
+		c.releaseJobFiles(node, res)
 		t.logf("warn", "The build failed (exit %d). The source is still available, with the build output.", out.ExitCode)
 		return fail(withSandboxNote(output, out))
 	}

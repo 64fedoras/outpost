@@ -52,6 +52,16 @@ ssh -t admin@node1.example.local 'sudo chmod +x ~/outpost-linux-amd64 && sudo ~/
 The node service runs as the user who ran `sudo`, keeps its data in `~/.outpost/node`, and runs jobs
 as that user. A machine that already joined becomes a service with `sudo outpost install node`.
 
+**What a node keeps.** Task results, project files, build artifacts, screenshots and generated pictures
+are stored on the controller only. A node runs each job in its own folder under `work/` in its data
+folder and deletes it when the job ends. When a job collected a file over 1 MB, the folder stays only
+until the controller has fetched that file; a cancelled, timed-out or failed-build job's folder is
+deleted straight away, and anything left behind (for example after a controller restart) is deleted
+after 30 minutes, at node start, or after a minute without the controller. What stays on a node is
+models, llama.cpp and stable-diffusion builds, toolchains Outpost installed, the Outpost binary, its
+settings and logs, and the shared build cache (`sandbox-cache/`: Go, npm, pip and Cargo caches that
+make later builds faster). With the sandbox off, those caches go to the node user's usual cache folders.
+
 Nodes need nothing else installed. The controller fetches llama.cpp and models once and copies
 them to nodes, and the Outpost binary carries the small system library llama.cpp needs that minimal
 Linux installs lack (`libgomp`), dropping it next to llama.cpp and stable-diffusion.cpp (images and video) only when the machine is missing it.
