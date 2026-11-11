@@ -1,6 +1,9 @@
 package sandbox
 
 import (
+	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -95,5 +98,29 @@ func TestSandboxNotes(t *testing.T) {
 	}
 	if !LooksDenied(1, "", "dial tcp: lookup proxy.golang.org: no such host") || LooksDenied(0, "permission denied", "") || LooksDenied(1, "FAIL TestX", "") {
 		t.Error("LooksDenied")
+	}
+}
+
+func TestGoProxyFromStore(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "package-store")
+	in := Input{Mode: Basic, Dir: t.TempDir(), CacheDir: t.TempDir(), StoreDir: store, HostEnv: []string{"GOPROXY=https://proxy.example"}}
+	p := Build(in)
+	want := "GOPROXY=" + FileURL(filepath.Join(store, "go")) + ",https://proxy.example"
+	if v := lastEnv(p.Env, "GOPROXY"); "GOPROXY="+v != want {
+		t.Errorf("basic: GOPROXY=%s, want %s", v, want)
+	}
+	if !slices.Contains(p.RO, store) {
+		t.Error("the store must be readable (and only readable) in the sandbox")
+	}
+	in.Mode = Strict
+	if v := lastEnv(Build(in).Env, "GOPROXY"); v != FileURL(filepath.Join(store, "go")) {
+		t.Errorf("strict without network: GOPROXY=%s, want the store only", v)
+	}
+	in.StoreDir = ""
+	if v := lastEnv(Build(in).Env, "GOPROXY"); v != "off" {
+		t.Errorf("strict without a store: GOPROXY=%s", v)
+	}
+	if u := FileURL(`C:\data\go`); runtime.GOOS == "windows" && u != "file:///C:/data/go" {
+		t.Errorf("FileURL = %s", u)
 	}
 }

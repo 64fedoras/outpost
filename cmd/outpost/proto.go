@@ -185,25 +185,26 @@ type Welcome struct {
 }
 
 type Heartbeat struct {
-	CPUPct        float64    `json:"cpu_pct"`
-	RAMUsedBytes  uint64     `json:"ram_used_bytes"`
-	RAMTotalBytes uint64     `json:"ram_total_bytes"`
-	SwapUsedBytes uint64     `json:"swap_used_bytes"`
-	GPUUtilPct    []int      `json:"gpu_util_pct"`
-	VRAMUsedBytes []uint64   `json:"vram_used_bytes"`
-	RunningJobs   []string   `json:"running_jobs"`
-	Workspaces    int        `json:"workspaces"`
-	LoadedModel   string     `json:"loaded_model"`
-	InferenceRdy  bool       `json:"inference_ready"`
-	InferenceBusy int        `json:"inference_busy"`
-	ModelsBytes   int64      `json:"models_bytes"`
-	LlamaError    string     `json:"llama_error,omitempty"`
-	RPCEndpoint   string     `json:"rpc_endpoint,omitempty"`  // set while lending memory
-	Paused        bool       `json:"paused,omitempty"`        // no new work (set from the tray icon or the web UI)
-	PausedBy      string     `json:"paused_by,omitempty"`     // tray | web
-	PausedUntil   *time.Time `json:"paused_until,omitempty"`  // a timed pause ends on its own then
-	GPUYielding   bool       `json:"gpu_yielding,omitempty"`  // the model is unloaded because another program is using the GPU
-	IdleUnloaded  bool       `json:"idle_unloaded,omitempty"` // LoadedModel was stopped for idleness; the next request loads it again
+	CPUPct            float64    `json:"cpu_pct"`
+	RAMUsedBytes      uint64     `json:"ram_used_bytes"`
+	RAMTotalBytes     uint64     `json:"ram_total_bytes"`
+	SwapUsedBytes     uint64     `json:"swap_used_bytes"`
+	GPUUtilPct        []int      `json:"gpu_util_pct"`
+	VRAMUsedBytes     []uint64   `json:"vram_used_bytes"`
+	RunningJobs       []string   `json:"running_jobs"`
+	Workspaces        int        `json:"workspaces"`
+	LoadedModel       string     `json:"loaded_model"`
+	InferenceRdy      bool       `json:"inference_ready"`
+	InferenceBusy     int        `json:"inference_busy"`
+	ModelsBytes       int64      `json:"models_bytes"`
+	LlamaError        string     `json:"llama_error,omitempty"`
+	RPCEndpoint       string     `json:"rpc_endpoint,omitempty"`        // set while lending memory
+	Paused            bool       `json:"paused,omitempty"`              // no new work (set from the tray icon or the web UI)
+	PausedBy          string     `json:"paused_by,omitempty"`           // tray | web
+	PausedUntil       *time.Time `json:"paused_until,omitempty"`        // a timed pause ends on its own then
+	PackageStoreBytes int64      `json:"package_store_bytes,omitempty"` // clean package store for exec jobs (node_pkgcache.go)
+	GPUYielding       bool       `json:"gpu_yielding,omitempty"`        // the model is unloaded because another program is using the GPU
+	IdleUnloaded      bool       `json:"idle_unloaded,omitempty"`       // LoadedModel was stopped for idleness; the next request loads it again
 }
 
 // ---- jobs ----
@@ -222,6 +223,7 @@ type JobDispatch struct {
 	JobID        string          `json:"job_id"`
 	ParentTaskID string          `json:"parent_task_id,omitempty"`
 	WorkspaceID  string          `json:"workspace_id,omitempty"`
+	CacheScope   string          `json:"cache_scope,omitempty"` // build cache to use: the task's ID; "" = one for this job only
 	Kind         string          `json:"kind"`
 	TimeoutS     int             `json:"timeout_s"`
 	Inputs       []FileEntry     `json:"inputs"`
@@ -480,4 +482,4 @@ type NodePause struct {
 
 // nodeFeatures lists the controller-to-node messages added after 0.8.0, so the
 // controller can tell an older node apart instead of waiting for no answer.
-var nodeFeatures = []string{"node.ask", "node.pause", "node.gen", "node.video"}
+var nodeFeatures = []string{"node.ask", "node.pause", "node.gen", "node.video", "cache.scope"}

@@ -273,6 +273,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/tokens/{id}", c.auth(c.handleTokenStatus))
 	mux.HandleFunc("POST /api/nodes/{id}/settings", c.auth(c.handleNodeSettings))
 	mux.HandleFunc("POST /api/nodes/{id}/wake", c.auth(c.handleWakeNode))
+	mux.HandleFunc("POST /api/nodes/{id}/package-store/clear", c.auth(c.handleClearPackageStore))
 	mux.HandleFunc("DELETE /api/nodes/{id}", c.auth(c.handleNodeDelete))
 	mux.HandleFunc("POST /api/nodes/{id}/jobs", c.auth(c.handleNewJob))
 	mux.HandleFunc("GET /api/jobs/{id}", c.auth(c.handleGetJob))

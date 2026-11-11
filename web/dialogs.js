@@ -261,6 +261,7 @@ document.addEventListener('click', async (e) => {
       case 'clean': openClean(id); break;
       case 'rename': renameNode(id); break;
       case 'logs': openLogs(id); break;
+      case 'clear-pkg': if (confirm(`Clear the package cache on ${nodeName(nodeById(id))}? The next tasks download their Go modules and npm packages again.`)) { await post(`/api/nodes/${id}/package-store/clear`); toast('Clearing the package cache'); } break;
       case 'node-resume': await pauseNode(id, 'resume'); break;
       case 'idle': setNodeIdle(id); break;
       case 'health-reset': resetHealth(id); break;
