@@ -217,8 +217,15 @@ func (c *Controller) projectPlanner(p *Project) (planner, model, orModel string,
 	if planner == "" {
 		planner = set.DefaultPlanner
 	}
-	if planner == "auto" || planner == "" {
-		if planner, err = c.autoPlanner(); err != nil {
+	// Claude without a key: use the best ready node instead of failing. With no
+	// ready node the usual "add a Claude API key" error below still applies.
+	if planner == "claude" && c.anthropicKey() == "" {
+		if auto, aerr := c.autoPlanner(); aerr == nil {
+			planner = auto
+		}
+	}
+	if planner == "auto" || planner == "auto_api" || planner == "" {
+		if planner, err = c.resolveAutoPlanner(planner); err != nil {
 			return
 		}
 	}
@@ -226,7 +233,9 @@ func (c *Controller) projectPlanner(p *Project) (planner, model, orModel string,
 	if _, ok := claudePrices[model]; !ok {
 		model = "claude-sonnet-5-5"
 	}
-	err = c.checkPlanner(planner, orModel)
+	if err = c.checkPlanner(planner, orModel); err != nil {
+		err = fmt.Errorf("%w (the project conversation uses this project's planner, set in the project's Settings, or the default planner in Settings → Tasks)", err)
+	}
 	return
 }
 

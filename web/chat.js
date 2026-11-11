@@ -21,7 +21,7 @@ async function chatList() {
 function fillChatNodes() {
   const cur = $('chat-node').value || (chatCur && chatCur.node) || 'auto';
   const nodes = (state ? state.nodes : []).filter((n) => n.online && n.heartbeat && n.heartbeat.loaded_model);
-  setHTML('chat-node', `<option value="auto">Automatic (strongest free node)</option>${nodes.map((n) => `<option value="${esc(n.id)}">${esc(n.heartbeat.loaded_model)} on ${esc(nodeName(n))}</option>`).join('')}`);
+  setHTML('chat-node', `<option value="auto">Auto (local, strongest free node)</option>${nodes.map((n) => `<option value="${esc(n.id)}">${esc(n.heartbeat.loaded_model)} on ${esc(nodeName(n))}</option>`).join('')}`);
   $('chat-node').value = [...$('chat-node').options].some((o) => o.value === cur) ? cur : 'auto';
 }
 async function chatLoad(id) {

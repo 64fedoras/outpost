@@ -316,8 +316,11 @@ files (.zip)**, **Settings**, **Clear conversation** and **Delete** (Del; only f
 tasks left). Pinned projects are listed under **Projects** in the sidebar, with an amber count when
 something in them is waiting on you; the pin is stored on the controller, so it shows on every device.
 
+- **Auto planners.** *Auto (local)* only ever uses a ready node's model. *Auto (local + API)* tries a ready node,
+  then Claude, then OpenRouter (each only if it has a key); change the order or untick providers under
+  Settings → Tasks → Planner. Schedules refuse it, because they must never spend money.
 - **The middle is the project conversation.** Ask about the project or describe work: the project's
-  planner (its own, else the default planner in Settings; Claude, OpenRouter or a node's model) answers
+  planner (its own, chosen in the project's **Settings**, else the default planner in Settings → Tasks; Claude, OpenRouter or a node's model) answers
   with what it can see (the project's tasks and their results, the file list, the instructions) and
   starts tasks for work you ask for, at most 3 per answer. Each task it starts appears under its answer
   as a live card (status, the subtask progress strip, the result note, **Answer** / **Review plan** /
