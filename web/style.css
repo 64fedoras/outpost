@@ -983,3 +983,5 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .pj-card-name .pin-mark { margin-right: 6px; }
 .side-task, .side-pin, .pj-card-wrap, .pj-title { -webkit-touch-callout: none; }
 @media (hover: none) { .side-task, .side-pin, .pj-card-wrap { -webkit-user-select: none; user-select: none; } }
+.ao-row { display: flex; align-items: center; gap: 6px; }
+.ao-row .check { flex: 1; margin: 2px 0; }

@@ -244,24 +244,35 @@ func (c *Controller) autoPlanner() (string, error) {
 	return "", errors.New("Auto found no node with a model ready; load a model on a node or pick another planner")
 }
 
-// resolveAutoPlanner turns "auto" (local nodes only) or "auto_api" (local nodes,
-// else Claude, else OpenRouter) into a concrete planner. "auto_api" never spends
-// money while a node is ready.
+// resolveAutoPlanner turns "auto" (local nodes only) or "auto_api" into a
+// concrete planner. "auto_api" tries the providers in the order set in Settings
+// (default: a ready node, then Claude, then OpenRouter), skipping any that is
+// not usable.
 func (c *Controller) resolveAutoPlanner(p string) (string, error) {
-	node, err := c.autoPlanner()
-	if err == nil || p != "auto_api" {
-		return node, err
-	}
-	if c.anthropicKey() != "" {
-		return "claude", nil
+	if p != "auto_api" {
+		return c.autoPlanner()
 	}
 	c.mu.Lock()
+	order := normAutoOrder(c.settings.AutoOrder)
 	orModel := c.settings.OpenRouterModel
 	c.mu.Unlock()
-	if c.openRouterKey() != "" && orModel != "" {
-		return "openrouter", nil
+	for _, who := range order {
+		switch who {
+		case "local":
+			if node, err := c.autoPlanner(); err == nil {
+				return node, nil
+			}
+		case "claude":
+			if c.anthropicKey() != "" {
+				return "claude", nil
+			}
+		case "openrouter":
+			if c.openRouterKey() != "" && orModel != "" {
+				return "openrouter", nil
+			}
+		}
 	}
-	return "", errors.New("Auto (local + API) found no node with a model ready and no Claude or OpenRouter key; load a model on a node or add a key in Settings")
+	return "", errors.New("Auto (local + API) found nothing usable: no node with a model ready, and no Claude or OpenRouter key (see the order in Settings → Tasks)")
 }
 
 func isCloudPlanner(p string) bool { return p == "claude" || p == "openrouter" }

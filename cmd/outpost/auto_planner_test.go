@@ -20,3 +20,33 @@ func TestResolveAutoPlanner(t *testing.T) {
 		t.Fatalf("a schedule may use auto: %v", err)
 	}
 }
+
+// The order setting decides which provider "auto_api" tries first, and a
+// provider that is not usable is skipped.
+func TestAutoOrder(t *testing.T) {
+	if got := normAutoOrder(nil); len(got) != 3 || got[0] != "local" {
+		t.Fatalf("default: %v", got)
+	}
+	if got := normAutoOrder([]string{"openrouter", "bogus", "openrouter", "local"}); len(got) != 2 || got[0] != "openrouter" || got[1] != "local" {
+		t.Fatalf("normalised: %v", got)
+	}
+	c := testController(t)
+	c.settings.OpenRouterModel = "x/y"
+	enc, err := c.encrypt("sk-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.settings.OpenRouterKeyEnc = enc
+	c.settings.AutoOrder = []string{"claude", "openrouter"}
+	if p, err := c.resolveAutoPlanner("auto_api"); err != nil || p != "openrouter" {
+		t.Fatalf("claude has no key, so openrouter: %q %v", p, err)
+	}
+	c.settings.AnthropicKeyEnc = enc
+	if p, _ := c.resolveAutoPlanner("auto_api"); p != "claude" {
+		t.Fatalf("claude first: %q", p)
+	}
+	c.settings.AutoOrder = []string{"openrouter", "claude"}
+	if p, _ := c.resolveAutoPlanner("auto_api"); p != "openrouter" {
+		t.Fatalf("openrouter first: %q", p)
+	}
+}
