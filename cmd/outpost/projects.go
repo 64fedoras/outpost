@@ -27,6 +27,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -443,13 +444,23 @@ func (c *Controller) handleDeleteProject(w http.ResponseWriter, r *http.Request)
 // their git history), settings and instructions. Tasks, the conversation and
 // suggested rules are not copied, the copy is not pinned, and pushing and pull
 // requests start off so the copy never pushes to the original's branch by
-// surprise. A task working in p holds its slot, and the copy waits for none:
+// surprise. {"detach": true} disconnects the copy from the git repository:
+// its files are copied without .git and the git settings are left out. A task working in p holds its slot, and the copy waits for none:
 // it is refused, so it never catches files half written.
 func (c *Controller) handleDuplicateProject(w http.ResponseWriter, r *http.Request) {
 	p := c.getProject(r.PathValue("id"))
 	if p == nil {
 		writeJSON(w, 404, map[string]string{"error": "no such project"})
 		return
+	}
+	var req struct {
+		Detach bool `json:"detach"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeJSON(w, 400, map[string]string{"error": "bad request"})
+			return
+		}
 	}
 	select {
 	case p.slot <- struct{}{}:
@@ -467,6 +478,9 @@ func (c *Controller) handleDuplicateProject(w http.ResponseWriter, r *http.Reque
 		v := *p.Review
 		cp.Review = &v
 	}
+	if req.Detach {
+		cp.GitURL, cp.GitBranch, cp.GitBase, cp.GitUser, cp.GitTokenEnc, cp.GitKeyEnc = "", "", "", "", "", ""
+	}
 	src := p.repoDir()
 	p.mu.Unlock()
 	cp.dir = filepath.Join(c.projectsDir(), cp.ID)
@@ -481,6 +495,12 @@ func (c *Controller) handleDuplicateProject(w http.ResponseWriter, r *http.Reque
 	if err := copyTree(src, cp.repoDir()); err != nil {
 		fail(err)
 		return
+	}
+	if req.Detach {
+		if err := os.RemoveAll(filepath.Join(cp.repoDir(), ".git")); err != nil {
+			fail(err)
+			return
+		}
 	}
 	if err := cp.save(); err != nil {
 		fail(err)

@@ -128,6 +128,29 @@ async def main():
         assert d["instructions"] == "Use pytest. Keep Python 3.9 compatible." and d["test_command"] == "pytest" and not d["pinned"], d
         await pg.evaluate(POST, [f"/api/projects/{dup}", None, "DELETE"])
 
+        # a git project asks first: keep the repository or disconnect the copy. The rig cannot
+        # clone, so the page is told this project has a repository.
+        await pg.evaluate(f"() => {{ const p = projects.find((q) => q.id === '{pid}'); p.git_url = 'https://example.local/dice.git'; p.git_branch = 'outpost'; }}")
+        await card.click(button="right")
+        await menu.locator("[data-pctx=duplicate]").click()
+        await pg.wait_for_selector("#modal-pj-dup:not(.hidden)")
+        assert "example.local/dice.git" in await pg.inner_text("#pj-dup-body")
+        await pg.screenshot(path=E + f"projmenu/{SCHEME}-dup-git.png")
+        await pg.click("#pj-dup-body [data-dup=cancel]")
+        await pg.wait_for_selector("#modal-pj-dup", state="hidden")
+        await pg.wait_for_timeout(500)
+        names = lambda: pg.evaluate("() => fetch('/api/projects').then(r => r.json()).then(l => l.map(p => p.name))")
+        assert "Dice roller CLI (copy)" not in await names(), "cancel made a copy"
+        await pg.evaluate(f"() => {{ const p = projects.find((q) => q.id === '{pid}'); p.git_url = 'https://example.local/dice.git'; }}")
+        await card.click(button="right")
+        await menu.locator("[data-pctx=duplicate]").click()
+        await pg.click("#pj-dup-body [data-dup=detach]")
+        await pg.wait_for_function("() => fetch('/api/projects').then(r => r.json()).then(l => l.some(p => p.name === 'Dice roller CLI (copy)'))")
+        d = next(p for p in await pg.evaluate("() => fetch('/api/projects').then(r => r.json())") if p["name"] == "Dice roller CLI (copy)")
+        dup = d["id"]
+        assert d["git_url"] == "", d
+        await pg.evaluate(POST, [f"/api/projects/{dup}", None, "DELETE"])
+
         # Delete from the menu (empty project)
         await pg.goto(U + "/#/projects")
         oc = pg.locator(f".pj-card-wrap[data-proj='{other}']")
