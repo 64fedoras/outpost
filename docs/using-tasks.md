@@ -29,6 +29,18 @@ The web UI is laid out like a chat app. The sidebar lists your tasks in three gr
 (amber dot), **Running** (green) and **Earlier**; a task in a project shows the project name on its
 second line. Pinned tasks sit above the groups. **Projects** sits right under **New task** at the top of the sidebar, styled the same way.
 
+**Groups.** The switch above the sidebar list picks **By status** (the three sections above) or **By group**.
+Chats are listed in the sidebar too (💬), under Running while one is answering and otherwise under Earlier.
+In **By group** the list is Pinned, **Needs you** (still on top, each item tagged with its group), then one
+collapsible section per group, then **No group**. A group is a named, coloured folder that holds tasks and chats
+together; an item is in one group at most. **＋ New group** creates one. Drag a task or chat row onto a group to move it
+there (drop on *No group* to take it out), or use **Move to group ▸** in the row's menu: the groups fold out beside the
+menu (a bottom sheet on a phone), with **New group…** and **Remove from group**. Right-click a group header (or its **⋯**,
+or F2 / Delete on it) to **Rename**, pick a **colour**, **Move up / down** or **Delete group** (its tasks and chats are kept,
+they just leave the group). A group with something waiting on you shows an amber count. Groups are stored on the controller
+(`groups.json`, up to 100), so every browser and phone sees the same ones; the chosen view and which groups are collapsed are
+remembered per browser. Dragging needs a pointer; on a phone use the menu.
+
 Right-click a task in the sidebar (or press its **⋯** button, which is always shown on a phone) for
 **Open in new tab**, **Rename**, **Pin to top**, **Copy prompt**, **Copy link**, **Duplicate as new
 task** (fills the new-task box with the same prompt and options: planner, Claude model, cap, peer review, mockups-first, tests-first, fix rounds, test time limit, project and node label; attachments and pasted images are not copied, and a planner, project or label that no longer exists falls back to the current choice), **Stop** (while it

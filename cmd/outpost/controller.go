@@ -150,6 +150,8 @@ type Controller struct {
 	projects   map[string]*Project      // see projects.go
 	chats      map[string]*Chat         // chat.go, guarded by chatMu
 	chatMu     sync.Mutex
+	groups     []Group // sidebar groups (groups.go), guarded by groupMu
+	groupMu    sync.Mutex
 	// resumeWake wakes autoResumeInterrupted on node heartbeats (nudgeResume).
 	resumeWake chan struct{}
 	reserved   map[string]int // calls holding a node (see slotsLocked)
@@ -205,6 +207,7 @@ func runController(args []string) error {
 	c.loadGens()
 	c.loadProjects()
 	c.loadChats()
+	c.loadGroups()
 	c.loadTemplates()
 	c.loadSavedCatalog()
 	c.checkSafeMode()
@@ -324,6 +327,7 @@ func runController(args []string) error {
 	c.projectRoutes(mux)
 	c.projectChatRoutes(mux)
 	c.chatRoutes(mux)
+	c.groupRoutes(mux)
 	c.templateRoutes(mux)
 	c.openAIRoutes(mux)
 	c.imageRoutes(mux)
