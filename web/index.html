@@ -57,6 +57,7 @@
     <a class="new-task" href="#/new"><span aria-hidden="true">＋</span> New task</a>
     <a class="new-task side-projects" href="#/image" data-tab="image"><span aria-hidden="true">✦</span> New image</a>
     <a class="new-task side-projects" href="#/projects" data-tab="projects"><span aria-hidden="true">▤</span> Projects</a>
+    <nav class="side-pins hidden" id="side-pins" aria-label="Pinned projects"></nav>
     <a class="new-task side-projects" href="#/chat" data-tab="chat"><span aria-hidden="true">💬</span> Chat</a>
     <nav class="side-tasks" id="side-tasks" aria-label="Tasks"></nav>
     <div class="side-foot">
@@ -205,9 +206,10 @@
             </div>
             <div class="task-bar-tools">
               <button class="small pj-tb" id="pj-threads-btn" aria-controls="pj-panel" aria-expanded="false" title="Show the project's tasks and artifacts">Threads <span class="badge pj-badge hidden" id="pj-threads-n"></span></button>
-              <button class="small pj-tb" id="pj-files-btn" title="Instructions and files">Files</button>
+              <button class="small pj-tb" id="pj-files-btn" title="The project's files">Files</button>
               <button class="small pj-tb" id="pj-set-btn" title="Project settings" aria-label="Project settings">⚙</button>
               <a id="pj-download" title="Download the project's files"><button class="small">.zip</button></a>
+              <button class="small pj-tb pj-more-btn" id="pj-ctx-btn" aria-haspopup="menu" aria-expanded="false" title="Edit, pin and more" aria-label="Project actions">⋯</button>
             </div>
           </div>
           <div class="thread pj-feed" id="pj-feed" aria-live="polite"></div>
@@ -733,9 +735,15 @@
 </div>
 <div id="modal-pj-files" class="overlay hidden">
   <div class="modal">
-    <h3>Instructions and files</h3>
+    <h3>Files</h3>
     <div id="pj-files-body"></div>
     <div class="modal-foot"><a id="pj-files-zip"><button>Download .zip</button></a><button data-close>Close</button></div>
+  </div>
+</div>
+<div id="modal-pj-edit" class="overlay hidden">
+  <div class="modal">
+    <h3>Edit project</h3>
+    <div id="pj-edit-body"></div>
   </div>
 </div>
 <div id="modal-pj-settings" class="overlay hidden">
@@ -860,6 +868,7 @@
 <div id="drop-overlay" class="hidden"><div><b>Drop to upload</b><span>Outpost binaries (outpost-&lt;platform&gt;) become releases</span></div></div>
 <div id="toast" class="hidden"></div>
 <div id="task-ctx" class="ctx-menu hidden" role="menu"></div>
+<div id="proj-ctx" class="ctx-menu hidden" role="menu"></div>
 <div id="sr-status" class="sr-only" role="status" aria-live="polite"></div>
 
 <div id="modal-palette" class="overlay hidden palette-ov">
