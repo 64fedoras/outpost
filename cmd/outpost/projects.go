@@ -418,7 +418,15 @@ func (c *Controller) handleDeleteProject(w http.ResponseWriter, r *http.Request)
 	}
 	delete(c.projects, p.ID)
 	c.mu.Unlock()
+	pc := p.chatLog()
+	pc.mu.Lock()
+	if pc.cancel != nil {
+		pc.cancel()
+	}
+	pc.mu.Unlock()
+	projectChats.Delete(pc.path)
 	os.RemoveAll(p.dir)
+	c.spendDeleted("projchat_" + p.ID)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 

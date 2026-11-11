@@ -52,6 +52,7 @@ type projectOverview struct {
 	Artifacts  []projectArtifact `json:"artifacts"`
 	Files      []repoFile        `json:"files"`
 	FilesTotal int               `json:"files_total"`
+	Chat       projectChatView   `json:"chat"`
 }
 
 func clip(s string, n int) string {
@@ -104,6 +105,7 @@ func (c *Controller) handleProjectOverview(w http.ResponseWriter, r *http.Reques
 		files = files[:overviewMaxFiles]
 	}
 	out.Files = files
+	out.Chat = p.chatLog().view()
 	writeJSON(w, 200, out)
 }
 
