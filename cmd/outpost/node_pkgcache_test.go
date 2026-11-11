@@ -48,8 +48,7 @@ func TestPromoteGoModules(t *testing.T) {
 	// example.com/Foo is stored escaped as example.com/!foo.
 	good := filepath.Join(dl, "example.com", "!foo", "@v")
 	mod := "module example.com/Foo\n"
-	os.MkdirAll(good, 0o555)
-	os.Chmod(good, 0o755)
+	os.MkdirAll(good, 0o755)
 	os.WriteFile(filepath.Join(good, "v1.0.0.mod"), []byte(mod), 0o444)
 	makeModZip(t, filepath.Join(good, "v1.0.0.zip"), "example.com/Foo@v1.0.0", map[string]string{"go.mod": mod, "a.go": "package foo\n"})
 	zipSum, err := hashZip(filepath.Join(good, "v1.0.0.zip"))
