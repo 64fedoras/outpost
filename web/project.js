@@ -393,6 +393,7 @@ function openProjMenu(id, x, y, from) {
     item('pin', p.pinned ? 'Unpin from sidebar' : 'Pin to sidebar'),
     '<hr>',
     item('new-task', 'New task in this project'),
+    item('duplicate', 'Duplicate'),
     item('copy-link', 'Copy link'),
     item('download', 'Download files (.zip)'),
     item('settings', 'Settings…'),
@@ -449,6 +450,13 @@ async function runProjMenu(act, id) {
         try { localStorage.setItem('nt-project', id); } catch (e) {}
         location.hash = '#/new';
         setTimeout(() => { $('nt-project').value = id; renderNew(); $('nt-prompt').focus(); }, 0); break;
+      case 'duplicate': {
+        const r = await post(`/api/projects/${encodeURIComponent(id)}/duplicate`, {});
+        await refresh();
+        toast(`Made ${r.name}: the files, settings and instructions are copied; tasks and the conversation are not`, 4000);
+        if (page === 'project') location.hash = '#/projects/' + r.id;
+        break;
+      }
       case 'copy-link': await copyText(projLink(id)); toast('Link copied'); break;
       case 'download': location.href = `/api/projects/${encodeURIComponent(id)}/download`; break;
       case 'settings': openPjSettings(id); break;

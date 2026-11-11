@@ -117,6 +117,17 @@ async def main():
         await pin.wait_for(state="detached")
         assert (await proj(pg, pid))["pinned"] is False
 
+        # Duplicate from the card menu: a new card "… (copy)" with the instructions
+        await pg.goto(U + "/#/projects")
+        await card.click(button="right")
+        await menu.locator("[data-pctx=duplicate]").click()
+        dupcard = pg.locator(".pj-card-wrap:has(.pj-card-name:text-is('▤ Dice roller CLI (copy)'))")
+        await dupcard.wait_for()
+        dup = await dupcard.get_attribute("data-proj")
+        d = await proj(pg, dup)
+        assert d["instructions"] == "Use pytest. Keep Python 3.9 compatible." and d["test_command"] == "pytest" and not d["pinned"], d
+        await pg.evaluate(POST, [f"/api/projects/{dup}", None, "DELETE"])
+
         # Delete from the menu (empty project)
         await pg.goto(U + "/#/projects")
         oc = pg.locator(f".pj-card-wrap[data-proj='{other}']")

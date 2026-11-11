@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -306,5 +307,55 @@ func TestProjectPinRename(t *testing.T) {
 	c.loadProjects()
 	if v := c.projectViews(); len(v) != 1 || !v[0].Pinned || v[0].Name != "second" {
 		t.Fatalf("after reload: %+v", v)
+	}
+}
+
+// Duplicate copies files, settings and instructions; not tasks, chat, pin or push settings.
+func TestProjectDuplicate(t *testing.T) {
+	c := testController(t)
+	w := httptest.NewRecorder()
+	c.handleCreateProject(w, httptest.NewRequest("POST", "/api/projects", strings.NewReader(`{"name":"Dice","test_command":"pytest"}`)))
+	if w.Code != 200 {
+		t.Fatalf("create: %d %s", w.Code, w.Body)
+	}
+	src := c.projectViews()[0].ID
+	p := c.getProject(src)
+	p.Instructions, p.Pinned, p.FixRounds = "use pytest", true, 5
+	p.Suggestions = []ProjectSuggestion{{ID: "sg_1", Text: "x"}}
+	os.MkdirAll(filepath.Join(p.repoDir(), "pkg"), 0o755)
+	os.WriteFile(filepath.Join(p.repoDir(), "pkg", "main.py"), []byte("print(1)\n"), 0o644)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/projects/{id}/duplicate", c.handleDuplicateProject)
+	dup := func() (int, map[string]string) {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/projects/"+src+"/duplicate", nil))
+		var out map[string]string
+		json.Unmarshal(w.Body.Bytes(), &out)
+		return w.Code, out
+	}
+	code, out := dup()
+	if code != 200 || out["name"] != "Dice (copy)" {
+		t.Fatalf("duplicate: %d %v", code, out)
+	}
+	cp := c.getProject(out["id"])
+	if cp == nil || cp.Instructions != "use pytest" || cp.TestCommand != "pytest" || cp.FixRounds != 5 || cp.Pinned || len(cp.Suggestions) != 0 || cp.GitPush || cp.GitPR {
+		t.Fatalf("copy: %+v", cp)
+	}
+	if b, err := os.ReadFile(filepath.Join(cp.repoDir(), "pkg", "main.py")); err != nil || string(b) != "print(1)\n" {
+		t.Fatalf("copied file: %q %v", b, err)
+	}
+	// a task working in the project holds its slot: the copy is refused, not half-made
+	p.slot <- struct{}{}
+	if code, _ := dup(); code != 409 {
+		t.Fatalf("busy project duplicated: %d", code)
+	}
+	<-p.slot
+	if n := len(c.projectViews()); n != 2 {
+		t.Fatalf("projects: %d", n)
+	}
+	for in, want := range map[string]string{"A": "A (copy)", "A (copy)": "A (copy 2)", "A (copy 2)": "A (copy 3)", "A (copy x)": "A (copy x) (copy)"} {
+		if got := copyName(in); got != want {
+			t.Errorf("copyName(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
