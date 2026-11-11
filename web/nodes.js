@@ -399,7 +399,15 @@ function toolsBox(n) {
   const hasGo = tools.some((t) => t.name === 'go');
   return `<div class="sub wrap u17">Runs commands in ${esc(h.shell)} · ${chips || 'no tools found'}
     ${n.online ? `<a href="#" data-act="install-tool" data-tool="go" data-id="${n.id}">${hasGo ? 'Reinstall' : 'Install'} Go</a>` : ''}</div>
-`;
+${pkgStoreLine(n)}`;
+}
+
+// The node's clean package store (verified Go modules and npm packages that
+// tasks reuse; node_pkgcache.go). Each task's own build cache is deleted when it ends.
+function pkgStoreLine(n) {
+  if (!(n.hello && n.hello.features || []).includes('cache.scope')) return '';
+  const b = (n.heartbeat || {}).package_store_bytes || 0;
+  return `<div class="sub u17" title="Verified Go modules and npm packages that later tasks reuse. Each task's own build cache is deleted when the task ends.">Package cache: ${b ? bytes(b) : 'empty'}${b && n.online ? ` · <a href="#" data-act="clear-pkg" data-id="${n.id}">clear</a>` : ''}</div>`;
 }
 
 async function setExec(id, on) {

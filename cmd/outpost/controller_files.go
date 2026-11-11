@@ -99,7 +99,7 @@ func (c *Controller) handleServeJobInput(w http.ResponseWriter, r *http.Request)
 // the job's result files returned.
 func (c *Controller) runExecJobFiles(ctx context.Context, nodeID string, argv []string, inputs []FileEntry, srcs map[string]string, collect []string, label string, timeout time.Duration) (*ExecOutput, *JobResult, error) {
 	spec, _ := json.Marshal(ExecSpec{Argv: argv, Stream: true, Network: execNetwork(argv)})
-	job := &JobDispatch{JobID: newID("job"), Kind: "exec", TimeoutS: int(timeout.Seconds()), Inputs: inputs, Collect: collect, Spec: spec}
+	job := &JobDispatch{JobID: newID("job"), Kind: "exec", TimeoutS: int(timeout.Seconds()), Inputs: inputs, Collect: collect, Spec: spec, CacheScope: cacheScopeOf(ctx)}
 	if len(srcs) > 0 {
 		c.mu.Lock()
 		if c.jobBlobs == nil {

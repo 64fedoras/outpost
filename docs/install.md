@@ -59,8 +59,27 @@ until the controller has fetched that file; a cancelled, timed-out or failed-bui
 deleted straight away, and anything left behind (for example after a controller restart) is deleted
 after 30 minutes, at node start, or after a minute without the controller. What stays on a node is
 models, llama.cpp and stable-diffusion builds, toolchains Outpost installed, the Outpost binary, its
-settings and logs, and the shared build cache (`sandbox-cache/`: Go, npm, pip and Cargo caches that
-make later builds faster). With the sandbox off, those caches go to the node user's usual cache folders.
+settings and logs, and the clean package cache described next.
+
+**Build caches and the package cache.** Each task gets its own build cache (`cache/<task>` in the
+node's data folder: Go's build and module cache, npm, pip and Cargo), shared by that task's builds,
+tests and fix rounds and deleted when the task ends (or after an hour unused, or at node start). A
+command run on its own gets a cache that goes when it ends. Before a task's cache is deleted, the
+node copies third-party packages it can verify into its **package cache** (`package-store/`), so
+later tasks do not download them again:
+- **Go modules** whose hashes match Go's public checksum database (sum.golang.org). Later tasks read
+  them as a local module source in front of the normal one, and the `go` command checks each module
+  again against `go.sum` and the checksum database. Private modules (`GOPRIVATE`, `GONOSUMDB`) are
+  never copied and their names are not sent anywhere; with `GOSUMDB` set to anything else, nothing
+  from Go is copied.
+- **npm packages** from npm's cache whose content matches the hash in their file name. Each new task's
+  npm cache starts as a copy, so `npm ci` with a lockfile installs them without downloading.
+
+Nothing built from your code (Go's build cache, pip, Cargo or anything else) is kept. The package cache
+is capped at 5 GB, oldest files first; its size shows on the node card under its tools, with **clear**
+to empty it. This applies with the sandbox off too: commands are then pointed at the task cache instead
+of the node user's own cache folders (except Cargo, which keeps using `~/.cargo` with the sandbox off).
+Nodes from before this change kept one shared `sandbox-cache/` folder; it is deleted at their first start.
 
 Nodes need nothing else installed. The controller fetches llama.cpp and models once and copies
 them to nodes, and the Outpost binary carries the small system library llama.cpp needs that minimal
@@ -309,7 +328,7 @@ can check detection without joining.
    tools are detected, not installed. Windows exec nodes run commands in PowerShell, not `sh`.
    **Command sandbox (Linux nodes).** Commands run in a sandbox, set in Settings → *Command sandbox* and per
    node on its card (*default*, *off*, *basic*, *strict*). *Basic* (the default): a command can only
-   change files in its own job folder, a private temporary folder and a shared build cache; it can read
+   change files in its own job folder, a private temporary folder and its task's build cache; it can read
    system folders (`/usr`, `/lib`, `/bin`, `/opt`, a few files in `/etc`) and Outpost's toolchains but not
    your home folder, SSH keys, Outpost's data or other jobs; the environment is cleaned (no tokens from
    the node; proxy and Go module settings are kept); it has no special rights and cannot write huge
