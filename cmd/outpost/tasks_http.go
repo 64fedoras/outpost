@@ -687,6 +687,7 @@ func (c *Controller) restartTask(t *Task, status, from, note string) {
 
 func (c *Controller) startTask(t *Task, fn func(ctx context.Context, t *Task)) {
 	ctx, cancel := context.WithCancel(context.Background())
+	ctx = withCacheScope(ctx, t.ID)
 	t.mu.Lock()
 	if t.cancel != nil {
 		t.cancel()
@@ -703,6 +704,7 @@ func (c *Controller) startTask(t *Task, fn func(ctx context.Context, t *Task)) {
 				t.mu.Unlock()
 				t.setStatus("failed")
 			}
+			c.closeCacheScope(t.ID) // nodes delete this task's build cache
 		}()
 		fn(ctx, t)
 	}()
