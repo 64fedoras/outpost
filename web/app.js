@@ -215,6 +215,7 @@ function renderAll() {
   pollNotifications();
   renderBadges();
   renderSideTasks();
+  renderSidePins();
   renderSideCluster();
   if (page === 'new') renderNew();
   if (page === 'projects' || page === 'project') renderProjects();
@@ -297,7 +298,7 @@ const canRetry = (t) => t.status === 'failed' || t.status === 'interrupted';
 function openTaskMenu(id, x, y, from) {
   const t = taskById(id);
   if (!t) return;
-  closeTaskMenu(false);
+  closeTaskMenu(false); closeProjMenu(false);
   ctxTaskId = id; ctxReturn = from || null;
   const item = (act, text, extra = '') => `<button role="menuitem" tabindex="-1" data-ctx="${act}" ${extra}>${text}</button>`;
   const html = [
@@ -418,6 +419,46 @@ async function runTaskMenu(act, id) {
   } catch (e) { toast(e.message); }
 }
 
+// menuKeys gives a context menu arrow-key, Home/End, Escape and Tab handling.
+function menuKeys(m, closeMenu) {
+  m.addEventListener('keydown', (e) => {
+    const items = [...m.querySelectorAll('button')];
+    const i = items.indexOf(document.activeElement);
+    const go = (n) => { e.preventDefault(); items[(n + items.length) % items.length].focus(); };
+    if (e.key === 'ArrowDown') go(i + 1);
+    else if (e.key === 'ArrowUp') go(i - 1);
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(items.length - 1);
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); }
+    else if (e.key === 'Tab') closeMenu(false);
+  });
+}
+// longPress opens a context menu when a finger rests on an item for half a
+// second (phones have no right-click; iOS Safari sends no contextmenu event).
+// The tap that ends the press does not follow the link, and Android's own
+// contextmenu event right after it is swallowed.
+let lpUntil = 0;
+function longPress(root, sel, cb) {
+  let timer = 0, x0 = 0, y0 = 0, fired = false;
+  const cancel = () => { clearTimeout(timer); timer = 0; };
+  // A press that opened the menu swallows the click and contextmenu that follow
+  // its release, however long the finger stayed down.
+  const release = () => { cancel(); if (fired) { fired = false; lpUntil = Date.now() + 600; } };
+  root.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    const el = e.target.closest(sel);
+    if (!el || e.target.closest('input, textarea, select, button')) return;
+    x0 = e.clientX; y0 = e.clientY;
+    cancel();
+    timer = setTimeout(() => { timer = 0; fired = true; lpUntil = Infinity; if (navigator.vibrate) try { navigator.vibrate(10); } catch (x) {} cb(el, x0, y0); }, 500);
+  });
+  root.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - x0, e.clientY - y0) > 8) cancel(); });
+  ['pointerup', 'pointercancel'].forEach((t) => document.addEventListener(t, release, true));
+  root.addEventListener('scroll', cancel, true);
+  root.addEventListener('click', (e) => { if (Date.now() < lpUntil && e.target.closest(sel)) { e.preventDefault(); e.stopPropagation(); } }, true);
+  root.addEventListener('contextmenu', (e) => { if (Date.now() < lpUntil && e.target.closest(sel)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+}
+
 (function wireTaskMenu() {
   const side = $('side-tasks'), m = $('task-ctx');
   side.addEventListener('contextmenu', (e) => {
@@ -448,17 +489,8 @@ async function runTaskMenu(act, id) {
     const b = e.target.closest('[data-ctx]');
     if (b) runTaskMenu(b.dataset.ctx, ctxTaskId);
   });
-  m.addEventListener('keydown', (e) => {
-    const items = [...m.querySelectorAll('button')];
-    const i = items.indexOf(document.activeElement);
-    const go = (n) => { e.preventDefault(); items[(n + items.length) % items.length].focus(); };
-    if (e.key === 'ArrowDown') go(i + 1);
-    else if (e.key === 'ArrowUp') go(i - 1);
-    else if (e.key === 'Home') go(0);
-    else if (e.key === 'End') go(items.length - 1);
-    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeTaskMenu(); }
-    else if (e.key === 'Tab') closeTaskMenu(false);
-  });
+  menuKeys(m, closeTaskMenu);
+  longPress(side, '.side-task', (row, x, y) => openTaskMenu(row.dataset.task, x, y, row.querySelector('.side-task-link')));
   document.addEventListener('pointerdown', (e) => { if (ctxTaskId && !m.contains(e.target) && !e.target.closest('[data-task-menu]')) closeTaskMenu(false); });
   side.addEventListener('scroll', () => closeTaskMenu(false));
   window.addEventListener('resize', () => closeTaskMenu(false));

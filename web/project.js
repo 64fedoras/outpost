@@ -33,9 +33,10 @@ function renderProjects() {
     const c = projectCounts(p.id);
     const pills = [c.waiting ? `<span class="pill pj-needs">${c.waiting} waiting on you</span>` : '', c.working ? `<span class="pill pj-work">${c.working} working</span>` : '',
       c.idle ? `<span class="pill">${c.idle} idle</span>` : '', c.resolved ? `<span class="pill">${c.resolved} resolved</span>` : ''].join('');
-    return `<a class="pj-card" href="#/projects/${esc(p.id)}"><span class="pj-card-name">▤ ${esc(p.name)}</span>
+    return `<div class="pj-card-wrap ${ctxProjId === p.id ? 'menu-open' : ''}" data-proj="${esc(p.id)}"><a class="pj-card pj-card-link" href="#/projects/${esc(p.id)}" aria-keyshortcuts="Shift+F10 F2 Delete"><span class="pj-card-name">${p.pinned ? '<span class="pin-mark" aria-label="Pinned">📌</span>' : ''}▤ ${esc(p.name)}</span>
       <span class="pj-card-sub">${p.files} file${p.files === 1 ? '' : 's'} · ${p.git_url ? 'git → ' + esc(p.git_branch) : 'plain folder'} · ${p.tasks} task${p.tasks === 1 ? '' : 's'}</span>
-      <span class="pj-card-pills">${pills || '<span class="muted">No tasks yet</span>'}</span></a>`;
+      <span class="pj-card-pills">${pills || '<span class="muted">No tasks yet</span>'}</span></a>
+      <button class="side-task-more pj-card-more" data-proj-menu="${esc(p.id)}" aria-haspopup="menu" aria-expanded="${ctxProjId === p.id}" aria-label="Actions for ${esc(p.name)}" title="Actions">⋯</button></div>`;
   }).join('');
   setHTML('projects-list', `<div class="pj-cards">${cards}<button class="pj-card pj-card-new" data-act="proj-new">＋ New project<span class="pj-card-sub">An empty folder, or a clone of a git repository</span></button></div>`);
 }
@@ -231,19 +232,16 @@ $('pj-more').onclick = (e) => {
 function renderPjFiles(p) {
   const files = (pjData && pjDataFor === p.id && pjData.files) || [];
   const total = (pjData && pjData.files_total) || files.length;
-  setHTML('pj-files-body', `<h4 class="pj-h4">Project instructions</h4>
-    <p class="hint">Standing rules for every task in this project, added after the ones in Settings (and before an <code>OUTPOST.md</code> in the files).</p>
-    <textarea rows="4" data-pf="instructions" data-id="${esc(p.id)}" spellcheck="false" placeholder="e.g. Tests use pytest. Keep Python 3.9 compatible.">${esc(p.instructions || '')}</textarea>
-    ${(p.suggestions || []).map((s) => `<div class="note u6 nv-note"><span class="nv-grow"><b>Suggested after a failed task:</b> ${esc(s.text)} <span class="muted">(${esc(s.task_title || '')})</span></span><button class="small primary" data-act="project-suggest" data-id="${esc(p.id)}" data-sid="${esc(s.id)}" data-do="add">Add to instructions</button><button class="small" data-act="project-suggest" data-id="${esc(p.id)}" data-sid="${esc(s.id)}" data-do="dismiss">Dismiss</button></div>`).join('')}
-    <div class="btns u6"><button class="small primary" data-act="proj-save-instr" data-id="${esc(p.id)}">Save instructions</button></div>
+  const sug = (p.suggestions || []).length;
+  setHTML('pj-files-body', `<p class="hint">Project instructions are under <b>Edit</b>: right-click the project, or press <b>⋯</b> at the top of its page.${sug ? ` <button class="link-btn" data-act="proj-edit" data-id="${esc(p.id)}">${sug} suggested rule${sug === 1 ? '' : 's'} waiting</button>` : ''}</p>
     <h4 class="pj-h4">Files <span class="muted">${total}</span></h4>
     ${files.length ? `<ul class="pj-files">${files.map((f) => `<li><span class="mono">${esc(f.path)}</span><span class="muted">${bytes(f.bytes)}</span></li>`).join('')}</ul>${total > files.length ? `<p class="hint">Showing the first ${files.length}. The .zip has them all.</p>` : ''}` : '<p class="hint">No files yet. The first task writes them.</p>'}`);
 }
 function openPjFiles() { const p = projectById(pageArg); if (!p) return; $('pj-files-zip').href = `/api/projects/${encodeURIComponent(p.id)}/download`; renderPjFiles(p); open('modal-pj-files'); }
 $('pj-files-btn').onclick = openPjFiles;
 
-function openPjSettings() {
-  const p = projectById(pageArg); if (!p) return;
+function openPjSettings(id = pageArg) {
+  const p = projectById(id); if (!p) return;
   const sel = (k, opts, cur, word) => `<select data-pf="${k}" data-id="${esc(p.id)}">${opts.map((v) => `<option value="${v}" ${(cur || 0) === v ? 'selected' : ''}>${v ? word(v) : 'default'}</option>`).join('')}</select>`;
   setHTML('pj-set-body', `<p class="hint">Defaults for tasks started in <b>${esc(p.name)}</b>. A task's own options still win.</p>
     <label>Test command</label><input data-pf="test_command" data-id="${esc(p.id)}" value="${esc(p.test_command)}" placeholder="none, e.g. go test ./...">
@@ -253,13 +251,12 @@ function openPjSettings() {
     ${p.git_url ? `<h4 class="pj-h4">Git</h4><p class="hint"><code>${esc(p.git_url)}</code> → branch <code>${esc(p.git_branch)}</code>${p.last_push ? ' · last push ' + ago(p.last_push) : ''}${p.last_pr ? ` · <a href="${esc(p.last_pr)}" target="_blank" rel="noopener">last pull request</a>` : ''}</p>
     <label class="toggle"><input type="checkbox" data-pf="git_push" data-id="${esc(p.id)}" ${p.git_push ? 'checked' : ''}> push each finished round to the branch</label>
     <label class="toggle"><input type="checkbox" data-pf="git_pr" data-id="${esc(p.id)}" ${p.git_pr ? 'checked' : ''}> also open a GitHub pull request</label>` : ''}
-    <textarea class="hidden" data-pf="instructions" data-id="${esc(p.id)}">${esc(p.instructions || '')}</textarea>
     <h4 class="pj-h4">Conversation</h4><p class="hint">The project conversation is answered by the project's planner (or the default planner in Settings). With Claude or OpenRouter each answer is a small paid call, shown on the Spending page as "${esc(p.name)} · project chat".</p>
     <button class="small" data-act="proj-chat-clear" data-id="${esc(p.id)}">Clear conversation…</button>
     <div class="modal-foot"><button class="danger" data-act="project-delete" data-id="${esc(p.id)}">Delete project…</button><span class="spacer"></span><button data-close>Cancel</button><button class="primary" data-act="project-save" data-id="${esc(p.id)}">Save</button></div>`);
   open('modal-pj-settings');
 }
-$('pj-set-btn').onclick = openPjSettings;
+$('pj-set-btn').onclick = () => openPjSettings();
 
 function openPjArts() {
   const arts = (pjData && pjData.artifacts) || [];
@@ -273,15 +270,23 @@ async function projectAction(act, el) {
   if (act === 'project-delete') {
     if (!confirm('Delete this project and its files? Its git remote is not touched. (A project that still has tasks cannot be deleted; delete them first.)')) return;
     await api(`/api/projects/${id}`, { method: 'DELETE' }); toast('Project deleted');
-    close('modal-pj-settings');
-    if (page === 'project') location.hash = '#/projects';
+    close('modal-pj-settings'); close('modal-pj-edit');
+    projects = (projects || []).filter((q) => q.id !== id); renderSidePins();
+    if (page === 'project' && pageArg === id) location.hash = '#/projects';
   } else if (act === 'project-save') {
-    const body = { test_command: f('test_command').value, review: f('review').checked, fix_rounds: +f('fix_rounds').value, test_minutes: +f('test_minutes').value, node_label: f('node_label').value, instructions: f('instructions').value };
+    const body = { test_command: f('test_command').value, review: f('review').checked, fix_rounds: +f('fix_rounds').value, test_minutes: +f('test_minutes').value, node_label: f('node_label').value };
     if (f('git_push')) { body.git_push = f('git_push').checked; body.git_pr = f('git_pr').checked; }
     await post(`/api/projects/${id}`, body); toast('Saved'); close('modal-pj-settings');
   } else if (act === 'project-suggest') {
     await post(`/api/projects/${id}/suggestions/${encodeURIComponent(el.dataset.sid)}/${el.dataset.do}`, {});
-    toast(el.dataset.do === 'add' ? 'Added to the instructions' : 'Dismissed'); refresh();
+    toast(el.dataset.do === 'add' ? 'Added to the instructions' : 'Dismissed');
+    // Show the new instructions in the open Edit dialog; a name typed there is kept.
+    if (!$('modal-pj-edit').classList.contains('hidden')) {
+      const name = $('pj-edit-name').value;
+      projects = await api('/api/projects');
+      openPjEdit(id); $('pj-edit-name').value = name;
+    }
+    refresh();
   } else if (act === 'project-use') {
     try { localStorage.setItem('nt-project', id); } catch (e) {}
     $('nt-project').value = id;
@@ -314,9 +319,13 @@ async function projPageAction(act, el) {
     case 'proj-chat-clear':
       if (!confirm('Clear this project\'s conversation? The tasks it started are kept.')) return;
       await api(`/api/projects/${encodeURIComponent(id)}/chat`, { method: 'DELETE' }); close('modal-pj-settings'); toast('Conversation cleared'); pjFetch(true); return;
-    case 'proj-save-instr': {
-      const box = document.querySelector(`#modal-pj-files [data-pf="instructions"][data-id="${id}"]`);
-      await post(`/api/projects/${id}`, { instructions: box.value }); toast('Instructions saved'); refresh(); return;
+    case 'proj-edit': close('modal-pj-files'); openPjEdit(id); return;
+    case 'proj-edit-save': {
+      const name = $('pj-edit-name').value.trim();
+      if (!name) { toast('Give the project a name'); $('pj-edit-name').focus(); return; }
+      await post(`/api/projects/${id}`, { name, instructions: $('pj-edit-instr').value });
+      const p = projectById(id); if (p) { p.name = name; p.instructions = $('pj-edit-instr').value; }
+      close('modal-pj-edit'); toast('Saved'); renderSidePins(); renderProjects(); renderSideTasks(); return;
     }
   }
 }
@@ -335,3 +344,164 @@ $('np-go').onclick = async () => {
   } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
   $('np-go').disabled = false; $('np-go').textContent = 'Create project';
 };
+
+// ---------- Edit dialog: name and project instructions ----------
+function openPjEdit(id, focusName) {
+  const p = projectById(id); if (!p) return;
+  setHTML('pj-edit-body', `<label for="pj-edit-name">Name</label><input id="pj-edit-name" maxlength="120" value="${esc(p.name)}">
+    <label for="pj-edit-instr">Project instructions</label>
+    <p class="hint">Standing rules for every task in this project, added after the ones in Settings (and before an <code>OUTPOST.md</code> in the files).</p>
+    <textarea id="pj-edit-instr" rows="6" spellcheck="false" placeholder="e.g. Tests use pytest. Keep Python 3.9 compatible.">${esc(p.instructions || '')}</textarea>
+    ${(p.suggestions || []).map((s) => `<div class="note u6 nv-note"><span class="nv-grow"><b>Suggested after a failed task:</b> ${esc(s.text)} <span class="muted">(${esc(s.task_title || '')})</span></span><button class="small primary" data-act="project-suggest" data-id="${esc(p.id)}" data-sid="${esc(s.id)}" data-do="add">Add to instructions</button><button class="small" data-act="project-suggest" data-id="${esc(p.id)}" data-sid="${esc(s.id)}" data-do="dismiss">Dismiss</button></div>`).join('')}
+    <div class="modal-foot"><span class="spacer"></span><button data-close-edit>Cancel</button><button class="primary" data-act="proj-edit-save" data-id="${esc(p.id)}">Save</button></div>`);
+  $('pj-edit-body').querySelector('[data-close-edit]').onclick = () => close('modal-pj-edit');
+  $('pj-edit-name').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('pj-edit-body').querySelector('[data-act=proj-edit-save]').click(); } };
+  open('modal-pj-edit');
+  const f = focusName ? $('pj-edit-name') : $('pj-edit-instr');
+  f.focus(); if (focusName) f.select();
+}
+
+// ---------- pinned projects in the sidebar ----------
+function renderSidePins() {
+  const pins = (projects || []).filter((p) => p.pinned);
+  const el = $('side-pins');
+  el.classList.toggle('hidden', !pins.length);
+  setHTML(el, pins.map((p) => {
+    const w = projectCounts(p.id).waiting;
+    const cls = [page === 'project' && pageArg === p.id ? 'active' : '', ctxProjId === p.id ? 'menu-open' : ''].join(' ');
+    return `<div class="side-pin ${cls}" data-proj="${esc(p.id)}"><a class="side-pin-link" href="#/projects/${esc(p.id)}" aria-keyshortcuts="Shift+F10 F2 Delete">
+      <span class="side-pin-name">${esc(p.name)}</span>${w ? `<span class="side-pin-n" title="${w} waiting on you">${w}</span>` : ''}</a>
+      <button class="side-task-more" data-proj-menu="${esc(p.id)}" aria-haspopup="menu" aria-expanded="${ctxProjId === p.id}" aria-label="Actions for ${esc(p.name)}" title="Actions">⋯</button></div>`;
+  }).join(''));
+}
+
+// ---------- project context menu ----------
+// Right-click a project (its card, its pinned row in the sidebar, or the title
+// on its page), press its ⋯ button, hold a finger on it, or press Shift+F10 /
+// the menu key on a focused one. F2 renames and Delete deletes directly.
+let ctxProjId = null, ctxProjReturn = null;
+function openProjMenu(id, x, y, from) {
+  const p = projectById(id);
+  if (!p) return;
+  closeTaskMenu(false); closeProjMenu(false);
+  ctxProjId = id; ctxProjReturn = from || null;
+  const item = (act, text, extra = '') => `<button role="menuitem" tabindex="-1" data-pctx="${act}" ${extra}>${text}</button>`;
+  const m = $('proj-ctx');
+  m.innerHTML = [
+    item('open-tab', 'Open in new tab'),
+    item('edit', 'Edit name and instructions…'),
+    item('rename', 'Rename…<span class="kbd">F2</span>'),
+    item('pin', p.pinned ? 'Unpin from sidebar' : 'Pin to sidebar'),
+    '<hr>',
+    item('new-task', 'New task in this project'),
+    item('copy-link', 'Copy link'),
+    item('download', 'Download files (.zip)'),
+    item('settings', 'Settings…'),
+    '<hr>',
+    item('clear-chat', 'Clear conversation…'),
+    item('delete', 'Delete…<span class="kbd">Del</span>', 'class="danger"'),
+  ].join('');
+  m.setAttribute('aria-label', `Actions for ${p.name}`);
+  m.classList.remove('hidden');
+  const r = m.getBoundingClientRect(), pad = 6;
+  m.style.left = Math.max(pad, Math.min(x, innerWidth - r.width - pad)) + 'px';
+  m.style.top = Math.max(pad, Math.min(y, innerHeight - r.height - pad)) + 'px';
+  projMenuMarks();
+  m.querySelector('button').focus();
+}
+function closeProjMenu(restoreFocus = true) {
+  const m = $('proj-ctx');
+  if (!m || m.classList.contains('hidden')) return;
+  m.classList.add('hidden'); m.innerHTML = '';
+  ctxProjId = null;
+  projMenuMarks();
+  if (restoreFocus && ctxProjReturn && document.body.contains(ctxProjReturn)) ctxProjReturn.focus();
+  ctxProjReturn = null;
+}
+// projMenuMarks highlights the item whose menu is open without re-rendering it,
+// so focus and the card under the pointer stay put.
+function projMenuMarks() {
+  document.querySelectorAll('[data-proj]').forEach((el) => el.classList.toggle('menu-open', el.dataset.proj === ctxProjId));
+  document.querySelectorAll('[data-proj-menu]').forEach((b) => b.setAttribute('aria-expanded', String(b.dataset.projMenu === ctxProjId)));
+  $('pj-ctx-btn').setAttribute('aria-expanded', String(!!ctxProjId && ctxProjId === pageArg && page === 'project'));
+}
+const projLink = (id) => location.origin + location.pathname + '#/projects/' + id;
+
+async function deleteProject(id) {
+  const p = projectById(id); if (!p) return;
+  if (p.tasks) { toast(`${p.name} still has ${p.tasks} task${p.tasks === 1 ? '' : 's'}; delete them first`, 4000); return; }
+  await projectAction('project-delete', { dataset: { id } });
+  refresh();
+}
+
+async function runProjMenu(act, id) {
+  const p = projectById(id);
+  closeProjMenu(!['edit', 'rename', 'settings'].includes(act));
+  if (!p) return;
+  try {
+    switch (act) {
+      case 'open-tab': window.open('#/projects/' + id, '_blank', 'noopener'); break;
+      case 'edit': openPjEdit(id, false); break;
+      case 'rename': openPjEdit(id, true); break;
+      case 'pin':
+        await post(`/api/projects/${id}`, { pinned: !p.pinned }); p.pinned = !p.pinned;
+        renderSidePins(); if (page === 'projects') renderProjects();
+        toast(p.pinned ? 'Pinned to the sidebar' : 'Unpinned'); break;
+      case 'new-task':
+        try { localStorage.setItem('nt-project', id); } catch (e) {}
+        location.hash = '#/new';
+        setTimeout(() => { $('nt-project').value = id; renderNew(); $('nt-prompt').focus(); }, 0); break;
+      case 'copy-link': await copyText(projLink(id)); toast('Link copied'); break;
+      case 'download': location.href = `/api/projects/${encodeURIComponent(id)}/download`; break;
+      case 'settings': openPjSettings(id); break;
+      case 'clear-chat':
+        if (!confirm(`Clear ${p.name}'s conversation? The tasks it started are kept.`)) return;
+        await api(`/api/projects/${encodeURIComponent(id)}/chat`, { method: 'DELETE' }); toast('Conversation cleared');
+        if (page === 'project' && pageArg === id) pjFetch(true); break;
+      case 'delete': await deleteProject(id); break;
+    }
+  } catch (e) { toast(e.message, 4000); }
+}
+
+(function wireProjMenu() {
+  const m = $('proj-ctx');
+  const roots = [$('side-pins'), $('projects-list'), document.querySelector('.pj-bar .pj-title')];
+  const linkOf = (el) => el.querySelector('.side-pin-link, .pj-card-link') || el;
+  const idOf = (el) => el.dataset.proj || pageArg;
+  roots.forEach((root) => {
+    const sel = root.classList.contains('pj-title') ? '.pj-title' : '[data-proj]';
+    root.addEventListener('contextmenu', (e) => {
+      const el = e.target.closest(sel);
+      if (!el || e.target.closest('select')) return;
+      e.preventDefault();
+      if (e.clientX || e.clientY) openProjMenu(idOf(el), e.clientX, e.clientY, linkOf(el));
+      else { const r = el.getBoundingClientRect(); openProjMenu(idOf(el), Math.min(r.right - 24, r.left + 200), r.top + 28, linkOf(el)); }
+    });
+    longPress(root, sel, (el, x, y) => openProjMenu(idOf(el), x, y, linkOf(el)));
+    root.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      const el = e.target.closest('[data-proj]');
+      if (!el || !e.target.matches('.side-pin-link, .pj-card-link')) return;
+      if (e.key === 'F2') { e.preventDefault(); openPjEdit(el.dataset.proj, true); }
+      else if (e.key === 'Delete') { e.preventDefault(); deleteProject(el.dataset.proj); }
+    });
+  });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-proj-menu], #pj-ctx-btn');
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    const id = b.dataset.projMenu || pageArg;
+    if (ctxProjId === id) { closeProjMenu(); return; }
+    const r = b.getBoundingClientRect();
+    openProjMenu(id, b.id === 'pj-ctx-btn' ? r.right - 220 : r.left, r.bottom + 4, b);
+  }, true);
+  m.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pctx]');
+    if (b) runProjMenu(b.dataset.pctx, ctxProjId);
+  });
+  menuKeys(m, closeProjMenu);
+  document.addEventListener('pointerdown', (e) => { if (ctxProjId && !m.contains(e.target) && !e.target.closest('[data-proj-menu], #pj-ctx-btn')) closeProjMenu(false); });
+  $('side-tasks').addEventListener('scroll', () => closeProjMenu(false));
+  window.addEventListener('resize', () => closeProjMenu(false));
+  window.addEventListener('hashchange', () => closeProjMenu(false));
+})();

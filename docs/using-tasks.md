@@ -258,12 +258,12 @@ and goes at the top of every planner, worker, reviewer and fix prompt of that ta
 contain an `OUTPOST.md` at the root, its text is added as well. Both together are cut at 8,000 characters
 so a small local model keeps room for the code. Changing the box affects new tasks only.
 
-A project has its own **Instructions** box too (**Files** on the project page). For a task in that project they are added
+A project has its own **Instructions** box too (**Edit** in the project's menu: right-click the project, or press **⋯** on its card or page). For a task in that project they are added
 after the Settings rules (the same 8,000-character limit applies to all of it together).
 
 **Learning from failures.** When a task in a project finishes with its tests still failing, the planner
 is asked once for a short general rule that would have avoided it ("use the testing package only; do
-not add testify"). The rule appears under the project's instructions (**Files** on the project page) as a suggestion: **Add to instructions** or
+not add testify"). The rule appears under the project's instructions (**Edit** in the project's menu) as a suggestion: **Add to instructions** or
 **Dismiss**; nothing changes until you choose. The last 5 suggestions are kept. With Claude or OpenRouter
 this is one small call counted in the task's cost, and it is skipped if it would pass the cap.
 
@@ -307,6 +307,15 @@ project's tasks before deleting the project.
 resolved); **＋ New project** opens the form in a dialog. Click a card to open the **project page**
 (`#/projects/<id>`):
 
+**Project menu.** Right-click a project (its card, its pinned row in the sidebar, or its name at the
+top of the project page), press its **⋯** button, hold a finger on it for half a second on a phone, or
+press Shift+F10 / the menu key on a focused one. It has **Open in new tab**, **Edit name and
+instructions** (the project's instructions box and any suggested rules live here), **Rename** (F2),
+**Pin to sidebar** / **Unpin from sidebar**, **New task in this project**, **Copy link**, **Download
+files (.zip)**, **Settings**, **Clear conversation** and **Delete** (Del; only for a project with no
+tasks left). Pinned projects are listed under **Projects** in the sidebar, with an amber count when
+something in them is waiting on you; the pin is stored on the controller, so it shows on every device.
+
 - **The middle is the project conversation.** Ask about the project or describe work: the project's
   planner (its own, else the default planner in Settings; Claude, OpenRouter or a node's model) answers
   with what it can see (the project's tasks and their results, the file list, the instructions) and
@@ -331,8 +340,8 @@ resolved); **＋ New project** opens the form in a dialog. Click a card to open 
   task menu, or **Resolve all** on Idle) only tidies it away: nothing is deleted, the card leaves the
   middle (a link shows the hidden ones) and the task moves to Resolved. A follow-up, a retry or
   anything that needs you brings it back to the other groups by itself; **Reopen** does it by hand.
-- **Files** shows the project's instructions (and suggested rules) and its file list; **⚙** holds the
-  project's defaults, its git settings and **Delete project**; **.zip** downloads the files.
+- **Files** shows the project's file list; **⚙** holds the
+  project's defaults, its git settings and **Delete project**; **.zip** downloads the files; **⋯** opens the project menu (Edit for the instructions, Pin to sidebar and the rest).
 
 **Attachments:** the 📎 button in the composer takes up to 50 MB in total. A `.zip` becomes the
 task's starting files (one top-level folder is stripped). Other files must be text and are shown

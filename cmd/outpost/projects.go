@@ -57,6 +57,8 @@ type Project struct {
 	Instructions string `json:"instructions,omitempty"`
 	// Suggestions are rules proposed after failed tasks (project_suggest.go).
 	Suggestions []ProjectSuggestion `json:"suggestions,omitempty"`
+	// Pinned projects are listed in the sidebar under Projects.
+	Pinned bool `json:"pinned,omitempty"`
 
 	// Git. GitURL empty = a plain folder project.
 	GitURL      string `json:"git_url,omitempty"`
@@ -207,6 +209,7 @@ type projectView struct {
 	GitPR       bool                `json:"git_pr"`
 	LastPush    string              `json:"last_push"`
 	LastPR      string              `json:"last_pr"`
+	Pinned      bool                `json:"pinned"`
 	Files       int                 `json:"files"`
 	Tasks       int                 `json:"tasks"`
 }
@@ -230,7 +233,7 @@ func (c *Controller) projectViews() []projectView {
 		out = append(out, projectView{ID: p.ID, Name: p.Name, Created: p.Created, Planner: p.Planner, Review: p.Review,
 			TestCommand: p.TestCommand, FixRounds: p.FixRounds, TestMinutes: p.TestMinutes, NodeLabel: p.NodeLabel, Instr: p.Instructions, Suggest: append([]ProjectSuggestion(nil), p.Suggestions...), GitURL: p.GitURL, GitBranch: p.GitBranch, GitBase: p.GitBase, GitUser: p.GitUser,
 			GitToken: p.GitTokenEnc != "", GitKey: p.GitKeyEnc != "", GitPush: p.GitPush, GitPR: p.GitPR,
-			LastPush: p.LastPush, LastPR: p.LastPR, Tasks: counts[p.ID]})
+			LastPush: p.LastPush, LastPR: p.LastPR, Pinned: p.Pinned, Tasks: counts[p.ID]})
 		p.mu.Unlock()
 		out[len(out)-1].Files = len(listRepo(p.repoDir()))
 	}
@@ -264,6 +267,7 @@ type projectReq struct {
 	GitSSHKey   *string `json:"git_ssh_key"` // same
 	GitPush     *bool   `json:"git_push"`
 	GitPR       *bool   `json:"git_pr"`
+	Pinned      *bool   `json:"pinned"`
 }
 
 // apply copies the request onto p (the git URL is only set at creation). Secrets are encrypted.
@@ -306,6 +310,9 @@ func (c *Controller) applyProjectReq(p *Project, req projectReq) error {
 	}
 	if req.GitPR != nil {
 		p.GitPR = *req.GitPR
+	}
+	if req.Pinned != nil {
+		p.Pinned = *req.Pinned
 	}
 	for _, s := range []struct {
 		in  *string
