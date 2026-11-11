@@ -408,7 +408,9 @@ label.check { display: flex; align-items: center; gap: 8px; }
 label.check input { width: auto; }
 
 /* file browser and round changes */
-.fb { display: grid; grid-template-columns: minmax(160px, 260px) 1fr; gap: 12px; margin-top: 8px; }
+.fb { display: grid; grid-template-columns: minmax(160px, 260px) minmax(0, 1fr); gap: 12px; margin-top: 8px; }
+/* min-width 0: without it the grid column grows to the longest code line and the file runs out of the window. */
+.fb-view { min-width: 0; }
 .fb-tree { max-height: 62vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px; font-family: var(--mono); font-size: 12.5px; display: flex; flex-direction: column; }
 .fb-row { display: flex; align-items: center; gap: 6px; }
 .fb-tree a { padding: 2px 6px; border-radius: 4px; word-break: break-all; }
@@ -422,7 +424,7 @@ pre.diff { max-height: 40vh; }
 .d-add { background: rgba(46, 160, 67, .25); display: block; } .d-del { background: rgba(220, 70, 60, .25); display: block; }
 .d-ctx { display: block; } .d-gap { color: #7d7e84; display: block; }
 .diffs details { margin: 6px 0; } .diffs summary { cursor: pointer; }
-@media (max-width: 700px) { .fb { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .fb { grid-template-columns: minmax(0, 1fr); } }
 /* live output of a running subtask */
 .p-list li > details.live { grid-column: 2 / -1; margin: 4px 0 2px; }
 details.live summary { cursor: pointer; font-size: 12px; color: var(--muted); }
