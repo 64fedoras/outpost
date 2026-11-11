@@ -39,7 +39,8 @@ type Chat struct {
 	Created  time.Time `json:"created"`
 	Updated  time.Time `json:"updated"`
 	Messages []ChatMsg `json:"messages"`
-	Busy     string    `json:"busy,omitempty"` // "" | waiting | answering (not saved meaningfully; reset at load)
+	GroupID  string    `json:"group_id,omitempty"` // sidebar group (groups.go)
+	Busy     string    `json:"busy,omitempty"`     // "" | waiting | answering (not saved meaningfully; reset at load)
 
 	dir    string
 	cancel context.CancelFunc
@@ -111,7 +112,7 @@ func (c *Controller) handleListChats(w http.ResponseWriter, r *http.Request) {
 	out := []map[string]any{}
 	for _, ch := range c.chats {
 		ch.mu.Lock()
-		out = append(out, map[string]any{"id": ch.ID, "title": ch.Title, "updated": ch.Updated, "busy": ch.Busy, "messages": len(ch.Messages)})
+		out = append(out, map[string]any{"id": ch.ID, "title": ch.Title, "updated": ch.Updated, "busy": ch.Busy, "messages": len(ch.Messages), "group_id": ch.GroupID})
 		ch.mu.Unlock()
 	}
 	c.chatMu.Unlock()
