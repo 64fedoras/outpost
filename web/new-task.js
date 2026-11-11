@@ -41,6 +41,9 @@ function renderNew() {
   const sel = $('nt-planner');
   const cur = sel.value || state.default_planner || 'claude';
   setHTML(sel, plannerOptions(state.has_claude_key || cur !== 'claude' ? cur : (state.nodes[0] ? 'node:' + state.nodes[0].id : 'claude')));
+  const df = $('nt-fix').options[0], dt = $('nt-testmin').options[0];
+  if (state.default_fix_rounds) df.textContent = `Default (${state.default_fix_rounds})`;
+  if (state.default_test_minutes) dt.textContent = `Default (${state.default_test_minutes} min)`;
   if (!ntInit) {
     ntInit = true;
     $('nt-cap').value = state.default_cap_usd || 2;
