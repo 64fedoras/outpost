@@ -55,11 +55,38 @@ async function loadSettings() {
   $('set-agent').checked = settings.agent_mode !== false; $('set-websearch').checked = !!settings.web_search; $('set-webprivate').checked = !!settings.web_allow_private;
   if (!state) state = await api('/api/state').catch(() => null);
   if (state) $('set-planner').innerHTML = plannerOptions(settings.default_planner);
+  renderAutoOrder(settings.auto_order || ['local', 'claude', 'openrouter']);
   loadNotifySettings();
   loadSecurity();
   loadStorage();
   loadScorecard();
   Guard.settingsReset();
+}
+// Order of providers for the Auto (local + API) planner: ticked ones are tried top to bottom.
+const AUTO_NAMES = { local: 'A ready node (local model)', claude: 'Claude', openrouter: 'OpenRouter' };
+function renderAutoOrder(enabled) {
+  const on = new Set(enabled), box = $('set-autoorder');
+  const all = [...enabled, ...['local', 'claude', 'openrouter'].filter((k) => !on.has(k))];
+  box.innerHTML = all.map((k, i) => `<div class="ao-row" data-ao-row="${k}"><label class="check"><input type="checkbox" data-ao="${k}" ${on.has(k) ? 'checked' : ''}> ${AUTO_NAMES[k]}</label>
+    <button class="msg-tool shown" data-ao-move="-1" ${i ? '' : 'disabled'} aria-label="Move up" title="Move up">↑</button>
+    <button class="msg-tool shown" data-ao-move="1" ${i < all.length - 1 ? '' : 'disabled'} aria-label="Move down" title="Move down">↓</button></div>`).join('');
+}
+// Full order as shown (ticked or not), and the ticked part of it.
+const autoOrderRows = () => [...$('set-autoorder').querySelectorAll('[data-ao-row]')];
+function autoOrderValue() { return autoOrderRows().filter((r) => r.querySelector('[data-ao]').checked).map((r) => r.dataset.aoRow); }
+$('set-autoorder').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ao-move]'); if (!b) return;
+  const rows = autoOrderRows(), row = b.closest('[data-ao-row]'), i = rows.indexOf(row), j = i + +b.dataset.aoMove;
+  if (j < 0 || j >= rows.length) return;
+  const keys = rows.map((r) => r.dataset.aoRow), on = new Set(autoOrderValue());
+  [keys[i], keys[j]] = [keys[j], keys[i]];
+  // Unticked providers keep their place in the list but are not sent.
+  renderAutoOrderKeys(keys, on);
+});
+function renderAutoOrderKeys(keys, on) {
+  $('set-autoorder').innerHTML = keys.map((k, i) => `<div class="ao-row" data-ao-row="${k}"><label class="check"><input type="checkbox" data-ao="${k}" ${on.has(k) ? 'checked' : ''}> ${AUTO_NAMES[k]}</label>
+    <button class="msg-tool shown" data-ao-move="-1" ${i ? '' : 'disabled'} aria-label="Move up" title="Move up">↑</button>
+    <button class="msg-tool shown" data-ao-move="1" ${i < keys.length - 1 ? '' : 'disabled'} aria-label="Move down" title="Move down">↓</button></div>`).join('');
 }
 let orLoaded = false;
 async function loadOpenRouterModels() {
@@ -214,7 +241,7 @@ $('set-wake').addEventListener('change', () => saveSettings({ wake_for_work: $('
 $('set-idle-save').onclick = () => saveSettings({ idle_unload: $('set-idle').value.trim() }, 'Idle unload saved');
 $('set-pooling-save').onclick = () => saveSettings({ pooling_enabled: $('set-pooling').checked }, $('set-pooling').checked ? 'Pooling enabled' : 'Pooling off; pools dissolved');
 $('set-claude-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0 }, 'Claude model and cap saved');
-$('set-save').onclick = () => saveSettings({ default_planner: $('set-planner').value, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked }, 'Defaults saved');
+$('set-save').onclick = () => saveSettings({ default_planner: $('set-planner').value, auto_order: autoOrderValue(), web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked }, 'Defaults saved');
 $('set-run-save').onclick = () => saveSettings({ agent_mode: $('set-agent').checked, auto_resume: $('set-autoresume').checked, best_of_n: $('set-bestofn').value }, 'Task settings saved');
 $('pw-form').onsubmit = async (e) => {
   e.preventDefault();

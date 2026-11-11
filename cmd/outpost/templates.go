@@ -154,7 +154,7 @@ func (c *Controller) scheduleAllowed(req createReq) error {
 		p = c.settings.DefaultPlanner
 	}
 	c.mu.Unlock()
-	if isCloudPlanner(p) {
+	if isCloudPlanner(p) || p == "auto_api" {
 		return errors.New("a schedule runs without you, so it must plan on a node: pick a node (or Auto) as the planner, not Claude or OpenRouter")
 	}
 	return nil
