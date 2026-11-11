@@ -224,8 +224,8 @@ func (c *Controller) projectPlanner(p *Project) (planner, model, orModel string,
 			planner = auto
 		}
 	}
-	if planner == "auto" || planner == "" {
-		if planner, err = c.autoPlanner(); err != nil {
+	if planner == "auto" || planner == "auto_api" || planner == "" {
+		if planner, err = c.resolveAutoPlanner(planner); err != nil {
 			return
 		}
 	}

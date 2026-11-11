@@ -166,8 +166,8 @@ func (c *Controller) createTask(req createReq, files []attachedFile, opt createO
 	if req.Planner == "" {
 		req.Planner = set.DefaultPlanner
 	}
-	if req.Planner == "auto" {
-		p, err := c.autoPlanner()
+	if req.Planner == "auto" || req.Planner == "auto_api" {
+		p, err := c.resolveAutoPlanner(req.Planner)
 		if err != nil {
 			return nil, 409, err
 		}
@@ -242,6 +242,26 @@ func (c *Controller) autoPlanner() (string, error) {
 		return "node:" + w[0], nil
 	}
 	return "", errors.New("Auto found no node with a model ready; load a model on a node or pick another planner")
+}
+
+// resolveAutoPlanner turns "auto" (local nodes only) or "auto_api" (local nodes,
+// else Claude, else OpenRouter) into a concrete planner. "auto_api" never spends
+// money while a node is ready.
+func (c *Controller) resolveAutoPlanner(p string) (string, error) {
+	node, err := c.autoPlanner()
+	if err == nil || p != "auto_api" {
+		return node, err
+	}
+	if c.anthropicKey() != "" {
+		return "claude", nil
+	}
+	c.mu.Lock()
+	orModel := c.settings.OpenRouterModel
+	c.mu.Unlock()
+	if c.openRouterKey() != "" && orModel != "" {
+		return "openrouter", nil
+	}
+	return "", errors.New("Auto (local + API) found no node with a model ready and no Claude or OpenRouter key; load a model on a node or add a key in Settings")
 }
 
 func isCloudPlanner(p string) bool { return p == "claude" || p == "openrouter" }

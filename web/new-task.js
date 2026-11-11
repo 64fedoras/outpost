@@ -5,6 +5,7 @@
 function plannerOptions(selected) {
   const opts = [];
   opts.push(`<option value="auto" ${selected === 'auto' ? 'selected' : ''}>Planner: Auto (local, best ready node)</option>`);
+  opts.push(`<option value="auto_api" ${selected === 'auto_api' ? 'selected' : ''}>Planner: Auto (local + API: nodes first, else Claude or OpenRouter)</option>`);
   opts.push(`<option value="claude" ${state.has_claude_key ? '' : 'disabled'} ${selected === 'claude' ? 'selected' : ''}>Planner: Claude${state.has_claude_key ? '' : ' (add an API key in Settings)'}</option>`);
   const orOk = state.has_openrouter_key && state.openrouter_model;
   opts.push(`<option value="openrouter" ${orOk ? '' : 'disabled'} ${selected === 'openrouter' ? 'selected' : ''}>Planner: ${state.has_openrouter_key ? (state.openrouter_model ? esc(state.openrouter_label) : 'OpenRouter (pick a model in Settings)') : 'OpenRouter (add an API key in Settings)'}</option>`);
