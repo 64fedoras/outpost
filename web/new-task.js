@@ -251,5 +251,7 @@ async function projectAction(act, el) {
   } else if (act === 'project-use') {
     try { localStorage.setItem('nt-project', id); } catch (e) {}
     $('nt-project').value = id;
+    // The link's own navigation is cancelled by the shared data-act click handler, so go there here.
+    location.hash = '#/new';
   }
 }
