@@ -170,15 +170,22 @@ func (c *Controller) waitCanaryBack(id, version string) error {
 		n := c.nodes[id]
 		online := c.conns[id] != nil
 		u := c.updates[id]
+		ver, failed, failMsg := "", false, "" // read under the lock: a reconnect replaces Hello and the update status
+		if n != nil && n.Hello != nil {
+			ver = n.Hello.AgentVersion
+		}
+		if u != nil && u.State == "failed" {
+			failed, failMsg = true, u.Error
+		}
 		c.mu.Unlock()
 		if n == nil {
 			return errors.New("the node was removed")
 		}
-		if online && n.Hello != nil && n.Hello.AgentVersion == version {
+		if online && ver == version {
 			return nil
 		}
-		if u != nil && u.State == "failed" {
-			return errors.New(firstNonEmpty(u.Error, "the update failed"))
+		if failed {
+			return errors.New(firstNonEmpty(failMsg, "the update failed"))
 		}
 		time.Sleep(rolloutPoll)
 	}
