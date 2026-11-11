@@ -226,7 +226,9 @@ func (c *Controller) projectPlanner(p *Project) (planner, model, orModel string,
 	if _, ok := claudePrices[model]; !ok {
 		model = "claude-sonnet-5-5"
 	}
-	err = c.checkPlanner(planner, orModel)
+	if err = c.checkPlanner(planner, orModel); err != nil {
+		err = fmt.Errorf("%w (the project conversation uses this project's planner, set in the project's Settings, or the default planner in Settings → Tasks)", err)
+	}
 	return
 }
 

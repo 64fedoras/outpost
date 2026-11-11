@@ -106,7 +106,7 @@ function renderPjFeed(p) {
     if (m.role === 'user') html = `<div class="pj-ask"><div class="bubble">${esc(m.text)}</div><span class="pj-when">${(m.tasks || []).length ? 'started as a task · ' : ''}${ago(m.time)}</span></div>${cards(m.tasks)}`;
     else {
       const meta = [m.who && esc(m.who), m.cost_usd ? usd(m.cost_usd) : '', ago(m.time)].filter(Boolean).join(' · ');
-      html = `<div class="pj-answer">${m.text ? `<div class="pj-answer-text">${esc(m.text)}</div>` : ''}${m.error ? `<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>` : ''}${cards(m.tasks)}<div class="pj-when">${meta}</div></div>`;
+      html = `<div class="pj-answer">${m.text ? `<div class="pj-answer-text">${esc(m.text)}</div>` : ''}${m.error ? `<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}${/planner|API key/i.test(m.error) && m.error !== 'stopped' ? `<div class="card-actions"><button class="small" data-act="proj-planner-pick" data-id="${esc(p.id)}">Pick this project's planner</button> <a href="#/settings" data-act="proj-planner-settings">Open Settings → Tasks</a></div>` : ''}</div>` : ''}${cards(m.tasks)}<div class="pj-when">${meta}</div></div>`;
     }
     items.push({ time: new Date(m.time).getTime(), html });
   });
@@ -244,6 +244,8 @@ function openPjSettings(id = pageArg) {
   const p = projectById(id); if (!p) return;
   const sel = (k, opts, cur, word) => `<select data-pf="${k}" data-id="${esc(p.id)}">${opts.map((v) => `<option value="${v}" ${(cur || 0) === v ? 'selected' : ''}>${v ? word(v) : 'default'}</option>`).join('')}</select>`;
   setHTML('pj-set-body', `<p class="hint">Defaults for tasks started in <b>${esc(p.name)}</b>. A task's own options still win.</p>
+    <label for="pj-set-planner">Planner <span class="hint">(plans tasks and answers the project conversation)</span></label>
+    <select id="pj-set-planner" data-pf="planner" data-id="${esc(p.id)}"><option value="">Default planner (set in Settings → Tasks)</option>${plannerOptions(p.planner || '__none__')}</select>
     <label>Test command</label><input data-pf="test_command" data-id="${esc(p.id)}" value="${esc(p.test_command)}" placeholder="none, e.g. go test ./...">
     <div class="row2"><div><label>Fix rounds</label>${sel('fix_rounds', [0, 1, 2, 3, 5, 8], p.fix_rounds, (v) => v)}</div><div><label>Test time limit</label>${sel('test_minutes', [0, 5, 10, 30, 60], p.test_minutes, (v) => v + ' min')}</div></div>
     <label>Nodes <span class="hint">(tasks run only on nodes with this label; empty = any node)</span></label><input data-pf="node_label" data-id="${esc(p.id)}" value="${esc(p.node_label || '')}" placeholder="any label">
@@ -251,7 +253,7 @@ function openPjSettings(id = pageArg) {
     ${p.git_url ? `<h4 class="pj-h4">Git</h4><p class="hint"><code>${esc(p.git_url)}</code> → branch <code>${esc(p.git_branch)}</code>${p.last_push ? ' · last push ' + ago(p.last_push) : ''}${p.last_pr ? ` · <a href="${esc(p.last_pr)}" target="_blank" rel="noopener">last pull request</a>` : ''}</p>
     <label class="toggle"><input type="checkbox" data-pf="git_push" data-id="${esc(p.id)}" ${p.git_push ? 'checked' : ''}> push each finished round to the branch</label>
     <label class="toggle"><input type="checkbox" data-pf="git_pr" data-id="${esc(p.id)}" ${p.git_pr ? 'checked' : ''}> also open a GitHub pull request</label>` : ''}
-    <h4 class="pj-h4">Conversation</h4><p class="hint">The project conversation is answered by the project's planner (or the default planner in Settings). With Claude or OpenRouter each answer is a small paid call, shown on the Spending page as "${esc(p.name)} · project chat".</p>
+    <h4 class="pj-h4">Conversation</h4><p class="hint">The project conversation is answered by the planner chosen above (or, if left on default, the default planner in Settings → Tasks). With Claude or OpenRouter each answer is a small paid call, shown on the Spending page as "${esc(p.name)} · project chat".</p>
     <button class="small" data-act="proj-chat-clear" data-id="${esc(p.id)}">Clear conversation…</button>
     <div class="modal-foot"><button class="danger" data-act="project-delete" data-id="${esc(p.id)}">Delete project…</button><span class="spacer"></span><button data-close>Cancel</button><button class="primary" data-act="project-save" data-id="${esc(p.id)}">Save</button></div>`);
   open('modal-pj-settings');
@@ -274,7 +276,7 @@ async function projectAction(act, el) {
     projects = (projects || []).filter((q) => q.id !== id); renderSidePins();
     if (page === 'project' && pageArg === id) location.hash = '#/projects';
   } else if (act === 'project-save') {
-    const body = { test_command: f('test_command').value, review: f('review').checked, fix_rounds: +f('fix_rounds').value, test_minutes: +f('test_minutes').value, node_label: f('node_label').value };
+    const body = { planner: f('planner').value, test_command: f('test_command').value, review: f('review').checked, fix_rounds: +f('fix_rounds').value, test_minutes: +f('test_minutes').value, node_label: f('node_label').value };
     if (f('git_push')) { body.git_push = f('git_push').checked; body.git_pr = f('git_pr').checked; }
     await post(`/api/projects/${id}`, body); toast('Saved'); close('modal-pj-settings');
   } else if (act === 'project-suggest') {
@@ -300,6 +302,11 @@ async function projPageAction(act, el) {
   const id = el.dataset.id;
   switch (act) {
     case 'proj-new': open('modal-newproj'); return;
+    case 'proj-planner-pick': openPjSettings(id); return;
+    case 'proj-planner-settings':
+      location.hash = '#/settings';
+      setTimeout(() => { const a = document.querySelector('#set-nav a[href="#set-tasks"]'); if (a) a.click(); }, 150);
+      return;
     case 'proj-arts': openPjArts(); return;
     case 'proj-show-resolved': pjResolvedOpen = !pjResolvedOpen; renderProjectPage(); return;
     case 'proj-resolve': {
