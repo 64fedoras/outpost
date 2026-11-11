@@ -31,6 +31,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -246,6 +247,7 @@ func (c *Controller) projectRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/projects", c.auth(c.handleCreateProject))
 	mux.HandleFunc("POST /api/projects/{id}", c.auth(c.handleUpdateProject))
 	mux.HandleFunc("DELETE /api/projects/{id}", c.auth(c.handleDeleteProject))
+	mux.HandleFunc("POST /api/projects/{id}/duplicate", c.auth(c.handleDuplicateProject))
 	mux.HandleFunc("POST /api/projects/{id}/suggestions/{sid}/{act}", c.auth(c.handleProjectSuggestion))
 	mux.HandleFunc("GET /api/projects/{id}/download", c.auth(c.handleDownloadProject))
 	mux.HandleFunc("GET /api/projects/{id}/overview", c.auth(c.handleProjectOverview))
@@ -435,6 +437,72 @@ func (c *Controller) handleDeleteProject(w http.ResponseWriter, r *http.Request)
 	os.RemoveAll(p.dir)
 	c.spendDeleted("projchat_" + p.ID)
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// handleDuplicateProject makes a new project with a copy of p's files (with
+// their git history), settings and instructions. Tasks, the conversation and
+// suggested rules are not copied, the copy is not pinned, and pushing and pull
+// requests start off so the copy never pushes to the original's branch by
+// surprise. A task working in p holds its slot, and the copy waits for none:
+// it is refused, so it never catches files half written.
+func (c *Controller) handleDuplicateProject(w http.ResponseWriter, r *http.Request) {
+	p := c.getProject(r.PathValue("id"))
+	if p == nil {
+		writeJSON(w, 404, map[string]string{"error": "no such project"})
+		return
+	}
+	select {
+	case p.slot <- struct{}{}:
+		defer func() { <-p.slot }()
+	default:
+		writeJSON(w, 409, map[string]string{"error": "a task is working in this project; duplicate it when the task finishes"})
+		return
+	}
+	p.mu.Lock()
+	cp := &Project{Schema: projectSchema, ID: newID("proj"), Created: time.Now(), slot: make(chan struct{}, 1),
+		Name: copyName(p.Name), Planner: p.Planner, TestCommand: p.TestCommand, FixRounds: p.FixRounds,
+		TestMinutes: p.TestMinutes, NodeLabel: p.NodeLabel, Instructions: p.Instructions,
+		GitURL: p.GitURL, GitBranch: p.GitBranch, GitBase: p.GitBase, GitUser: p.GitUser, GitTokenEnc: p.GitTokenEnc, GitKeyEnc: p.GitKeyEnc}
+	if p.Review != nil {
+		v := *p.Review
+		cp.Review = &v
+	}
+	src := p.repoDir()
+	p.mu.Unlock()
+	cp.dir = filepath.Join(c.projectsDir(), cp.ID)
+	fail := func(err error) {
+		os.RemoveAll(cp.dir)
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+	}
+	if err := os.MkdirAll(cp.repoDir(), 0o755); err != nil {
+		fail(err)
+		return
+	}
+	if err := copyTree(src, cp.repoDir()); err != nil {
+		fail(err)
+		return
+	}
+	if err := cp.save(); err != nil {
+		fail(err)
+		return
+	}
+	c.mu.Lock()
+	c.projects[cp.ID] = cp
+	c.mu.Unlock()
+	writeJSON(w, 200, map[string]string{"id": cp.ID, "name": cp.Name})
+}
+
+// copyName gives a duplicate's name: "Dice" -> "Dice (copy)", "Dice (copy)" -> "Dice (copy 2)".
+func copyName(name string) string {
+	if base, ok := strings.CutSuffix(name, " (copy)"); ok {
+		return base + " (copy 2)"
+	}
+	if i := strings.LastIndex(name, " (copy "); i > 0 && strings.HasSuffix(name, ")") {
+		if n, err := strconv.Atoi(name[i+7 : len(name)-1]); err == nil && n > 1 {
+			return name[:i] + " (copy " + strconv.Itoa(n+1) + ")"
+		}
+	}
+	return name + " (copy)"
 }
 
 func (c *Controller) handleDownloadProject(w http.ResponseWriter, r *http.Request) {
