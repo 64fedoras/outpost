@@ -213,11 +213,12 @@
           <div class="thread pj-feed" id="pj-feed" aria-live="polite"></div>
           <div class="dock">
             <div class="composer">
-              <textarea id="pj-text" rows="1" placeholder="Start a task in this project… (Ctrl+Enter starts)" aria-label="New task in this project"></textarea>
+              <textarea id="pj-text" rows="1" placeholder="Ask about this project or describe work to do… (Ctrl+Enter sends)" aria-label="Message to the project"></textarea>
               <div class="composer-bar">
-                <span class="composer-hint">Uses this project's settings.</span><a href="#/new" id="pj-more" class="composer-hint">More options…</a>
+                <a href="#/new" id="pj-more" class="composer-hint" title="The full new-task form, with this project chosen">More options…</a>
                 <span class="spacer"></span>
-                <button class="send" id="pj-go">Start</button>
+                <button class="small" id="pj-task" title="Skip the conversation: start this message as a task now, with the project's settings">Start as task</button>
+                <button class="send" id="pj-go">Send</button>
               </div>
             </div>
           </div>

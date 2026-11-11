@@ -307,10 +307,20 @@ project's tasks before deleting the project.
 resolved); **＋ New project** opens the form in a dialog. Click a card to open the **project page**
 (`#/projects/<id>`):
 
-- **The middle** lists every request made in the project, oldest first, each followed by its task's
-  card: status, the subtask progress strip while it works, the result note when it is done, and
-  **Answer** / **Review plan** / **✓ Resolve**. The box at the bottom starts a task in the project with
-  the project's own defaults; **More options…** opens the full new-task form with the project chosen.
+- **The middle is the project conversation.** Ask about the project or describe work: the project's
+  planner (its own, else the default planner in Settings; Claude, OpenRouter or a node's model) answers
+  with what it can see (the project's tasks and their results, the file list, the instructions) and
+  starts tasks for work you ask for, at most 3 per answer. Each task it starts appears under its answer
+  as a live card (status, the subtask progress strip, the result note, **Answer** / **Review plan** /
+  **✓ Resolve**), so questions and results come back into the conversation. It cannot open files or
+  run commands itself; tasks do that. **Start as task** skips the conversation and starts your message
+  as a task at once; **More options…** opens the full new-task form with the project chosen. Tasks
+  started elsewhere (the New task page, a schedule) show up in time order with their request.
+  With Claude or OpenRouter each answer is one small paid call, on the Spending page as
+  "*project* · project chat"; an answer that would pass the monthly cap or cost more than the
+  default task cap is refused with a note. A node planner waits for a free slot on its node.
+  **Stop** cancels an answer in progress; **⚙ → Clear conversation** empties it (tasks are kept).
+  The conversation is kept in the project folder on the controller and is deleted with the project.
 - **Threads** (top bar; the amber number is how many tasks wait on you) opens a panel on the right
   with the project's **Artifacts** (screenshots, build outputs, result zips and the last pull request;
   **View all** lists them all) and its tasks in four groups: **Waiting on you** (questions, a plan to

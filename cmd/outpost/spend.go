@@ -215,7 +215,17 @@ func (c *Controller) recordSpend(t *Task, provider string, resp *llmResponse) {
 		title = firstLine(t.Prompt, 80)
 	}
 	t.mu.Unlock()
-	label := c.spendPlannerLabel(provider, model, orModel)
+	if err := c.recordSpendFor(provider, id, title, c.spendPlannerLabel(provider, model, orModel), resp); err != nil {
+		t.logf("warn", "Could not save the spending ledger: %v", err)
+	}
+}
+
+// recordSpendFor adds one cloud call under any id: a task, or a project
+// conversation ("projchat_<project id>").
+func (c *Controller) recordSpendFor(provider, id, title, label string, resp *llmResponse) error {
+	if resp == nil {
+		return nil
+	}
 	l := c.spendLedger()
 	now := time.Now()
 	l.mu.Lock()
@@ -223,9 +233,7 @@ func (c *Controller) recordSpend(t *Task, provider string, resp *llmResponse) {
 	l.pruneLocked(now)
 	err := l.saveLocked()
 	l.mu.Unlock()
-	if err != nil {
-		t.logf("warn", "Could not save the spending ledger: %v", err)
-	}
+	return err
 }
 
 // spendRename and spendDeleted keep the ledger's task titles in step with the sidebar.

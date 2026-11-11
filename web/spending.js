@@ -89,7 +89,8 @@ function renderSpending() {
 $('sp-month').addEventListener('change', (e) => { spendMonth = e.target.value; loadSpending(); });
 $('sp-top').addEventListener('click', (e) => {
   const row = e.target.closest('[data-act="sp-open"]');
-  if (row) location.hash = '#/tasks/' + row.dataset.id;
+  // A project conversation is recorded as projchat_<project id>.
+  if (row) location.hash = row.dataset.id.startsWith('projchat_') ? '#/projects/' + row.dataset.id.slice(9) : '#/tasks/' + row.dataset.id;
 });
 $('sp-cap-save').addEventListener('click', async () => {
   const raw = $('sp-cap').value.trim();
