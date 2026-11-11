@@ -66,7 +66,8 @@ async def main():
         await pg.wait_for_timeout(2500)  # a poll must keep it
         assert await pin.is_visible()
 
-        # F2 on the focused card renames through the same dialog; the sidebar follows
+        assert not any(i.startswith("Rename") for i in items), items
+        # F2 on the focused card opens the same Edit dialog; the sidebar follows
         await card.locator(".pj-card-link").focus()
         await pg.keyboard.press("F2")
         await pg.wait_for_selector("#modal-pj-edit:not(.hidden)")
