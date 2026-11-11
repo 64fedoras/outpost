@@ -353,6 +353,29 @@ func TestProjectDuplicate(t *testing.T) {
 	if n := len(c.projectViews()); n != 2 {
 		t.Fatalf("projects: %d", n)
 	}
+	// detach: no .git, no git settings; the files stay
+	p.GitURL, p.GitBranch, p.GitTokenEnc = "https://example.local/a.git", "outpost", "enc"
+	os.MkdirAll(filepath.Join(p.repoDir(), ".git"), 0o755)
+	os.WriteFile(filepath.Join(p.repoDir(), ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0o644)
+	for _, detach := range []bool{false, true} {
+		w := httptest.NewRecorder()
+		body := `{}`
+		if detach {
+			body = `{"detach":true}`
+		}
+		mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/projects/"+src+"/duplicate", strings.NewReader(body)))
+		var o map[string]string
+		json.Unmarshal(w.Body.Bytes(), &o)
+		d := c.getProject(o["id"])
+		if w.Code != 200 || d == nil {
+			t.Fatalf("duplicate detach=%v: %d %s", detach, w.Code, w.Body)
+		}
+		_, gitErr := os.Stat(filepath.Join(d.repoDir(), ".git", "HEAD"))
+		_, fileErr := os.Stat(filepath.Join(d.repoDir(), "pkg", "main.py"))
+		if fileErr != nil || (gitErr == nil) == detach || (d.GitURL == "") != detach || (d.GitTokenEnc == "") != detach {
+			t.Fatalf("detach=%v: git=%v file=%v %+v", detach, gitErr, fileErr, d)
+		}
+	}
 	for in, want := range map[string]string{"A": "A (copy)", "A (copy)": "A (copy 2)", "A (copy 2)": "A (copy 3)", "A (copy x)": "A (copy x) (copy)"} {
 		if got := copyName(in); got != want {
 			t.Errorf("copyName(%q) = %q, want %q", in, got, want)

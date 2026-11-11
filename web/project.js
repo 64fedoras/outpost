@@ -436,7 +436,7 @@ async function deleteProject(id) {
 
 async function runProjMenu(act, id) {
   const p = projectById(id);
-  closeProjMenu(!['edit', 'settings'].includes(act));
+  closeProjMenu(!['edit', 'settings', 'duplicate'].includes(act));
   if (!p) return;
   try {
     switch (act) {
@@ -450,13 +450,7 @@ async function runProjMenu(act, id) {
         try { localStorage.setItem('nt-project', id); } catch (e) {}
         location.hash = '#/new';
         setTimeout(() => { $('nt-project').value = id; renderNew(); $('nt-prompt').focus(); }, 0); break;
-      case 'duplicate': {
-        const r = await post(`/api/projects/${encodeURIComponent(id)}/duplicate`, {});
-        await refresh();
-        toast(`Made ${r.name}: the files, settings and instructions are copied; tasks and the conversation are not`, 4000);
-        if (page === 'project') location.hash = '#/projects/' + r.id;
-        break;
-      }
+      case 'duplicate': if (p.git_url) openPjDup(p); else await duplicateProject(id, false); break;
       case 'copy-link': await copyText(projLink(id)); toast('Link copied'); break;
       case 'download': location.href = `/api/projects/${encodeURIComponent(id)}/download`; break;
       case 'settings': openPjSettings(id); break;
@@ -467,6 +461,30 @@ async function runProjMenu(act, id) {
       case 'delete': await deleteProject(id); break;
     }
   } catch (e) { toast(e.message, 4000); }
+}
+
+// duplicateProject copies a project; detach leaves the copy without its git repository.
+async function duplicateProject(id, detach) {
+  const r = await post(`/api/projects/${encodeURIComponent(id)}/duplicate`, { detach });
+  await refresh();
+  toast(`Made ${r.name}: the files, settings and instructions are copied; tasks and the conversation are not` + (detach ? '; it is not connected to the repository' : ''), 4000);
+  if (page === 'project') location.hash = '#/projects/' + r.id;
+}
+// A git project asks first: the copy would share the repository and its branch.
+function openPjDup(p) {
+  setHTML('pj-dup-body', `<div class="note warn">⚠ <b>${esc(p.name)}</b> is connected to <code>${esc(p.git_url)}</code> (branch <code>${esc(p.git_branch)}</code>).</div>
+    <p class="hint">A copy that keeps the repository shares that branch: if you later turn pushing on in both, their commits land on the same branch. Pushing and pull requests start off in the copy either way.</p>
+    <p class="hint"><b>Disconnect</b> makes the copy a plain folder with the same files, without the git history or the git settings.</p>
+    <div class="modal-foot"><button data-dup="cancel">Cancel</button><span class="spacer"></span><button data-dup="keep">Keep the repository attached</button><button class="primary" data-dup="detach">Disconnect the copy</button></div>`);
+  $('pj-dup-body').querySelectorAll('[data-dup]').forEach((b) => {
+    b.onclick = async () => {
+      const how = b.dataset.dup;
+      close('modal-pj-dup');
+      if (how === 'cancel') return;
+      try { await duplicateProject(p.id, how === 'detach'); } catch (e) { toast(e.message, 4000); }
+    };
+  });
+  open('modal-pj-dup');
 }
 
 (function wireProjMenu() {
