@@ -217,6 +217,13 @@ func (c *Controller) projectPlanner(p *Project) (planner, model, orModel string,
 	if planner == "" {
 		planner = set.DefaultPlanner
 	}
+	// Claude without a key: use the best ready node instead of failing. With no
+	// ready node the usual "add a Claude API key" error below still applies.
+	if planner == "claude" && c.anthropicKey() == "" {
+		if auto, aerr := c.autoPlanner(); aerr == nil {
+			planner = auto
+		}
+	}
 	if planner == "auto" || planner == "" {
 		if planner, err = c.autoPlanner(); err != nil {
 			return
