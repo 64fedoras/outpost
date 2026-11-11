@@ -168,7 +168,7 @@ not affected; an older llama.cpp build that does not take a schema simply answer
 
 **Fix rounds and the test time limit.** By default the planner gets up to 3 fix rounds and one test run
 may take 10 minutes. Change both per task under **Change options** (1 to 8 rounds; 5 to 60 minutes), or
-as a project default on the project's card.
+as a project default in the project's settings (⚙ on the project page).
 
 **When the tests fail**, the planner gets its fix rounds (3 unless changed). Each round sees the test output and
 which files earlier rounds changed, and works as an agent (below). It treats the tests as the
@@ -258,12 +258,12 @@ and goes at the top of every planner, worker, reviewer and fix prompt of that ta
 contain an `OUTPOST.md` at the root, its text is added as well. Both together are cut at 8,000 characters
 so a small local model keeps room for the code. Changing the box affects new tasks only.
 
-A project has its own **Instructions** box on its card too. For a task in that project they are added
+A project has its own **Instructions** box too (**Files** on the project page). For a task in that project they are added
 after the Settings rules (the same 8,000-character limit applies to all of it together).
 
 **Learning from failures.** When a task in a project finishes with its tests still failing, the planner
 is asked once for a short general rule that would have avoided it ("use the testing package only; do
-not add testify"). The rule appears on the project's card as a suggestion: **Add to instructions** or
+not add testify"). The rule appears under the project's instructions (**Files** on the project page) as a suggestion: **Add to instructions** or
 **Dismiss**; nothing changes until you choose. The last 5 suggestions are kept. With Claude or OpenRouter
 this is one small call counted in the task's cost, and it is skipped if it would pass the cap.
 
@@ -302,6 +302,27 @@ follow-up round does. Only one task works in a project at a time; later ones sho
 project* and start when the first finishes. A project can store defaults (test command, peer review, fix rounds, test time limit) and its own instructions.
 Tasks without a project work as before, and existing tasks stay as they were. Delete a
 project's tasks before deleting the project.
+
+**The Projects page** shows one card per project with its counts (waiting on you, working, idle,
+resolved); **＋ New project** opens the form in a dialog. Click a card to open the **project page**
+(`#/projects/<id>`):
+
+- **The middle** lists every request made in the project, oldest first, each followed by its task's
+  card: status, the subtask progress strip while it works, the result note when it is done, and
+  **Answer** / **Review plan** / **✓ Resolve**. The box at the bottom starts a task in the project with
+  the project's own defaults; **More options…** opens the full new-task form with the project chosen.
+- **Threads** (top bar; the amber number is how many tasks wait on you) opens a panel on the right
+  with the project's **Artifacts** (screenshots, build outputs, result zips and the last pull request;
+  **View all** lists them all) and its tasks in four groups: **Waiting on you** (questions, a plan to
+  approve, a cap or a resume), **Working** (including tasks queued behind the one that works),
+  **Idle** (finished, failed or stopped) and **Resolved** (folded; click to open). On a narrow window
+  the panel slides over the page; on a phone it fills the screen. The wide-screen choice is remembered.
+- **Resolving** a task (✓ on its row, **✓ Resolve** on its card, **Mark resolved** in the sidebar's
+  task menu, or **Resolve all** on Idle) only tidies it away: nothing is deleted, the card leaves the
+  middle (a link shows the hidden ones) and the task moves to Resolved. A follow-up, a retry or
+  anything that needs you brings it back to the other groups by itself; **Reopen** does it by hand.
+- **Files** shows the project's instructions (and suggested rules) and its file list; **⚙** holds the
+  project's defaults, its git settings and **Delete project**; **.zip** downloads the files.
 
 **Attachments:** the 📎 button in the composer takes up to 50 MB in total. A `.zip` becomes the
 task's starting files (one top-level folder is stripped). Other files must be text and are shown
