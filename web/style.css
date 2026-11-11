@@ -963,3 +963,23 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .pj-answer .error-msg { margin: 0; }
 .pj-thinking { flex-direction: row; align-items: center; gap: 8px; }
 .pj-thinking .dots { margin-left: 0; }
+
+/* ---------- project context menu, pinned projects ---------- */
+.side-pins { margin: -6px 12px 8px 22px; display: flex; flex-direction: column; gap: 1px; }
+.side-pins + .new-task { margin-top: 0; }
+.side-pin { display: flex; align-items: center; border-radius: 7px; }
+.side-pin:hover, .side-pin.menu-open { background: var(--side-hover); }
+.side-pin.active { background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
+.side-pin-link { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 5px 0 5px 10px; color: var(--ink); text-decoration: none; font-size: 13.5px; border-radius: 7px; }
+.side-pin-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-pin-n { flex: none; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--needs); color: #fff; font-size: 11px; font-weight: 650; text-align: center; line-height: 18px; }
+.side-pin .side-task-more { margin: 0 4px 0 2px; }
+.side-pin:hover .side-task-more, .side-pin.active .side-task-more, .side-pin:focus-within .side-task-more, .side-pin.menu-open .side-task-more { visibility: visible; }
+.pj-card-wrap { position: relative; display: flex; }
+.pj-card-wrap > .pj-card { flex: 1; min-width: 0; padding-right: 40px; }
+.pj-card-wrap.menu-open > .pj-card { border-color: var(--muted); }
+.pj-card-more { position: absolute; top: 8px; right: 6px; margin: 0; }
+.pj-card-wrap:hover .pj-card-more, .pj-card-wrap:focus-within .pj-card-more, .pj-card-wrap.menu-open .pj-card-more { visibility: visible; }
+.pj-card-name .pin-mark { margin-right: 6px; }
+.side-task, .side-pin, .pj-card-wrap, .pj-title { -webkit-touch-callout: none; }
+@media (hover: none) { .side-task, .side-pin, .pj-card-wrap { -webkit-user-select: none; user-select: none; } }
