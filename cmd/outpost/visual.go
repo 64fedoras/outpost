@@ -113,6 +113,7 @@ func (c *Controller) runCollectJob(ctx context.Context, node string, argv []stri
 	if err != nil {
 		return nil, nil, err
 	}
+	c.releaseJobFiles(node, res) // only inline files are used here
 	files := map[string][]byte{}
 	for _, f := range res.Files {
 		if data, err := base64.StdEncoding.DecodeString(f.InlineB64); err == nil && len(data) > 0 {

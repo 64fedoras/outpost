@@ -777,6 +777,11 @@ func (n *Node) runJob(jd JobDispatch) {
 					private = false
 				}
 			}
+			if !private { // if the controller never fetches, the janitor still deletes it
+				n.mu.Lock()
+				n.wsLastUsed[wsID] = time.Now()
+				n.mu.Unlock()
+			}
 			if e != nil {
 				res.Status, res.Error = "failed", e
 			}
@@ -886,7 +891,10 @@ func (n *Node) runJob(jd JobDispatch) {
 	files, e := n.collectFiles(dir, jd.JobID, jd.Collect)
 	res.Files = files
 	for _, f := range files {
-		if f.Blob { // the controller fetches these, then closes the workspace
+		// Keep the workspace only while the controller fetches the big files
+		// of a job that ran to the end; a cancelled or timed-out job's files
+		// are never fetched, so they go with the workspace now.
+		if f.Blob && res.Status == "succeeded" {
 			private = false
 			break
 		}
