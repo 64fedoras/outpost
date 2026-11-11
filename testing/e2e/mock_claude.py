@@ -72,6 +72,14 @@ class H(BaseHTTPRequestHandler):
                     plan["artifacts"] = ["dist/*"]
                 plan["note"] = "I went with a small Python package and unittest, since you asked for standard tools."
                 text = json.dumps(plan)
+        elif "lead for the software project" in system:
+            # Project chat: a question gets an answer; anything else starts one task.
+            last = user.rsplit("Owner: ", 1)[-1].strip()
+            if last.endswith("?"):
+                n = system.count("\n- ")
+                text = f"This project has {n} task(s) so far. Ask me to change something and I will start a task for it."
+            else:
+                text = f"Sure. I'll start one task for that.\n\n[start task]\n{last}\n[/start task]"
         elif "tests fail" in system:
             # Fix: make core.py correct.
             text = "<<<FILE wordcount/core.py>>>\ndef count_words(text):\n    counts = {}\n    for w in text.lower().split():\n        counts[w] = counts.get(w, 0) + 1\n    return counts\n<<<END>>>\n"

@@ -958,3 +958,8 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 }
 @media (hover: none) { .pj-rb { visibility: visible; } }
 #pj-download button, #pj-files-zip button { color: var(--ink); }
+.pj-answer { display: flex; flex-direction: column; gap: 8px; }
+.pj-answer-text { white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
+.pj-answer .error-msg { margin: 0; }
+.pj-thinking { flex-direction: row; align-items: center; gap: 8px; }
+.pj-thinking .dots { margin-left: 0; }
