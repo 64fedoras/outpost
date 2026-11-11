@@ -193,6 +193,42 @@
       </div>
     </section>
 
+    <!-- ONE PROJECT (project.js) -->
+    <section data-page="project" class="page-project hidden">
+      <div class="pj-wrap" id="pj-wrap">
+        <div class="pj-main">
+          <div class="task-bar pj-bar">
+            <div class="task-bar-main">
+              <button class="icon-btn task-menu" id="pj-menu" aria-label="Show tasks and menu">☰</button>
+              <span class="pj-title"><span aria-hidden="true">▤</span> <h2 id="pj-name"></h2><select id="pj-switch" class="pj-switch" aria-label="Switch project"></select></span>
+              <span class="pj-sub" id="pj-sub"></span>
+            </div>
+            <div class="task-bar-tools">
+              <button class="small pj-tb" id="pj-threads-btn" aria-controls="pj-panel" aria-expanded="false" title="Show the project's tasks and artifacts">Threads <span class="badge pj-badge hidden" id="pj-threads-n"></span></button>
+              <button class="small pj-tb" id="pj-files-btn" title="Instructions and files">Files</button>
+              <button class="small pj-tb" id="pj-set-btn" title="Project settings" aria-label="Project settings">⚙</button>
+              <a id="pj-download" title="Download the project's files"><button class="small">.zip</button></a>
+            </div>
+          </div>
+          <div class="thread pj-feed" id="pj-feed" aria-live="polite"></div>
+          <div class="dock">
+            <div class="composer">
+              <textarea id="pj-text" rows="1" placeholder="Start a task in this project… (Ctrl+Enter starts)" aria-label="New task in this project"></textarea>
+              <div class="composer-bar">
+                <span class="composer-hint">Uses this project's settings.</span><a href="#/new" id="pj-more" class="composer-hint">More options…</a>
+                <span class="spacer"></span>
+                <button class="send" id="pj-go">Start</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <aside class="pj-panel" id="pj-panel" aria-label="Threads">
+          <div class="pj-panel-h"><b>Threads</b><span class="spacer"></span><button class="icon-btn" id="pj-panel-close" aria-label="Close the Threads panel">✕</button></div>
+          <div class="pj-panel-b" id="pj-threads"></div>
+        </aside>
+      </div>
+    </section>
+
     <main class="page-plain">
     <!-- NODES -->
     <section data-page="nodes" class="hidden">
@@ -286,22 +322,9 @@
 
     <!-- PROJECTS -->
     <section data-page="projects" class="hidden">
-      <div class="section-head"><h2>Projects</h2></div>
+      <div class="section-head"><h2>Projects</h2><span class="spacer"></span><button class="primary small" data-act="proj-new">＋ New project</button></div>
       <p class="hint">A project keeps its files between tasks. Every task you start in it begins from the project's current files, and one task works in a project at a time (the rest wait). Optionally it clones a git repository and commits each finished round to a branch.</p>
       <div id="projects-list"></div>
-      <div class="section-head"><h2>New project</h2></div>
-      <div class="card settings-form" id="np-form">
-        <label for="np-name">Name</label><input id="np-name" placeholder="my-api">
-        <label for="np-url">Git URL <span class="hint">(optional; https://… or ssh://… or git@host:path)</span></label><input id="np-url" placeholder="https://github.com/me/repo.git" autocomplete="off">
-        <label for="np-branch">Branch to commit to <span class="hint">(created if missing; default outpost)</span></label><input id="np-branch" placeholder="outpost">
-        <label for="np-token">HTTPS token <span class="hint">(optional; stored encrypted)</span></label><input id="np-token" type="password" autocomplete="off">
-        <label for="np-key">or SSH private key <span class="hint">(optional; stored encrypted)</span></label><textarea id="np-key" rows="3" autocomplete="off"></textarea>
-        <label for="np-test">Test command <span class="hint">(optional)</span></label><input id="np-test" placeholder="go test ./...">
-        <label class="toggle"><input type="checkbox" id="np-push"> push each finished round to the branch</label>
-        <label class="toggle"><input type="checkbox" id="np-pr"> also open a GitHub pull request (needs an HTTPS token)</label>
-        <div class="btns"><button class="primary" id="np-go">Create project</button></div>
-        <div class="error-msg hidden" id="np-err"></div>
-      </div>
     </section>
 
     <!-- SETTINGS -->
@@ -690,6 +713,44 @@
   </div>
 </div>
 
+<div id="modal-newproj" class="overlay hidden">
+  <div class="modal">
+    <h3>New project</h3>
+    <div class="settings-form" id="np-form">
+        <label for="np-name">Name</label><input id="np-name" placeholder="my-api">
+        <label for="np-url">Git URL <span class="hint">(optional; https://… or ssh://… or git@host:path)</span></label><input id="np-url" placeholder="https://github.com/me/repo.git" autocomplete="off">
+        <label for="np-branch">Branch to commit to <span class="hint">(created if missing; default outpost)</span></label><input id="np-branch" placeholder="outpost">
+        <label for="np-token">HTTPS token <span class="hint">(optional; stored encrypted)</span></label><input id="np-token" type="password" autocomplete="off">
+        <label for="np-key">or SSH private key <span class="hint">(optional; stored encrypted)</span></label><textarea id="np-key" rows="3" autocomplete="off"></textarea>
+        <label for="np-test">Test command <span class="hint">(optional)</span></label><input id="np-test" placeholder="go test ./...">
+        <label class="toggle"><input type="checkbox" id="np-push"> push each finished round to the branch</label>
+        <label class="toggle"><input type="checkbox" id="np-pr"> also open a GitHub pull request (needs an HTTPS token)</label>
+        <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="np-go">Create project</button></div>
+        <div class="error-msg hidden" id="np-err"></div>
+    </div>
+  </div>
+</div>
+<div id="modal-pj-files" class="overlay hidden">
+  <div class="modal">
+    <h3>Instructions and files</h3>
+    <div id="pj-files-body"></div>
+    <div class="modal-foot"><a id="pj-files-zip"><button>Download .zip</button></a><button data-close>Close</button></div>
+  </div>
+</div>
+<div id="modal-pj-settings" class="overlay hidden">
+  <div class="modal">
+    <h3>Project settings</h3>
+    <div id="pj-set-body"></div>
+  </div>
+</div>
+<div id="modal-pj-arts" class="overlay hidden">
+  <div class="modal wide">
+    <h3>Artifacts</h3>
+    <p class="hint">Everything this project's tasks produced, newest first. All of it is kept on the controller.</p>
+    <div id="pj-arts-body"></div>
+    <div class="modal-foot"><button data-close>Close</button></div>
+  </div>
+</div>
 <div id="modal-redo" class="overlay hidden">
   <div class="modal">
     <h3>Redo <span id="redo-title"></span></h3>
@@ -811,6 +872,7 @@
 <script src="guard.js"></script>
 <script src="app.js"></script>
 <script src="new-task.js"></script>
+<script src="project.js"></script>
 <script src="chat.js"></script>
 <script src="thread.js"></script>
 <script src="nodes.js"></script>

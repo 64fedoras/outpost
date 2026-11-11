@@ -93,7 +93,8 @@ type Task struct {
 	ID           string          `json:"id"`
 	Prompt       string          `json:"prompt"`
 	Title        string          `json:"title"`
-	Pinned       bool            `json:"pinned,omitempty"` // kept above the other groups in the sidebar
+	Pinned       bool            `json:"pinned,omitempty"`      // kept above the other groups in the sidebar
+	ResolvedAt   *time.Time      `json:"resolved_at,omitempty"` // marked resolved on the project page; see resolvedLocked
 	Status       string          `json:"status"`
 	PausedFrom   string          `json:"paused_from,omitempty"`
 	CapKind      string          `json:"cap_kind,omitempty"` // while paused_cap: "" = this task's cap, "monthly" = the monthly cap (spend.go)
