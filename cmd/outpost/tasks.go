@@ -161,6 +161,7 @@ type Task struct {
 	repo      string // working files; the project's repo for a project task, else <dir>/repo
 	cancel    context.CancelFunc
 	resume    chan struct{}
+	done      chan struct{} // closed when the goroutine started by startTask has ended
 
 	asks map[string]chan string // agent questions waiting for an answer, by message id
 	act  []ActStep              // what the test-and-fix phase is doing now (tasks_activity.go), memory only
