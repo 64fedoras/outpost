@@ -106,7 +106,9 @@ These are real gaps. Please do not treat them as fixed.
 - **Pooling is clear text and IP-based** (see above).
 - **Untested on real hardware.** Windows (service, Defender, updates), macOS, and the full 0.8.x feature set
   have not been tested on a real cluster. Treat their security behaviour as unverified too.
-- **No third-party audit.** `govulncheck` has not been run as part of CI yet.
+- **No third-party audit.** Nobody outside the project has reviewed the code. CI runs `govulncheck`
+  on every pull request and every push to `main` (known vulnerabilities in the Go standard library and
+  the vendored modules that Outpost calls); it reports and does not block a build.
 
 ## Hardening checklist for your install
 
@@ -121,10 +123,8 @@ These are real gaps. Please do not treat them as fixed.
 
 Please report privately, not in a public issue.
 
-- Use **GitHub private vulnerability reporting**: on the repository, open the **Security** tab and choose
-  **Report a vulnerability**.
-- Direct contact: **TODO: owner contact to be filled in by Mark** (an email address or other private
-  channel).
+Use **GitHub private vulnerability reporting**: on the repository, open the **Security** tab and choose
+**Report a vulnerability**. The report stays private between you and the maintainer.
 
 Include the version (Settings or the Updates tab), what you did, what you expected and what
 happened. This is a small personal project maintained by one person, so there is no bounty or
