@@ -9,6 +9,7 @@ U = "https://127.0.0.1:18460"
 SCHEME = sys.argv[1] if len(sys.argv) > 1 else "dark"
 POST = "(a) => fetch(a[0], {method: a[2] || 'POST', headers: {'Content-Type': 'application/json'}, body: a[1] ? JSON.stringify(a[1]) : undefined}).then(r => r.json())"
 GET = "(u) => fetch(u).then(r => r.json())"
+ACCEPT_ASK = "new MutationObserver(() => { const b = document.querySelector('#modal-ask:not(.hidden) #ask-yes'); if (b) b.click(); }).observe(document, {subtree: true, childList: true, attributes: true, attributeFilter: ['class']})"
 
 async def until(pg, js, arg=None, tries=60):
     for _ in range(tries):
@@ -28,7 +29,8 @@ async def main():
         errors = []
         pg.on("pageerror", lambda e: errors.append(str(e)))
         pg.on("console", lambda m: m.type == "error" and "Failed to load resource" not in m.text and errors.append(m.text))
-        pg.on("dialog", lambda d: asyncio.ensure_future(d.accept()))
+        # The UI's own confirm dialog (confirm.js) replaced the native one: accept it as it appears.
+        await ctx.add_init_script(ACCEPT_ASK)
         await login(pg)
         t1 = (await pg.evaluate(POST, ["/api/tasks", {"prompt": "Write a hello world script in Python"}]))["id"]
         t2 = (await pg.evaluate(POST, ["/api/tasks", {"prompt": "Write a word counter in Python"}]))["id"]
