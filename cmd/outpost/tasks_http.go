@@ -764,8 +764,11 @@ func (c *Controller) startTask(t *Task, fn func(ctx context.Context, t *Task)) {
 	}
 	t.cancel = cancel
 	t.resume = make(chan struct{}, 1)
+	done := make(chan struct{})
+	t.done = done
 	t.mu.Unlock()
 	go func() {
+		defer close(done)
 		defer func() {
 			if p := recover(); p != nil {
 				log.Printf("task %s crashed: %v", t.ID, p)
