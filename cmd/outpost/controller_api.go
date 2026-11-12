@@ -263,7 +263,7 @@ func (c *Controller) nodeSettingsLocked(n *NodeRec) NodeSettings {
 	}
 	return NodeSettings{HeartbeatS: heartbeatSeconds, ExecEnabled: n.ExecEnabled,
 		IdleUnloadS: int(idle / time.Second), YieldGPU: n.YieldGPU,
-		Sandbox:     effectiveSandbox(c.settings.Sandbox, n.Sandbox)}
+		Sandbox: effectiveSandbox(c.settings.Sandbox, n.Sandbox)}
 }
 
 // pushNodeSettings sends every connected node its settings again.

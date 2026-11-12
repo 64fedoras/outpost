@@ -114,7 +114,7 @@ func (c *Controller) handleImageInstall(w http.ResponseWriter, r *http.Request) 
 func (c *Controller) handleImageSettings(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var req struct {
-			RetentionDays *int `json:"retention_days"`
+			RetentionDays *int  `json:"retention_days"`
 			MaxGB         *int  `json:"max_gb"`
 			APIEnabled    *bool `json:"api_enabled"`
 			PauseForTasks *bool `json:"pause_for_tasks"`

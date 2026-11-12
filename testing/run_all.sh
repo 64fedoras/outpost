@@ -2,7 +2,7 @@
 # One entry point for every automatic check. Run it from anywhere.
 #
 #   sh testing/run_all.sh          same as "fast"
-#   sh testing/run_all.sh fast     go vet, unit tests, JavaScript syntax check, cross-build of all five platforms
+#   sh testing/run_all.sh fast     gofmt check, go vet, unit tests, JavaScript syntax check, cross-build of all five platforms
 #   sh testing/run_all.sh race     unit tests with the race detector (needs gcc for cgo)
 #   sh testing/run_all.sh e2e      starts the local rig, runs the browser scripts, stops the rig
 #   sh testing/run_all.sh all      fast, then race, then e2e
@@ -18,6 +18,13 @@ cd "$ROOT"
 step() { printf '\n== %s\n' "$*"; }
 
 fast() {
+	step "gofmt"
+	unformatted=$(gofmt -l cmd internal transfer ./*.go)
+	if [ -n "$unformatted" ]; then
+		echo "these files need gofmt -w:" >&2
+		echo "$unformatted" >&2
+		exit 1
+	fi
 	step "go vet"
 	go vet ./...
 	step "go test"
