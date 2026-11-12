@@ -185,7 +185,7 @@ function renderStorage(s) {
 async function loadStorage() { try { renderStorage(await api('/api/storage')); } catch (e) {} }
 async function saveStorage(run) {
   const days = $('st-on').checked ? parseInt($('st-days').value, 10) || 0 : 0;
-  if (run && !confirm(`Remove old round copies${$('st-builds').checked ? ', build outputs' : ''} and screenshots of tasks finished more than ${days} days ago?`)) return;
+  if (run && !await askConfirm(`Remove old round copies${$('st-builds').checked ? ', build outputs' : ''} and screenshots of tasks finished more than ${days} days ago?`)) return;
   try { const s = await post('/api/storage', { cleanup_days: days, cleanup_builds: $('st-builds').checked, run }); renderStorage(s); toast(run ? `Freed ${bytes(s.last_freed)}` : 'Saved'); }
   catch (e) { toast(e.message); }
 }
