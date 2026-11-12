@@ -19,10 +19,12 @@ up to 5 minutes and then says so. It never interrupts task work and costs no Cla
 you turn on web search below.
 
 **Web search in chats** (Settings, Tasks, Planner: "Let chats search the web", off by default). Local
-models cannot search, so with this on each chat message first asks Claude, with its web search tool, to
+models cannot search, so with this on each chat message first asks a cloud model with web search to
 look the question up and write a short brief with source links; the local model then answers using it.
-It costs about $0.01 per search (up to 3 per message) plus a small Claude call, and is counted in
-Spending and the monthly cap. It needs a Claude API key; OpenRouter cannot do it. If there is no key,
+A **Search with** menu picks who does the search: Claude (its own search tool, about $0.01 per search, up to 3 per
+message) or OpenRouter (its web search plugin on the OpenRouter model you chose, any model including Claude
+Opus, roughly $0.004 per result billed by OpenRouter). Either way there is a small model call too, and it is counted
+in Spending and the monthly cap. It needs that provider's API key. If there is no key,
 the cap would be passed or the search fails, the chat is still answered and the answer notes why the web
 was not used. When it did search, the answer notes how many searches and what it cost.
 

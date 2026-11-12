@@ -238,6 +238,10 @@ func CallOpenRouter(ctx context.Context, key, model string, req Request) (*Respo
 	if m := OpenRouterModels.Get(model); m != nil && m.maxOut > 0 && req.MaxTokens > m.maxOut {
 		body["max_tokens"] = m.maxOut
 	}
+	if req.WebSearch {
+		// OpenRouter's web plugin works with any model; the search cost is part of the reported usage cost.
+		body["plugins"] = []map[string]any{{"id": "web", "max_results": WebSearchUses}}
+	}
 	if req.Temperature > 0 {
 		body["temperature"] = req.Temperature
 	}
