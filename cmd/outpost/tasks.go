@@ -184,7 +184,11 @@ func (t *Task) saveLocked() {
 		t.saveTimer.Stop()
 		t.saveTimer = nil
 	}
-	b, _ := json.MarshalIndent(t, "", "  ")
+	b, err := json.MarshalIndent(t, "", "  ")
+	if err != nil {
+		log.Printf("task %s: save failed, keeping the last saved copy: %v", t.ID, err)
+		return
+	}
 	if err := writeFileAtomicBackup(filepath.Join(t.dir, "task.json"), b, 0o644); err != nil {
 		log.Printf("task %s: save failed: %v", t.ID, err)
 	}

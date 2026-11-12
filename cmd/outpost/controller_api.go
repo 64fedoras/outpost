@@ -49,8 +49,14 @@ func (c *Controller) saveNodesLocked() {
 	for _, n := range c.nodes {
 		list = append(list, n)
 	}
-	b, _ := json.MarshalIndent(list, "", "  ")
-	_ = writeFileAtomicBackup(c.nodesPath(), b, 0o600)
+	b, err := json.MarshalIndent(list, "", "  ")
+	if err == nil {
+		err = writeFileAtomicBackup(c.nodesPath(), b, 0o600)
+	}
+	if err != nil {
+		// Losing this file loses every node's key: say so instead of failing silently.
+		log.Printf("saving the node list failed (the last saved copy is kept): %v", err)
+	}
 }
 
 func hashSecret(salt, secret string) string {

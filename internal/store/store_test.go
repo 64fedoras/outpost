@@ -135,3 +135,22 @@ func TestVerifyBackupCatchesTruncation(t *testing.T) {
 		t.Fatal("truncated backup passed")
 	}
 }
+
+// A state file must not be replaced by nothing when the caller's encoding failed.
+func TestWriteFileAtomicBackupRefusesEmpty(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "nodes.json")
+	if err := WriteFileAtomicBackup(p, []byte(`[{"id":"n1"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFileAtomicBackup(p, nil, 0o600); err == nil {
+		t.Fatal("an empty save was accepted")
+	}
+	if b, _ := os.ReadFile(p); string(b) != `[{"id":"n1"}]` {
+		t.Fatalf("file changed: %q", b)
+	}
+	// The plain variant still writes an empty file: a saved source file may be empty.
+	q := filepath.Join(t.TempDir(), "empty.txt")
+	if err := WriteFileAtomic(q, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
