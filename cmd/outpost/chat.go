@@ -29,6 +29,7 @@ type ChatMsg struct {
 	Model string    `json:"model,omitempty"` // the model that answered
 	TPS   float64   `json:"tok_s,omitempty"`
 	Error string    `json:"error,omitempty"`
+	Note  string    `json:"note,omitempty"` // e.g. that the web was searched, or why it was not
 	At    time.Time `json:"at"`
 }
 
@@ -328,6 +329,8 @@ func (c *Controller) answerChat(ctx context.Context, chatID, pref string, hist [
 	}
 	defer c.releaseNode(node)
 	started()
+	brief, note := c.chatSearchBrief(ctx, chatID, hist)
+	hist = withSearchBrief(hist, brief)
 	ctxTok := c.nodeCtx(node)
 	maxOut := min(4096, ctxTok/2)
 	spec := InferenceSpec{Messages: fitHistory(hist, (ctxTok-maxOut)*3), Params: InferenceParams{MaxTokens: maxOut}}
@@ -339,13 +342,13 @@ func (c *Controller) answerChat(ctx context.Context, chatID, pref string, hist [
 	case errors.Is(ctx.Err(), context.Canceled):
 		return ChatMsg{Role: "assistant", Node: name, Error: "stopped"}
 	case err != nil:
-		return ChatMsg{Role: "assistant", Node: name, Error: err.Error()}
+		return ChatMsg{Role: "assistant", Node: name, Error: err.Error(), Note: note}
 	}
 	text := out.Text
 	if out.FinishReason == "length" {
 		text += "\n\n…(cut off at the length limit)"
 	}
-	return ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec}
+	return ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note}
 }
 
 // acquireModelNode reserves a free slot on a ready node: pref "auto" (or "")
