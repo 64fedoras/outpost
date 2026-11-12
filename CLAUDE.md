@@ -33,7 +33,7 @@ Nothing here can be reached from a cloud build box; test on these machines by ha
 
 ## Commands
 ```sh
-sh testing/run_all.sh                    # vet, unit tests, JS syntax, five-platform build (also: race, e2e, all)
+sh testing/run_all.sh                    # gofmt check, vet, unit tests, JS syntax, five-platform build (also: race, e2e, all)
 go vet ./... && go test ./...            # unit tests only
 sh build.sh                              # all 5 platforms into ../dist/outpost-<version>/bin
 sh winres/gen.sh                         # regenerate rsrc_windows_amd64.syso after bumping Version

@@ -4,8 +4,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
-	"time"
 	"testing"
+	"time"
 )
 
 func newGenTestController(t *testing.T) *Controller {

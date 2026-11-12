@@ -5,7 +5,7 @@ One entry point, `sh testing/run_all.sh`:
 
 | Command | What it runs |
 | --- | --- |
-| `sh testing/run_all.sh` (or `fast`) | `go vet`, all unit tests, `node --check` on every `web/*.js`, and a build for all five platforms. |
+| `sh testing/run_all.sh` (or `fast`) | A `gofmt` check, `go vet`, all unit tests, `node --check` on every `web/*.js`, and a build for all five platforms. |
 | `sh testing/run_all.sh race` | Unit tests with the race detector (needs gcc). |
 | `sh testing/run_all.sh e2e` | Starts the local rig, runs the browser scripts below (`steer`, `edit`, `rerun`, `taskmenu`, `mobile`, `dropzone`, `projectnew`), stops the rig. Needs Python Playwright; it stops with an error if that is missing instead of skipping. `E2E_FULL=1` adds `flow.py` (about 4 minutes) and `soak.py`. |
 | `sh testing/run_all.sh all` | `fast`, then `race`, then `e2e`. |
