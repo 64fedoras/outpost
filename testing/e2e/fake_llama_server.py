@@ -14,6 +14,43 @@ CONTENT = {
  "tests/test_core.py": "import unittest\nfrom wordcount.core import count_words\n\nclass T(unittest.TestCase):\n    def test_counts(self):\n        self.assertEqual(count_words('a b A'), {'a': 2, 'b': 1})\n\nif __name__ == '__main__':\n    unittest.main()\n",
  "README.md": "# Word Counter\n\nRun `python3 -m wordcount.cli FILE`.\n",
 }
+# What the chat page's markdown test asks for: headings, emphasis, lists, a rule, a table, code and HTML that must stay text.
+MARKDOWN_SAMPLE = """Don't toss them! Here are practical ways to use up onions that are about to go bad:
+
+### 🧅 **Quick Fixes (Same Day/Next Day)**
+- **Caramelize them**
+  Thinly slice and slowly cook in a bit of oil over low heat for 30–45 mins. Store in the fridge for up to *1 week*.
+
+- **Make onion jam or relish**
+  Cook down with vinegar, sugar and spices. See https://example.com/onion-jam for a recipe.
+
+---
+
+### 🧊 **Preserve for Later**
+1. **Freeze them**: chop, spread on a tray, then bag for 3–4 months.
+2. **Pickle them**: use `vinegar`, water, sugar and salt.
+   - red onions keep their colour
+   - ready in about an hour
+
+| Method | Keeps for | Effort |
+|---|--:|:-:|
+| Fridge, caramelized | 1 week | low |
+| Freezer | 3–4 months | low |
+| Pickled | 2–3 weeks | medium |
+
+A small script to plan it:
+
+```python
+onions = ["red", "yellow", "white"]
+for i, o in enumerate(onions):
+    print(f"{i}: <b>{o}</b> & caramelize")  # stays text
+```
+
+> Tip: a soft onion is fine to cook; a mouldy one is not.
+
+<script>window.mdTestHacked = 1</script> <img src=x onerror="window.mdTestHacked = 1"> [bad link](javascript:window.mdTestHacked=1)
+"""
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):
@@ -39,6 +76,8 @@ class H(BaseHTTPRequestHandler):
                 text = "<<<FILE wordcount/core.py>>>\ndef count_words(text):\n    counts = {}\n    for w in text.lower().split():\n        counts[w] = counts.get(w, 0) + 1\n    return counts\n<<<END>>>\n"
             else:
                 text = "<<<OK>>>"
+        elif "markdown sample" in user:
+            text = MARKDOWN_SAMPLE  # the chat page's markdown test (chatmd.py)
         elif "Write these files:" not in user:
             text = "A hash map stores values under keys. " * 12  # the node benchmark
         else:

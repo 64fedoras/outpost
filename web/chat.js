@@ -92,7 +92,7 @@ function chatBubble(m) {
   if (m.role === 'user') return `<div class="bubble-row"><div class="bubble">${esc(m.text)}</div></div>`;
   const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, m.note && esc(m.note)].filter(Boolean).join(' · ');
   if (m.error) return `<div class="chat-answer error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}</div>`;
-  return `<div class="chat-answer"><div class="chat-text">${esc(m.text)}</div>${meta ? `<div class="sub">${meta}</div>` : ''}</div>`;
+  return `<div class="chat-answer"><div class="chat-text md">${md(m.text)}</div>${meta ? `<div class="sub">${meta}</div>` : ''}</div>`;
 }
 function chatRender() {
   if (!chatCur) return;
@@ -109,7 +109,7 @@ function chatRenderLive() {
   if (!calls.length) { el.innerHTML = chatCur.busy === 'waiting' ? '<p class="muted">Waiting for a free node…</p>' : ''; return; }
   const c = calls[0];
   const rate = liveRate(Object.assign({}, c, { text: c.text }));
-  setHTML('chat-live', `<div class="chat-answer"><div class="chat-text">${esc(c.text) || '<span class="muted">…</span>'}</div><div class="sub">${esc(c.node || '')}${rate ? ' · ' + esc(rate) : ''}</div></div>`);
+  setHTML('chat-live', `<div class="chat-answer"><div class="chat-text md">${md(c.text) || '<span class="muted">…</span>'}</div><div class="sub">${esc(c.node || '')}${rate ? ' · ' + esc(rate) : ''}</div></div>`);
   const box = $('chat-msgs');
   if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) box.scrollTop = box.scrollHeight;
 }
