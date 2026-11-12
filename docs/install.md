@@ -265,7 +265,10 @@ can check detection without joining.
    below it (every control: idle unload, benchmark, stored models, tools, exec and sandbox, Pause, Restart,
    Logs, Rename, Remove, Run). An optional **Detailed list** view (a short list on the left, the full card
    and recent jobs on the right) is off by default; turn it on in **Settings → Display and alerts → Appearance**
-   (kept in this browser only). **Details** on a Grid card opens the node in the List view.
+   (kept in this browser only). Click a Grid card (or its **Details**) and a details panel opens on the
+   right with the same full card and the node's recent jobs, while the grid stays in view: click another
+   card to switch, use the arrows in the panel header to step through the nodes, and close it with the
+   cross or Esc. On a wide screen the grid narrows beside the panel; on a phone the panel fills the screen.
    The full card shows **Recommended**: the best coding model that fits that
    node (fully in VRAM first, then VRAM plus RAM, then RAM; skipped if the node's disk is too small, or
    if no llama.cpp build exists for it), with the reason and a one-click **Load**. A node running the

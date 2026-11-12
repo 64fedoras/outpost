@@ -273,10 +273,9 @@ document.addEventListener('click', async (e) => {
         await post(`/api/nodes/${id}/restart`); toast('Restarting'); break;
       }
       case 'remove': removeNode(id); break;
-      case 'node-detail':
-        // Grid "Details": the detailed list when enabled, else the node opened under its List row.
-        if (showDetailed) { nodeSel = id; setNodeView('detail'); } else { nodeOpen.add(id); setNodeView('list'); }
-        return;
+      case 'node-detail': openNodeDrawer(id); return; // Grid card or its Details button: the details panel
+      case 'node-drawer-go': if (id) openNodeDrawer(id); return;
+      case 'node-drawer-close': closeNodeDrawer(); return;
       case 'node-toggle': if (nodeOpen.has(id)) nodeOpen.delete(id); else nodeOpen.add(id); renderNodes(); return;
       case 'node-select': nodeSel = id; renderNodes(); return;
       case 'node-view': setNodeView(el.dataset.nodeView); return;
