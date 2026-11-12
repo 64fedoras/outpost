@@ -15,31 +15,31 @@ It is a single self-contained binary with two modes, and no other software to in
 - **Controller**: the web UI, planning, job dispatch, and storage for models and releases. One per cluster.
 - **Node**: runs llama.cpp and commands for the controller. Keeps no job data after a job. As many as you like.
 
-![The New task screen: "What should the cluster build?" with a prompt box and sample project cards](docs/images/new-task.png)
+![The New task screen: "What should the cluster build?" with a prompt box and sample project cards](docs/images/new-task-dark.png)
 
 *New task: describe what you want, or start from a sample project. The planner asks questions if anything is unclear.*
 
-![A plan card with three subtasks, time estimates and an "Approve and start" button](docs/images/plan.png)
+![A plan card with three subtasks, time estimates and an "Approve and start" button](docs/images/plan-dark.png)
 
 *Nothing runs until you approve the plan. You can edit it, change a subtask's priority, or ask for changes below.*
 
-![A task mid-run: a progress bar, one finished subtask and one being written](docs/images/task-working.png)
+![A task mid-run: a progress bar, one finished subtask and one being written](docs/images/task-working-dark.png)
 
-*A task in progress, with live model output for each subtask. Outpost also follows your system's dark mode ([dark version](docs/images/task-working-dark.png)).*
+*A task in progress, with live model output for each subtask. Outpost also follows your system's dark mode.*
 
-![The Nodes page: cluster summary tiles and a node card with CPU, RAM and GPU gauges, plus recent jobs](docs/images/nodes.png)
+![The Nodes page: cluster summary tiles and a node card with CPU, RAM and GPU gauges, plus recent jobs](docs/images/nodes-dark.png)
 
 *Nodes: what each machine is doing, its loaded model and speed. Grid, list and detailed views.*
 
-![The Models page: the model library and a Discover list with fit estimates per node](docs/images/models.png)
+![The Models page: the model library and a Discover list with fit estimates per node](docs/images/models-dark.png)
 
 *Models: download from Hugging Face, with a fit estimate for each of your nodes.*
 
-![A project page with the project conversation in the middle and the Threads panel on the right](docs/images/project.png)
+![A project page with the project conversation in the middle and the Threads panel on the right](docs/images/project-dark.png)
 
-*A project: talk to the project in the middle, and see its tasks in the Threads panel (waiting on you, working, idle, resolved) on the right ([dark version](docs/images/project-dark.png)).*
+*A project: talk to the project in the middle, and see its tasks in the Threads panel (waiting on you, working, idle, resolved) on the right.*
 
-![Settings, Tasks section: default planner and the order of the Auto (local + API) planner](docs/images/settings.png)
+![Settings, Tasks section: default planner and the order of the Auto (local + API) planner](docs/images/settings-dark.png)
 
 *Settings: nine sections, including the planner choice and spending caps.*
 
