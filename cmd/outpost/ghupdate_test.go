@@ -23,6 +23,21 @@ func TestParseSums(t *testing.T) {
 	}
 }
 
+// relabelTestBinary returns the test binary with its build marker changed to 99.0.0. The file
+// keeps its length (NUL padding after the marker) so the ELF section headers at the end stay
+// valid whatever version the build was stamped with, such as 0.13.16-dev.1.
+func relabelTestBinary(exe string) ([]byte, string) {
+	base, _ := os.ReadFile(exe)
+	// Built at run time: a literal marker here would be found first by the other tests' binary scans.
+	marker := fmt.Sprintf("%s|%s|", strings.Split(buildInfo, "|")[0], "99.0.0")
+	repl := marker
+	if n := len(buildInfo) - len(marker); n > 0 {
+		repl += strings.Repeat("\x00", n)
+	}
+	bin := bytes.ReplaceAll(base, []byte(buildInfo), []byte(repl))
+	return append(bin, []byte(marker+"\x00")...), marker
+}
+
 // ghStub serves a release whose binary is the test binary relabelled as version 99.0.0.
 func ghStub(t *testing.T, badSum bool) (*httptest.Server, []byte) {
 	t.Helper()
@@ -30,11 +45,7 @@ func ghStub(t *testing.T, badSum bool) (*httptest.Server, []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base, _ := os.ReadFile(exe)
-	// Built at run time: a literal marker here would be found first by the other tests' binary scans.
-	marker := fmt.Sprintf("%s|%s|", strings.Split(buildInfo, "|")[0], "99.0.0")
-	bin := bytes.ReplaceAll(base, []byte(buildInfo), []byte(marker))
-	bin = append(bin, []byte(marker+"\x00")...)
+	bin, _ := relabelTestBinary(exe)
 	sum := sha256.Sum256(bin)
 	name := releaseFileName(thisPlatform())
 	sums := hex.EncodeToString(sum[:]) + "  " + name + "\n"
@@ -129,10 +140,8 @@ func TestCheckGitHubPrivateRepoUsesToken(t *testing.T) {
 		t.Skip("uses the test binary as an ELF")
 	}
 	exe, _ := os.Executable()
-	base, _ := os.ReadFile(exe)
-	marker := fmt.Sprintf("%s|%s|", strings.Split(buildInfo, "|")[0], "99.0.0")
-	bin := bytes.ReplaceAll(base, []byte(buildInfo), []byte(marker))
-	bin = append(bin, []byte(marker+"\x00")...)
+	bin, marker := relabelTestBinary(exe)
+	_ = marker
 	sum := sha256.Sum256(bin)
 	name := releaseFileName(thisPlatform())
 	sums := hex.EncodeToString(sum[:]) + "  " + name + "\n"
