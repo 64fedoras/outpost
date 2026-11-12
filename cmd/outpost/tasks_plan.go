@@ -55,7 +55,7 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 	webSearch := c.settings.WebSearch
 	c.mu.Unlock()
 	t.mu.Lock()
-	webSearch = webSearch && t.Planner == "claude"
+	webSearch = webSearch && (t.Planner == "claude" || t.Planner == "openrouter") // cloud planners only; local models cannot search
 	t.mu.Unlock()
 	indexed := t.roundHasFiles() && repoNeedsIndex(t.repoDir(), budget)
 	t.mu.Lock()
