@@ -71,3 +71,29 @@ func TestWebScriptsAreAllLoadedInOrder(t *testing.T) {
 		}
 	}
 }
+
+// The UI uses the styled askConfirm / askText dialogs (confirm.js) instead of the
+// browser's confirm(), alert() and prompt(), which show a native popup with the
+// controller address. This fails if one comes back in any web script.
+func TestNoNativePopups(t *testing.T) {
+	files, err := fs.Glob(webFS, "web/*.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	native := regexp.MustCompile(`(^|[^.\w$])(window\.)?(confirm|alert|prompt)\s*\(`)
+	for _, f := range files {
+		src, err := webFS.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			code := line
+			if j := strings.Index(code, "//"); j >= 0 && !strings.Contains(code[:j], "'") && !strings.Contains(code[:j], "\"") {
+				code = code[:j]
+			}
+			if native.MatchString(code) {
+				t.Errorf("%s:%d uses a native popup; use askConfirm or askText from confirm.js: %s", f, i+1, strings.TrimSpace(line))
+			}
+		}
+	}
+}

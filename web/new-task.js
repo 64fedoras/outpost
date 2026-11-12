@@ -149,7 +149,7 @@ function renderSaved() {
 $('nt-save-tpl').onclick = async () => {
   const prompt0 = $('nt-prompt').value.trim();
   if (!prompt0) { $('nt-prompt').focus(); toast('Write the request first'); return; }
-  const name = prompt('Name for this saved task', prompt0.split('\n')[0].slice(0, 60));
+  const name = await askText('Name for this saved task', prompt0.split('\n')[0].slice(0, 60));
   if (name === null) return;
   const request = { prompt: prompt0, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, mockup: $('nt-mockup').checked, test_first: $('nt-testfirst').checked, fix_rounds: +$('nt-fix').value, test_minutes: +$('nt-testmin').value, project: $('nt-project').value, node_label: $('nt-label').value };
   try { await post('/api/templates', { name, request }); toast(ntFiles.length || ntImg.payload().length ? 'Saved (attachments and images are not kept)' : 'Saved under Saved tasks'); refresh(); } catch (e) { toast(e.message); }
@@ -178,7 +178,7 @@ async function templateAction(act, id) {
   if (!t) return;
   if (act === 'tpl-run') { const r = await post(`/api/templates/${id}/run`, {}); location.hash = '#/tasks/' + r.id; refresh(); }
   else if (act === 'tpl-sched') openSched(id);
-  else if (act === 'tpl-del') { if (confirm(`Delete the saved task "${t.name}"${t.schedule ? ' and its schedule' : ''}?`)) { await api('/api/templates/' + id, { method: 'DELETE' }); toast('Deleted'); refresh(); } }
+  else if (act === 'tpl-del') { if (await askConfirm(`Delete the saved task "${t.name}"${t.schedule ? ' and its schedule' : ''}?`)) { await api('/api/templates/' + id, { method: 'DELETE' }); toast('Deleted'); refresh(); } }
   else if (act === 'tpl-use') ntFill(t.request);
 }
 

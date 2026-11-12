@@ -272,7 +272,7 @@ async function projectAction(act, el) {
   const id = el.dataset.id;
   const f = (k) => document.querySelector(`#modal-pj-settings [data-pf="${k}"][data-id="${id}"]`) || document.querySelector(`[data-pf="${k}"][data-id="${id}"]`);
   if (act === 'project-delete') {
-    if (!confirm('Delete this project and its files? Its git remote is not touched. (A project that still has tasks cannot be deleted; delete them first.)')) return;
+    if (!await askConfirm('Delete this project and its files? Its git remote is not touched. (A project that still has tasks cannot be deleted; delete them first.)')) return;
     await api(`/api/projects/${id}`, { method: 'DELETE' }); toast('Project deleted');
     close('modal-pj-settings'); close('modal-pj-edit');
     projects = (projects || []).filter((q) => q.id !== id); renderSidePins();
@@ -326,7 +326,7 @@ async function projPageAction(act, el) {
     }
     case 'proj-chat-stop': await post(`/api/projects/${encodeURIComponent(pageArg)}/chat/stop`); pjFetch(true); return;
     case 'proj-chat-clear':
-      if (!confirm('Clear this project\'s conversation? The tasks it started are kept.')) return;
+      if (!await askConfirm('Clear this project\'s conversation? The tasks it started are kept.')) return;
       await api(`/api/projects/${encodeURIComponent(id)}/chat`, { method: 'DELETE' }); close('modal-pj-settings'); toast('Conversation cleared'); pjFetch(true); return;
     case 'proj-edit': close('modal-pj-files'); openPjEdit(id); return;
     case 'proj-edit-save': {
@@ -464,7 +464,7 @@ async function runProjMenu(act, id) {
       case 'download': location.href = `/api/projects/${encodeURIComponent(id)}/download`; break;
       case 'settings': openPjSettings(id); break;
       case 'clear-chat':
-        if (!confirm(`Clear ${p.name}'s conversation? The tasks it started are kept.`)) return;
+        if (!await askConfirm(`Clear ${p.name}'s conversation? The tasks it started are kept.`)) return;
         await api(`/api/projects/${encodeURIComponent(id)}/chat`, { method: 'DELETE' }); toast('Conversation cleared');
         if (page === 'project' && pageArg === id) pjFetch(true); break;
       case 'delete': await deleteProject(id); break;
