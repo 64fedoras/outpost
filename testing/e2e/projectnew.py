@@ -1,4 +1,4 @@
-# Projects page: "New task here" opens the new-task page with that project picked.
+# Projects page: "New task in this project" in a card's menu opens the new-task page with that project picked.
 import asyncio, os
 from playwright.async_api import async_playwright
 E = os.environ.get("OUTPOST_E2E_DIR", ".") + "/"
@@ -17,9 +17,12 @@ async def main():
         pid = r.get("id") or r.get("project", {}).get("id")
         assert pid, r
         await pg.goto(U + "/#/projects")
-        btn = pg.locator(f"a[data-act=project-use][data-id='{pid}'] button")
-        await btn.wait_for()
-        await btn.click()
+        # The card's own "New task here" button went with the project page redesign; the same
+        # action is now "New task in this project" in the card's menu.
+        card = pg.locator(f".pj-card-wrap[data-proj='{pid}']")
+        await card.wait_for()
+        await card.click(button="right")
+        await pg.locator("#proj-ctx [data-pctx=new-task]").click()
         await pg.wait_for_function("() => location.hash === '#/new'", timeout=3000)
         await pg.wait_for_selector("section[data-page=new]:not(.hidden) #nt-prompt")
         assert await pg.input_value("#nt-project") == pid, await pg.input_value("#nt-project")
