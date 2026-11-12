@@ -52,7 +52,7 @@ async function loadSettings() {
   $('set-pooling').checked = !!settings.pooling_enabled;
   $('set-autofree').checked = settings.auto_free !== false;
   $('set-pooling-notice').classList.toggle('hidden', !settings.pooling_notice);
-  $('set-agent').checked = settings.agent_mode !== false; $('set-websearch').checked = !!settings.web_search; $('set-webprivate').checked = !!settings.web_allow_private;
+  $('set-agent').checked = settings.agent_mode !== false; $('set-websearch').checked = !!settings.web_search; $('set-chatweb').checked = !!settings.chat_web_search; $('set-chatsearchwith').value = settings.chat_search_with || ''; $('set-webprivate').checked = !!settings.web_allow_private;
   if (!state) state = await api('/api/state').catch(() => null);
   if (state) $('set-planner').innerHTML = plannerOptions(settings.default_planner);
   renderAutoOrder(settings.auto_order || ['local', 'claude', 'openrouter']);
@@ -241,7 +241,7 @@ $('set-wake').addEventListener('change', () => saveSettings({ wake_for_work: $('
 $('set-idle-save').onclick = () => saveSettings({ idle_unload: $('set-idle').value.trim() }, 'Idle unload saved');
 $('set-pooling-save').onclick = () => saveSettings({ pooling_enabled: $('set-pooling').checked }, $('set-pooling').checked ? 'Pooling enabled' : 'Pooling off; pools dissolved');
 $('set-claude-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0 }, 'Claude model and cap saved');
-$('set-save').onclick = () => saveSettings({ default_planner: $('set-planner').value, auto_order: autoOrderValue(), web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked }, 'Defaults saved');
+$('set-save').onclick = () => saveSettings({ default_planner: $('set-planner').value, auto_order: autoOrderValue(), web_search: $('set-websearch').checked, chat_web_search: $('set-chatweb').checked, chat_search_with: $('set-chatsearchwith').value, web_allow_private: $('set-webprivate').checked }, 'Defaults saved');
 $('set-run-save').onclick = () => saveSettings({ agent_mode: $('set-agent').checked, auto_resume: $('set-autoresume').checked, best_of_n: $('set-bestofn').value }, 'Task settings saved');
 $('pw-form').onsubmit = async (e) => {
   e.preventDefault();
