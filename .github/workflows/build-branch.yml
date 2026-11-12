@@ -1,0 +1,74 @@
+name: Build branch
+
+# Builds the five platform binaries for a branch and publishes them as a GitHub *prerelease*
+# v<next>-<branch>.<run> with SHA256SUMS, so a controller set to that branch in the Updates tab
+# can fetch it. Prereleases are never "latest", so normal (Stable) updates are not affected.
+# Only the branches listed below build on push; run it by hand (Actions -> Run workflow, pick the
+# branch) to build another one. Nothing is committed back and no workflow artifact is stored.
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-branch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.ref_name != 'main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - name: Install llvm (for Windows version info)
+        run: sudo apt-get update && sudo apt-get install -y llvm
+      - name: Stamp version
+        env:
+          BRANCH: ${{ github.ref_name }}
+          RUN: ${{ github.run_number }}
+        run: |
+          # Branch name as a short slug: lower case, a-z 0-9 and -, at most 12 characters.
+          SLUG=$(printf '%s' "$BRANCH" | tr 'A-Z/_' 'a-z--' | tr -cd 'a-z0-9-' | cut -c1-12 | sed 's/^-*//; s/-*$//')
+          [ -n "$SLUG" ] || { echo "branch name has no usable characters"; exit 1; }
+          V="$(sh .github/next-version.sh)-$SLUG.$RUN"
+          sed -i "s/^const Version = \".*\"/const Version = \"$V\"/" cmd/outpost/proto.go
+          echo "OUTPOST_VERSION=$V" >> "$GITHUB_ENV"
+          echo "OUTPOST_SLUG=$SLUG" >> "$GITHUB_ENV"
+          echo "Building Outpost $V"
+      - name: Vet and test
+        run: go vet ./... && go test ./...
+      - name: Build
+        run: |
+          V=$OUTPOST_VERSION
+          sh build.sh "$PWD/dist/outpost-$V"
+          (cd "dist/outpost-$V/bin" && sha256sum * > SHA256SUMS)
+          ./dist/outpost-$V/bin/outpost-linux-amd64 version | grep -F "$V"
+          grep -aF "OUTPOST_BUILD_INFO|$V|" dist/outpost-$V/bin/outpost-linux-amd64 >/dev/null
+      - name: Publish prerelease and prune old ones
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$OUTPOST_VERSION
+          for i in 1 2 3; do
+            gh release create "v$V" dist/outpost-$V/bin/* --prerelease --latest=false \
+              --target "$GITHUB_SHA" --title "Outpost $V (branch build)" \
+              --notes "Branch build of $GITHUB_REF_NAME at $GITHUB_SHA. Untested code; for the Updates tab's branch channel only." \
+              && break
+            gh release view "v$V" >/dev/null 2>&1 && break
+            [ "$i" = 3 ] && exit 1
+            sleep $((i * 10))
+          done
+          # Keep the newest 3 builds of this branch; delete the rest with their tags.
+          gh release list --limit 200 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease) | .tagName' \
+            | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+-$OUTPOST_SLUG\.[0-9]+$" \
+            | sort -t. -k4,4nr | tail -n +4 \
+            | while read -r t; do gh release delete "$t" --cleanup-tag --yes || true; done
