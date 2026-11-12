@@ -69,8 +69,11 @@ type Node struct {
 	artifacts   map[string]string // "<job>/<path>" -> file on disk, served to the controller
 	freedNote   string            // last automatic disk cleanup, shown on the node card
 	freedAt     int64
-	busyModels  map[string]int // models being written right now; cleanup skips them
-	verifyMu    sync.Mutex     // serialises model re-checks (node_verify.go)
+	busyModels  map[string]int         // models being written right now; cleanup skips them
+	verifyMu    sync.Mutex             // serialises model re-checks (node_verify.go)
+	scopes      map[string]*cacheScope // task build caches in use (node_pkgcache.go)
+	storeMu     sync.Mutex             // guards the package store
+	storeBytes  int64
 }
 
 func (n *Node) agentDir() string { return filepath.Join(n.dataDir, "agent") }
@@ -110,7 +113,7 @@ func runNode(args []string) error {
 		}
 		log.Printf("joined controller %s as %s; config saved to %s", cfg.Controller, cfg.NodeID, cfgPath)
 	}
-	checkTrial(n.agentDir(), n.args)   // roll back if a fresh update keeps crashing (update_trial.go)
+	checkTrial(n.agentDir(), n.args) // roll back if a fresh update keeps crashing (update_trial.go)
 	go trialHealthy(n.agentDir())
 	launchNewest(n.agentDir(), n.args) // switch to an installed update, if newer
 	// One node per data folder. During an update or restart the old process
@@ -140,6 +143,7 @@ func runNode(args []string) error {
 	freed := n.sweepWorkRoot()
 	log.Printf("outpost node %s starting; node id %s; work root %s (startup sweep freed %d bytes)", Version, n.cfg.NodeID, n.workRoot, freed)
 	go n.workspaceJanitor()
+	go n.sweepCaches()
 	go n.pauseTimer()
 	go n.autoload()
 	go n.verifyModelsBackground()
@@ -161,6 +165,7 @@ func runNode(args []string) error {
 			n.rpc.stop(true)
 			time.Sleep(time.Second)
 			n.sweepWorkRoot()
+			n.wipeCaches()
 			_ = os.Remove(cfgPath)
 			return nil
 		}
@@ -356,6 +361,13 @@ func (n *Node) sessionInner(welcomed *bool) error {
 				n.applySettings(s)
 				log.Printf("settings updated: exec %s", onOff(s.ExecEnabled))
 			}
+		case "cache.close":
+			var cc CacheClose
+			if json.Unmarshal(env.Body, &cc) == nil {
+				n.closeCacheScope(cc.Scope)
+			}
+		case "cache.clear":
+			go n.clearPackageStore()
 		case "ws.close":
 			var wc WSClose
 			if json.Unmarshal(env.Body, &wc) == nil {
@@ -582,6 +594,9 @@ func (n *Node) buildHeartbeat() Heartbeat {
 	}
 	hb.RPCEndpoint = n.rpc.current()
 	hb.Paused, hb.PausedBy, hb.PausedUntil = n.pauseInfo()
+	n.mu.Lock()
+	hb.PackageStoreBytes = n.storeBytes
+	n.mu.Unlock()
 	return hb
 }
 
@@ -677,6 +692,7 @@ func (n *Node) workspaceJanitor() {
 		for _, id := range idle {
 			n.closeWorkspace(id, "ttl")
 		}
+		n.expireCacheScopes()
 	}
 }
 
@@ -777,6 +793,11 @@ func (n *Node) runJob(jd JobDispatch) {
 					private = false
 				}
 			}
+			if !private { // if the controller never fetches, the janitor still deletes it
+				n.mu.Lock()
+				n.wsLastUsed[wsID] = time.Now()
+				n.mu.Unlock()
+			}
 			if e != nil {
 				res.Status, res.Error = "failed", e
 			}
@@ -824,20 +845,22 @@ func (n *Node) runJob(jd JobDispatch) {
 		return
 	}
 
+	cacheDir, releaseCache := n.acquireCache(jd.CacheScope, jd.JobID)
+	defer releaseCache() // after finish: the task's cache stays until the task ends
+	mode := n.sandboxMode()
+
 	cmd := exec.CommandContext(ctx, spec.Argv[0], spec.Argv[1:]...)
 	cmd.Dir = dir
-	cmd.Env = n.execEnv()
+	cmd.Env = append(n.execEnv(), n.cacheEnv(cacheDir, true)...)
 	for k, v := range spec.Env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
 	setProcGroup(cmd)
 	cmd.WaitDelay = 5 * time.Second
-	mode := n.sandboxMode()
 	netOn := true
 	if mode != sandboxOff {
-		pol := buildSandboxPolicy(sandboxInput{Mode: mode, Dir: dir, ToolDir: n.toolchainDir(), CacheDir: n.sandboxCacheDir(),
+		pol := buildSandboxPolicy(sandboxInput{Mode: mode, Dir: dir, ToolDir: n.toolchainDir(), CacheDir: cacheDir, StoreDir: n.pkgStoreDir(),
 			GoBin: n.goBinDirIfAny(), HostEnv: os.Environ(), ExtraRO: filepath.SplitList(os.Getenv("OUTPOST_SANDBOX_EXTRA_RO")), Argv: spec.Argv, Env: spec.Env, Network: spec.Network})
-		_ = os.MkdirAll(n.sandboxCacheDir(), 0o700)
 		_ = os.MkdirAll(pol.Tmp, 0o700)
 		if e := sandboxWrap(cmd, pol); e != nil {
 			fail(e)
@@ -886,7 +909,10 @@ func (n *Node) runJob(jd JobDispatch) {
 	files, e := n.collectFiles(dir, jd.JobID, jd.Collect)
 	res.Files = files
 	for _, f := range files {
-		if f.Blob { // the controller fetches these, then closes the workspace
+		// Keep the workspace only while the controller fetches the big files
+		// of a job that ran to the end; a cancelled or timed-out job's files
+		// are never fetched, so they go with the workspace now.
+		if f.Blob && res.Status == "succeeded" {
 			private = false
 			break
 		}

@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -131,10 +130,24 @@ func (c *Controller) handleSetTLS(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Write the files, then switch.
 	crt, key := filepath.Join(c.dataDir, "tls.crt"), filepath.Join(c.dataDir, "tls.key")
-	if err := writeFileAtomic(crt, []byte(req.Cert), 0o644); err == nil {
-		err = writeFileAtomic(key, []byte(req.Key), 0o600)
+	// The old pair is kept in memory so a failed second write cannot leave a
+	// certificate on disk that does not match its key (the controller would not
+	// start again). Reading may fail on a first swap from a generated pair; then
+	// there is nothing to put back.
+	oldCrt, oldCrtErr := os.ReadFile(crt)
+	err = writeFileAtomic(crt, []byte(req.Cert), 0o644)
+	if err == nil {
+		if err = writeFileAtomic(key, []byte(req.Key), 0o600); err != nil && oldCrtErr == nil {
+			_ = writeFileAtomic(crt, oldCrt, 0o644)
+		}
 	}
 	if err != nil {
+		// The nodes were already told the new pin. The controller keeps serving the
+		// old certificate, so point them back at it or they could not reconnect.
+		oldFP := c.fingerprintNow()
+		for _, nc := range conns {
+			_ = nc.send("node.repin", map[string]string{"fingerprint": oldFP})
+		}
 		writeJSON(w, 500, map[string]string{"error": "saving the certificate: " + err.Error()})
 		return
 	}
@@ -173,6 +186,3 @@ func (c *Controller) clearRepin(nodeID string) {
 		_ = writeFileAtomic(c.pendingRepinPath(), nb, 0o600)
 	}
 }
-
-// repinCommand is printed for nodes that missed the swap.
-func repinCommand(fp string) string { return fmt.Sprintf("outpost repin --fingerprint %s", fp) }

@@ -203,6 +203,47 @@ func TestSetTLSCertificate(t *testing.T) {
 	}
 }
 
+// A certificate that cannot be saved must not be switched to: the controller would
+// come back with the old one after a restart while the nodes pin the new one.
+func TestSetTLSCertificateSaveFailureKeepsOld(t *testing.T) {
+	c := authTestController(t)
+	cert, fp, err := loadOrCreateCert(c.dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.cert, c.fingerprint = cert, fp
+	c.nodes = map[string]*NodeRec{}
+	c.conns = map[string]*nodeConn{}
+	oldCrt, _ := os.ReadFile(filepath.Join(c.dataDir, "tls.crt"))
+
+	// Make the key path unwritable in a way that also holds for root: a non-empty folder.
+	keyPath := filepath.Join(c.dataDir, "tls.key")
+	if err := os.Remove(keyPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(keyPath, "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	other := t.TempDir()
+	_, _, _ = loadOrCreateCert(other)
+	crt, _ := os.ReadFile(filepath.Join(other, "tls.crt"))
+	key, _ := os.ReadFile(filepath.Join(other, "tls.key"))
+	body, _ := json.Marshal(map[string]string{"cert": string(crt), "key": string(key)})
+
+	w := httptest.NewRecorder()
+	c.handleSetTLS(w, httptest.NewRequest("POST", "/api/tls", bytes.NewReader(body)))
+	if w.Code != 500 {
+		t.Fatalf("want 500 when the key cannot be saved, got %d %s", w.Code, w.Body.String())
+	}
+	if c.fingerprint != fp {
+		t.Fatal("switched to a certificate that was not saved")
+	}
+	if b, _ := os.ReadFile(filepath.Join(c.dataDir, "tls.crt")); !bytes.Equal(b, oldCrt) {
+		t.Fatal("tls.crt on disk no longer matches the key the controller will load")
+	}
+}
+
 func setupPost(c *Controller, ip, pw string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest("POST", "/api/setup", strings.NewReader(`{"password":"`+pw+`"}`))
 	r.RemoteAddr = ip + ":1234"

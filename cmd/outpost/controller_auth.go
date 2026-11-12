@@ -171,7 +171,7 @@ func (c *Controller) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct{ Password string }
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req)
 	if !c.checkPassword(req.Password) {
 		c.mu.Lock()
 		c.loginFails[ip] = append(c.loginFails[ip], time.Now())

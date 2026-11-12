@@ -24,8 +24,11 @@ type Settings struct {
 	MonthlyCapUSD     float64        `json:"monthly_cap_usd,omitempty"` // all cloud planner calls in a calendar month; 0 = off (spend.go)
 	WakeForWork       bool           `json:"wake_for_work,omitempty"`   // Wake-on-LAN offline nodes when a task waits for a worker (wol.go)
 	DefaultPlanner    string         `json:"default_planner"`           // "claude", "openrouter" or "node:<id>"
+	AutoOrder         []string       `json:"auto_order,omitempty"`      // providers "Auto (local + API)" tries, in order: local, claude, openrouter; empty = all three in that order
 	OpenRouterKeyEnc  string         `json:"openrouter_key_enc,omitempty"`
 	OpenRouterModel   string         `json:"openrouter_model,omitempty"`
+	ChatWebSearch     bool           `json:"chat_web_search,omitempty"`   // chats get a Claude web search brief first (paid per search)
+	ChatSearchWith    string         `json:"chat_search_with,omitempty"`  // "claude" (default) or "openrouter": who runs the chat search step
 	WebSearch         bool           `json:"web_search,omitempty"`        // Claude planner may use the web search tool (paid per search)
 	WebAllowPrivate   bool           `json:"web_allow_private,omitempty"` // pasted links may reach internal addresses
 	BackupEnabled     bool           `json:"backup_enabled,omitempty"`
@@ -42,6 +45,7 @@ type Settings struct {
 	GitHubAutoInstall bool           `json:"github_auto_install,omitempty"` // also update idle nodes and the controller by itself
 	GitHubRepo        string         `json:"github_repo,omitempty"`         // owner/repo trusted for updates; empty = ghDefaultRepo
 	GitHubTokenEnc    string         `json:"github_token_enc,omitempty"`    // optional read-only token for a private repo; controller only
+	GitHubBranch      string         `json:"github_branch,omitempty"`       // update channel: "" = Stable releases, else a branch build slug (controller_ghupdate.go)
 	GitHubHoldVersion string         `json:"github_hold_version,omitempty"` // set by a rollback: auto-install skips this version and older
 	Sandbox           string         `json:"sandbox,omitempty"`             // default sandbox for exec jobs on nodes: off | basic | strict; empty = basic
 	HealthAmber       int            `json:"health_amber,omitempty"`        // node health: points for amber (0 = default 5)
@@ -172,11 +176,11 @@ func (c *Controller) settingsView() map[string]any {
 		"has_hf_token": hf != "", "claude_model": c.settings.ClaudeModel,
 		"has_openrouter_key": ork != "", "openrouter_key_hint": keyHint(ork), "openrouter_model": c.settings.OpenRouterModel,
 		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
-		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner, "monthly_cap_usd": c.settings.MonthlyCapUSD,
+		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner, "auto_order": normAutoOrder(c.settings.AutoOrder), "monthly_cap_usd": c.settings.MonthlyCapUSD,
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
 		"wake_for_work": c.settings.WakeForWork,
 		"auto_resume":   !c.settings.AutoResumeOff, "best_of_n": normBestOf(c.settings.BestOfN),
-		"agent_mode": !c.settings.AgentOff, "web_search": c.settings.WebSearch, "web_allow_private": c.settings.WebAllowPrivate,
+		"agent_mode": !c.settings.AgentOff, "web_search": c.settings.WebSearch, "chat_web_search": c.settings.ChatWebSearch, "chat_search_with": c.settings.ChatSearchWith, "web_allow_private": c.settings.WebAllowPrivate,
 		"auto_free": !c.settings.AutoFreeOff, "pooling_enabled": c.poolingOnLocked(), "pooling_notice": c.settings.PoolingNotice,
 		"github_repo": c.ghRepoLocked(), "github_repo_default": ghDefaultRepo, "github_token_set": c.settings.GitHubTokenEnc != "",
 		"github_updates": !c.settings.GitHubUpdatesOff, "github_auto_install": c.settings.GitHubAutoInstall,
@@ -197,16 +201,17 @@ func (c *Controller) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		AnthropicKey    *string  `json:"anthropic_key"`
-		HFToken         *string  `json:"hf_token"`
-		ClaudeModel     *string  `json:"claude_model"`
-		DefaultCapUSD   *float64 `json:"default_cap_usd"`
-		WakeForWork     *bool    `json:"wake_for_work"`
-		DefaultPlanner  *string  `json:"default_planner"`
-		HealthAmber     *int     `json:"health_amber"`
-		HealthRed       *int     `json:"health_red"`
-		OpenRouterKey   *string  `json:"openrouter_key"`
-		OpenRouterModel *string  `json:"openrouter_model"`
+		AnthropicKey    *string   `json:"anthropic_key"`
+		HFToken         *string   `json:"hf_token"`
+		ClaudeModel     *string   `json:"claude_model"`
+		DefaultCapUSD   *float64  `json:"default_cap_usd"`
+		WakeForWork     *bool     `json:"wake_for_work"`
+		DefaultPlanner  *string   `json:"default_planner"`
+		AutoOrder       *[]string `json:"auto_order"`
+		HealthAmber     *int      `json:"health_amber"`
+		HealthRed       *int      `json:"health_red"`
+		OpenRouterKey   *string   `json:"openrouter_key"`
+		OpenRouterModel *string   `json:"openrouter_model"`
 		Notify          *struct {
 			Browser    *bool           `json:"browser"`
 			NtfyURL    *string         `json:"ntfy_url"`
@@ -220,6 +225,8 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		BestOfN         *string `json:"best_of_n"`
 		Instructions    *string `json:"instructions"`
 		WebSearch       *bool   `json:"web_search"`
+		ChatWebSearch   *bool   `json:"chat_web_search"`
+		ChatSearchWith  *string `json:"chat_search_with"`
 		AgentMode       *bool   `json:"agent_mode"`
 		WebAllowPrivate *bool   `json:"web_allow_private"`
 		PoolingEnabled  *bool   `json:"pooling_enabled"`
@@ -365,11 +372,24 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	if req.DefaultPlanner != nil {
 		c.settings.DefaultPlanner = *req.DefaultPlanner
 	}
+	if req.AutoOrder != nil {
+		c.settings.AutoOrder = normAutoOrder(*req.AutoOrder)
+	}
 	if req.Instructions != nil {
 		c.settings.Instructions = clipInstructions(*req.Instructions)
 	}
 	if req.WebSearch != nil {
 		c.settings.WebSearch = *req.WebSearch
+	}
+	if req.ChatWebSearch != nil {
+		c.settings.ChatWebSearch = *req.ChatWebSearch
+	}
+	if req.ChatSearchWith != nil {
+		if v := strings.TrimSpace(*req.ChatSearchWith); v == "openrouter" {
+			c.settings.ChatSearchWith = v
+		} else {
+			c.settings.ChatSearchWith = "" // Claude
+		}
 	}
 	if req.AgentMode != nil {
 		c.settings.AgentOff = !*req.AgentMode
@@ -452,4 +472,21 @@ func (c *Controller) ghRepoLocked() string {
 		return r
 	}
 	return ghDefaultRepo
+}
+
+// normAutoOrder keeps the known providers of "Auto (local + API)" once each, in
+// the given order; nothing valid means the default order.
+func normAutoOrder(in []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, p := range in {
+		if (p == "local" || p == "claude" || p == "openrouter") && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"local", "claude", "openrouter"}
+	}
+	return out
 }

@@ -94,7 +94,9 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 
 	c.mu.Lock()
 	if old := c.conns[n.ID]; old != nil {
-		old.conn.Close(websocket.StatusGoingAway, "replaced by new connection")
+		// Not under c.mu: Close waits up to 10 s for a peer that is often gone
+		// (that is why the node reconnected), and c.mu stops the whole controller.
+		go old.conn.Close(websocket.StatusGoingAway, "replaced by new connection")
 	}
 	hello.NodeID = n.ID
 	n.Hello = &hello
@@ -163,15 +165,6 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 		}
 		c.handleNodeMessage(n.ID, &env)
 	}
-}
-
-func containsInt(xs []int, v int) bool {
-	for _, x := range xs {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }
 
 func (c *Controller) handleNodeMessage(nodeID string, env *Envelope) {
@@ -307,34 +300,41 @@ func (c *Controller) finishJobLocked(j *JobRec, status string, e *ErrInfo) {
 // offlineSweeper drops connections that stop heartbeating and marks their jobs lost after 60 s.
 func (c *Controller) offlineSweeper() {
 	for range time.Tick(5 * time.Second) {
-		c.mu.Lock()
-		now := time.Now()
-		for id, nc := range c.conns {
-			if now.Sub(c.lastSeen[id]) > 3*heartbeatSeconds*time.Second {
-				log.Printf("node %s missed 3 heartbeats; closing", id)
-				nc.conn.Close(websocket.StatusGoingAway, "heartbeat timeout")
-				delete(c.conns, id)
-			}
-		}
-		for _, j := range c.jobs {
-			if j.Status != "dispatched" && j.Status != "running" {
-				continue
-			}
-			if _, online := c.conns[j.NodeID]; !online && now.Sub(c.lastSeen[j.NodeID]) > 60*time.Second {
-				c.finishJobLocked(j, "lost", errf("lost", true, "node offline for more than 60 s"))
-			}
-		}
-		c.sweepOfflineNodes(now)
-		for s, exp := range c.tokens {
-			if now.After(exp) {
-				delete(c.tokens, s)
-			}
-		}
-		for id, u := range c.usedTok {
-			if now.Sub(u.At) > 2*joinTokenTTL {
-				delete(c.usedTok, id)
-			}
-		}
-		c.mu.Unlock()
+		c.sweepOnce(time.Now())
 	}
+}
+
+// sweepOnce is one pass of the offline sweeper.
+func (c *Controller) sweepOnce(now time.Time) {
+	c.mu.Lock()
+	for id, nc := range c.conns {
+		if now.Sub(c.lastSeen[id]) > 3*heartbeatSeconds*time.Second {
+			log.Printf("node %s missed 3 heartbeats; closing", id)
+			// Close in the background: its close handshake waits up to 10 s
+			// for a node that has stopped answering, and holding c.mu that
+			// long froze the web UI and every other node whenever one died.
+			go nc.conn.Close(websocket.StatusGoingAway, "heartbeat timeout")
+			delete(c.conns, id)
+		}
+	}
+	for _, j := range c.jobs {
+		if j.Status != "dispatched" && j.Status != "running" {
+			continue
+		}
+		if _, online := c.conns[j.NodeID]; !online && now.Sub(c.lastSeen[j.NodeID]) > 60*time.Second {
+			c.finishJobLocked(j, "lost", errf("lost", true, "node offline for more than 60 s"))
+		}
+	}
+	c.sweepOfflineNodes(now)
+	for s, exp := range c.tokens {
+		if now.After(exp) {
+			delete(c.tokens, s)
+		}
+	}
+	for id, u := range c.usedTok {
+		if now.Sub(u.At) > 2*joinTokenTTL {
+			delete(c.usedTok, id)
+		}
+	}
+	c.mu.Unlock()
 }

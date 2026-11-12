@@ -64,19 +64,52 @@ function renderGitHub() {
   $('gh-info').textContent = t;
   if (g.error) { const e = document.createElement('span'); e.className = 'error-msg'; e.style.display = 'block'; e.textContent = g.error; $('gh-info').appendChild(e); }
   $('btn-gh-check').disabled = $('btn-gh-install').disabled = !!g.busy;
+  const sel = $('gh-channel');
+  if (document.activeElement !== sel) ensureChannelOption(g.branch || '');
+  $('gh-channel-note').textContent = g.branch ? 'Branch builds are untested code: nothing installs by itself, and Roll back is kept.' : '';
 }
+// The dropdown always shows the current choice; the other branches are read from GitHub when it opens.
+function ensureChannelOption(branch) {
+  const sel = $('gh-channel');
+  if (branch && ![...sel.options].some((o) => o.value === branch)) sel.add(new Option(branch + ' (branch build)', branch));
+  if (sel.value !== branch) sel.value = branch;
+}
+let ghBranchesLoading = false;
+async function loadBranches() {
+  if (ghBranchesLoading) return;
+  ghBranchesLoading = true;
+  const sel = $('gh-channel');
+  try {
+    const r = await api('/api/github-updates/branches');
+    if (r.error) throw new Error(r.error);
+    const keep = sel.value;
+    sel.length = 1;
+    for (const b of r.branches || []) sel.add(new Option(`${b.branch} (v${b.version})`, b.branch));
+    ensureChannelOption(r.selected || keep);
+    sel.value = keep;
+  } catch (e) { toast('Could not list branches: ' + e.message, 6000); }
+  ghBranchesLoading = false;
+}
+$('gh-channel').addEventListener('focus', loadBranches);
+$('gh-channel').addEventListener('mousedown', loadBranches);
+$('gh-channel').onchange = async () => {
+  const b = $('gh-channel').value;
+  if (b && !await askConfirm(`Follow branch "${b}"? Its builds are untested code. Nothing installs until you click Update, and Roll back stays available.`)) { ensureChannelOption((state.github_updates || {}).branch || ''); return; }
+  try { await post('/api/github-updates/channel', { branch: b }); toast(b ? 'Following ' + b : 'Back on Stable'); } catch (e) { toast(e.message, 6000); ensureChannelOption((state.github_updates || {}).branch || ''); }
+  refresh();
+};
 async function ghAction(path, msg) {
   try { await post(path); toast(msg); } catch (e) { toast(e.message, 6000); }
   refresh();
 }
 $('btn-gh-check').onclick = () => ghAction('/api/github-updates/check', 'Checked GitHub');
-$('btn-gh-install').onclick = () => { if (confirm('Check GitHub and update idle nodes and the controller to the latest release now?')) ghAction('/api/github-updates/install', 'Installing from GitHub'); };
+$('btn-gh-install').onclick = async () => { if (await askConfirm('Check GitHub and update idle nodes and the controller to the latest release now?')) ghAction('/api/github-updates/install', 'Installing from GitHub'); };
 $('btn-upd-all').onclick = async () => {
   try { const r = await post('/api/update-all'); toast(r.waiting ? `Updating ${r.canary} first; ${r.waiting} more follow once it passes` : `Updating ${r.canary}`, 6000); refresh(); } catch (e) { toast(e.message); }
 };
 async function rollbackController() {
   const to = state.controller_rollback_to;
-  if (!confirm(`Roll the controller back to v${to}? It restarts on that version and stays there until you install an update.`)) return;
+  if (!await askConfirm(`Roll the controller back to v${to}? It restarts on that version and stays there until you install an update.`)) return;
   try { await post('/api/controller/rollback'); } catch (e) { toast(e.message); return; }
   ctlUpdating = true; renderUpdates(); toast('Controller restarting…');
   for (let i = 0; i < 60; i++) {
@@ -91,7 +124,7 @@ async function rollbackController() {
 }
 
 async function updateController() {
-  if (!confirm(`Update the controller to v${state.controller_update_to} and restart it? Working tasks on a local planner pick up where they stopped once their node is back; Claude and OpenRouter tasks wait for you to press Resume.`)) return;
+  if (!await askConfirm(`Update the controller to v${state.controller_update_to} and restart it? Working tasks on a local planner pick up where they stopped once their node is back; Claude and OpenRouter tasks wait for you to press Resume.`)) return;
   const target = state.controller_update_to;
   try { await post('/api/controller/update'); } catch (e) { toast(e.message); return; }
   ctlUpdating = true; renderUpdates(); toast('Controller restarting…');

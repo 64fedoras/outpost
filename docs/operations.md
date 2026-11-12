@@ -21,6 +21,19 @@ tab does the same once, on request. After a rollback, automatic install skips th
 (and older ones) until a newer release appears. Nothing but the version check and the downloads goes to
 GitHub. This path has only been tested against a stub server, not the live GitHub API.
 
+**Following a branch.** Under *GitHub releases* the Updates tab has an **Update channel** dropdown. *Stable*
+is the normal behaviour above. The other entries are branches that have a build on GitHub; the list is read
+from GitHub each time you open the dropdown. Picking one makes the controller follow that branch's newest
+build (shown as a version like `0.12.19-dev.7`) instead of the latest release. The build goes through the same
+SHA-256 check, preflight, one-node-first rollout, trial and rollback as any update, but automatic install is off
+while a branch is selected, so nothing installs until you click Update. Branch builds are made by the
+`Build branch` workflow as GitHub *prereleases* (never "latest"), for `dev` on every push and for any other
+branch when you run the workflow by hand; the newest three per branch are kept. A branch build counts as
+older than the same number without a suffix, so the next merge to `main` offers you Stable again; switching
+back to Stable replaces a stored branch build with the latest release, and **Roll back** returns to the
+previous version if the stable release is not newer than what is running. Not yet tested against the live
+GitHub API or on the cluster.
+
 **Which repository, and private repositories.** *Settings → Updates from GitHub* has a **Repository to
 trust for updates** field. Enter a `github.com` address such as `https://github.com/64fedoras/outpost`
 (or just `owner/repo`; other hosts are refused); empty means the default. Whoever controls that
@@ -164,6 +177,10 @@ you fill it in (set it if you reach the controller by a name or IP different fro
   model file again and compares it with the checksum recorded at download. A damaged or missing file raises a
   banner and a *model download/load failed* notification; **Retry** on the Models page downloads it again.
   It finds damage after the download, not a bad download.
+- **Stalled downloads:** a download that receives nothing for two minutes is dropped instead of waiting for
+  ever. Downloads from Hugging Face and GitHub (models, llama.cpp builds, the Go toolchain) then resume by
+  themselves from where they stopped; a refusal such as a gated model is reported at once. A node fetching a
+  file from the controller reports the failure and keeps the partial file, so trying again continues it.
 - **Node health:** a node's card shows *Shaky* (amber) or *Unreliable* (red) when, in the last 7 days, it
   disconnected or could not take or finish work often (1 point per disconnect, 2 per refused or lost call;
   5 points amber, 15 red; **Settings → Node health colours** changes the two numbers). Red nodes are handed work after all others. The record is `health.json` in the

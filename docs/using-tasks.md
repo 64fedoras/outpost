@@ -29,6 +29,18 @@ The web UI is laid out like a chat app. The sidebar lists your tasks in three gr
 (amber dot), **Running** (green) and **Earlier**; a task in a project shows the project name on its
 second line. Pinned tasks sit above the groups. **Projects** sits right under **New task** at the top of the sidebar, styled the same way.
 
+**Groups.** The switch above the sidebar list picks **By status** (the three sections above) or **By group**.
+Chats are listed in the sidebar too (💬), under Running while one is answering and otherwise under Earlier.
+In **By group** the list is Pinned, **Needs you** (still on top, each item tagged with its group), then one
+collapsible section per group, then **No group**. A group is a named, coloured folder that holds tasks and chats
+together; an item is in one group at most. **＋ New group** creates one. Drag a task or chat row onto a group to move it
+there (drop on *No group* to take it out), or use **Move to group ▸** in the row's menu: the groups fold out beside the
+menu (a bottom sheet on a phone), with **New group…** and **Remove from group**. Right-click a group header (or its **⋯**,
+or F2 / Delete on it) to **Rename**, pick a **colour**, **Move up / down** or **Delete group** (its tasks and chats are kept,
+they just leave the group). A group with something waiting on you shows an amber count. Groups are stored on the controller
+(`groups.json`, up to 100), so every browser and phone sees the same ones; the chosen view and which groups are collapsed are
+remembered per browser. Dragging needs a pointer; on a phone use the menu.
+
 Right-click a task in the sidebar (or press its **⋯** button, which is always shown on a phone) for
 **Open in new tab**, **Rename**, **Pin to top**, **Copy prompt**, **Copy link**, **Duplicate as new
 task** (fills the new-task box with the same prompt and options: planner, Claude model, cap, peer review, mockups-first, tests-first, fix rounds, test time limit, project and node label; attachments and pasted images are not copied, and a planner, project or label that no longer exists falls back to the current choice), **Stop** (while it
@@ -168,7 +180,7 @@ not affected; an older llama.cpp build that does not take a schema simply answer
 
 **Fix rounds and the test time limit.** By default the planner gets up to 3 fix rounds and one test run
 may take 10 minutes. Change both per task under **Change options** (1 to 8 rounds; 5 to 60 minutes), or
-as a project default on the project's card.
+as a project default in the project's settings (⚙ on the project page).
 
 **When the tests fail**, the planner gets its fix rounds (3 unless changed). Each round sees the test output and
 which files earlier rounds changed, and works as an agent (below). It treats the tests as the
@@ -258,12 +270,12 @@ and goes at the top of every planner, worker, reviewer and fix prompt of that ta
 contain an `OUTPOST.md` at the root, its text is added as well. Both together are cut at 8,000 characters
 so a small local model keeps room for the code. Changing the box affects new tasks only.
 
-A project has its own **Instructions** box on its card too. For a task in that project they are added
+A project has its own **Instructions** box too (**Edit** in the project's menu: right-click the project, or press **⋯** on its card or page). For a task in that project they are added
 after the Settings rules (the same 8,000-character limit applies to all of it together).
 
 **Learning from failures.** When a task in a project finishes with its tests still failing, the planner
 is asked once for a short general rule that would have avoided it ("use the testing package only; do
-not add testify"). The rule appears on the project's card as a suggestion: **Add to instructions** or
+not add testify"). The rule appears under the project's instructions (**Edit** in the project's menu) as a suggestion: **Add to instructions** or
 **Dismiss**; nothing changes until you choose. The last 5 suggestions are kept. With Claude or OpenRouter
 this is one small call counted in the task's cost, and it is skipped if it would pass the cap.
 
@@ -302,6 +314,49 @@ follow-up round does. Only one task works in a project at a time; later ones sho
 project* and start when the first finishes. A project can store defaults (test command, peer review, fix rounds, test time limit) and its own instructions.
 Tasks without a project work as before, and existing tasks stay as they were. Delete a
 project's tasks before deleting the project.
+
+**The Projects page** shows one card per project with its counts (waiting on you, working, idle,
+resolved); **＋ New project** opens the form in a dialog. Click a card to open the **project page**
+(`#/projects/<id>`):
+
+**Project menu.** Right-click a project (its card, its pinned row in the sidebar, or its name at the
+top of the project page), press its **⋯** button, hold a finger on it for half a second on a phone, or
+press Shift+F10 / the menu key on a focused one. It has **Open in new tab**, **Edit** (F2; the
+project's name, its instructions box and any suggested rules),
+**Pin to sidebar** / **Unpin from sidebar**, **New task in this project**, **Duplicate** (a new project named "… (copy)" with the same files, git history, settings and instructions; tasks, the conversation, suggested rules and the pin are not copied, pushing and pull requests start off, and it is refused while a task is working in the project; for a project with a git repository a dialog first warns that the copy would share the repository and its branch, and offers **Keep the repository attached** or **Disconnect the copy**, which makes it a plain folder with the same files but no git history or git settings), **Copy link**, **Download
+files (.zip)**, **Settings**, **Clear conversation** and **Delete** (Del; only for a project with no
+tasks left). Pinned projects are listed under **Projects** in the sidebar, with an amber count when
+something in them is waiting on you; the pin is stored on the controller, so it shows on every device.
+
+- **Auto planners.** *Auto (local)* only ever uses a ready node's model. *Auto (local + API)* tries a ready node,
+  then Claude, then OpenRouter (each only if it has a key); change the order or untick providers under
+  Settings → Tasks → Planner. Schedules refuse it, because they must never spend money.
+- **The middle is the project conversation.** Ask about the project or describe work: the project's
+  planner (its own, chosen in the project's **Settings**, else the default planner in Settings → Tasks; Claude, OpenRouter or a node's model) answers
+  with what it can see (the project's tasks and their results, the file list, the instructions) and
+  starts tasks for work you ask for, at most 3 per answer. Each task it starts appears under its answer
+  as a live card (status, the subtask progress strip, the result note, **Answer** / **Review plan** /
+  **✓ Resolve**), so questions and results come back into the conversation. It cannot open files or
+  run commands itself; tasks do that. **Start as task** skips the conversation and starts your message
+  as a task at once; **More options…** opens the full new-task form with the project chosen. Tasks
+  started elsewhere (the New task page, a schedule) show up in time order with their request.
+  With Claude or OpenRouter each answer is one small paid call, on the Spending page as
+  "*project* · project chat"; an answer that would pass the monthly cap or cost more than the
+  default task cap is refused with a note. A node planner waits for a free slot on its node.
+  **Stop** cancels an answer in progress; **⚙ → Clear conversation** empties it (tasks are kept).
+  The conversation is kept in the project folder on the controller and is deleted with the project.
+- **Threads** (top bar; the amber number is how many tasks wait on you) opens a panel on the right
+  with the project's **Artifacts** (screenshots, build outputs, result zips and the last pull request;
+  **View all** lists them all) and its tasks in four groups: **Waiting on you** (questions, a plan to
+  approve, a cap or a resume), **Working** (including tasks queued behind the one that works),
+  **Idle** (finished, failed or stopped) and **Resolved** (folded; click to open). On a narrow window
+  the panel slides over the page; on a phone it fills the screen. The wide-screen choice is remembered.
+- **Resolving** a task (✓ on its row, **✓ Resolve** on its card, **Mark resolved** in the sidebar's
+  task menu, or **Resolve all** on Idle) only tidies it away: nothing is deleted, the card leaves the
+  middle (a link shows the hidden ones) and the task moves to Resolved. A follow-up, a retry or
+  anything that needs you brings it back to the other groups by itself; **Reopen** does it by hand.
+- **Files** shows the project's file list; **⚙** holds the
+  project's defaults, its git settings and **Delete project**; **.zip** downloads the files; **⋯** opens the project menu (Edit for the instructions, Pin to sidebar and the rest).
 
 **Attachments:** the 📎 button in the composer takes up to 50 MB in total. A `.zip` becomes the
 task's starting files (one top-level folder is stripped). Other files must be text and are shown

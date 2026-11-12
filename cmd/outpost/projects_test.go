@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -262,5 +264,121 @@ func TestProjectHTTP(t *testing.T) {
 	c.handleCreateProject(w, httptest.NewRequest("POST", "/api/projects", strings.NewReader(`{"name":"bad","git_url":"file:///etc"}`)))
 	if w.Code != 400 || len(c.projects) != 1 {
 		t.Fatalf("local git URL accepted: %d %s", w.Code, w.Body)
+	}
+}
+
+// The project menu renames, pins and edits instructions through POST /api/projects/{id};
+// fields left out of the request keep their value.
+func TestProjectPinRename(t *testing.T) {
+	c := testController(t)
+	w := httptest.NewRecorder()
+	c.handleCreateProject(w, httptest.NewRequest("POST", "/api/projects", strings.NewReader(`{"name":"first","test_command":"go test"}`)))
+	if w.Code != 200 {
+		t.Fatalf("create: %d %s", w.Code, w.Body)
+	}
+	id := c.projectViews()[0].ID
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/projects/{id}", c.handleUpdateProject)
+	post := func(body string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/projects/"+id, strings.NewReader(body)))
+		if w.Code != 200 {
+			t.Fatalf("update %s: %d %s", body, w.Code, w.Body)
+		}
+	}
+	post(`{"pinned":true}`)
+	v := c.projectViews()[0]
+	if !v.Pinned || v.Name != "first" || v.TestCommand != "go test" {
+		t.Fatalf("after pin: %+v", v)
+	}
+	post(`{"name":"  second  ","instructions":"use pytest"}`)
+	v = c.projectViews()[0]
+	if !v.Pinned || v.Name != "second" || v.Instr != "use pytest" {
+		t.Fatalf("after rename: %+v", v)
+	}
+	post(`{"name":"","pinned":false}`)
+	v = c.projectViews()[0]
+	if v.Pinned || v.Name != "second" {
+		t.Fatalf("after unpin: %+v", v)
+	}
+	// the pin survives a restart
+	post(`{"pinned":true}`)
+	c.loadProjects()
+	if v := c.projectViews(); len(v) != 1 || !v[0].Pinned || v[0].Name != "second" {
+		t.Fatalf("after reload: %+v", v)
+	}
+}
+
+// Duplicate copies files, settings and instructions; not tasks, chat, pin or push settings.
+func TestProjectDuplicate(t *testing.T) {
+	c := testController(t)
+	w := httptest.NewRecorder()
+	c.handleCreateProject(w, httptest.NewRequest("POST", "/api/projects", strings.NewReader(`{"name":"Dice","test_command":"pytest"}`)))
+	if w.Code != 200 {
+		t.Fatalf("create: %d %s", w.Code, w.Body)
+	}
+	src := c.projectViews()[0].ID
+	p := c.getProject(src)
+	p.Instructions, p.Pinned, p.FixRounds = "use pytest", true, 5
+	p.Suggestions = []ProjectSuggestion{{ID: "sg_1", Text: "x"}}
+	os.MkdirAll(filepath.Join(p.repoDir(), "pkg"), 0o755)
+	os.WriteFile(filepath.Join(p.repoDir(), "pkg", "main.py"), []byte("print(1)\n"), 0o644)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/projects/{id}/duplicate", c.handleDuplicateProject)
+	dup := func() (int, map[string]string) {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/projects/"+src+"/duplicate", nil))
+		var out map[string]string
+		json.Unmarshal(w.Body.Bytes(), &out)
+		return w.Code, out
+	}
+	code, out := dup()
+	if code != 200 || out["name"] != "Dice (copy)" {
+		t.Fatalf("duplicate: %d %v", code, out)
+	}
+	cp := c.getProject(out["id"])
+	if cp == nil || cp.Instructions != "use pytest" || cp.TestCommand != "pytest" || cp.FixRounds != 5 || cp.Pinned || len(cp.Suggestions) != 0 || cp.GitPush || cp.GitPR {
+		t.Fatalf("copy: %+v", cp)
+	}
+	if b, err := os.ReadFile(filepath.Join(cp.repoDir(), "pkg", "main.py")); err != nil || string(b) != "print(1)\n" {
+		t.Fatalf("copied file: %q %v", b, err)
+	}
+	// a task working in the project holds its slot: the copy is refused, not half-made
+	p.slot <- struct{}{}
+	if code, _ := dup(); code != 409 {
+		t.Fatalf("busy project duplicated: %d", code)
+	}
+	<-p.slot
+	if n := len(c.projectViews()); n != 2 {
+		t.Fatalf("projects: %d", n)
+	}
+	// detach: no .git, no git settings; the files stay
+	p.GitURL, p.GitBranch, p.GitTokenEnc = "https://example.local/a.git", "outpost", "enc"
+	os.MkdirAll(filepath.Join(p.repoDir(), ".git"), 0o755)
+	os.WriteFile(filepath.Join(p.repoDir(), ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0o644)
+	for _, detach := range []bool{false, true} {
+		w := httptest.NewRecorder()
+		body := `{}`
+		if detach {
+			body = `{"detach":true}`
+		}
+		mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/projects/"+src+"/duplicate", strings.NewReader(body)))
+		var o map[string]string
+		json.Unmarshal(w.Body.Bytes(), &o)
+		d := c.getProject(o["id"])
+		if w.Code != 200 || d == nil {
+			t.Fatalf("duplicate detach=%v: %d %s", detach, w.Code, w.Body)
+		}
+		_, gitErr := os.Stat(filepath.Join(d.repoDir(), ".git", "HEAD"))
+		_, fileErr := os.Stat(filepath.Join(d.repoDir(), "pkg", "main.py"))
+		if fileErr != nil || (gitErr == nil) == detach || (d.GitURL == "") != detach || (d.GitTokenEnc == "") != detach {
+			t.Fatalf("detach=%v: git=%v file=%v %+v", detach, gitErr, fileErr, d)
+		}
+	}
+	for in, want := range map[string]string{"A": "A (copy)", "A (copy)": "A (copy 2)", "A (copy 2)": "A (copy 3)", "A (copy x)": "A (copy x) (copy)"} {
+		if got := copyName(in); got != want {
+			t.Errorf("copyName(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

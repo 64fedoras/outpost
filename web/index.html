@@ -57,8 +57,10 @@
     <a class="new-task" href="#/new"><span aria-hidden="true">＋</span> New task</a>
     <a class="new-task side-projects" href="#/image" data-tab="image"><span aria-hidden="true">✦</span> New image</a>
     <a class="new-task side-projects" href="#/projects" data-tab="projects"><span aria-hidden="true">▤</span> Projects</a>
+    <nav class="side-pins hidden" id="side-pins" aria-label="Pinned projects"></nav>
     <a class="new-task side-projects" href="#/chat" data-tab="chat"><span aria-hidden="true">💬</span> Chat</a>
-    <nav class="side-tasks" id="side-tasks" aria-label="Tasks"></nav>
+    <div class="side-groupbar" id="side-groupbar"></div>
+    <nav class="side-tasks" id="side-tasks" aria-label="Tasks and chats"></nav>
     <div class="side-foot">
       <div class="cluster" id="side-cluster"></div>
       <nav class="side-nav" aria-label="Cluster">
@@ -193,6 +195,79 @@
       </div>
     </section>
 
+    <!-- ONE PROJECT (project.js) -->
+    <section data-page="project" class="page-project hidden">
+      <div class="pj-wrap" id="pj-wrap">
+        <div class="pj-main">
+          <div class="task-bar pj-bar">
+            <div class="task-bar-main">
+              <button class="icon-btn task-menu" id="pj-menu" aria-label="Show tasks and menu">☰</button>
+              <span class="pj-title"><span aria-hidden="true">▤</span> <h2 id="pj-name"></h2><select id="pj-switch" class="pj-switch" aria-label="Switch project"></select></span>
+              <span class="pj-sub" id="pj-sub"></span>
+            </div>
+            <div class="task-bar-tools">
+              <button class="small pj-tb" id="pj-threads-btn" aria-controls="pj-panel" aria-expanded="false" title="Show the project's tasks and artifacts">Threads <span class="badge pj-badge hidden" id="pj-threads-n"></span></button>
+              <button class="small pj-tb" id="pj-files-btn" title="The project's files">Files</button>
+              <button class="small pj-tb" id="pj-set-btn" title="Project settings" aria-label="Project settings">⚙</button>
+              <a id="pj-download" title="Download the project's files"><button class="small">.zip</button></a>
+              <button class="small pj-tb pj-more-btn" id="pj-ctx-btn" aria-haspopup="menu" aria-expanded="false" title="Edit, pin and more" aria-label="Project actions">⋯</button>
+            </div>
+          </div>
+          <div class="thread pj-feed" id="pj-feed" aria-live="polite"></div>
+          <div class="dock">
+            <div class="composer">
+              <textarea id="pj-text" rows="1" placeholder="Ask about this project or describe work to do… (Ctrl+Enter sends)" aria-label="Message to the project"></textarea>
+              <div class="composer-bar">
+                <a href="#/new" id="pj-more" class="composer-hint" title="The full new-task form, with this project chosen">More options…</a>
+                <span class="spacer"></span>
+                <button class="small" id="pj-task" title="Skip the conversation: start this message as a task now, with the project's settings">Start as task</button>
+                <button class="send" id="pj-go">Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <aside class="pj-panel" id="pj-panel" aria-label="Threads">
+          <div class="pj-panel-h"><b>Threads</b><span class="spacer"></span><button class="icon-btn" id="pj-panel-close" aria-label="Close the Threads panel">✕</button></div>
+          <div class="pj-panel-b" id="pj-threads"></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- CHAT -->
+    <section data-page="chat" class="page-chat hidden">
+      <div class="chat-wrap" id="chat-wrap">
+        <div class="chat-main">
+          <div class="chat-top">
+            <h2 class="chat-ttl" id="chat-title">New chat</h2>
+            <span class="spacer"></span>
+            <button class="tb" id="chat-panel-btn" aria-expanded="true" aria-controls="chat-panel" title="Show or hide the list of chats">☰ <span class="hide-ph">Chats</span> <span class="badge hidden" id="chat-count"></span></button>
+            <button class="tb" id="chat-new">＋ <span class="hide-ph">New chat</span></button>
+          </div>
+          <div class="chat-msgs" id="chat-msgs" aria-live="polite"></div>
+          <div class="chat-dock">
+            <div class="chat-col">
+              <div class="chat-compose">
+                <textarea id="chat-text" rows="2" placeholder="Ask anything… (Ctrl+Enter sends)" aria-label="Message"></textarea>
+                <div class="chat-bar">
+                  <select id="chat-node" class="chat-pill" aria-label="Which node answers"></select>
+                  <span class="grow"></span>
+                  <button class="small hidden" id="chat-totask" title="Start a new task with this conversation as its request">Make this a task</button>
+                  <span class="kbd hide-ph">Ctrl+Enter</span>
+                  <button class="small danger hidden" id="chat-stop">Stop</button>
+                  <button class="primary" id="chat-send">Send</button>
+                </div>
+              </div>
+              <p class="chat-note">Chat uses a free node only, so task work goes first; it waits up to 5 minutes for one.</p>
+            </div>
+          </div>
+        </div>
+        <aside class="chat-panel" id="chat-panel" aria-label="Chats">
+          <div class="chat-panel-h"><b>Chats</b><button class="small" id="chat-new2">＋ New</button><button class="tb chat-panel-x" id="chat-panel-x" aria-label="Close the list of chats">✕</button></div>
+          <nav class="chat-list" id="chat-list" aria-label="Chats"></nav>
+        </aside>
+      </div>
+    </section>
+
     <main class="page-plain">
     <!-- NODES -->
     <section data-page="nodes" class="hidden">
@@ -235,6 +310,7 @@
       <div class="table-wrap" id="upd-table"></div>
       <div class="section-head"><h2>GitHub releases</h2><span class="spacer"></span><button id="btn-gh-check" class="small">Check now</button> <button id="btn-gh-install" class="small primary">Check and install</button></div>
       <p class="sub wrap" id="gh-info"></p>
+      <p class="sub wrap"><label for="gh-channel">Update channel</label> <select id="gh-channel" aria-label="Update channel" title="Stable follows the normal releases. A branch follows that branch's newest build; the list is read from GitHub when you open it."><option value="">Stable (latest release)</option></select> <span class="muted" id="gh-channel-note"></span></p>
       <div class="section-head"><h2>Uploaded releases</h2></div>
       <label class="drop" id="drop">
         <input type="file" id="drop-input" multiple class="hidden">
@@ -262,46 +338,11 @@
       </div>
     </section>
 
-    <!-- CHAT -->
-    <section data-page="chat" class="hidden">
-      <div class="section-head"><h2>Chat</h2><button class="small" id="chat-new">New chat</button></div>
-      <p class="hint">Ask a model on your nodes directly: no plan, no files. A chat only uses a node that is free, so task work goes first; it waits up to 5 minutes for one.</p>
-      <div class="chat-layout">
-        <nav class="chat-list" id="chat-list" aria-label="Chats"></nav>
-        <div class="chat-main">
-          <div class="chat-msgs" id="chat-msgs" aria-live="polite"></div>
-          <div class="chat-compose">
-            <textarea id="chat-text" rows="3" placeholder="Ask anything… (Ctrl+Enter sends)" aria-label="Message"></textarea>
-            <div class="chat-bar">
-              <label class="chip-input">model <select id="chat-node" aria-label="Which node answers"></select></label>
-              <span class="grow"></span>
-              <button class="small hidden" id="chat-totask" title="Start a new task with this conversation as its request">Make this a task</button>
-              <button class="small danger hidden" id="chat-stop">Stop</button>
-              <button class="primary" id="chat-send">Send</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <!-- PROJECTS -->
     <section data-page="projects" class="hidden">
-      <div class="section-head"><h2>Projects</h2></div>
+      <div class="section-head"><h2>Projects</h2><span class="spacer"></span><button class="primary small" data-act="proj-new">＋ New project</button></div>
       <p class="hint">A project keeps its files between tasks. Every task you start in it begins from the project's current files, and one task works in a project at a time (the rest wait). Optionally it clones a git repository and commits each finished round to a branch.</p>
       <div id="projects-list"></div>
-      <div class="section-head"><h2>New project</h2></div>
-      <div class="card settings-form" id="np-form">
-        <label for="np-name">Name</label><input id="np-name" placeholder="my-api">
-        <label for="np-url">Git URL <span class="hint">(optional; https://… or ssh://… or git@host:path)</span></label><input id="np-url" placeholder="https://github.com/me/repo.git" autocomplete="off">
-        <label for="np-branch">Branch to commit to <span class="hint">(created if missing; default outpost)</span></label><input id="np-branch" placeholder="outpost">
-        <label for="np-token">HTTPS token <span class="hint">(optional; stored encrypted)</span></label><input id="np-token" type="password" autocomplete="off">
-        <label for="np-key">or SSH private key <span class="hint">(optional; stored encrypted)</span></label><textarea id="np-key" rows="3" autocomplete="off"></textarea>
-        <label for="np-test">Test command <span class="hint">(optional)</span></label><input id="np-test" placeholder="go test ./...">
-        <label class="toggle"><input type="checkbox" id="np-push"> push each finished round to the branch</label>
-        <label class="toggle"><input type="checkbox" id="np-pr"> also open a GitHub pull request (needs an HTTPS token)</label>
-        <div class="btns"><button class="primary" id="np-go">Create project</button></div>
-        <div class="error-msg hidden" id="np-err"></div>
-      </div>
     </section>
 
     <!-- SETTINGS -->
@@ -324,7 +365,13 @@
         <div class="section-head"><h2>Planner</h2></div>
         <div class="card">
           <label for="set-planner">Default planner</label><select id="set-planner"></select>
-          <label class="check"><input type="checkbox" id="set-websearch"> Let the Claude planner search the web (about $0.01 per search, counted against the task cap)</label>
+          <label>Order for Auto (local + API) <span class="hint">(tried top to bottom; untick to skip a provider)</span></label>
+          <div id="set-autoorder" class="auto-order"></div>
+          <label class="check"><input type="checkbox" id="set-websearch"> Let the planner search the web (about $0.01 per search, counted against the task cap)</label>
+          <label class="check"><input type="checkbox" id="set-chatweb"> Let chats search the web (about $0.01 per search, counted in Spending and the monthly cap)</label>
+          <label for="set-chatsearchwith">Search with</label>
+          <select id="set-chatsearchwith"><option value="">Claude (Claude API key and the model above)</option><option value="openrouter">OpenRouter (OpenRouter key and its model, any model, including Claude Opus)</option></select>
+          <p class="hint">Chats are answered by a local model, which cannot search. With this on, each chat message first asks a cloud model to search the web and write a short sourced brief, which the local model then uses. Claude uses its own search tool (about $0.01 per search, up to 3). OpenRouter uses its web search plugin with the OpenRouter model chosen in the OpenRouter card (roughly $0.004 per result, billed by OpenRouter on top of the model cost). Needs the matching API key; without one, or if the search fails, the chat is still answered and a note says why the web was not used. Off by default.</p>
           <label class="check"><input type="checkbox" id="set-webprivate"> Allow pasted links to reach internal addresses (loopback, LAN). Off blocks them.</label>
           <div class="modal-foot"><button class="primary" id="set-save">Save defaults</button></div>
         </div>
@@ -690,6 +737,56 @@
   </div>
 </div>
 
+<div id="modal-newproj" class="overlay hidden">
+  <div class="modal">
+    <h3>New project</h3>
+    <div class="settings-form" id="np-form">
+        <label for="np-name">Name</label><input id="np-name" placeholder="my-api">
+        <label for="np-url">Git URL <span class="hint">(optional; https://… or ssh://… or git@host:path)</span></label><input id="np-url" placeholder="https://github.com/me/repo.git" autocomplete="off">
+        <label for="np-branch">Branch to commit to <span class="hint">(created if missing; default outpost)</span></label><input id="np-branch" placeholder="outpost">
+        <label for="np-token">HTTPS token <span class="hint">(optional; stored encrypted)</span></label><input id="np-token" type="password" autocomplete="off">
+        <label for="np-key">or SSH private key <span class="hint">(optional; stored encrypted)</span></label><textarea id="np-key" rows="3" autocomplete="off"></textarea>
+        <label for="np-test">Test command <span class="hint">(optional)</span></label><input id="np-test" placeholder="go test ./...">
+        <label class="toggle"><input type="checkbox" id="np-push"> push each finished round to the branch</label>
+        <label class="toggle"><input type="checkbox" id="np-pr"> also open a GitHub pull request (needs an HTTPS token)</label>
+        <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="np-go">Create project</button></div>
+        <div class="error-msg hidden" id="np-err"></div>
+    </div>
+  </div>
+</div>
+<div id="modal-pj-files" class="overlay hidden">
+  <div class="modal">
+    <h3>Files</h3>
+    <div id="pj-files-body"></div>
+    <div class="modal-foot"><a id="pj-files-zip"><button>Download .zip</button></a><button data-close>Close</button></div>
+  </div>
+</div>
+<div id="modal-pj-dup" class="overlay hidden">
+  <div class="modal">
+    <h3>Duplicate a project with a git repository</h3>
+    <div id="pj-dup-body"></div>
+  </div>
+</div>
+<div id="modal-pj-edit" class="overlay hidden">
+  <div class="modal">
+    <h3>Edit project</h3>
+    <div id="pj-edit-body"></div>
+  </div>
+</div>
+<div id="modal-pj-settings" class="overlay hidden">
+  <div class="modal">
+    <h3>Project settings</h3>
+    <div id="pj-set-body"></div>
+  </div>
+</div>
+<div id="modal-pj-arts" class="overlay hidden">
+  <div class="modal wide">
+    <h3>Artifacts</h3>
+    <p class="hint">Everything this project's tasks produced, newest first. All of it is kept on the controller.</p>
+    <div id="pj-arts-body"></div>
+    <div class="modal-foot"><button data-close>Close</button></div>
+  </div>
+</div>
 <div id="modal-redo" class="overlay hidden">
   <div class="modal">
     <h3>Redo <span id="redo-title"></span></h3>
@@ -798,6 +895,10 @@
 <div id="drop-overlay" class="hidden"><div><b>Drop to upload</b><span>Outpost binaries (outpost-&lt;platform&gt;) become releases</span></div></div>
 <div id="toast" class="hidden"></div>
 <div id="task-ctx" class="ctx-menu hidden" role="menu"></div>
+<div id="proj-ctx" class="ctx-menu hidden" role="menu"></div>
+<div id="group-ctx" class="ctx-menu hidden" role="menu"></div>
+<div id="group-sub-scrim" class="scrim hidden"></div>
+<div id="group-sub" class="ctx-menu group-sub hidden" role="menu" aria-label="Move to group"></div>
 <div id="sr-status" class="sr-only" role="status" aria-live="polite"></div>
 
 <div id="modal-palette" class="overlay hidden palette-ov">
@@ -810,7 +911,10 @@
 
 <script src="guard.js"></script>
 <script src="app.js"></script>
+<script src="confirm.js"></script>
+<script src="groups.js"></script>
 <script src="new-task.js"></script>
+<script src="project.js"></script>
 <script src="chat.js"></script>
 <script src="thread.js"></script>
 <script src="nodes.js"></script>

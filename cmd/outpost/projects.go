@@ -27,10 +27,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +59,8 @@ type Project struct {
 	Instructions string `json:"instructions,omitempty"`
 	// Suggestions are rules proposed after failed tasks (project_suggest.go).
 	Suggestions []ProjectSuggestion `json:"suggestions,omitempty"`
+	// Pinned projects are listed in the sidebar under Projects.
+	Pinned bool `json:"pinned,omitempty"`
 
 	// Git. GitURL empty = a plain folder project.
 	GitURL      string `json:"git_url,omitempty"`
@@ -207,6 +211,7 @@ type projectView struct {
 	GitPR       bool                `json:"git_pr"`
 	LastPush    string              `json:"last_push"`
 	LastPR      string              `json:"last_pr"`
+	Pinned      bool                `json:"pinned"`
 	Files       int                 `json:"files"`
 	Tasks       int                 `json:"tasks"`
 }
@@ -230,7 +235,7 @@ func (c *Controller) projectViews() []projectView {
 		out = append(out, projectView{ID: p.ID, Name: p.Name, Created: p.Created, Planner: p.Planner, Review: p.Review,
 			TestCommand: p.TestCommand, FixRounds: p.FixRounds, TestMinutes: p.TestMinutes, NodeLabel: p.NodeLabel, Instr: p.Instructions, Suggest: append([]ProjectSuggestion(nil), p.Suggestions...), GitURL: p.GitURL, GitBranch: p.GitBranch, GitBase: p.GitBase, GitUser: p.GitUser,
 			GitToken: p.GitTokenEnc != "", GitKey: p.GitKeyEnc != "", GitPush: p.GitPush, GitPR: p.GitPR,
-			LastPush: p.LastPush, LastPR: p.LastPR, Tasks: counts[p.ID]})
+			LastPush: p.LastPush, LastPR: p.LastPR, Pinned: p.Pinned, Tasks: counts[p.ID]})
 		p.mu.Unlock()
 		out[len(out)-1].Files = len(listRepo(p.repoDir()))
 	}
@@ -243,8 +248,10 @@ func (c *Controller) projectRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/projects", c.auth(c.handleCreateProject))
 	mux.HandleFunc("POST /api/projects/{id}", c.auth(c.handleUpdateProject))
 	mux.HandleFunc("DELETE /api/projects/{id}", c.auth(c.handleDeleteProject))
+	mux.HandleFunc("POST /api/projects/{id}/duplicate", c.auth(c.handleDuplicateProject))
 	mux.HandleFunc("POST /api/projects/{id}/suggestions/{sid}/{act}", c.auth(c.handleProjectSuggestion))
 	mux.HandleFunc("GET /api/projects/{id}/download", c.auth(c.handleDownloadProject))
+	mux.HandleFunc("GET /api/projects/{id}/overview", c.auth(c.handleProjectOverview))
 }
 
 type projectReq struct {
@@ -263,6 +270,7 @@ type projectReq struct {
 	GitSSHKey   *string `json:"git_ssh_key"` // same
 	GitPush     *bool   `json:"git_push"`
 	GitPR       *bool   `json:"git_pr"`
+	Pinned      *bool   `json:"pinned"`
 }
 
 // apply copies the request onto p (the git URL is only set at creation). Secrets are encrypted.
@@ -305,6 +313,9 @@ func (c *Controller) applyProjectReq(p *Project, req projectReq) error {
 	}
 	if req.GitPR != nil {
 		p.GitPR = *req.GitPR
+	}
+	if req.Pinned != nil {
+		p.Pinned = *req.Pinned
 	}
 	for _, s := range []struct {
 		in  *string
@@ -417,8 +428,101 @@ func (c *Controller) handleDeleteProject(w http.ResponseWriter, r *http.Request)
 	}
 	delete(c.projects, p.ID)
 	c.mu.Unlock()
+	pc := p.chatLog()
+	pc.mu.Lock()
+	if pc.cancel != nil {
+		pc.cancel()
+	}
+	pc.mu.Unlock()
+	projectChats.Delete(pc.path)
 	os.RemoveAll(p.dir)
+	c.spendDeleted("projchat_" + p.ID)
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// handleDuplicateProject makes a new project with a copy of p's files (with
+// their git history), settings and instructions. Tasks, the conversation and
+// suggested rules are not copied, the copy is not pinned, and pushing and pull
+// requests start off so the copy never pushes to the original's branch by
+// surprise. {"detach": true} disconnects the copy from the git repository:
+// its files are copied without .git and the git settings are left out. A task working in p holds its slot, and the copy waits for none:
+// it is refused, so it never catches files half written.
+func (c *Controller) handleDuplicateProject(w http.ResponseWriter, r *http.Request) {
+	p := c.getProject(r.PathValue("id"))
+	if p == nil {
+		writeJSON(w, 404, map[string]string{"error": "no such project"})
+		return
+	}
+	var req struct {
+		Detach bool `json:"detach"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeJSON(w, 400, map[string]string{"error": "bad request"})
+			return
+		}
+	}
+	select {
+	case p.slot <- struct{}{}:
+		defer func() { <-p.slot }()
+	default:
+		writeJSON(w, 409, map[string]string{"error": "a task is working in this project; duplicate it when the task finishes"})
+		return
+	}
+	p.mu.Lock()
+	cp := &Project{Schema: projectSchema, ID: newID("proj"), Created: time.Now(), slot: make(chan struct{}, 1),
+		Name: copyName(p.Name), Planner: p.Planner, TestCommand: p.TestCommand, FixRounds: p.FixRounds,
+		TestMinutes: p.TestMinutes, NodeLabel: p.NodeLabel, Instructions: p.Instructions,
+		GitURL: p.GitURL, GitBranch: p.GitBranch, GitBase: p.GitBase, GitUser: p.GitUser, GitTokenEnc: p.GitTokenEnc, GitKeyEnc: p.GitKeyEnc}
+	if p.Review != nil {
+		v := *p.Review
+		cp.Review = &v
+	}
+	if req.Detach {
+		cp.GitURL, cp.GitBranch, cp.GitBase, cp.GitUser, cp.GitTokenEnc, cp.GitKeyEnc = "", "", "", "", "", ""
+	}
+	src := p.repoDir()
+	p.mu.Unlock()
+	cp.dir = filepath.Join(c.projectsDir(), cp.ID)
+	fail := func(err error) {
+		os.RemoveAll(cp.dir)
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+	}
+	if err := os.MkdirAll(cp.repoDir(), 0o755); err != nil {
+		fail(err)
+		return
+	}
+	if err := copyTree(src, cp.repoDir()); err != nil {
+		fail(err)
+		return
+	}
+	if req.Detach {
+		if err := os.RemoveAll(filepath.Join(cp.repoDir(), ".git")); err != nil {
+			fail(err)
+			return
+		}
+	}
+	if err := cp.save(); err != nil {
+		fail(err)
+		return
+	}
+	c.mu.Lock()
+	c.projects[cp.ID] = cp
+	c.mu.Unlock()
+	writeJSON(w, 200, map[string]string{"id": cp.ID, "name": cp.Name})
+}
+
+// copyName gives a duplicate's name: "Dice" -> "Dice (copy)", "Dice (copy)" -> "Dice (copy 2)".
+func copyName(name string) string {
+	if base, ok := strings.CutSuffix(name, " (copy)"); ok {
+		return base + " (copy 2)"
+	}
+	if i := strings.LastIndex(name, " (copy "); i > 0 && strings.HasSuffix(name, ")") {
+		if n, err := strconv.Atoi(name[i+7 : len(name)-1]); err == nil && n > 1 {
+			return name[:i] + " (copy " + strconv.Itoa(n+1) + ")"
+		}
+	}
+	return name + " (copy)"
 }
 
 func (c *Controller) handleDownloadProject(w http.ResponseWriter, r *http.Request) {

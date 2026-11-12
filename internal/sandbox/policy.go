@@ -118,7 +118,8 @@ type Input struct {
 	Dir      string            // workspace
 	GoDir    string            // Outpost-installed Go (bin folder's parent); may not exist
 	ToolDir  string            // toolchains folder, read-only
-	CacheDir string            // shared build cache, read/write
+	CacheDir string            // this task's build cache, read/write (deleted when the task ends)
+	StoreDir string            // the node's clean package store, read-only; "" = none
 	HostEnv  []string          // the node's environment
 	ExtraRO  []string          // OUTPOST_SANDBOX_EXTRA_RO
 	Argv     []string          // the command
@@ -134,6 +135,9 @@ func Build(in Input) *Policy {
 	p := &Policy{Mode: in.Mode, Dir: in.Dir, Tmp: tmp, FSize: defaultFSize, Argv: in.Argv}
 	p.RO = append(append([]string{}, sandboxSystemRO...), in.ToolDir)
 	p.RO = append(p.RO, in.ExtraRO...)
+	if in.StoreDir != "" {
+		p.RO = append(p.RO, in.StoreDir)
+	}
 	p.RW = []string{in.Dir, tmp, in.CacheDir, "/dev"}
 	p.Net = in.Mode != Strict || in.Network == "allow"
 	p.Seccomp = in.Mode == Strict
@@ -145,6 +149,7 @@ func Build(in Input) *Policy {
 	env := []string{
 		"PATH=" + path, "HOME=" + tmp, "TMPDIR=" + tmp, "LANG=C.UTF-8",
 		"GOCACHE=" + filepath.Join(in.CacheDir, "go-build"), "GOPATH=" + filepath.Join(in.CacheDir, "gopath"),
+		"GOMODCACHE=" + filepath.Join(in.CacheDir, "gomod"),
 		"npm_config_cache=" + filepath.Join(in.CacheDir, "npm"), "PIP_CACHE_DIR=" + filepath.Join(in.CacheDir, "pip"),
 		"XDG_CACHE_HOME=" + filepath.Join(in.CacheDir, "xdg"), "CARGO_HOME=" + filepath.Join(in.CacheDir, "cargo"),
 	}
@@ -157,6 +162,9 @@ func Build(in Input) *Policy {
 	}
 	if !p.Net { // fail fast instead of waiting on a network that is not there
 		env = append(env, "GOTOOLCHAIN=local", "GOPROXY=off")
+	}
+	if px := GoProxy(in.StoreDir, lastEnv(in.HostEnv, "GOPROXY"), p.Net); px != "" {
+		env = append(env, "GOPROXY="+px)
 	}
 	keys := make([]string, 0, len(in.Env))
 	for k := range in.Env {
@@ -229,4 +237,42 @@ func (e *Unavailable) Error() string { return e.Message }
 
 func unavailable(format string, a ...any) *Unavailable {
 	return &Unavailable{Message: fmt.Sprintf(format, a...)}
+}
+
+// GoProxy puts the node's clean package store in front of the Go module
+// proxy list: modules it holds come from disk (the go command still checks
+// each one against go.sum and the checksum database), the rest from host (or
+// the default proxy). Without the network only the store is used. "" when
+// there is no store.
+func GoProxy(storeDir, host string, network bool) string {
+	if storeDir == "" {
+		return ""
+	}
+	u := FileURL(filepath.Join(storeDir, "go"))
+	if !network || host == "off" {
+		return u
+	}
+	if host == "" {
+		host = "https://proxy.golang.org,direct"
+	}
+	return u + "," + host
+}
+
+// FileURL is the file:// form of an absolute path, as GOPROXY wants it.
+func FileURL(p string) string {
+	s := filepath.ToSlash(p)
+	if !strings.HasPrefix(s, "/") {
+		s = "/" + s // Windows: file:///C:/...
+	}
+	return "file://" + s
+}
+
+func lastEnv(env []string, k string) string {
+	v := ""
+	for _, kv := range env {
+		if rest, ok := strings.CutPrefix(kv, k+"="); ok {
+			v = rest
+		}
+	}
+	return v
 }

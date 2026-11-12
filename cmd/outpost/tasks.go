@@ -93,7 +93,9 @@ type Task struct {
 	ID           string          `json:"id"`
 	Prompt       string          `json:"prompt"`
 	Title        string          `json:"title"`
-	Pinned       bool            `json:"pinned,omitempty"` // kept above the other groups in the sidebar
+	Pinned       bool            `json:"pinned,omitempty"`      // kept above the other groups in the sidebar
+	GroupID      string          `json:"group_id,omitempty"`    // sidebar group (groups.go)
+	ResolvedAt   *time.Time      `json:"resolved_at,omitempty"` // marked resolved on the project page; see resolvedLocked
 	Status       string          `json:"status"`
 	PausedFrom   string          `json:"paused_from,omitempty"`
 	CapKind      string          `json:"cap_kind,omitempty"` // while paused_cap: "" = this task's cap, "monthly" = the monthly cap (spend.go)
@@ -159,6 +161,7 @@ type Task struct {
 	repo      string // working files; the project's repo for a project task, else <dir>/repo
 	cancel    context.CancelFunc
 	resume    chan struct{}
+	done      chan struct{} // closed when the goroutine started by startTask has ended
 
 	asks map[string]chan string // agent questions waiting for an answer, by message id
 	act  []ActStep              // what the test-and-fix phase is doing now (tasks_activity.go), memory only
@@ -181,7 +184,11 @@ func (t *Task) saveLocked() {
 		t.saveTimer.Stop()
 		t.saveTimer = nil
 	}
-	b, _ := json.MarshalIndent(t, "", "  ")
+	b, err := json.MarshalIndent(t, "", "  ")
+	if err != nil {
+		log.Printf("task %s: save failed, keeping the last saved copy: %v", t.ID, err)
+		return
+	}
 	if err := writeFileAtomicBackup(filepath.Join(t.dir, "task.json"), b, 0o644); err != nil {
 		log.Printf("task %s: save failed: %v", t.ID, err)
 	}

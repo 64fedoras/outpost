@@ -29,6 +29,7 @@ type ChatMsg struct {
 	Model string    `json:"model,omitempty"` // the model that answered
 	TPS   float64   `json:"tok_s,omitempty"`
 	Error string    `json:"error,omitempty"`
+	Note  string    `json:"note,omitempty"` // e.g. that the web was searched, or why it was not
 	At    time.Time `json:"at"`
 }
 
@@ -39,7 +40,8 @@ type Chat struct {
 	Created  time.Time `json:"created"`
 	Updated  time.Time `json:"updated"`
 	Messages []ChatMsg `json:"messages"`
-	Busy     string    `json:"busy,omitempty"` // "" | waiting | answering (not saved meaningfully; reset at load)
+	GroupID  string    `json:"group_id,omitempty"` // sidebar group (groups.go)
+	Busy     string    `json:"busy,omitempty"`     // "" | waiting | answering (not saved meaningfully; reset at load)
 
 	dir    string
 	cancel context.CancelFunc
@@ -111,7 +113,7 @@ func (c *Controller) handleListChats(w http.ResponseWriter, r *http.Request) {
 	out := []map[string]any{}
 	for _, ch := range c.chats {
 		ch.mu.Lock()
-		out = append(out, map[string]any{"id": ch.ID, "title": ch.Title, "updated": ch.Updated, "busy": ch.Busy, "messages": len(ch.Messages)})
+		out = append(out, map[string]any{"id": ch.ID, "title": ch.Title, "updated": ch.Updated, "busy": ch.Busy, "messages": len(ch.Messages), "group_id": ch.GroupID})
 		ch.mu.Unlock()
 	}
 	c.chatMu.Unlock()
@@ -327,6 +329,8 @@ func (c *Controller) answerChat(ctx context.Context, chatID, pref string, hist [
 	}
 	defer c.releaseNode(node)
 	started()
+	brief, note := c.chatSearchBrief(ctx, chatID, hist)
+	hist = withSearchBrief(hist, brief)
 	ctxTok := c.nodeCtx(node)
 	maxOut := min(4096, ctxTok/2)
 	spec := InferenceSpec{Messages: fitHistory(hist, (ctxTok-maxOut)*3), Params: InferenceParams{MaxTokens: maxOut}}
@@ -338,13 +342,13 @@ func (c *Controller) answerChat(ctx context.Context, chatID, pref string, hist [
 	case errors.Is(ctx.Err(), context.Canceled):
 		return ChatMsg{Role: "assistant", Node: name, Error: "stopped"}
 	case err != nil:
-		return ChatMsg{Role: "assistant", Node: name, Error: err.Error()}
+		return ChatMsg{Role: "assistant", Node: name, Error: err.Error(), Note: note}
 	}
 	text := out.Text
 	if out.FinishReason == "length" {
 		text += "\n\n…(cut off at the length limit)"
 	}
-	return ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec}
+	return ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note}
 }
 
 // acquireModelNode reserves a free slot on a ready node: pref "auto" (or "")

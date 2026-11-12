@@ -111,9 +111,9 @@ func (g *GenRec) finished() bool {
 
 // genSettings are the owner's choices (Settings, Images and video card).
 type genSettings struct {
-	RetentionDays int                  `json:"retention_days"`        // 0 = keep forever
-	MaxGB         int                  `json:"max_gb"`                // 0 = no cap
-	APIEnabled    bool                 `json:"api_enabled,omitempty"` // allow /v1/images/generations for tokens
+	RetentionDays int                  `json:"retention_days"`            // 0 = keep forever
+	MaxGB         int                  `json:"max_gb"`                    // 0 = no cap
+	APIEnabled    bool                 `json:"api_enabled,omitempty"`     // allow /v1/images/generations for tokens
 	PauseForTasks bool                 `json:"pause_for_tasks,omitempty"` // start no picture or clip while a coding task is working (gen_priority.go)
 	Accepted      map[string]time.Time `json:"accepted,omitempty"`
 	Observed      map[string]int64     `json:"observed,omitempty"` // compute buffer a node measured: model|node|WxH
@@ -481,12 +481,8 @@ type GenNode struct {
 	VRAM     int64  `json:"vram"`
 }
 
-// genNodesLocked evaluates every node for a model at a size. c.mu must be held.
-func (c *Controller) genNodesLocked(d *ImageModelDef, w, h int) []GenNode {
-	return c.genNodesFramesLocked(d, w, h, 0)
-}
-
-// genNodesFramesLocked is genNodesLocked for a clip of frames frames (0 for a picture).
+// genNodesFramesLocked evaluates every node for a model at a size, for a clip of
+// frames frames (0 for a picture). c.mu must be held.
 func (c *Controller) genNodesFramesLocked(d *ImageModelDef, w, h, frames int) []GenNode {
 	var out []GenNode
 	for id, n := range c.nodes {

@@ -15,13 +15,36 @@ It is a single self-contained binary with two modes, and no other software to in
 - **Controller**: the web UI, planning, job dispatch, and storage for models and releases. One per cluster.
 - **Node**: runs llama.cpp and commands for the controller. Keeps no job data after a job. As many as you like.
 
-![The New task screen: "What should the cluster build?" with a prompt box and sample project cards](docs/images/ui-new-task.png)
+![The New task screen: "What should the cluster build?" with a prompt box and sample project cards](docs/images/new-task.png)
 
-*New task: describe what you want, or start from a sample project.*
+*New task: describe what you want, or start from a sample project. The planner asks questions if anything is unclear.*
 
-![Outpost web UI: a task mid-run, with ten subtasks being written in parallel across four nodes](docs/images/ui-task.png)
+![A plan card with three subtasks, time estimates and an "Approve and start" button](docs/images/plan.png)
 
-*A task in progress: the approved plan, and subtasks being written in parallel on different nodes.*
+*Nothing runs until you approve the plan. You can edit it, change a subtask's priority, or ask for changes below.*
+
+![A task mid-run: a progress bar, one finished subtask and one being written](docs/images/task-working.png)
+
+*A task in progress, with live model output for each subtask. Outpost also follows your system's dark mode ([dark version](docs/images/task-working-dark.png)).*
+
+![The Nodes page: cluster summary tiles and a node card with CPU, RAM and GPU gauges, plus recent jobs](docs/images/nodes.png)
+
+*Nodes: what each machine is doing, its loaded model and speed. Grid, list and detailed views.*
+
+![The Models page: the model library and a Discover list with fit estimates per node](docs/images/models.png)
+
+*Models: download from Hugging Face, with a fit estimate for each of your nodes.*
+
+![A project page with the project conversation in the middle and the Threads panel on the right](docs/images/project.png)
+
+*A project: talk to the project in the middle, and see its tasks in the Threads panel (waiting on you, working, idle, resolved) on the right ([dark version](docs/images/project-dark.png)).*
+
+![Settings, Tasks section: default planner and the order of the Auto (local + API) planner](docs/images/settings.png)
+
+*Settings: nine sections, including the planner choice and spending caps.*
+
+These screenshots were taken from the [local test rig](testing/README.md) with a stub Claude API, a fake
+model and demo data, so the output text is canned, not real model output.
 
 ## Quick start
 
@@ -34,12 +57,14 @@ It is a single self-contained binary with two modes, and no other software to in
 ## Key features
 
 - **Parallel task execution.** A plan is split into subtasks that run on different nodes at once, with peer review, test runs on an exec-enabled node, and automatic fix rounds.
-- **Agent mode** for investigating and fixing existing code, plus projects with git, attachments and project instructions.
+- **Agent mode** for investigating and fixing existing code.
+- **Projects.** Each project keeps its files, git settings and instructions, and has a page where you talk to the project (it can start tasks for you) next to a Threads panel of its tasks. Right-click a project to edit, pin, duplicate (files, settings and instructions, with a warning for git projects) or delete it, and pick a planner per project.
+- **Flexible planners.** Claude, OpenRouter, a local model on a node, or *Auto (local)* and *Auto (local + API)*, which try your own nodes first and optionally fall back to the cloud in an order you set.
 - **Smart routing.** The biggest, fastest loaded model gets the hardest work; benchmarks, best-of-N on spare nodes, and optional memory pooling across machines (experimental, off by default).
 - **Model management.** Browse and download models from Hugging Face, with per-node fit estimates, context-size sizing and automatic disk clean-up.
 - **Chat and an OpenAI-compatible `/v1` API** so editors and agents (aider, Open WebUI and others) can use your cluster.
 - **Hands-off operation.** Saved and scheduled tasks, working hours, Wake-on-LAN, notifications, a spending cap per task and per month for cloud planners (with a Spending page), and tasks that resume after a controller restart.
-- **Safe to run.** Lockout and API tokens, encrypted backups, Linux command sandbox, and in-UI updates with rollback. See [SECURITY.md](SECURITY.md).
+- **Safe to run.** Lockout and API tokens, encrypted backups, Linux command sandbox, a clean per-task build and package cache on nodes (nothing built from your code is kept), and in-UI updates with rollback. See [SECURITY.md](SECURITY.md).
 
 ## Install
 
@@ -48,6 +73,14 @@ Download the binary for each machine's platform from the [releases page](https:/
 or `outpost-windows-amd64.exe`. Release binaries are unsigned; see [docs/BUILDING.md](docs/BUILDING.md) to verify checksums or build from source.
 
 ### Controller (Linux, systemd)
+
+One paste that downloads the latest release for this machine (amd64 or arm64), checks it against the published `SHA256SUMS` and installs the controller:
+
+```bash
+A=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); B=https://github.com/64fedoras/outpost/releases/latest/download; cd ~ && curl -fsSLO $B/outpost-linux-$A && curl -fsSL $B/SHA256SUMS | grep " outpost-linux-$A\$" | sha256sum -c - && sudo chmod +x ~/outpost-linux-$A && sudo ~/outpost-linux-$A install controller --advertise https://192.0.2.10:8443
+```
+
+Or, with the binary already on the machine (downloaded by hand or copied over):
 
 ```bash
 sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install controller --advertise https://192.0.2.10:8443
@@ -81,6 +114,7 @@ Outpost is developed and tested on Linux. **Treat everything else as untested un
 
 - **Windows** (service install, tray icon, self-update, Defender exclusion, PowerShell test runs, GPU use from a service) has been built and unit-tested but never run on a real Windows machine.
 - **macOS** (LaunchAgent, menu bar item) has never run on a real Mac.
+- The newest features (project pages and the project conversation, project menu and Duplicate, the per-task package cache) have only been exercised in the local test rig and in unit tests.
 - The current release has been tested against stub Claude and OpenRouter servers and a fake llama-server, **not on the real cluster** with real GPUs and transfer speeds. The live OpenRouter API was never called.
 
 The full list of known limits is in the [user guide](docs/known-limits.md).

@@ -99,7 +99,7 @@ func (c *Controller) handleServeJobInput(w http.ResponseWriter, r *http.Request)
 // the job's result files returned.
 func (c *Controller) runExecJobFiles(ctx context.Context, nodeID string, argv []string, inputs []FileEntry, srcs map[string]string, collect []string, label string, timeout time.Duration) (*ExecOutput, *JobResult, error) {
 	spec, _ := json.Marshal(ExecSpec{Argv: argv, Stream: true, Network: execNetwork(argv)})
-	job := &JobDispatch{JobID: newID("job"), Kind: "exec", TimeoutS: int(timeout.Seconds()), Inputs: inputs, Collect: collect, Spec: spec}
+	job := &JobDispatch{JobID: newID("job"), Kind: "exec", TimeoutS: int(timeout.Seconds()), Inputs: inputs, Collect: collect, Spec: spec, CacheScope: cacheScopeOf(ctx)}
 	if len(srcs) > 0 {
 		c.mu.Lock()
 		if c.jobBlobs == nil {
@@ -131,6 +131,23 @@ func (c *Controller) runExecJobFiles(ctx context.Context, nodeID string, argv []
 	case <-ctx.Done():
 		c.cancelJob(job.JobID)
 		return nil, nil, ctx.Err()
+	}
+}
+
+// releaseJobFiles tells the node to delete a job's workspace when the job
+// left big files there that the controller is not going to fetch, so no job
+// data waits on the node for the 30-minute janitor.
+func (c *Controller) releaseJobFiles(nodeID string, res *JobResult) {
+	if res == nil {
+		return
+	}
+	for _, f := range res.Files {
+		if f.Blob {
+			if nc := c.connOf(nodeID); nc != nil {
+				_ = nc.send("ws.close", WSClose{WorkspaceID: "ws_" + res.JobID})
+			}
+			return
+		}
 	}
 }
 
@@ -300,6 +317,7 @@ func (c *Controller) runBuild(ctx context.Context, t *Task) bool {
 	}
 	output := strings.TrimSpace(out.StdoutTail + "\n" + out.StderrTail)
 	if out.ExitCode != 0 {
+		c.releaseJobFiles(node, res)
 		t.logf("warn", "The build failed (exit %d). The source is still available, with the build output.", out.ExitCode)
 		return fail(withSandboxNote(output, out))
 	}

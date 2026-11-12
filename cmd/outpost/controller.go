@@ -150,6 +150,8 @@ type Controller struct {
 	projects   map[string]*Project      // see projects.go
 	chats      map[string]*Chat         // chat.go, guarded by chatMu
 	chatMu     sync.Mutex
+	groups     []Group // sidebar groups (groups.go), guarded by groupMu
+	groupMu    sync.Mutex
 	// resumeWake wakes autoResumeInterrupted on node heartbeats (nudgeResume).
 	resumeWake chan struct{}
 	reserved   map[string]int // calls holding a node (see slotsLocked)
@@ -205,6 +207,7 @@ func runController(args []string) error {
 	c.loadGens()
 	c.loadProjects()
 	c.loadChats()
+	c.loadGroups()
 	c.loadTemplates()
 	c.loadSavedCatalog()
 	c.checkSafeMode()
@@ -273,6 +276,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/tokens/{id}", c.auth(c.handleTokenStatus))
 	mux.HandleFunc("POST /api/nodes/{id}/settings", c.auth(c.handleNodeSettings))
 	mux.HandleFunc("POST /api/nodes/{id}/wake", c.auth(c.handleWakeNode))
+	mux.HandleFunc("POST /api/nodes/{id}/package-store/clear", c.auth(c.handleClearPackageStore))
 	mux.HandleFunc("DELETE /api/nodes/{id}", c.auth(c.handleNodeDelete))
 	mux.HandleFunc("POST /api/nodes/{id}/jobs", c.auth(c.handleNewJob))
 	mux.HandleFunc("GET /api/jobs/{id}", c.auth(c.handleGetJob))
@@ -285,6 +289,8 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/github-updates/check", c.auth(c.handleCheckGitHub))
 	mux.HandleFunc("POST /api/github-updates/install", c.auth(c.handleInstallGitHub))
 	mux.HandleFunc("POST /api/github-updates/test", c.auth(c.handleTestGitHub))
+	mux.HandleFunc("GET /api/github-updates/branches", c.auth(c.handleGitHubBranches))
+	mux.HandleFunc("POST /api/github-updates/channel", c.auth(c.handleGitHubChannel))
 	mux.HandleFunc("POST /api/controller/rollback", c.auth(c.handleRollbackController))
 	mux.HandleFunc("POST /api/nodes/{id}/rollback", c.auth(c.handleRollbackNode))
 	mux.HandleFunc("POST /api/nodes/{id}/restart", c.auth(c.handleRestartNode))
@@ -321,7 +327,9 @@ func runController(args []string) error {
 	mux.HandleFunc("DELETE /api/nodes/{id}/models/{name}", c.auth(c.handleRemoveNodeModel))
 	mux.HandleFunc("POST /api/nodes/{id}/models/cleanup", c.auth(c.handleCleanupNodeModels))
 	c.projectRoutes(mux)
+	c.projectChatRoutes(mux)
 	c.chatRoutes(mux)
+	c.groupRoutes(mux)
 	c.templateRoutes(mux)
 	c.openAIRoutes(mux)
 	c.imageRoutes(mux)

@@ -49,8 +49,14 @@ func (c *Controller) saveNodesLocked() {
 	for _, n := range c.nodes {
 		list = append(list, n)
 	}
-	b, _ := json.MarshalIndent(list, "", "  ")
-	_ = writeFileAtomicBackup(c.nodesPath(), b, 0o600)
+	b, err := json.MarshalIndent(list, "", "  ")
+	if err == nil {
+		err = writeFileAtomicBackup(c.nodesPath(), b, 0o600)
+	}
+	if err != nil {
+		// Losing this file loses every node's key: say so instead of failing silently.
+		log.Printf("saving the node list failed (the last saved copy is kept): %v", err)
+	}
 }
 
 func hashSecret(salt, secret string) string {
@@ -182,6 +188,7 @@ func (c *Controller) stateView() map[string]any {
 		"nodes": nodes, "jobs": jobs, "releases": releases, "ops": c.nodeOps,
 		"has_claude_key": c.settings.AnthropicKeyEnc != "", "default_planner": c.settings.DefaultPlanner,
 		"default_cap_usd": c.settings.DefaultCapUSD, "claude_model": c.settings.ClaudeModel,
+		"default_fix_rounds": maxFixRounds, "default_test_minutes": int(testTimeout / time.Minute),
 		"has_openrouter_key": c.settings.OpenRouterKeyEnc != "", "openrouter_model": c.settings.OpenRouterModel,
 		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
 		"pooling_enabled":  c.poolingOnLocked(),
@@ -262,7 +269,7 @@ func (c *Controller) nodeSettingsLocked(n *NodeRec) NodeSettings {
 	}
 	return NodeSettings{HeartbeatS: heartbeatSeconds, ExecEnabled: n.ExecEnabled,
 		IdleUnloadS: int(idle / time.Second), YieldGPU: n.YieldGPU,
-		Sandbox:     effectiveSandbox(c.settings.Sandbox, n.Sandbox)}
+		Sandbox: effectiveSandbox(c.settings.Sandbox, n.Sandbox)}
 }
 
 // pushNodeSettings sends every connected node its settings again.

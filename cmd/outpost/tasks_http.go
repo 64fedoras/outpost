@@ -39,13 +39,17 @@ type taskSummary struct {
 	ProjectID   string     `json:"project_id,omitempty"`
 	Updated     time.Time  `json:"updated"`
 	Pinned      bool       `json:"pinned,omitempty"`
+	GroupID     string     `json:"group_id,omitempty"`
 	AutoResume  bool       `json:"auto_resume,omitempty"` // interrupted, resuming on its own once its node is back
 	CapKind     string     `json:"cap_kind,omitempty"`    // paused_cap: "monthly" when the monthly cap stopped it
+	// Resolved: marked resolved and nothing happened since (no new message,
+	// no later end, not running and not waiting on the person).
+	Resolved bool `json:"resolved,omitempty"`
 }
 
 func (t *Task) summaryLocked() taskSummary {
 	s := taskSummary{ID: t.ID, Title: t.Title, Status: t.Status, Planner: t.Planner, CostUSD: t.CostUSD, CapUSD: t.CapUSD,
-		ProjectID: t.ProjectID, Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created, Pinned: t.Pinned, AutoResume: t.AutoResume, CapKind: t.CapKind}
+		ProjectID: t.ProjectID, Total: len(t.Subtasks), TestStatus: t.TestStatus, Created: t.Created, Ended: t.Ended, ResultBytes: t.ResultBytes, Round: t.Round, Updated: t.Created, Pinned: t.Pinned, GroupID: t.GroupID, AutoResume: t.AutoResume, CapKind: t.CapKind}
 	switch {
 	case t.Status == "interrupted" && t.AutoResume:
 		s.NeedsYou = false // resuming on its own
@@ -65,7 +69,25 @@ func (t *Task) summaryLocked() taskSummary {
 	if s.Title == "" {
 		s.Title = firstLine(t.Prompt, 80)
 	}
+	s.Resolved = t.resolvedLocked(s.Updated, s.NeedsYou)
 	return s
+}
+
+// resolvedLocked reports whether the resolved mark still holds: a follow-up,
+// a retry or anything that needs the person clears it without a write.
+func (t *Task) resolvedLocked(updated time.Time, needsYou bool) bool {
+	if t.ResolvedAt == nil || needsYou {
+		return false
+	}
+	switch t.Status {
+	case "done", "failed", "cancelled":
+	default:
+		return false // working, queued or resuming
+	}
+	if updated.After(*t.ResolvedAt) || (t.Ended != nil && t.Ended.After(*t.ResolvedAt)) {
+		return false
+	}
+	return true
 }
 
 func firstLine(s string, max int) string {
@@ -145,8 +167,8 @@ func (c *Controller) createTask(req createReq, files []attachedFile, opt createO
 	if req.Planner == "" {
 		req.Planner = set.DefaultPlanner
 	}
-	if req.Planner == "auto" {
-		p, err := c.autoPlanner()
+	if req.Planner == "auto" || req.Planner == "auto_api" {
+		p, err := c.resolveAutoPlanner(req.Planner)
 		if err != nil {
 			return nil, 409, err
 		}
@@ -221,6 +243,37 @@ func (c *Controller) autoPlanner() (string, error) {
 		return "node:" + w[0], nil
 	}
 	return "", errors.New("Auto found no node with a model ready; load a model on a node or pick another planner")
+}
+
+// resolveAutoPlanner turns "auto" (local nodes only) or "auto_api" into a
+// concrete planner. "auto_api" tries the providers in the order set in Settings
+// (default: a ready node, then Claude, then OpenRouter), skipping any that is
+// not usable.
+func (c *Controller) resolveAutoPlanner(p string) (string, error) {
+	if p != "auto_api" {
+		return c.autoPlanner()
+	}
+	c.mu.Lock()
+	order := normAutoOrder(c.settings.AutoOrder)
+	orModel := c.settings.OpenRouterModel
+	c.mu.Unlock()
+	for _, who := range order {
+		switch who {
+		case "local":
+			if node, err := c.autoPlanner(); err == nil {
+				return node, nil
+			}
+		case "claude":
+			if c.anthropicKey() != "" {
+				return "claude", nil
+			}
+		case "openrouter":
+			if c.openRouterKey() != "" && orModel != "" {
+				return "openrouter", nil
+			}
+		}
+	}
+	return "", errors.New("Auto (local + API) found nothing usable: no node with a model ready, and no Claude or OpenRouter key (see the order in Settings → Tasks)")
 }
 
 func isCloudPlanner(p string) bool { return p == "claude" || p == "openrouter" }
@@ -546,7 +599,7 @@ func (c *Controller) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 
 const maxTaskTitle = 120
 
-// handleTaskMeta renames or pins a task. Either field may be left out. An
+// handleTaskMeta renames, pins or resolves a task. Either field may be left out. An
 // empty title is refused; the planner never overwrites a title that is set.
 func (c *Controller) handleTaskMeta(w http.ResponseWriter, r *http.Request) {
 	t := c.getTask(r.PathValue("id"))
@@ -555,11 +608,17 @@ func (c *Controller) handleTaskMeta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Title  *string `json:"title"`
-		Pinned *bool   `json:"pinned"`
+		Title    *string `json:"title"`
+		Pinned   *bool   `json:"pinned"`
+		Resolved *bool   `json:"resolved"`
+		Group    *string `json:"group"` // sidebar group id; "" takes the task out of its group
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad request"})
+		return
+	}
+	if req.Group != nil && *req.Group != "" && !c.groupExists(*req.Group) {
+		writeJSON(w, 400, map[string]string{"error": "no such group"})
 		return
 	}
 	var title string
@@ -579,6 +638,17 @@ func (c *Controller) handleTaskMeta(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Pinned != nil {
 		t.Pinned = *req.Pinned
+	}
+	if req.Group != nil {
+		t.GroupID = *req.Group
+	}
+	if req.Resolved != nil {
+		if *req.Resolved {
+			now := time.Now()
+			t.ResolvedAt = &now
+		} else {
+			t.ResolvedAt = nil
+		}
 	}
 	t.saveLocked()
 	s := t.summaryLocked()
@@ -687,14 +757,18 @@ func (c *Controller) restartTask(t *Task, status, from, note string) {
 
 func (c *Controller) startTask(t *Task, fn func(ctx context.Context, t *Task)) {
 	ctx, cancel := context.WithCancel(context.Background())
+	ctx = withCacheScope(ctx, t.ID)
 	t.mu.Lock()
 	if t.cancel != nil {
 		t.cancel()
 	}
 	t.cancel = cancel
 	t.resume = make(chan struct{}, 1)
+	done := make(chan struct{})
+	t.done = done
 	t.mu.Unlock()
 	go func() {
+		defer close(done)
 		defer func() {
 			if p := recover(); p != nil {
 				log.Printf("task %s crashed: %v", t.ID, p)
@@ -703,6 +777,7 @@ func (c *Controller) startTask(t *Task, fn func(ctx context.Context, t *Task)) {
 				t.mu.Unlock()
 				t.setStatus("failed")
 			}
+			c.closeCacheScope(t.ID) // nodes delete this task's build cache
 		}()
 		fn(ctx, t)
 	}()

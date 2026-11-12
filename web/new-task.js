@@ -1,10 +1,11 @@
 'use strict';
-// New task page, saved and scheduled tasks, projects. Plain script, no modules: shares globals with app.js and loads after it (see index.html).
+// New task page, saved and scheduled tasks. Plain script, no modules: shares globals with app.js and loads after it (see index.html).
 
 // ---------- new task ----------
 function plannerOptions(selected) {
   const opts = [];
-  opts.push(`<option value="auto" ${selected === 'auto' ? 'selected' : ''}>Planner: Auto (best ready node)</option>`);
+  opts.push(`<option value="auto" ${selected === 'auto' ? 'selected' : ''}>Planner: Auto (local, best ready node)</option>`);
+  opts.push(`<option value="auto_api" ${selected === 'auto_api' ? 'selected' : ''}>Planner: Auto (local + API: nodes first, else Claude or OpenRouter)</option>`);
   opts.push(`<option value="claude" ${state.has_claude_key ? '' : 'disabled'} ${selected === 'claude' ? 'selected' : ''}>Planner: Claude${state.has_claude_key ? '' : ' (add an API key in Settings)'}</option>`);
   const orOk = state.has_openrouter_key && state.openrouter_model;
   opts.push(`<option value="openrouter" ${orOk ? '' : 'disabled'} ${selected === 'openrouter' ? 'selected' : ''}>Planner: ${state.has_openrouter_key ? (state.openrouter_model ? esc(state.openrouter_label) : 'OpenRouter (pick a model in Settings)') : 'OpenRouter (add an API key in Settings)'}</option>`);
@@ -41,6 +42,9 @@ function renderNew() {
   const sel = $('nt-planner');
   const cur = sel.value || state.default_planner || 'claude';
   setHTML(sel, plannerOptions(state.has_claude_key || cur !== 'claude' ? cur : (state.nodes[0] ? 'node:' + state.nodes[0].id : 'claude')));
+  const df = $('nt-fix').options[0], dt = $('nt-testmin').options[0];
+  if (state.default_fix_rounds) df.textContent = `Default (${state.default_fix_rounds})`;
+  if (state.default_test_minutes) dt.textContent = `Default (${state.default_test_minutes} min)`;
   if (!ntInit) {
     ntInit = true;
     $('nt-cap').value = state.default_cap_usd || 2;
@@ -145,7 +149,7 @@ function renderSaved() {
 $('nt-save-tpl').onclick = async () => {
   const prompt0 = $('nt-prompt').value.trim();
   if (!prompt0) { $('nt-prompt').focus(); toast('Write the request first'); return; }
-  const name = prompt('Name for this saved task', prompt0.split('\n')[0].slice(0, 60));
+  const name = await askText('Name for this saved task', prompt0.split('\n')[0].slice(0, 60));
   if (name === null) return;
   const request = { prompt: prompt0, planner: $('nt-planner').value, claude_model: $('nt-model').value, cap_usd: parseFloat($('nt-cap').value) || 0, review: $('nt-review').checked, mockup: $('nt-mockup').checked, test_first: $('nt-testfirst').checked, fix_rounds: +$('nt-fix').value, test_minutes: +$('nt-testmin').value, project: $('nt-project').value, node_label: $('nt-label').value };
   try { await post('/api/templates', { name, request }); toast(ntFiles.length || ntImg.payload().length ? 'Saved (attachments and images are not kept)' : 'Saved under Saved tasks'); refresh(); } catch (e) { toast(e.message); }
@@ -174,7 +178,7 @@ async function templateAction(act, id) {
   if (!t) return;
   if (act === 'tpl-run') { const r = await post(`/api/templates/${id}/run`, {}); location.hash = '#/tasks/' + r.id; refresh(); }
   else if (act === 'tpl-sched') openSched(id);
-  else if (act === 'tpl-del') { if (confirm(`Delete the saved task "${t.name}"${t.schedule ? ' and its schedule' : ''}?`)) { await api('/api/templates/' + id, { method: 'DELETE' }); toast('Deleted'); refresh(); } }
+  else if (act === 'tpl-del') { if (await askConfirm(`Delete the saved task "${t.name}"${t.schedule ? ' and its schedule' : ''}?`)) { await api('/api/templates/' + id, { method: 'DELETE' }); toast('Deleted'); refresh(); } }
   else if (act === 'tpl-use') ntFill(t.request);
 }
 
@@ -198,58 +202,3 @@ function ntFill(q) {
   return missed;
 }
 $('nt-prompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) startTask(); });
-
-// ---------- projects ----------
-function renderProjects() {
-  setHTML('projects-list', !projects.length ? `<div class="empty">No projects yet. Tasks outside a project work as before.</div>` :
-    projects.map((p) => `<div class="card u12">
-      <div class="section-head u13"><b>${esc(p.name)}</b><span class="spacer"></span>
-        <a href="/api/projects/${p.id}/download"><button>Download .zip</button></a>
-        <button class="danger" data-act="project-delete" data-id="${p.id}">Delete</button></div>
-      <p class="hint">${p.files} file${p.files === 1 ? '' : 's'} · ${p.tasks} task${p.tasks === 1 ? '' : 's'}${p.git_url ? ` · ${esc(p.git_url)} → branch <code>${esc(p.git_branch)}</code>${p.git_push ? ' (pushed after each round)' : ' (committed, not pushed)'}${p.last_push ? ' · last push ' + ago(p.last_push) : ''}` : ''}${p.last_pr ? ` · <a href="${esc(p.last_pr)}" target="_blank" rel="noopener">last pull request</a>` : ''}</p>
-      <div class="btns u14">
-        <label class="chip-input">tests <input data-pf="test_command" data-id="${p.id}" value="${esc(p.test_command)}" placeholder="none"></label>
-        <label class="toggle"><input type="checkbox" data-pf="review" data-id="${p.id}" ${p.review === false ? '' : 'checked'}> peer review</label>
-        <label class="chip-input">fix rounds <select data-pf="fix_rounds" data-id="${p.id}">${[0, 1, 2, 3, 5, 8].map((v) => `<option value="${v}" ${(p.fix_rounds || 0) === v ? 'selected' : ''}>${v || 'default'}</option>`).join('')}</select></label>
-        <label class="chip-input">test limit <select data-pf="test_minutes" data-id="${p.id}">${[0, 5, 10, 30, 60].map((v) => `<option value="${v}" ${(p.test_minutes || 0) === v ? 'selected' : ''}>${v ? v + ' min' : 'default'}</option>`).join('')}</select></label>
-        <label class="chip-input" title="Tasks in this project run only on nodes with this label (empty = any node)">nodes <input data-pf="node_label" data-id="${p.id}" value="${esc(p.node_label || '')}" placeholder="any label"></label>
-        ${p.git_url ? `<label class="toggle"><input type="checkbox" data-pf="git_push" data-id="${p.id}" ${p.git_push ? 'checked' : ''}> push</label>
-        <label class="toggle"><input type="checkbox" data-pf="git_pr" data-id="${p.id}" ${p.git_pr ? 'checked' : ''}> open PR</label>` : ''}
-        <button data-act="project-save" data-id="${p.id}">Save</button>
-        <a href="#/new" data-act="project-use" data-id="${p.id}"><button class="primary">New task here</button></a></div>
-      <details class="u6" ${p.instructions ? 'open' : ''}><summary class="hint">Project instructions${p.instructions ? '' : ' (none yet)'}</summary>
-        <p class="hint">Standing rules for every task in this project, added after the ones in Settings (and before an <code>OUTPOST.md</code> in the files). For example: "Tests use pytest. Keep Python 3.9 compatible."</p>
-        <textarea rows="4" data-pf="instructions" data-id="${p.id}" spellcheck="false" placeholder="e.g. Use the standard library only.">${esc(p.instructions || '')}</textarea>
-        ${(p.suggestions || []).map((s) => `<div class="note u6 nv-note"><span class="nv-grow"><b>Suggested after a failed task:</b> ${esc(s.text)} <span class="muted">(${esc(s.task_title || '')})</span></span><button class="small primary" data-act="project-suggest" data-id="${p.id}" data-sid="${esc(s.id)}" data-do="add">Add to instructions</button><button class="small" data-act="project-suggest" data-id="${p.id}" data-sid="${esc(s.id)}" data-do="dismiss">Dismiss</button></div>`).join('')}
-      </details></div>`).join(''));
-}
-$('np-go').onclick = async () => {
-  const err = $('np-err'); err.classList.add('hidden');
-  $('np-go').disabled = true; $('np-go').textContent = $('np-url').value.trim() ? 'Cloning…' : 'Creating…';
-  try {
-    await post('/api/projects', { name: $('np-name').value, git_url: $('np-url').value.trim(), git_branch: $('np-branch').value.trim(), git_token: $('np-token').value, git_ssh_key: $('np-key').value,
-      test_command: $('np-test').value, git_push: $('np-push').checked, git_pr: $('np-pr').checked });
-    ['np-name', 'np-url', 'np-branch', 'np-token', 'np-key', 'np-test'].forEach((i) => { $(i).value = ''; });
-    $('np-push').checked = $('np-pr').checked = false;
-    toast('Project created'); refresh();
-  } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
-  $('np-go').disabled = false; $('np-go').textContent = 'Create project';
-};
-async function projectAction(act, el) {
-  const id = el.dataset.id;
-  if (act === 'project-delete') {
-    if (!confirm('Delete this project and its files? Its git remote is not touched.')) return;
-    await api(`/api/projects/${id}`, { method: 'DELETE' }); toast('Project deleted');
-  } else if (act === 'project-save') {
-    const f = (k) => document.querySelector(`[data-pf="${k}"][data-id="${id}"]`);
-    const body = { test_command: f('test_command').value, review: f('review').checked, fix_rounds: +f('fix_rounds').value, test_minutes: +f('test_minutes').value, node_label: f('node_label').value, instructions: f('instructions').value };
-    if (f('git_push')) { body.git_push = f('git_push').checked; body.git_pr = f('git_pr').checked; }
-    await post(`/api/projects/${id}`, body); toast('Saved');
-  } else if (act === 'project-suggest') {
-    await post(`/api/projects/${id}/suggestions/${encodeURIComponent(el.dataset.sid)}/${el.dataset.do}`, {});
-    toast(el.dataset.do === 'add' ? 'Added to the instructions' : 'Dismissed'); refresh();
-  } else if (act === 'project-use') {
-    try { localStorage.setItem('nt-project', id); } catch (e) {}
-    $('nt-project').value = id;
-  }
-}

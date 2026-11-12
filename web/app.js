@@ -110,18 +110,18 @@ $('setup-form').onsubmit = async (e) => {
 };
 $('btn-logout').onclick = async () => { await post('/api/logout').catch(() => {}); showLogin(); };
 
-const PAGES = ['new', 'image', 'task', 'chat', 'projects', 'nodes', 'models', 'updates', 'spending', 'settings'];
+const PAGES = ['new', 'image', 'task', 'chat', 'projects', 'project', 'nodes', 'models', 'updates', 'spending', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
   ntDraft.flush(); tmDraft.flush();
   const m = location.hash.match(/^#\/(\w+)(?:\/([\w-]+))?/) || [];
-  page = m[1] === 'tasks' && m[2] ? 'task' : PAGES.includes(m[1]) ? m[1] : 'new';
-  pageArg = page === 'task' || page === 'chat' ? m[2] || null : null;
+  page = m[1] === 'tasks' && m[2] ? 'task' : m[1] === 'projects' && m[2] ? 'project' : m[1] === 'project' ? 'projects' : PAGES.includes(m[1]) ? m[1] : 'new';
+  pageArg = page === 'task' || page === 'chat' || page === 'project' ? m[2] || null : null;
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
-  document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === page));
-  document.querySelector('.page-plain').classList.toggle('hidden', !['chat', 'projects', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
+  document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === (page === 'project' ? 'projects' : page)));
+  document.querySelector('.page-plain').classList.toggle('hidden', !['projects', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image' }[page] || page[0].toUpperCase() + page.slice(1));
-  document.body.classList.toggle('on-task', page === 'task');
+  document.body.classList.toggle('on-task', page === 'task' || page === 'project');
   closeSide();
   clearTimeout(taskTimer);
   liveClose();
@@ -130,6 +130,7 @@ function route() {
   if (page === 'settings') loadSettings();
   if (page === 'spending') loadSpending();
   if (page === 'chat') chatOpen(pageArg);
+  if (page === 'project') projectRoute();
   if (typeof imgRoute === 'function') imgRoute(page);
   renderSideTasks();
   if (state) refresh();
@@ -178,6 +179,7 @@ async function refresh() {
     api('/api/projects').then((p) => { projects = p; }).catch(() => {}),
   ]);
   renderAll();
+  refreshGroups();
 }
 let modelsAt = 0, pushSeq = 0;
 // applyPushed takes one pushed payload: state, task list and projects together.
@@ -192,6 +194,7 @@ async function applyPushed(d) {
     if (mine !== pushSeq) return; // a newer payload already rendered
   }
   renderAll();
+  refreshGroups();
 }
 // Screen readers hear a task's status change (Plan ready, Done, Failed) without visiting it.
 let lastStatuses = null;
@@ -214,9 +217,10 @@ function renderAll() {
   pollNotifications();
   renderBadges();
   renderSideTasks();
+  renderSidePins();
   renderSideCluster();
   if (page === 'new') renderNew();
-  if (page === 'projects') renderProjects();
+  if (page === 'projects' || page === 'project') renderProjects();
   if (page === 'chat' && document.activeElement !== $('chat-node')) fillChatNodes();
   if (page === 'nodes') { renderNodes(); renderJobs(); }
   if (page === 'models') renderModels();
@@ -258,33 +262,19 @@ function taskTone(t) {
   return 'idle';
 }
 
-function sideTaskHTML(t, projectName) {
+function sideTaskHTML(t, projectName, tagGroup) {
   const cls = [page === 'task' && pageArg === t.id ? 'active' : '', ctxTaskId === t.id ? 'menu-open' : ''].join(' ');
   const title = renamingId === t.id
     ? `<input class="side-rename" id="side-rename" value="${esc(t.title)}" maxlength="120" aria-label="New name for this task">`
     : `<span class="side-task-title">${t.pinned ? '<span class="pin-mark" aria-label="Pinned">📌</span>' : ''}${esc(t.title)}</span>`;
-  return `<div class="side-task ${cls}" data-task="${esc(t.id)}">
-    <a href="#/tasks/${esc(t.id)}" class="side-task-link" aria-keyshortcuts="Shift+F10 F2 Delete">
+  return `<div class="side-task ${cls}" draggable="true" data-task="${esc(t.id)}">
+    <a href="#/tasks/${esc(t.id)}" class="side-task-link" draggable="false" aria-keyshortcuts="Shift+F10 F2 Delete">
       <span class="tdot ${taskTone(t)}" aria-hidden="true"></span>
       <span class="side-task-text">${title}
-      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${projectName ? esc(projectName) + ' · ' : ''}${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>
+      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${groupTag(tagGroup)}${projectName ? esc(projectName) + ' · ' : ''}${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>
     <button class="side-task-more" data-task-menu="${esc(t.id)}" aria-haspopup="menu" aria-expanded="${ctxTaskId === t.id}" aria-label="Actions for ${esc(t.title)}" title="Actions">⋯</button></div>`;
 }
-// Tasks are grouped by what the person needs to do: answer, watch, or nothing.
-// Pinned tasks sit above all groups.
-function renderSideTasks(force) {
-  if (!tasks || (renamingId && !force)) return; // a rename in progress must survive polling
-  if (!tasks.length) { setHTML('side-tasks', `<p class="side-empty">Tasks you start show up here.</p>`); return; }
-  const names = {};
-  (projects || []).forEach((p) => { names[p.id] = p.name; });
-  const groups = [['Pinned', []], ['Needs you', []], ['Running', []], ['Earlier', []]];
-  tasks.forEach((t) => {
-    const tone = taskTone(t);
-    groups[t.pinned ? 0 : tone === 'needs' ? 1 : ACTIVE.includes(t.status) ? 2 : 3][1].push(t);
-  });
-  setHTML('side-tasks', groups.filter(([, list]) => list.length).map(([name, list]) =>
-    `<div class="side-group">${name}</div>` + list.map((t) => sideTaskHTML(t, names[t.project_id])).join('')).join(''));
-}
+// renderSideTasks (the sidebar list, By status or By group) is in groups.js.
 
 // ---------- task context menu (sidebar) ----------
 // Right-click a task, press its ⋯ button, or press Shift+F10 / the menu key on a
@@ -296,13 +286,15 @@ const canRetry = (t) => t.status === 'failed' || t.status === 'interrupted';
 function openTaskMenu(id, x, y, from) {
   const t = taskById(id);
   if (!t) return;
-  closeTaskMenu(false);
+  closeTaskMenu(false); closeProjMenu(false); closeGroupCtx(false);
   ctxTaskId = id; ctxReturn = from || null;
   const item = (act, text, extra = '') => `<button role="menuitem" tabindex="-1" data-ctx="${act}" ${extra}>${text}</button>`;
   const html = [
     item('open-tab', 'Open in new tab'),
     item('rename', 'Rename…<span class="kbd">F2</span>'),
     item('pin', t.pinned ? 'Unpin' : 'Pin to top'),
+    item('group', 'Move to group<span class="hint-r">▸</span>', 'aria-haspopup="menu" aria-expanded="false"'),
+    t.project_id && (canResolve(t) || t.resolved) ? item('resolve', t.resolved ? 'Reopen' : 'Mark resolved') : '',
     '<hr>',
     item('copy-prompt', 'Copy prompt'),
     item('copy-link', 'Copy link'),
@@ -324,6 +316,7 @@ function openTaskMenu(id, x, y, from) {
 function closeTaskMenu(restoreFocus = true) {
   const m = $('task-ctx');
   if (!m || m.classList.contains('hidden')) return;
+  closeGroupSub();
   m.classList.add('hidden'); m.innerHTML = '';
   ctxTaskId = null;
   renderSideTasks();
@@ -372,7 +365,7 @@ function startRename(id) {
 }
 
 async function deleteTask(id) {
-  if (!confirm('Delete this task, its conversation and its files?')) return;
+  if (!await askConfirm('Delete this task, its conversation and its files?')) return;
   try {
     await api(`/api/tasks/${id}`, { method: 'DELETE' }); Drafts.clear('task:' + id); Drafts.clearPrefix('ans:' + id + ':');
     tasksSeq++; tasks = tasks.filter((t) => t.id !== id); renderSideTasks();
@@ -389,6 +382,7 @@ async function runTaskMenu(act, id) {
     switch (act) {
       case 'open-tab': window.open('#/tasks/' + id, '_blank', 'noopener'); break;
       case 'rename': startRename(id); break;
+      case 'resolve': Object.assign(t, await post(`/api/tasks/${id}/meta`, { resolved: !t.resolved })); tasksSeq++; renderSideTasks(); if (page === 'project') renderProjectPage(); toast(t.resolved ? 'Resolved' : 'Moved back to Idle'); break;
       case 'pin': Object.assign(t, await post(`/api/tasks/${id}/meta`, { pinned: !t.pinned })); tasksSeq++; renderSideTasks(); toast(t.pinned ? 'Pinned' : 'Unpinned'); break;
       case 'copy-prompt': { const d = await api(`/api/tasks/${id}`); await copyText(d.prompt || ''); toast('Prompt copied'); break; }
       case 'copy-link': await copyText(taskLink(id)); toast('Link copied'); break;
@@ -407,7 +401,7 @@ async function runTaskMenu(act, id) {
         break;
       }
       case 'stop':
-        if (!confirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return;
+        if (!await askConfirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return;
         await post(`/api/tasks/${id}/cancel`); toast('Stopped'); refresh(); break;
       case 'retry': await post(`/api/tasks/${id}/resume`); toast('Trying again'); refresh(); break;
       case 'delete': await deleteTask(id); break;
@@ -415,11 +409,51 @@ async function runTaskMenu(act, id) {
   } catch (e) { toast(e.message); }
 }
 
+// menuKeys gives a context menu arrow-key, Home/End, Escape and Tab handling.
+function menuKeys(m, closeMenu) {
+  m.addEventListener('keydown', (e) => {
+    const items = [...m.querySelectorAll('button')];
+    const i = items.indexOf(document.activeElement);
+    const go = (n) => { e.preventDefault(); items[(n + items.length) % items.length].focus(); };
+    if (e.key === 'ArrowDown') go(i + 1);
+    else if (e.key === 'ArrowUp') go(i - 1);
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(items.length - 1);
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); }
+    else if (e.key === 'Tab') closeMenu(false);
+  });
+}
+// longPress opens a context menu when a finger rests on an item for half a
+// second (phones have no right-click; iOS Safari sends no contextmenu event).
+// The tap that ends the press does not follow the link, and Android's own
+// contextmenu event right after it is swallowed.
+let lpUntil = 0;
+function longPress(root, sel, cb) {
+  let timer = 0, x0 = 0, y0 = 0, fired = false;
+  const cancel = () => { clearTimeout(timer); timer = 0; };
+  // A press that opened the menu swallows the click and contextmenu that follow
+  // its release, however long the finger stayed down.
+  const release = () => { cancel(); if (fired) { fired = false; lpUntil = Date.now() + 600; } };
+  root.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    const el = e.target.closest(sel);
+    if (!el || e.target.closest('input, textarea, select, button')) return;
+    x0 = e.clientX; y0 = e.clientY;
+    cancel();
+    timer = setTimeout(() => { timer = 0; fired = true; lpUntil = Infinity; if (navigator.vibrate) try { navigator.vibrate(10); } catch (x) {} cb(el, x0, y0); }, 500);
+  });
+  root.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - x0, e.clientY - y0) > 8) cancel(); });
+  ['pointerup', 'pointercancel'].forEach((t) => document.addEventListener(t, release, true));
+  root.addEventListener('scroll', cancel, true);
+  root.addEventListener('click', (e) => { if (Date.now() < lpUntil && e.target.closest(sel)) { e.preventDefault(); e.stopPropagation(); } }, true);
+  root.addEventListener('contextmenu', (e) => { if (Date.now() < lpUntil && e.target.closest(sel)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+}
+
 (function wireTaskMenu() {
   const side = $('side-tasks'), m = $('task-ctx');
   side.addEventListener('contextmenu', (e) => {
     const row = e.target.closest('.side-task');
-    if (!row || renamingId) return;
+    if (!row || !row.dataset.task || renamingId) return;
     e.preventDefault();
     const link = row.querySelector('.side-task-link');
     // A keyboard-opened menu (menu key, Shift+F10) has no pointer position.
@@ -437,26 +471,19 @@ async function runTaskMenu(act, id) {
   side.addEventListener('keydown', (e) => {
     if (renamingId || e.target.tagName === 'INPUT') return;
     const row = e.target.closest('.side-task');
-    if (!row) return;
+    if (!row || !row.dataset.task) return;
     if (e.key === 'F2') { e.preventDefault(); startRename(row.dataset.task); }
     else if (e.key === 'Delete' && e.target.classList.contains('side-task-link')) { e.preventDefault(); deleteTask(row.dataset.task); }
   });
   m.addEventListener('click', (e) => {
     const b = e.target.closest('[data-ctx]');
-    if (b) runTaskMenu(b.dataset.ctx, ctxTaskId);
+    if (!b) return;
+    if (b.dataset.ctx === 'group') { openGroupSub('task', ctxTaskId, m, true); return; }
+    runTaskMenu(b.dataset.ctx, ctxTaskId);
   });
-  m.addEventListener('keydown', (e) => {
-    const items = [...m.querySelectorAll('button')];
-    const i = items.indexOf(document.activeElement);
-    const go = (n) => { e.preventDefault(); items[(n + items.length) % items.length].focus(); };
-    if (e.key === 'ArrowDown') go(i + 1);
-    else if (e.key === 'ArrowUp') go(i - 1);
-    else if (e.key === 'Home') go(0);
-    else if (e.key === 'End') go(items.length - 1);
-    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeTaskMenu(); }
-    else if (e.key === 'Tab') closeTaskMenu(false);
-  });
-  document.addEventListener('pointerdown', (e) => { if (ctxTaskId && !m.contains(e.target) && !e.target.closest('[data-task-menu]')) closeTaskMenu(false); });
+  menuKeys(m, closeTaskMenu);
+  longPress(side, '.side-task:not(.side-chat)', (row, x, y) => openTaskMenu(row.dataset.task, x, y, row.querySelector('.side-task-link')));
+  document.addEventListener('pointerdown', (e) => { if (ctxTaskId && !m.contains(e.target) && !$('group-sub').contains(e.target) && !e.target.closest('[data-task-menu]')) closeTaskMenu(false); });
   side.addEventListener('scroll', () => closeTaskMenu(false));
   window.addEventListener('resize', () => closeTaskMenu(false));
   window.addEventListener('hashchange', () => closeTaskMenu(false));

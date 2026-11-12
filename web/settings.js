@@ -52,14 +52,41 @@ async function loadSettings() {
   $('set-pooling').checked = !!settings.pooling_enabled;
   $('set-autofree').checked = settings.auto_free !== false;
   $('set-pooling-notice').classList.toggle('hidden', !settings.pooling_notice);
-  $('set-agent').checked = settings.agent_mode !== false; $('set-websearch').checked = !!settings.web_search; $('set-webprivate').checked = !!settings.web_allow_private;
+  $('set-agent').checked = settings.agent_mode !== false; $('set-websearch').checked = !!settings.web_search; $('set-chatweb').checked = !!settings.chat_web_search; $('set-chatsearchwith').value = settings.chat_search_with || ''; $('set-webprivate').checked = !!settings.web_allow_private;
   if (!state) state = await api('/api/state').catch(() => null);
   if (state) $('set-planner').innerHTML = plannerOptions(settings.default_planner);
+  renderAutoOrder(settings.auto_order || ['local', 'claude', 'openrouter']);
   loadNotifySettings();
   loadSecurity();
   loadStorage();
   loadScorecard();
   Guard.settingsReset();
+}
+// Order of providers for the Auto (local + API) planner: ticked ones are tried top to bottom.
+const AUTO_NAMES = { local: 'A ready node (local model)', claude: 'Claude', openrouter: 'OpenRouter' };
+function renderAutoOrder(enabled) {
+  const on = new Set(enabled), box = $('set-autoorder');
+  const all = [...enabled, ...['local', 'claude', 'openrouter'].filter((k) => !on.has(k))];
+  box.innerHTML = all.map((k, i) => `<div class="ao-row" data-ao-row="${k}"><label class="check"><input type="checkbox" data-ao="${k}" ${on.has(k) ? 'checked' : ''}> ${AUTO_NAMES[k]}</label>
+    <button class="msg-tool shown" data-ao-move="-1" ${i ? '' : 'disabled'} aria-label="Move up" title="Move up">↑</button>
+    <button class="msg-tool shown" data-ao-move="1" ${i < all.length - 1 ? '' : 'disabled'} aria-label="Move down" title="Move down">↓</button></div>`).join('');
+}
+// Full order as shown (ticked or not), and the ticked part of it.
+const autoOrderRows = () => [...$('set-autoorder').querySelectorAll('[data-ao-row]')];
+function autoOrderValue() { return autoOrderRows().filter((r) => r.querySelector('[data-ao]').checked).map((r) => r.dataset.aoRow); }
+$('set-autoorder').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ao-move]'); if (!b) return;
+  const rows = autoOrderRows(), row = b.closest('[data-ao-row]'), i = rows.indexOf(row), j = i + +b.dataset.aoMove;
+  if (j < 0 || j >= rows.length) return;
+  const keys = rows.map((r) => r.dataset.aoRow), on = new Set(autoOrderValue());
+  [keys[i], keys[j]] = [keys[j], keys[i]];
+  // Unticked providers keep their place in the list but are not sent.
+  renderAutoOrderKeys(keys, on);
+});
+function renderAutoOrderKeys(keys, on) {
+  $('set-autoorder').innerHTML = keys.map((k, i) => `<div class="ao-row" data-ao-row="${k}"><label class="check"><input type="checkbox" data-ao="${k}" ${on.has(k) ? 'checked' : ''}> ${AUTO_NAMES[k]}</label>
+    <button class="msg-tool shown" data-ao-move="-1" ${i ? '' : 'disabled'} aria-label="Move up" title="Move up">↑</button>
+    <button class="msg-tool shown" data-ao-move="1" ${i < keys.length - 1 ? '' : 'disabled'} aria-label="Move down" title="Move down">↓</button></div>`).join('');
 }
 let orLoaded = false;
 async function loadOpenRouterModels() {
@@ -135,8 +162,8 @@ async function loadSecurity() {
   } catch (e) {}
 }
 $('sessions-list').onclick = async (e) => { const id = e.target.dataset.sess; if (id) { await api('/api/sessions/' + id, { method: 'DELETE' }).catch((x) => toast(x.message)); loadSecurity(); } };
-$('tokens-list').onclick = async (e) => { const id = e.target.dataset.tok; if (id && confirm('Revoke this token? Scripts using it stop working.')) { await api('/api/apitokens/' + id, { method: 'DELETE' }).catch((x) => toast(x.message)); loadSecurity(); } };
-$('sess-all').onclick = async () => { if (confirm('Sign out every browser, including this one?')) { await post('/api/sessions/logout-all'); location.reload(); } };
+$('tokens-list').onclick = async (e) => { const id = e.target.dataset.tok; if (id && await askConfirm('Revoke this token? Scripts using it stop working.')) { await api('/api/apitokens/' + id, { method: 'DELETE' }).catch((x) => toast(x.message)); loadSecurity(); } };
+$('sess-all').onclick = async () => { if (await askConfirm('Sign out every browser, including this one?')) { await post('/api/sessions/logout-all'); location.reload(); } };
 $('tok-create').onclick = async () => {
   const name = $('tok-name').value.trim(); if (!name) return;
   try {
@@ -149,7 +176,7 @@ $('tok-create').onclick = async () => {
   } catch (e) { toast(e.message); }
 };
 $('tls-save').onclick = async () => {
-  if (!confirm('Replace the HTTPS certificate? Connected nodes are re-pinned automatically; the page will reload.')) return;
+  if (!await askConfirm('Replace the HTTPS certificate? Connected nodes are re-pinned automatically; the page will reload.')) return;
   try { const r = await post('/api/tls', { cert: $('tls-cert').value, key: $('tls-key').value }); $('tls-cert').value = ''; $('tls-key').value = ''; toast((r.needs_repin || []).length ? 'Certificate changed; some nodes need a re-pin' : 'Certificate changed'); loadSecurity(); } catch (e) { toast(e.message); }
 };
 $('bk-download').onclick = async () => {
@@ -170,17 +197,17 @@ async function saveSettings(body, msg) {
   try { settings = await post('/api/settings', body); Guard.settingsSaved(); toast(msg); loadSettings(); refresh(); } catch (e) { toast(e.message); }
 }
 $('set-key-save').onclick = () => { const v = $('set-key').value.trim(); if (!v) return; $('set-key').value = ''; saveSettings({ anthropic_key: v }, 'API key saved'); };
-$('set-key-clear').onclick = () => { if (confirm('Remove the Claude API key?')) saveSettings({ anthropic_key: '' }, 'API key removed'); };
+$('set-key-clear').onclick = async () => { if (await askConfirm('Remove the Claude API key?')) saveSettings({ anthropic_key: '' }, 'API key removed'); };
 $('set-or-key-save').onclick = () => { const v = $('set-or-key').value.trim(); if (!v) return; $('set-or-key').value = ''; orLoaded = false; saveSettings({ openrouter_key: v }, 'OpenRouter key saved'); };
-$('set-or-key-clear').onclick = () => { if (confirm('Remove the OpenRouter API key?')) saveSettings({ openrouter_key: '' }, 'OpenRouter key removed'); };
+$('set-or-key-clear').onclick = async () => { if (await askConfirm('Remove the OpenRouter API key?')) saveSettings({ openrouter_key: '' }, 'OpenRouter key removed'); };
 $('set-or-model-save').onclick = () => saveSettings({ openrouter_model: $('set-or-model').value.trim() }, 'OpenRouter model saved');
 $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-instr-save').onclick = () => saveSettings({ instructions: $('set-instr').value }, 'Instructions saved');
-$('set-ghupd-save').onclick = () => {
+$('set-ghupd-save').onclick = async () => {
   const body = { github_updates: $('set-ghupd').checked, github_auto_install: $('set-ghauto').checked, github_repo: $('set-ghrepo').value.trim() };
   const cur = settings.github_repo || settings.github_repo_default || '';
-  if (body.github_repo && !body.github_repo.toLowerCase().endsWith('/' + cur.toLowerCase()) && !confirm('Trust ' + body.github_repo + ' to supply updates for this controller and all nodes?')) return;
+  if (body.github_repo && !body.github_repo.toLowerCase().endsWith('/' + cur.toLowerCase()) && !await askConfirm('Trust ' + body.github_repo + ' to supply updates for this controller and all nodes?')) return;
   const tok = $('set-ghtoken').value.trim();
   if (tok) body.github_token = tok;
   $('set-ghtoken').value = '';
@@ -214,7 +241,7 @@ $('set-wake').addEventListener('change', () => saveSettings({ wake_for_work: $('
 $('set-idle-save').onclick = () => saveSettings({ idle_unload: $('set-idle').value.trim() }, 'Idle unload saved');
 $('set-pooling-save').onclick = () => saveSettings({ pooling_enabled: $('set-pooling').checked }, $('set-pooling').checked ? 'Pooling enabled' : 'Pooling off; pools dissolved');
 $('set-claude-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0 }, 'Claude model and cap saved');
-$('set-save').onclick = () => saveSettings({ default_planner: $('set-planner').value, web_search: $('set-websearch').checked, web_allow_private: $('set-webprivate').checked }, 'Defaults saved');
+$('set-save').onclick = () => saveSettings({ default_planner: $('set-planner').value, auto_order: autoOrderValue(), web_search: $('set-websearch').checked, chat_web_search: $('set-chatweb').checked, chat_search_with: $('set-chatsearchwith').value, web_allow_private: $('set-webprivate').checked }, 'Defaults saved');
 $('set-run-save').onclick = () => saveSettings({ agent_mode: $('set-agent').checked, auto_resume: $('set-autoresume').checked, best_of_n: $('set-bestofn').value }, 'Task settings saved');
 $('pw-form').onsubmit = async (e) => {
   e.preventDefault();
@@ -234,7 +261,7 @@ $('cfg-file').onchange = async () => {
   if (!f) return;
   try {
     const body = JSON.parse(await f.text());
-    if (!confirm('Replace the settings, saved tasks and node labels in this file on this controller? Keys and passwords stay as they are.')) return;
+    if (!await askConfirm('Replace the settings, saved tasks and node labels in this file on this controller? Keys and passwords stay as they are.')) return;
     const r = await post('/api/config/import', body);
     toast(`Imported ${r.settings} settings, ${r.templates} saved tasks, ${r.labels} node labels`);
   } catch (e) { toast(e.message); }

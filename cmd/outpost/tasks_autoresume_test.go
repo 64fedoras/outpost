@@ -3,8 +3,8 @@ package main
 import (
 	"net/http/httptest"
 	"os"
-	"runtime"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
