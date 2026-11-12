@@ -1,9 +1,13 @@
 name: CI
 
-# Checks every pull request before it can break main. The release build and
-# publishing stay in build.yml, which runs on push to main.
+# Checks every pull request before it can break main, and every direct push to
+# main or dev: a push without a pull request would otherwise skip the race
+# detector and the cross-build. The release build and publishing stay in
+# build.yml, which runs on push to main.
 on:
   pull_request:
+  push:
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
