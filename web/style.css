@@ -694,6 +694,17 @@ details.live summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .nv-item:last-child { border-bottom: 0; } .nv-item.on { background: var(--tint); }
 .nv-item .nv-grow { display: flex; flex-direction: column; }
 .nv-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; width: 96px; flex: none; }
+.gc[data-act] { cursor: pointer; } .gc[data-act]:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.gc.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* Grid details panel (nodes.js renderNodeDrawer): fixed on the right, below dialogs (.overlay z 20). */
+.nd { position: fixed; top: 0; right: 0; bottom: 0; width: min(540px, 100vw); z-index: 15; overflow-y: auto; overscroll-behavior: contain; background: var(--bg); border-left: 1px solid var(--line); box-shadow: -10px 0 30px rgba(0, 0, 0, .14); }
+.nd-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.nd-title { display: flex; align-items: center; gap: 8px; } .nd-title .node-name { font-size: 16px; flex: none; }
+.nd-head .small { min-width: 32px; }
+.nd-body { padding: 14px 16px 24px; }
+.nd-body > .card { margin: 0; } .nd-body > .card > .node-top { display: none; }
+/* Wide screens: the grid reflows beside the panel instead of under it. */
+@media (min-width: 1320px) { body.nd-open section[data-page="nodes"] { margin-right: 540px; } body.nd-open .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .nv-row { grid-template-columns: 180px minmax(0, 1fr) 150px 210px; } .nv-row > .r { display: none; } }
 @media (max-width: 860px) {
   .pool { grid-column: auto; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -702,6 +713,7 @@ details.live summary { cursor: pointer; font-size: 12px; color: var(--muted); }
   .gc-grid, .pool-cards { grid-template-columns: minmax(0, 1fr); }
   .gc-rings { grid-template-columns: repeat(3, minmax(0, 1fr)) 88px; } .ring { min-width: 0; } .gc-model { flex-wrap: wrap; }
   .nv-toggle button { padding: 5px 8px; }
+  .nd { box-shadow: none; border-left: 0; } .nd-head { padding: 10px 12px; } .nd-body { padding: 12px; }
 }
 
 /* ---------- Models page: Discover rows ---------- */

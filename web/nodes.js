@@ -24,6 +24,7 @@ function benchLine(n, loaded, ready) {
 // (short list on the left, the selected node's full card on the right).
 const NODE_VIEWS = ['grid', 'list', 'detail'];
 let nodeView = 'grid', nodeSel = null, nodeLabel = '';
+let nodeDrawer = null; // node whose details panel is open beside the Grid view
 const nodeOpen = new Set(); // nodes expanded under their List row
 // The Detailed list is optional (Settings → Display and alerts); kept in this browser only.
 let showDetailed = false;
@@ -113,12 +114,14 @@ function nodeDetailView(nodes) {
       <span class="dot ${f.dot}"></span><span class="nv-min nv-grow"><b>${esc(nodeName(n))}</b><span class="sub nv-sub nv-ell">${n.lending_to ? 'Lending to ' + esc(n.lending_to) : f.loaded ? esc(f.loaded) : !n.online ? 'Offline' : 'No model'}</span></span>
       <span class="nv-right">${nvTps(f)}<span>${nvChips(f)}</span></span></button>`;
   }).join('');
-  const jobs = (state.jobs || []).filter((j) => j.node_id === sel.id || (!j.node_id && j.node_name === nodeName(sel))).slice(0, 6);
   return `<div class="nv-split"><div class="nv-list">${list}</div>
-    <div class="nv-pane">${nodeCard(sel)}
-      <div class="section-head"><h2>Recent jobs on ${esc(nodeName(sel))}</h2></div>
-      ${jobs.length ? `<div class="table-wrap"><table><tbody>${jobs.map((j) => `<tr class="click" data-act="open-job" data-id="${j.id}"><td>${pill(j.status)}</td><td class="cmd">${esc(j.command)}</td><td>${ago(j.created)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No recent jobs on this node.</div>'}
-    </div></div>`;
+    <div class="nv-pane">${nodeCard(sel)}${nodeJobs(sel)}</div></div>`;
+}
+// nodeJobs lists a node's latest jobs, under its full card (Detailed list and the Grid details panel).
+function nodeJobs(n) {
+  const jobs = (state.jobs || []).filter((j) => j.node_id === n.id || (!j.node_id && j.node_name === nodeName(n))).slice(0, 6);
+  return `<div class="section-head"><h2>Recent jobs on ${esc(nodeName(n))}</h2></div>
+      ${jobs.length ? `<div class="table-wrap"><table><tbody>${jobs.map((j) => `<tr class="click" data-act="open-job" data-id="${j.id}"><td>${pill(j.status)}</td><td class="cmd">${esc(j.command)}</td><td>${ago(j.created)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No recent jobs on this node.</div>'}`;
 }
 
 // Grid view: cluster summary strip, then gauge cards. Nodes that share memory
@@ -151,9 +154,10 @@ function gaugeCard(n) {
   const ramTot = hb && hb.ram_total_bytes;
   const notes = f.issues.filter((i) => i.lvl !== 'off').map((i) => `<div class="note ${i.lvl === 'info' ? '' : i.lvl} nv-note"><span class="nv-grow">${esc(i.text)}</span>${i.act ? `<button class="small" data-act="${i.act}" data-id="${n.id}">${esc(i.fix)}</button>` : ''}</div>`).join('');
   const btns = n.online && !n.lending_to ? `<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>${f.loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}" title="Send a Wake-on-LAN packet">Wake</button>` : '';
-  return `<div class="card gc nv-s-${f.worst}">
+  const on = nodeDrawer === n.id;
+  return `<div class="card gc nv-s-${f.worst}${on ? ' on' : ''}" data-act="node-detail" data-id="${n.id}">
     <div class="node-top"><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span><span class="nv-pill nv-p-${cls}"><i></i>${st}</span>
-      <button class="small" data-act="node-detail" data-id="${n.id}" title="All details and controls for this node">Details</button></div>
+      <button class="small" data-act="node-detail" data-id="${n.id}" aria-expanded="${on}" aria-controls="node-drawer" title="All details and controls for this node">Details</button></div>
     <div class="sub nv-ell">${esc(cpu.model || 'CPU')} · ${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}</div>
     ${labelChips(n)}
     <div class="gc-rings">
@@ -222,8 +226,49 @@ function renderNodes() {
   if (nodeLabel && !labels.includes(nodeLabel)) nodeLabel = '';
   const shown = nodeLabel ? nodes.filter((n) => (n.labels || []).includes(nodeLabel)) : nodes;
   const chips = labels.length ? `<div class="label-filter" role="group" aria-label="Show nodes with label">${['', ...labels].map((l) => `<button class="small${l === nodeLabel ? ' on' : ''}" data-act="label-filter" data-label="${esc(l)}" aria-pressed="${l === nodeLabel}">${l ? esc(l) + ' · ' + nodes.filter((n) => (n.labels || []).includes(l)).length : 'All nodes'}</button>`).join('')}</div>` : '';
+  if (nodeView !== 'grid' || !nodeById(nodeDrawer)) nodeDrawer = null;
   setHTML('nodes', clusterSummary(nodes) + chips + (nodeView === 'list' ? nodeListView(shown) : nodeView === 'detail' ? nodeDetailView(shown) : nodeGridView(shown)));
+  renderNodeDrawer(shown);
 }
+
+// Grid details panel: clicking a card opens its full node card (the same nodeCard the
+// List and Detailed list show) in a panel on the right, so the grid stays in view.
+// Not modal: clicking another card switches the panel to that node.
+function openNodeDrawer(id) {
+  const was = nodeDrawer;
+  nodeDrawer = nodeDrawer === id ? null : id;
+  renderNodes();
+  if (nodeDrawer && nodeDrawer !== was) { const d = $('node-drawer'); d.scrollTop = 0; const x = d.querySelector('.nd-x'); if (x) x.focus({ preventScroll: true }); }
+}
+function closeNodeDrawer() {
+  const id = nodeDrawer;
+  if (!id) return;
+  nodeDrawer = null; renderNodes();
+  const card = document.querySelector(`.gc[data-id="${CSS.escape(id)}"] button[data-act="node-detail"]`);
+  if (card) card.focus({ preventScroll: true });
+}
+function renderNodeDrawer(shown) {
+  const d = $('node-drawer');
+  const n = nodeDrawer && nodeById(nodeDrawer);
+  d.classList.toggle('hidden', !n);
+  document.body.classList.toggle('nd-open', !!n);
+  if (!n) { setHTML(d, ''); return; }
+  const f = nodeFacts(n), h = f.h, [st, cls] = nodeStatus(n, f);
+  // Previous and next follow the order of the cards in the grid.
+  const order = [...document.querySelectorAll('#nodes .gc[data-id]')].map((c) => c.dataset.id).filter((id, i, a) => a.indexOf(id) === i);
+  const at = order.indexOf(n.id), prev = order[at - 1], next = order[at + 1];
+  const nav = (id, label, txt) => `<button class="small" data-act="node-drawer-go" data-id="${id || ''}" ${id ? '' : 'disabled'} title="${label}" aria-label="${label}">${txt}</button>`;
+  setHTML(d, `<div class="nd-head"><span class="dot ${f.dot}"></span><div class="nv-min nv-grow"><div class="nd-title"><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span><span class="nv-pill nv-p-${cls}"><i></i>${st}</span></div>
+      <div class="sub nv-ell">${h.agent_version ? 'v' + esc(h.agent_version) + ' · ' : ''}${esc(h.os ? h.os + '/' + h.arch : 'unknown')}${shown.length > 1 && at >= 0 ? ` · ${at + 1} of ${order.length}` : ''}</div></div>
+      ${order.length > 1 ? nav(prev, 'Previous node', '‹') + nav(next, 'Next node', '›') : ''}
+      <button class="small nd-x" data-act="node-drawer-close" title="Close (Esc)" aria-label="Close node details">✕</button></div>
+    <div class="nd-body">${nodeCard(n)}${nodeJobs(n)}</div>`);
+}
+document.addEventListener('keydown', (e) => {
+  // Dialogs opened from the panel (Load model, Logs…) close first; they handle their own Escape.
+  if (e.key !== 'Escape' || !nodeDrawer || document.querySelector('.overlay:not(.hidden)')) return;
+  closeNodeDrawer();
+});
 
 function opView(n) {
   const o = state.ops && state.ops[n.id];
