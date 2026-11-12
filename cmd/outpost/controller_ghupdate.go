@@ -228,15 +228,28 @@ func (c *Controller) checkGitHubRun(ctx context.Context) (latest string, fetched
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	defer cancel()
 	repo, token := c.ghConfig()
-	resp, err := c.ghGet(ctx, ghAPIBase()+"/repos/"+repo+"/releases/latest", "application/vnd.github+json", token)
-	if err != nil {
-		return "", nil, err
-	}
+	branch := c.ghBranch()
 	var rel ghLatest
-	err = json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&rel)
-	resp.Body.Close()
-	if err != nil {
-		return "", nil, err
+	if branch == "" {
+		resp, err := c.ghGet(ctx, ghAPIBase()+"/repos/"+repo+"/releases/latest", "application/vnd.github+json", token)
+		if err != nil {
+			return "", nil, err
+		}
+		err = json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&rel)
+		resp.Body.Close()
+		if err != nil {
+			return "", nil, err
+		}
+	} else {
+		builds, err := c.ghBranchBuilds(ctx, repo, token)
+		if err != nil {
+			return "", nil, err
+		}
+		b, ok := builds[branch]
+		if !ok {
+			return "", nil, fmt.Errorf("branch %q has no build on GitHub (builds are published when the branch is pushed)", branch)
+		}
+		rel = b
 	}
 	latest = strings.TrimPrefix(rel.Tag, "v")
 	if compareVersions(latest, "0.0.1") <= 0 {
@@ -251,7 +264,7 @@ func (c *Controller) checkGitHubRun(ctx context.Context) (latest string, fetched
 	c.mu.Unlock()
 	var want []string
 	for _, p := range plats {
-		if v, ok := have[p]; !ok || compareVersions(latest, v) > 0 {
+		if v, ok := have[p]; ghWantFetch(branch, v, ok, latest) {
 			want = append(want, p)
 		}
 	}
@@ -273,8 +286,10 @@ func (c *Controller) checkGitHubRun(ctx context.Context) (latest string, fetched
 		return latest, nil, err
 	}
 	sums := parseSums(sumBytes)
-	if err := c.updateCatalog(ctx, rel, latest, sums, token); err != nil {
-		log.Printf("model catalog update: %v", err)
+	if branch == "" { // a branch build never changes the suggested-models list
+		if err := c.updateCatalog(ctx, rel, latest, sums, token); err != nil {
+			log.Printf("model catalog update: %v", err)
+		}
 	}
 	if len(want) == 0 {
 		return latest, nil, nil
@@ -354,7 +369,7 @@ func (c *Controller) ghLoop() {
 	time.Sleep(ghFirstCheck)
 	for {
 		if check, auto := c.ghEnabled(); check {
-			if _, err := c.checkGitHub(context.Background()); err == nil && auto {
+			if _, err := c.checkGitHub(context.Background()); err == nil && auto && c.ghBranch() == "" {
 				c.autoInstall()
 			}
 		}
@@ -479,7 +494,7 @@ func (c *Controller) ghViewLocked() map[string]any {
 	}
 	return map[string]any{
 		"enabled": !c.settings.GitHubUpdatesOff, "auto_install": c.settings.GitHubAutoInstall,
-		"hold": c.settings.GitHubHoldVersion, "repo": repo,
+		"hold": c.settings.GitHubHoldVersion, "repo": repo, "branch": c.settings.GitHubBranch,
 		"checked": s.Checked, "latest": s.Latest, "error": s.Error, "busy": s.Busy, "fetched": s.Fetched, "catalog": s.Catalog,
 	}
 }
@@ -568,4 +583,126 @@ func (c *Controller) handleTestGitHub(w http.ResponseWriter, r *http.Request) {
 		msg += " has no SHA256SUMS file, so its binaries would not be installed."
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "repo": repo, "private": meta.Private, "latest": strings.TrimPrefix(rel.Tag, "v"), "sums": hasSums, "message": msg})
+}
+
+// ---- branch builds ----
+//
+// CI publishes every build of a listed branch as a GitHub prerelease tagged v<X.Y.Z>-<slug>.<run>
+// (see .github/workflows/build-branch.yml), with the same SHA256SUMS as a normal release. The
+// "latest release" endpoint never returns a prerelease, so the Stable channel is unaffected.
+// A controller set to a branch follows that branch's newest prerelease; everything after the
+// download (preflight, canary rollout, trial and rollback) is the same as for any release.
+
+var (
+	ghBranchRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,11}$`)
+	ghBuildTag  = regexp.MustCompile(`^v([0-9]+\.[0-9]+\.[0-9]+)-([a-z0-9][a-z0-9-]{0,11})\.([0-9]+)$`)
+	ghListLimit = 4 << 20
+)
+
+// ghBranch returns the selected branch channel; "" is Stable.
+func (c *Controller) ghBranch() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !ghBranchRe.MatchString(c.settings.GitHubBranch) {
+		return ""
+	}
+	return c.settings.GitHubBranch
+}
+
+// ghWantFetch decides whether the binary for a platform must be downloaded. Stable only takes
+// something newer, except that it replaces a stored branch build. A branch takes whatever its
+// newest build is (an older one is stored but never offered as an update).
+func ghWantFetch(branch, have string, haveOK bool, latest string) bool {
+	if !haveOK || have == latest {
+		return !haveOK
+	}
+	if branch != "" {
+		return true
+	}
+	return compareVersions(latest, have) > 0 || isPrerelease(have)
+}
+
+// ghBranchBuilds lists the repository's branch builds (prereleases), newest per branch.
+func (c *Controller) ghBranchBuilds(ctx context.Context, repo, token string) (map[string]ghLatest, error) {
+	resp, err := c.ghGet(ctx, ghAPIBase()+"/repos/"+repo+"/releases?per_page=100", "application/vnd.github+json", token)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var list []struct {
+		ghLatest
+		Prerelease bool `json:"prerelease"`
+		Draft      bool `json:"draft"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, int64(ghListLimit))).Decode(&list); err != nil {
+		return nil, err
+	}
+	out := map[string]ghLatest{}
+	for _, r := range list {
+		m := ghBuildTag.FindStringSubmatch(r.Tag)
+		if m == nil || !r.Prerelease || r.Draft {
+			continue
+		}
+		if cur, ok := out[m[2]]; !ok || compareVersions(r.Tag, cur.Tag) > 0 {
+			out[m[2]] = r.ghLatest
+		}
+	}
+	return out, nil
+}
+
+// handleGitHubBranches answers the Updates tab's dropdown with the branches that have a build
+// on GitHub right now (fetched live on every call).
+func (c *Controller) handleGitHubBranches(w http.ResponseWriter, r *http.Request) {
+	repo, token := c.ghConfig()
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	builds, err := c.ghBranchBuilds(ctx, repo, token)
+	if err != nil {
+		writeJSON(w, 502, map[string]string{"error": err.Error()})
+		return
+	}
+	type row struct {
+		Branch  string `json:"branch"`
+		Version string `json:"version"`
+	}
+	rows := []row{}
+	for b, rel := range builds {
+		rows = append(rows, row{b, strings.TrimPrefix(rel.Tag, "v")})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Branch < rows[j].Branch })
+	writeJSON(w, 200, map[string]any{"branches": rows, "selected": c.ghBranch()})
+}
+
+// handleGitHubChannel switches between Stable ("") and a branch, then checks at once.
+func (c *Controller) handleGitHubChannel(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Branch string `json:"branch"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "bad request"})
+		return
+	}
+	b := strings.TrimSpace(req.Branch)
+	if b != "" && !ghBranchRe.MatchString(b) {
+		writeJSON(w, 400, map[string]string{"error": "that is not a branch name Outpost builds"})
+		return
+	}
+	c.mu.Lock()
+	changed := c.settings.GitHubBranch != b
+	c.settings.GitHubBranch = b
+	if changed { // versions of another channel are unrelated to the rollback hold
+		c.settings.GitHubHoldVersion = ""
+		c.ghState = ghUpdateState{}
+	}
+	err := c.saveSettingsLocked()
+	c.mu.Unlock()
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	log.Printf("update channel set to %q", b)
+	if changed {
+		go c.checkGitHub(context.Background())
+	}
+	writeJSON(w, 200, c.ghView())
 }

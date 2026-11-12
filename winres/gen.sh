@@ -8,6 +8,7 @@ V=$(sed -n 's/^const Version = "\(.*\)"/\1/p' cmd/outpost/proto.go)
 IFS=. read MA MI PA <<EOT
 $V
 EOT
+PA=${PA%%-*} # a branch build "0.12.18-dev.57" gets the numeric part for the file version
 T=$(mktemp -d)
 sed "s/@V@/$V/g; s/@MA@/$MA/g; s/@MI@/$MI/g; s/@PA@/$PA/g" winres/outpost.rc.in > $T/outpost.rc
 cp winres/outpost.manifest winres/outpost.ico $T/
