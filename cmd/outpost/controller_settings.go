@@ -43,6 +43,7 @@ type Settings struct {
 	GitHubAutoInstall bool           `json:"github_auto_install,omitempty"` // also update idle nodes and the controller by itself
 	GitHubRepo        string         `json:"github_repo,omitempty"`         // owner/repo trusted for updates; empty = ghDefaultRepo
 	GitHubTokenEnc    string         `json:"github_token_enc,omitempty"`    // optional read-only token for a private repo; controller only
+	GitHubBranch      string         `json:"github_branch,omitempty"`       // update channel: "" = Stable releases, else a branch build slug (controller_ghupdate.go)
 	GitHubHoldVersion string         `json:"github_hold_version,omitempty"` // set by a rollback: auto-install skips this version and older
 	Sandbox           string         `json:"sandbox,omitempty"`             // default sandbox for exec jobs on nodes: off | basic | strict; empty = basic
 	HealthAmber       int            `json:"health_amber,omitempty"`        // node health: points for amber (0 = default 5)

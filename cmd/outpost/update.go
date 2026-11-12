@@ -41,26 +41,57 @@ func exeSuffix(goos string) string {
 	return ""
 }
 
-// compareVersions compares dotted numeric versions ("0.2.10" > "0.2.9").
+// compareVersions compares dotted numeric versions ("0.2.10" > "0.2.9"). A suffix after a hyphen
+// ("0.12.18-dev.57", a branch build) makes a pre-release: it sorts below the same number without
+// a suffix and above any lower number. Two suffixes compare dot part by dot part, numbers
+// numerically, so -dev.9 < -dev.10.
 func compareVersions(a, b string) int {
-	pa, pb := strings.Split(strings.TrimPrefix(a, "v"), "."), strings.Split(strings.TrimPrefix(b, "v"), ".")
+	ca, sa, _ := strings.Cut(strings.TrimPrefix(a, "v"), "-")
+	cb, sb, _ := strings.Cut(strings.TrimPrefix(b, "v"), "-")
+	if c := compareDotted(ca, cb); c != 0 {
+		return c
+	}
+	switch {
+	case sa == sb:
+		return 0
+	case sa == "":
+		return 1
+	case sb == "":
+		return -1
+	}
+	return compareDotted(sa, sb)
+}
+
+func compareDotted(a, b string) int {
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
 	for i := 0; i < len(pa) || i < len(pb); i++ {
-		var x, y int
+		var x, y string
 		if i < len(pa) {
-			x, _ = strconv.Atoi(pa[i])
+			x = pa[i]
 		}
 		if i < len(pb) {
-			y, _ = strconv.Atoi(pb[i])
+			y = pb[i]
 		}
-		if x != y {
-			if x < y {
-				return -1
+		nx, ex := strconv.Atoi(x)
+		ny, ey := strconv.Atoi(y)
+		if ex == nil && ey == nil || (x == "" && ey == nil) || (y == "" && ex == nil) {
+			if nx != ny {
+				if nx < ny {
+					return -1
+				}
+				return 1
 			}
-			return 1
+			continue
+		}
+		if c := strings.Compare(x, y); c != 0 {
+			return c
 		}
 	}
 	return 0
 }
+
+// isPrerelease reports whether a version is a branch build ("0.12.18-dev.57").
+func isPrerelease(v string) bool { return strings.Contains(v, "-") }
 
 // inspectBinary returns the platform ("linux-amd64") and Outpost version of a binary.
 func inspectBinary(path string) (platform, version string, err error) {
