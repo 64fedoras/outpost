@@ -131,9 +131,12 @@ async def main():
 
         # a git project asks first: keep the repository or disconnect the copy. The rig cannot
         # clone, so the page is told this project has a repository.
-        await pg.evaluate(f"() => {{ const p = projects.find((q) => q.id === '{pid}'); p.git_url = 'https://example.local/dice.git'; p.git_branch = 'outpost'; }}")
+        # The page's poll replaces `projects` every few seconds, so the field is set and the menu
+        # item clicked in one step; set earlier, a poll in between wiped it and no dialog opened.
+        dup_git = f"() => {{ const p = projects.find((q) => q.id === '{pid}'); p.git_url = 'https://example.local/dice.git'; p.git_branch = 'outpost'; document.querySelector('#proj-ctx [data-pctx=duplicate]').click(); }}"
         await card.click(button="right")
-        await menu.locator("[data-pctx=duplicate]").click()
+        await menu.wait_for(state="visible")
+        await pg.evaluate(dup_git)
         await pg.wait_for_selector("#modal-pj-dup:not(.hidden)")
         assert "example.local/dice.git" in await pg.inner_text("#pj-dup-body")
         await pg.screenshot(path=E + f"projmenu/{SCHEME}-dup-git.png")
@@ -142,9 +145,10 @@ async def main():
         await pg.wait_for_timeout(500)
         names = lambda: pg.evaluate("() => fetch('/api/projects').then(r => r.json()).then(l => l.map(p => p.name))")
         assert "Dice roller CLI (copy)" not in await names(), "cancel made a copy"
-        await pg.evaluate(f"() => {{ const p = projects.find((q) => q.id === '{pid}'); p.git_url = 'https://example.local/dice.git'; }}")
         await card.click(button="right")
-        await menu.locator("[data-pctx=duplicate]").click()
+        await menu.wait_for(state="visible")
+        await pg.evaluate(dup_git)
+        await pg.wait_for_selector("#modal-pj-dup:not(.hidden)")
         await pg.click("#pj-dup-body [data-dup=detach]")
         await pg.wait_for_function("() => fetch('/api/projects').then(r => r.json()).then(l => l.some(p => p.name === 'Dice roller CLI (copy)'))")
         d = next(p for p in await pg.evaluate("() => fetch('/api/projects').then(r => r.json())") if p["name"] == "Dice roller CLI (copy)")

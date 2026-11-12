@@ -7,7 +7,7 @@ One entry point, `sh testing/run_all.sh`:
 | --- | --- |
 | `sh testing/run_all.sh` (or `fast`) | A `gofmt` check, `go vet`, all unit tests, `node --check` on every `web/*.js`, and a build for all five platforms. |
 | `sh testing/run_all.sh race` | Unit tests with the race detector (needs gcc). |
-| `sh testing/run_all.sh e2e` | Starts the local rig, runs the browser scripts below (`steer`, `edit`, `rerun`, `taskmenu`, `mobile`, `dropzone`, `projectnew`), stops the rig. Needs Python Playwright; it stops with an error if that is missing instead of skipping. `E2E_FULL=1` adds `flow.py` (about 4 minutes) and `soak.py`. |
+| `sh testing/run_all.sh e2e` | Starts the local rig, runs the browser scripts below (`groups`, `steer`, `edit`, `rerun`, `taskmenu`, `projmenu`, `mobile`, `dropzone`, `projectnew`, `chatpage`), stops the rig. Needs Python Playwright; it stops with an error if that is missing instead of skipping. `E2E_FULL=1` adds `flow.py` (about 4 minutes) and `soak.py`. |
 | `sh testing/run_all.sh all` | `fast`, then `race`, then `e2e`. |
 
 CI runs `fast` and `race` on every pull request. `e2e` is run by hand (the nightly soak workflow runs `soak.py`).
@@ -38,7 +38,9 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `rerun.py` | Edit the plan (before approval, via the pencil on the plan card) and re-run an approved plan. |
 | `taskmenu.py dark\|light` | Sidebar task menu: right-click, the ⋯ button, Shift+F10, F2 rename, pin, copy link and prompt, duplicate, delete, and the phone drawer. Screenshots go to `run/menu/`. |
 | `mobile.py` | The same pages at phone width. |
-| `projectnew.py` | Projects page: "New task here" opens the new-task page with that project picked. |
+| `projectnew.py` | Projects page: "New task in this project" in a card's menu opens the new-task page with that project picked. |
+| `chatpage.py` | Chat page layout: model cards on a new chat, the docked composer, the chats panel and the phone sheet. |
+| `groups.py` | Sidebar groups: the By status / By group switch, new group, dragging a task and a chat onto a group, Move to group, rename, colour, move, delete, and the phone sheet. Runs first: it expects a controller with no groups yet. |
 | `shots.py` | Screenshots of every tab (needs a task id edited into the script). |
 | `soak.py` | No browser. Runs `SOAK_TASKS` tasks (default 8) through the API and, at random (`SOAK_SEED`), kills and restarts the node, the controller or both mid-task; every task must end `done`. Presses Resume for Claude tasks after a controller restart. Runs nightly in `.github/workflows/soak.yml`. |
 
