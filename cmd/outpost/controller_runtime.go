@@ -91,7 +91,7 @@ type runtimeCache struct {
 	checked  time.Time
 	releases []ghRelease
 	locks    map[string]*sync.Mutex
-	ceiling  map[string]string // node|variant -> newest build known to run on that node (older glibc)
+	ceiling  map[string]string       // node|variant -> newest build known to run on that node (older glibc)
 	blocked  map[string]blockedBuild // node|variant|build -> this build needs a newer glibc and no older release can help
 }
 
