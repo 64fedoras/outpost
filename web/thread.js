@@ -244,7 +244,7 @@ function msgItem(t, m, liveQuestions, livePlan) {
     case 'result': return { key, cls: 'card-row', html: resultCard(t, m) };
     case 'shots': case 'mockup': return { key, cls: 'card-row', html: shotsCard(t, m, msgs_lastMockup(t) === m.id) };
     case 'error': return { key, cls: 'card-row', html: `<div class="card-msg bad"><div class="card-head">Something went wrong</div>${errorBody(m.text)}${t.status === 'failed' && m.round === (t.round || 1) ? '<div class="card-actions"><button class="primary" data-act="task-resume">Try again</button><span class="hint">or send a message to change course</span></div>' : ''}</div>` };
-    default: return { key, cls: 'from-planner', html: `<div class="said">${esc(m.text)}</div>` };
+    default: return { key, cls: 'from-planner', html: `<div class="said md">${md(m.text)}</div>` };
   }
 }
 

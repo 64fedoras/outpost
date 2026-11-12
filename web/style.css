@@ -1086,3 +1086,36 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .ask-modal { width: min(440px, 100%); }
 .ask-modal .hint { font-size: 13.5px; line-height: 1.45; margin: 6px 0 0; }
 .ask-modal input { width: 100%; margin-top: 10px; box-sizing: border-box; }
+
+/* ---------- markdown in model answers (markdown.js) ---------- */
+.md, .chat-text.md, .pj-answer-text.md, .said.md { white-space: normal; word-break: normal; overflow-wrap: anywhere; line-height: 1.55; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 10px; }
+.md .md-plain { white-space: pre-wrap; }
+.md .md-h { margin: 18px 0 8px; line-height: 1.3; font-weight: 650; letter-spacing: 0; text-transform: none; color: var(--ink); }
+.md .md-h1 { font-size: 1.35em; }
+.md .md-h2 { font-size: 1.22em; }
+.md .md-h3 { font-size: 1.1em; }
+.md .md-h4, .md .md-h5, .md .md-h6 { font-size: 1em; }
+.md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }
+.md li { margin: 3px 0; }
+.md li > ul, .md li > ol { margin: 3px 0 0; }
+.md li > p { margin: 0 0 6px; }
+.md li.md-task { list-style: none; margin-left: -18px; }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+.md blockquote { margin: 0 0 10px; padding: 2px 0 2px 12px; border-left: 3px solid var(--line); color: var(--muted); }
+.md code { font-family: var(--mono); font-size: .9em; background: var(--bar); border-radius: 4px; padding: 1px 5px; }
+.md .md-code { margin: 0 0 10px; background: var(--code-bg); color: var(--code-ink); border-radius: 8px; overflow: hidden; }
+.md .md-code-bar { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 4px 12px; font-size: 11.5px; color: #a3a4a8; border-bottom: 1px solid rgba(255, 255, 255, .08); }
+.md .md-copy { background: none; border: 0; color: inherit; font: inherit; padding: 3px 8px; border-radius: 5px; cursor: pointer; }
+.md .md-copy:hover, .md .md-copy:focus-visible { background: rgba(255, 255, 255, .1); color: #fff; }
+.md .md-code pre { margin: 0; padding: 10px 12px; overflow: auto; max-height: 60vh; white-space: pre; tab-size: 4; }
+.md .md-code code { background: none; padding: 0; border-radius: 0; font-size: 12.5px; line-height: 1.5; color: inherit; }
+.md .md-table { overflow-x: auto; margin: 0 0 10px; }
+.md table { width: auto; max-width: none; border-radius: 0; background: none; overflow: visible; }
+.md th, .md td { padding: 6px 10px; border: 1px solid var(--line); font-size: inherit; vertical-align: top; }
+.md th { font-size: inherit; text-transform: none; letter-spacing: 0; color: var(--ink); font-weight: 600; background: var(--bar); }
+.md .md-c { text-align: center; }
+.md .md-r { text-align: right; }
+.md a { overflow-wrap: anywhere; }
