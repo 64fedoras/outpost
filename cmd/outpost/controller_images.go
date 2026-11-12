@@ -481,12 +481,8 @@ type GenNode struct {
 	VRAM     int64  `json:"vram"`
 }
 
-// genNodesLocked evaluates every node for a model at a size. c.mu must be held.
-func (c *Controller) genNodesLocked(d *ImageModelDef, w, h int) []GenNode {
-	return c.genNodesFramesLocked(d, w, h, 0)
-}
-
-// genNodesFramesLocked is genNodesLocked for a clip of frames frames (0 for a picture).
+// genNodesFramesLocked evaluates every node for a model at a size, for a clip of
+// frames frames (0 for a picture). c.mu must be held.
 func (c *Controller) genNodesFramesLocked(d *ImageModelDef, w, h, frames int) []GenNode {
 	var out []GenNode
 	for id, n := range c.nodes {

@@ -165,15 +165,6 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func containsInt(xs []int, v int) bool {
-	for _, x := range xs {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}
-
 func (c *Controller) handleNodeMessage(nodeID string, env *Envelope) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -196,13 +196,6 @@ func (g *ggufReader) scalar(t uint32, keepStr bool) (int64, string) {
 	return int64(b[0]), ""
 }
 
-// readGGUFMeta reads the metadata of a GGUF file (versions 2 and 3) and stops
-// before the tensor table, so only the header is read.
-func readGGUFMeta(r io.Reader) (map[string]ggufValue, error) {
-	meta, _, err := readGGUFHeader(r, false)
-	return meta, err
-}
-
 // ggufTensor is one entry of the tensor table.
 type ggufTensor struct {
 	name  string

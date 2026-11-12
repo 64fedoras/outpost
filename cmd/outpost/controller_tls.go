@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -187,6 +186,3 @@ func (c *Controller) clearRepin(nodeID string) {
 		_ = writeFileAtomic(c.pendingRepinPath(), nb, 0o600)
 	}
 }
-
-// repinCommand is printed for nodes that missed the swap.
-func repinCommand(fp string) string { return fmt.Sprintf("outpost repin --fingerprint %s", fp) }

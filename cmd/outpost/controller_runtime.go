@@ -246,11 +246,6 @@ func commonBuild(rels []ghRelease, variants []string) string {
 	return ""
 }
 
-// ensureRuntime makes sure the newest build for variant is on the controller.
-func (c *Controller) ensureRuntime(ctx context.Context, variant string) (*RuntimeRec, error) {
-	return c.ensureRuntimeBuild(ctx, variant, "")
-}
-
 // ensureRuntimeBuild makes sure a build for variant is on the controller: the
 // given build, or the newest one when build is "".
 func (c *Controller) ensureRuntimeBuild(ctx context.Context, variant, wantBuild string) (*RuntimeRec, error) {
