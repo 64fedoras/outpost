@@ -7,7 +7,10 @@ Part of the [Outpost user guide](USER-GUIDE.md).
 ## Chat and the OpenAI-compatible API
 
 **Chat** (sidebar) is a plain conversation with a model on your nodes, for quick questions that do not
-need a task. Pick a node or leave it on *Any node* (the strongest free one). Replies stream in, thinking
+need a task. A new chat opens with one card per way to answer: **Auto (local, strongest free node)**, or a
+node with a model loaded (shown free, busy or paused); click a card or use the model box under the message
+box. The message box stays docked at the bottom, and the **Chats** button opens a panel with your earlier
+chats (on a phone it is a full-screen list). Replies stream in, thinking
 models show their reasoning folded away, and each answer notes the node, model and speed. **Ctrl+Enter**
 sends, **Stop** ends a reply, and **Make this a task** copies the conversation into a new task. Chats are
 kept on the controller (`chats/`, up to 500); a long chat sends only the newest messages that fit the

@@ -233,6 +233,41 @@
       </div>
     </section>
 
+    <!-- CHAT -->
+    <section data-page="chat" class="page-chat hidden">
+      <div class="chat-wrap" id="chat-wrap">
+        <div class="chat-main">
+          <div class="chat-top">
+            <h2 class="chat-ttl" id="chat-title">New chat</h2>
+            <span class="spacer"></span>
+            <button class="tb" id="chat-panel-btn" aria-expanded="true" aria-controls="chat-panel" title="Show or hide the list of chats">☰ <span class="hide-ph">Chats</span> <span class="badge hidden" id="chat-count"></span></button>
+            <button class="tb" id="chat-new">＋ <span class="hide-ph">New chat</span></button>
+          </div>
+          <div class="chat-msgs" id="chat-msgs" aria-live="polite"></div>
+          <div class="chat-dock">
+            <div class="chat-col">
+              <div class="chat-compose">
+                <textarea id="chat-text" rows="2" placeholder="Ask anything… (Ctrl+Enter sends)" aria-label="Message"></textarea>
+                <div class="chat-bar">
+                  <select id="chat-node" class="chat-pill" aria-label="Which node answers"></select>
+                  <span class="grow"></span>
+                  <button class="small hidden" id="chat-totask" title="Start a new task with this conversation as its request">Make this a task</button>
+                  <span class="kbd hide-ph">Ctrl+Enter</span>
+                  <button class="small danger hidden" id="chat-stop">Stop</button>
+                  <button class="primary" id="chat-send">Send</button>
+                </div>
+              </div>
+              <p class="chat-note">Chat uses a free node only, so task work goes first; it waits up to 5 minutes for one.</p>
+            </div>
+          </div>
+        </div>
+        <aside class="chat-panel" id="chat-panel" aria-label="Chats">
+          <div class="chat-panel-h"><b>Chats</b><button class="small" id="chat-new2">＋ New</button><button class="tb chat-panel-x" id="chat-panel-x" aria-label="Close the list of chats">✕</button></div>
+          <nav class="chat-list" id="chat-list" aria-label="Chats"></nav>
+        </aside>
+      </div>
+    </section>
+
     <main class="page-plain">
     <!-- NODES -->
     <section data-page="nodes" class="hidden">
@@ -299,28 +334,6 @@
         <label for="sp-cap">Monthly cap for all tasks <span class="hint">(dollars; 0 or empty turns it off)</span></label>
         <div class="sp-cap-row"><input id="sp-cap" type="number" min="0" step="1" inputmode="decimal" placeholder="off"><button class="primary" id="sp-cap-save">Save</button><span class="sub" id="sp-cap-msg" role="status"></span></div>
         <p class="hint">When the month's cloud spend would pass the cap, tasks pause before their next Claude or OpenRouter call and wait until you raise the cap, switch them to a local planner, or the next month starts. Tasks on local planners keep running. Each task's own cap still applies too.</p>
-      </div>
-    </section>
-
-    <!-- CHAT -->
-    <section data-page="chat" class="hidden">
-      <div class="section-head"><h2>Chat</h2><button class="small" id="chat-new">New chat</button></div>
-      <p class="hint">Ask a model on your nodes directly: no plan, no files. A chat only uses a node that is free, so task work goes first; it waits up to 5 minutes for one.</p>
-      <div class="chat-layout">
-        <nav class="chat-list" id="chat-list" aria-label="Chats"></nav>
-        <div class="chat-main">
-          <div class="chat-msgs" id="chat-msgs" aria-live="polite"></div>
-          <div class="chat-compose">
-            <textarea id="chat-text" rows="3" placeholder="Ask anything… (Ctrl+Enter sends)" aria-label="Message"></textarea>
-            <div class="chat-bar">
-              <label class="chip-input">model <select id="chat-node" aria-label="Which node answers"></select></label>
-              <span class="grow"></span>
-              <button class="small hidden" id="chat-totask" title="Start a new task with this conversation as its request">Make this a task</button>
-              <button class="small danger hidden" id="chat-stop">Stop</button>
-              <button class="primary" id="chat-send">Send</button>
-            </div>
-          </div>
-        </div>
       </div>
     </section>
 
