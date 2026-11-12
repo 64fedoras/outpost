@@ -231,7 +231,7 @@ function closeGroupSub(focusRow) {
 
 async function deleteGroup(id) {
   const g = groupById(id);
-  if (!g || !confirm(`Delete the group “${g.name}”? Its tasks and chats are kept, they just leave the group.`)) return;
+  if (!g || !await askConfirm(`Delete the group “${g.name}”? Its tasks and chats are kept, they just leave the group.`, { danger: true, ok: 'Delete' })) return;
   try {
     sideSeq++; tasksSeq++;
     await api(`/api/groups/${id}`, { method: 'DELETE' });
@@ -286,7 +286,7 @@ async function runGroupCtx(act, kind, id) {
       if (act === 'open-tab') window.open('#/chat/' + id, '_blank', 'noopener');
       else if (act === 'copy-link') { await copyText(location.origin + location.pathname + '#/chat/' + id); toast('Link copied'); }
       else if (act === 'delete') {
-        if (!confirm('Delete this chat?')) return;
+        if (!await askConfirm('Delete this chat?', { danger: true, ok: 'Delete' })) return;
         sideSeq++;
         await api(`/api/chats/${id}`, { method: 'DELETE' });
         sideChats = sideChats.filter((c) => c.id !== id);
