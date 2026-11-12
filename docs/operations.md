@@ -177,6 +177,10 @@ you fill it in (set it if you reach the controller by a name or IP different fro
   model file again and compares it with the checksum recorded at download. A damaged or missing file raises a
   banner and a *model download/load failed* notification; **Retry** on the Models page downloads it again.
   It finds damage after the download, not a bad download.
+- **Stalled downloads:** a download that receives nothing for two minutes is dropped instead of waiting for
+  ever. Downloads from Hugging Face and GitHub (models, llama.cpp builds, the Go toolchain) then resume by
+  themselves from where they stopped; a refusal such as a gated model is reported at once. A node fetching a
+  file from the controller reports the failure and keeps the partial file, so trying again continues it.
 - **Node health:** a node's card shows *Shaky* (amber) or *Unreliable* (red) when, in the last 7 days, it
   disconnected or could not take or finish work often (1 point per disconnect, 2 per refused or lost call;
   5 points amber, 15 red; **Settings → Node health colours** changes the two numbers). Red nodes are handed work after all others. The record is `health.json` in the
