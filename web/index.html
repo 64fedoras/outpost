@@ -368,6 +368,10 @@
           <label>Order for Auto (local + API) <span class="hint">(tried top to bottom; untick to skip a provider)</span></label>
           <div id="set-autoorder" class="auto-order"></div>
           <label class="check"><input type="checkbox" id="set-websearch"> Let the planner search the web (about $0.01 per search, counted against the task cap)</label>
+          <label class="check"><input type="checkbox" id="set-chatweb"> Let chats search the web (about $0.01 per search, counted in Spending and the monthly cap)</label>
+          <label for="set-chatsearchwith">Search with</label>
+          <select id="set-chatsearchwith"><option value="">Claude (Claude API key and the model above)</option><option value="openrouter">OpenRouter (OpenRouter key and its model, any model, including Claude Opus)</option></select>
+          <p class="hint">Chats are answered by a local model, which cannot search. With this on, each chat message first asks a cloud model to search the web and write a short sourced brief, which the local model then uses. Claude uses its own search tool (about $0.01 per search, up to 3). OpenRouter uses its web search plugin with the OpenRouter model chosen in the OpenRouter card (roughly $0.004 per result, billed by OpenRouter on top of the model cost). Needs the matching API key; without one, or if the search fails, the chat is still answered and a note says why the web was not used. Off by default.</p>
           <label class="check"><input type="checkbox" id="set-webprivate"> Allow pasted links to reach internal addresses (loopback, LAN). Off blocks them.</label>
           <div class="modal-foot"><button class="primary" id="set-save">Save defaults</button></div>
         </div>

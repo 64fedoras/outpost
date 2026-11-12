@@ -27,6 +27,8 @@ type Settings struct {
 	AutoOrder         []string       `json:"auto_order,omitempty"`      // providers "Auto (local + API)" tries, in order: local, claude, openrouter; empty = all three in that order
 	OpenRouterKeyEnc  string         `json:"openrouter_key_enc,omitempty"`
 	OpenRouterModel   string         `json:"openrouter_model,omitempty"`
+	ChatWebSearch     bool           `json:"chat_web_search,omitempty"`   // chats get a Claude web search brief first (paid per search)
+	ChatSearchWith    string         `json:"chat_search_with,omitempty"`  // "claude" (default) or "openrouter": who runs the chat search step
 	WebSearch         bool           `json:"web_search,omitempty"`        // Claude planner may use the web search tool (paid per search)
 	WebAllowPrivate   bool           `json:"web_allow_private,omitempty"` // pasted links may reach internal addresses
 	BackupEnabled     bool           `json:"backup_enabled,omitempty"`
@@ -178,7 +180,7 @@ func (c *Controller) settingsView() map[string]any {
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
 		"wake_for_work": c.settings.WakeForWork,
 		"auto_resume":   !c.settings.AutoResumeOff, "best_of_n": normBestOf(c.settings.BestOfN),
-		"agent_mode": !c.settings.AgentOff, "web_search": c.settings.WebSearch, "web_allow_private": c.settings.WebAllowPrivate,
+		"agent_mode": !c.settings.AgentOff, "web_search": c.settings.WebSearch, "chat_web_search": c.settings.ChatWebSearch, "chat_search_with": c.settings.ChatSearchWith, "web_allow_private": c.settings.WebAllowPrivate,
 		"auto_free": !c.settings.AutoFreeOff, "pooling_enabled": c.poolingOnLocked(), "pooling_notice": c.settings.PoolingNotice,
 		"github_repo": c.ghRepoLocked(), "github_repo_default": ghDefaultRepo, "github_token_set": c.settings.GitHubTokenEnc != "",
 		"github_updates": !c.settings.GitHubUpdatesOff, "github_auto_install": c.settings.GitHubAutoInstall,
@@ -223,6 +225,8 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		BestOfN         *string `json:"best_of_n"`
 		Instructions    *string `json:"instructions"`
 		WebSearch       *bool   `json:"web_search"`
+		ChatWebSearch   *bool   `json:"chat_web_search"`
+		ChatSearchWith  *string `json:"chat_search_with"`
 		AgentMode       *bool   `json:"agent_mode"`
 		WebAllowPrivate *bool   `json:"web_allow_private"`
 		PoolingEnabled  *bool   `json:"pooling_enabled"`
@@ -376,6 +380,16 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.WebSearch != nil {
 		c.settings.WebSearch = *req.WebSearch
+	}
+	if req.ChatWebSearch != nil {
+		c.settings.ChatWebSearch = *req.ChatWebSearch
+	}
+	if req.ChatSearchWith != nil {
+		if v := strings.TrimSpace(*req.ChatSearchWith); v == "openrouter" {
+			c.settings.ChatSearchWith = v
+		} else {
+			c.settings.ChatSearchWith = "" // Claude
+		}
 	}
 	if req.AgentMode != nil {
 		c.settings.AgentOff = !*req.AgentMode
