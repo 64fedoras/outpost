@@ -33,7 +33,13 @@ func ghStub(t *testing.T, badSum bool) (*httptest.Server, []byte) {
 	base, _ := os.ReadFile(exe)
 	// Built at run time: a literal marker here would be found first by the other tests' binary scans.
 	marker := fmt.Sprintf("%s|%s|", strings.Split(buildInfo, "|")[0], "99.0.0")
-	bin := bytes.ReplaceAll(base, []byte(buildInfo), []byte(marker))
+	// Same length as the original, so offsets inside the executable stay valid whatever Version is
+	// (a branch build's version is longer than 99.0.0).
+	repl := []byte(marker)
+	for len(repl) < len(buildInfo) {
+		repl = append(repl, 0)
+	}
+	bin := bytes.ReplaceAll(base, []byte(buildInfo), repl)
 	bin = append(bin, []byte(marker+"\x00")...)
 	sum := sha256.Sum256(bin)
 	name := releaseFileName(thisPlatform())
@@ -131,7 +137,13 @@ func TestCheckGitHubPrivateRepoUsesToken(t *testing.T) {
 	exe, _ := os.Executable()
 	base, _ := os.ReadFile(exe)
 	marker := fmt.Sprintf("%s|%s|", strings.Split(buildInfo, "|")[0], "99.0.0")
-	bin := bytes.ReplaceAll(base, []byte(buildInfo), []byte(marker))
+	// Same length as the original, so offsets inside the executable stay valid whatever Version is
+	// (a branch build's version is longer than 99.0.0).
+	repl := []byte(marker)
+	for len(repl) < len(buildInfo) {
+		repl = append(repl, 0)
+	}
+	bin := bytes.ReplaceAll(base, []byte(buildInfo), repl)
 	bin = append(bin, []byte(marker+"\x00")...)
 	sum := sha256.Sum256(bin)
 	name := releaseFileName(thisPlatform())
