@@ -220,16 +220,34 @@ func TestUnattendedPlanApprovesItself(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	tk.mu.Lock()
-	approved, cancel := tk.Approved, tk.cancel
+	approved := tk.Approved
 	var auto bool
 	for _, m := range tk.Messages {
 		auto = auto || strings.Contains(m.Text, "started by a schedule")
 	}
 	tk.mu.Unlock()
-	if cancel != nil {
-		defer cancel()
-	}
+	// Stop the task and wait for it: it is still writing into the test's
+	// temporary folder, and removing that folder under it fails the test.
+	stopTaskAndWait(tk)
 	if approved == nil || !auto {
 		t.Fatalf("plan not approved on its own (approved %v)", approved)
+	}
+}
+
+// stopTaskAndWait cancels a task's goroutine and waits until it has ended. The
+// planner starts the build in a new goroutine when a plan approves itself, so it
+// repeats until no newer one has appeared.
+func stopTaskAndWait(tk *Task) {
+	var last chan struct{}
+	for {
+		tk.mu.Lock()
+		cancel, done := tk.cancel, tk.done
+		tk.mu.Unlock()
+		if done == nil || done == last {
+			return
+		}
+		cancel()
+		<-done
+		last = done
 	}
 }
