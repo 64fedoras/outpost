@@ -41,7 +41,7 @@ function chatChoices() {
   const nodes = (state ? state.nodes : []).filter((n) => n.online && n.heartbeat && n.heartbeat.loaded_model);
   return [{ id: 'auto', t: 'Auto (local, strongest free node)', s: 'The best free node picks up your message', tone: 'on', note: '' }].concat(nodes.map((n) => {
     const h = n.heartbeat, busy = h.inference_busy > 0, paused = h.paused;
-    return { id: n.id, t: h.loaded_model, s: nodeName(n), tone: busy || paused ? 'needs' : 'on', note: paused ? 'paused' : busy ? 'busy' : h.inference_ready === false ? 'loading' : 'free' };
+    return { id: n.id, t: h.loaded_model, s: nodeName(n), tone: busy || paused ? 'needs' : 'on', note: paused ? 'paused' : busy ? 'busy' : h.inference_ready === false ? 'loading' : 'local' };
   }));
 }
 function fillChatNodes() {
