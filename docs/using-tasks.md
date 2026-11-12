@@ -331,6 +331,9 @@ something in them is waiting on you; the pin is stored on the controller, so it 
 - **Auto planners.** *Auto (local)* only ever uses a ready node's model. *Auto (local + API)* tries a ready node,
   then Claude, then OpenRouter (each only if it has a key); change the order or untick providers under
   Settings → Tasks → Planner. Schedules refuse it, because they must never spend money.
+- **Planner web search.** The Settings → Tasks → Planner box "Let the planner search the web" works with a Claude or
+  OpenRouter planner (Claude's search tool, about $0.01 per search; OpenRouter's web plugin, about $0.004 per result).
+  Either way the cost counts against the task cap. Local planners cannot search.
 - **The middle is the project conversation.** Ask about the project or describe work: the project's
   planner (its own, chosen in the project's **Settings**, else the default planner in Settings → Tasks; Claude, OpenRouter or a node's model) answers
   with what it can see (the project's tasks and their results, the file list, the instructions) and
