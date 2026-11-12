@@ -29,7 +29,7 @@ type Settings struct {
 	OpenRouterModel   string         `json:"openrouter_model,omitempty"`
 	ChatWebSearch     bool           `json:"chat_web_search,omitempty"`   // chats get a Claude web search brief first (paid per search)
 	ChatSearchWith    string         `json:"chat_search_with,omitempty"`  // "claude" (default) or "openrouter": who runs the chat search step
-	WebSearch         bool           `json:"web_search,omitempty"`        // Claude planner may use the web search tool (paid per search)
+	WebSearch         bool           `json:"web_search,omitempty"`        // Claude or OpenRouter planner may search the web (paid per search)
 	WebAllowPrivate   bool           `json:"web_allow_private,omitempty"` // pasted links may reach internal addresses
 	BackupEnabled     bool           `json:"backup_enabled,omitempty"`
 	BackupDir         string         `json:"backup_dir,omitempty"`

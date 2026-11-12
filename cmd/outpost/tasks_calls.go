@@ -30,6 +30,9 @@ func (c *Controller) plannerCall(ctx context.Context, t *Task, req llmRequest) (
 		if planner == "openrouter" {
 			_ = openRouterCatalog().Refresh(ctx, c.openRouterKey(), false) // for prices; cached for an hour
 			est = openRouterEstimate(orModel, req.Size(), req.MaxTokens/2)
+			if req.WebSearch {
+				est += webSearchUses * 0.004 // OpenRouter's web plugin, about $4 per 1,000 results
+			}
 		} else {
 			est = estimateCost(model, req.Size(), req.MaxTokens/2)
 			if req.WebSearch {

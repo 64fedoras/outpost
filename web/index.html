@@ -367,7 +367,7 @@
           <label for="set-planner">Default planner</label><select id="set-planner"></select>
           <label>Order for Auto (local + API) <span class="hint">(tried top to bottom; untick to skip a provider)</span></label>
           <div id="set-autoorder" class="auto-order"></div>
-          <label class="check"><input type="checkbox" id="set-websearch"> Let the planner search the web (about $0.01 per search, counted against the task cap)</label>
+          <label class="check"><input type="checkbox" id="set-websearch"> Let the planner search the web (Claude or OpenRouter planner only; about $0.01 per search on Claude, about $0.004 per result on OpenRouter; counted against the task cap)</label>
           <label class="check"><input type="checkbox" id="set-chatweb"> Let chats search the web (about $0.01 per search, counted in Spending and the monthly cap)</label>
           <label for="set-chatsearchwith">Search with</label>
           <select id="set-chatsearchwith"><option value="">Claude (Claude API key and the model above)</option><option value="openrouter">OpenRouter (OpenRouter key and its model, any model, including Claude Opus)</option></select>

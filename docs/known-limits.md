@@ -23,7 +23,8 @@ See also [SECURITY.md](../SECURITY.md) for the security model and its limits (th
   again on every step.
 - Vision projector (`mmproj`) file names and sizes in the model catalog are assumptions; check them
   the first time you download a Vision model. The Claude web search tool name and its price are
-  unverified against the live API.
+  unverified against the live API, and so are OpenRouter's web plugin (planner and chat
+  search) and its per-result price.
 - Idle unload is covered by unit tests but its reload timing is **untested with a real llama-server** on
   the cluster. A request that wakes an unloaded model waits for the whole load (large models take minutes),
   and a node restart reloads a model that was unloaded for idleness.

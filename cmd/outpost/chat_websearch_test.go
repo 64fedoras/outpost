@@ -19,3 +19,10 @@ func TestChatSearchOffByDefault(t *testing.T) {
 		t.Fatalf("got %q %q", b, n)
 	}
 }
+
+func TestPlannerSearchCostEstimate(t *testing.T) {
+	// Documented per-result prices stay in step with what the cap check assumes.
+	if webSearchUSD != 0.01 || webSearchUses != 3 {
+		t.Fatalf("claude search price changed: %v x %v", webSearchUSD, webSearchUses)
+	}
+}
