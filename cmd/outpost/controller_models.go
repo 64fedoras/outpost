@@ -9,7 +9,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"log"
 	"net/http"
@@ -333,7 +335,21 @@ func hfURL(repo, file string) string {
 	return hfBase() + "/" + repo + "/resolve/main/" + strings.Join(parts, "/") + "?download=true"
 }
 
+// downloadStallTimeout is how long a download may receive nothing before the
+// connection is dropped and the download resumed. Without it a connection that
+// goes silent (a router dropping the flow, a hung server) holds the download
+// forever: the socket stays open and no read ever returns. A variable so tests
+// can shorten it.
+var downloadStallTimeout = 2 * time.Minute
+
+// errDownloadStalled is the cause set when the stall timer cancels an attempt.
+var errDownloadStalled = errors.New("no data received")
+
 // downloadResumable downloads url to dst (via dst.part) and returns its SHA-256.
+// It retries with a Range request after a network error or a stall; the retry
+// count starts again whenever an attempt received data, so a long download over
+// a poor link is not given up after a handful of interruptions. A 4xx answer
+// (gated, missing) is returned at once: asking again does not change it.
 func downloadResumable(ctx context.Context, client *http.Client, u, token, dst string, size int64, progress func(int64)) (string, error) {
 	if st, err := os.Stat(dst); err == nil && st.Size() == size {
 		sum, _, err := fileSHA256(dst)
@@ -346,79 +362,124 @@ func downloadResumable(ctx context.Context, client *http.Client, u, token, dst s
 		have, _ = io.Copy(h, f)
 		f.Close()
 	}
+	if size > 0 && have > size { // a leftover from a different file: start again
+		_ = os.Remove(part)
+		h.Reset()
+		have = 0
+	}
+	finish := func() (string, error) {
+		if size > 0 && have != size {
+			return "", fmt.Errorf("size mismatch (%d of %d bytes)", have, size)
+		}
+		progress(have)
+		if err := os.Rename(part, dst); err != nil {
+			return "", err
+		}
+		return hex.EncodeToString(h.Sum(nil)), nil
+	}
+	if size > 0 && have == size {
+		// Everything arrived earlier but the rename did not happen (a crash).
+		// Asking for the rest would get "416 Range Not Satisfiable".
+		return finish()
+	}
 	for attempt := 0; ; attempt++ {
-		req, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
-		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
+		before := have
+		done, fatal, err := downloadAttempt(ctx, client, u, token, part, h, &have, progress)
+		if fatal {
+			return "", err
 		}
-		if have > 0 {
-			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", have))
-		}
-		resp, err := client.Do(req)
-		if err == nil && resp.StatusCode == http.StatusOK && have > 0 {
-			h.Reset()
-			have = 0
-		}
-		if err == nil && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-			resp.Body.Close()
-			err = fmt.Errorf("Hugging Face: %s", resp.Status)
-		}
-		if err == nil {
-			flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
-			if have > 0 {
-				flags = os.O_CREATE | os.O_WRONLY | os.O_APPEND
-			}
-			f, ferr := os.OpenFile(part, flags, 0o644)
-			if ferr != nil {
-				resp.Body.Close()
-				return "", ferr
-			}
-			buf := make([]byte, 1<<20)
-			last := time.Now()
-			for {
-				k, rerr := resp.Body.Read(buf)
-				if k > 0 {
-					if _, werr := f.Write(buf[:k]); werr != nil {
-						f.Close()
-						resp.Body.Close()
-						return "", werr
-					}
-					h.Write(buf[:k])
-					have += int64(k)
-					if time.Since(last) > time.Second {
-						progress(have)
-						last = time.Now()
-					}
-				}
-				if rerr == io.EOF {
-					break
-				}
-				if rerr != nil {
-					err = rerr
-					break
-				}
-			}
-			f.Close()
-			resp.Body.Close()
-			if err == nil {
-				if size > 0 && have != size {
-					return "", fmt.Errorf("size mismatch (%d of %d bytes)", have, size)
-				}
-				progress(have)
-				if err := os.Rename(part, dst); err != nil {
-					return "", err
-				}
-				return hex.EncodeToString(h.Sum(nil)), nil
-			}
+		if done {
+			return finish()
 		}
 		if ctx.Err() != nil {
 			return "", ctx.Err()
+		}
+		if have > before {
+			attempt = 0
 		}
 		if attempt >= 5 {
 			return "", err
 		}
 		log.Printf("download %s: %v; retrying", path.Base(dst), err)
-		time.Sleep(time.Duration(2<<attempt) * time.Second)
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(time.Duration(2<<attempt) * time.Second):
+		}
+	}
+}
+
+// downloadAttempt makes one request and appends what arrives to part, keeping
+// h and *have in step with the file. done means the body was read to its end;
+// fatal means the error must not be retried.
+func downloadAttempt(ctx context.Context, client *http.Client, u, token, part string, h hash.Hash, have *int64, progress func(int64)) (done, fatal bool, err error) {
+	actx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	stall := time.AfterFunc(downloadStallTimeout, func() { cancel(errDownloadStalled) })
+	defer stall.Stop()
+	// A cancelled request reports "context canceled"; say why instead.
+	why := func(err error) error {
+		if ctx.Err() == nil && context.Cause(actx) == errDownloadStalled {
+			return fmt.Errorf("%w for %s, connection dropped", errDownloadStalled, downloadStallTimeout)
+		}
+		return err
+	}
+
+	req, _ := http.NewRequestWithContext(actx, "GET", u, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if *have > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", *have))
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, false, why(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		code := resp.StatusCode
+		fatal = code >= 400 && code < 500 && code != http.StatusRequestTimeout && code != http.StatusTooManyRequests
+		return false, fatal, fmt.Errorf("Hugging Face: %s", resp.Status)
+	}
+	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	if resp.StatusCode == http.StatusOK || *have == 0 {
+		// The server sent the whole file (it ignored the Range): start over.
+		h.Reset()
+		*have = 0
+		flags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	}
+	f, err := os.OpenFile(part, flags, 0o644)
+	if err != nil {
+		return false, true, err
+	}
+	defer f.Close()
+	buf := make([]byte, 1<<20)
+	last := time.Now()
+	for {
+		k, rerr := resp.Body.Read(buf)
+		if k > 0 {
+			stall.Reset(downloadStallTimeout)
+			if _, werr := f.Write(buf[:k]); werr != nil {
+				return false, true, werr
+			}
+			h.Write(buf[:k])
+			*have += int64(k)
+			if time.Since(last) > time.Second {
+				progress(*have)
+				last = time.Now()
+			}
+		}
+		if rerr == io.EOF {
+			// Close reports a failed flush (a full disk on some filesystems).
+			if cerr := f.Close(); cerr != nil {
+				return false, true, cerr
+			}
+			return true, false, nil
+		}
+		if rerr != nil {
+			return false, false, why(rerr)
+		}
 	}
 }
 
