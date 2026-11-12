@@ -29,6 +29,12 @@ func WriteFileAtomicBackup(path string, b []byte, mode os.FileMode) error {
 }
 
 func writeAtomic(path string, b []byte, mode os.FileMode, backup bool) error {
+	if backup && len(b) == 0 {
+		// The backup variant is only used for state files (nodes, settings,
+		// tasks), which are never empty. Empty contents mean the caller's
+		// encoding failed; keeping the last good file is better than blanking it.
+		return errors.New("refusing to replace " + filepath.Base(path) + " with an empty file")
+	}
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
