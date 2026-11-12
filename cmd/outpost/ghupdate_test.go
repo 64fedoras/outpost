@@ -233,3 +233,69 @@ func TestNegotiateProtocol(t *testing.T) {
 		t.Fatalf("overlap: %d %v", v, ok)
 	}
 }
+
+func TestCompareVersionsPrerelease(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want int
+	}{
+		{"0.12.18", "0.12.18-dev.57", 1},
+		{"0.12.18-dev.57", "0.12.17", 1},
+		{"0.12.18-dev.9", "0.12.18-dev.10", -1},
+		{"0.12.18-dev.10", "0.12.18-dev.10", 0},
+		{"0.12.10", "0.12.9", 1},
+		{"0.12.19-dev.1", "0.12.18", 1},
+	} {
+		if got := compareVersions(c.a, c.b); got != c.want {
+			t.Errorf("compareVersions(%q,%q)=%d want %d", c.a, c.b, got, c.want)
+		}
+	}
+}
+
+func TestGhWantFetch(t *testing.T) {
+	cases := []struct {
+		branch, have string
+		ok           bool
+		latest       string
+		want         bool
+	}{
+		{"", "", false, "0.12.18", true},
+		{"", "0.12.18", true, "0.12.18", false},
+		{"", "0.12.17", true, "0.12.18", true},
+		{"", "0.12.19-dev.3", true, "0.12.18", true}, // back to Stable replaces a branch build
+		{"", "0.12.19", true, "0.12.18", false},      // a newer manual upload is left alone
+		{"dev", "0.12.18", true, "0.12.19-dev.3", true},
+		{"dev", "0.12.19-dev.3", true, "0.12.19-dev.3", false},
+		{"dev", "0.12.20", true, "0.12.19-dev.3", true},
+	}
+	for i, c := range cases {
+		if got := ghWantFetch(c.branch, c.have, c.ok, c.latest); got != c.want {
+			t.Errorf("case %d: got %v want %v", i, got, c.want)
+		}
+	}
+}
+
+func TestBranchBuildsPicksNewestPrereleasePerBranch(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/"+ghDefaultRepo+"/releases", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `[
+		 {"tag_name":"v0.12.18","prerelease":false},
+		 {"tag_name":"v0.12.19-dev.9","prerelease":true},
+		 {"tag_name":"v0.12.19-dev.10","prerelease":true},
+		 {"tag_name":"v0.12.19-wip.1","prerelease":true},
+		 {"tag_name":"v0.12.19-fake.2","prerelease":false},
+		 {"tag_name":"v0.12.19-draft.3","prerelease":true,"draft":true},
+		 {"tag_name":"junk","prerelease":true}]`)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	t.Setenv("OUTPOST_GITHUB_API", srv.URL)
+	c := &Controller{}
+	b, err := c.ghBranchBuilds(context.Background(), ghDefaultRepo, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b) != 2 || b["dev"].Tag != "v0.12.19-dev.10" || b["wip"].Tag != "v0.12.19-wip.1" {
+		t.Fatalf("got %+v", b)
+	}
+}
