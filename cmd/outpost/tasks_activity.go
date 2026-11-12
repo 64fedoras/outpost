@@ -45,16 +45,6 @@ func (t *Task) actBeginQ(text, node string, quiet bool) {
 	taskLive.changed(t.ID)
 }
 
-// actSet changes the text of the running step, keeping its start time.
-func (t *Task) actSet(text string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if n := len(t.act); n > 0 && t.act[n-1].Status == "running" {
-		t.act[n-1].Text = text
-	}
-	taskLive.changed(t.ID)
-}
-
 // actEnd closes the running step with a result.
 func (t *Task) actEnd(status, text string) {
 	t.mu.Lock()
