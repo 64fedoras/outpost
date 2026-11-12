@@ -102,7 +102,20 @@ func (n *Node) fetchFile(urlPath, dst, wantSHA string, wantBytes int64, progress
 			have = 0
 		}
 	}
-	req, err := http.NewRequest("GET", strings.TrimRight(n.cfg.Controller, "/")+urlPath, nil)
+	// If the controller goes silent without closing the connection (powered off,
+	// a dropped network path), no read would ever return. Drop the request after
+	// downloadStallTimeout without data; the .part stays for the next try.
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	stall := time.AfterFunc(downloadStallTimeout, func() { cancel(errDownloadStalled) })
+	defer stall.Stop()
+	why := func(err error) error {
+		if context.Cause(ctx) == errDownloadStalled {
+			return fmt.Errorf("the controller sent nothing for %s, connection dropped", downloadStallTimeout)
+		}
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(n.cfg.Controller, "/")+urlPath, nil)
 	if err != nil {
 		return err
 	}
@@ -112,7 +125,7 @@ func (n *Node) fetchFile(urlPath, dst, wantSHA string, wantBytes int64, progress
 	}
 	resp, err := n.controllerClient(0).Do(req)
 	if err != nil {
-		return err
+		return why(err)
 	}
 	defer resp.Body.Close()
 	switch {
@@ -143,6 +156,7 @@ func (n *Node) fetchFile(urlPath, dst, wantSHA string, wantBytes int64, progress
 		for {
 			k, rerr := resp.Body.Read(buf)
 			if k > 0 {
+				stall.Reset(downloadStallTimeout)
 				if _, werr := f.Write(buf[:k]); werr != nil {
 					f.Close()
 					return werr
@@ -159,7 +173,7 @@ func (n *Node) fetchFile(urlPath, dst, wantSHA string, wantBytes int64, progress
 			}
 			if rerr != nil {
 				f.Close()
-				return rerr // keep .part for resume
+				return why(rerr) // keep .part for resume
 			}
 		}
 	}

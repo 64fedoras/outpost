@@ -122,3 +122,43 @@ func TestDownloadResumableFinishesCompletePart(t *testing.T) {
 		t.Fatal("not renamed into place")
 	}
 }
+
+// A node download from a controller that goes silent must give up and keep the
+// partial file, instead of holding the model, runtime or update step for ever.
+func TestNodeFetchFileGivesUpOnSilentController(t *testing.T) {
+	old := downloadStallTimeout
+	downloadStallTimeout = 300 * time.Millisecond
+	defer func() { downloadStallTimeout = old }()
+
+	data := bytes.Repeat([]byte("outpost "), 4096)
+	half := len(data) / 2
+	release := make(chan struct{})
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		w.Write(data[:half])
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	n := testNode(t)
+	n.cfg.Controller, n.cfg.Fingerprint = srv.URL, certFingerprint(srv.Certificate().Raw)
+	dst := filepath.Join(t.TempDir(), "file.bin")
+	errc := make(chan error, 1)
+	go func() { errc <- n.fetchFile("/v1/x", dst, sumHex(data), int64(len(data)), nil) }()
+	select {
+	case err := <-errc:
+		if err == nil || !strings.Contains(err.Error(), "sent nothing") {
+			t.Fatalf("err = %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("fetch still hanging on the silent controller")
+	}
+	if b, _ := os.ReadFile(dst + ".part"); !bytes.Equal(b, data[:half]) {
+		t.Fatalf("partial file not kept for resuming (%d bytes)", len(b))
+	}
+}
