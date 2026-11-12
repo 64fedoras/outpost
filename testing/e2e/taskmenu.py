@@ -20,7 +20,8 @@ async def main():
         pg.on("pageerror", lambda e: errors.append(str(e)))
         # network errors (401 before login, 404 for a deleted task) are expected; CSP violations are not
         pg.on("console", lambda m: m.type == "error" and "Failed to load resource" not in m.text and errors.append(m.text))
-        pg.on("dialog", lambda d: asyncio.ensure_future(d.accept()))
+        # The UI's own confirm dialog (confirm.js) replaced the native one: accept it as it appears.
+        await pg.add_init_script("new MutationObserver(() => { const b = document.querySelector('#modal-ask:not(.hidden) #ask-yes'); if (b) b.click(); }).observe(document, {subtree: true, childList: true, attributes: true, attributeFilter: ['class']})")
         await pg.goto(U + "/"); await pg.fill("#pw", open(E + "pw.txt").read().strip()); await pg.click("button[type=submit]")
         await pg.wait_for_selector("#nt-prompt")
         ids = []

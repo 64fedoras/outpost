@@ -257,11 +257,11 @@ document.addEventListener('click', async (e) => {
       case 'pick-model': openPick(el.dataset.name, el.dataset.catalog === '1'); break;
       case 'benchmark': await post(`/api/nodes/${id}/benchmark`); toast('Benchmark started'); break;
       case 'unload': await post(`/api/nodes/${id}/unload`); toast('Unloading'); break;
-      case 'rm-node-model': if (confirm(`Delete ${el.dataset.name} from this node's disk?`)) { await api(`/api/nodes/${id}/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); toast('Deleting'); } break;
+      case 'rm-node-model': if (await askConfirm(`Delete ${el.dataset.name} from this node's disk?`)) { await api(`/api/nodes/${id}/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); toast('Deleting'); } break;
       case 'clean': openClean(id); break;
       case 'rename': renameNode(id); break;
       case 'logs': openLogs(id); break;
-      case 'clear-pkg': if (confirm(`Clear the package cache on ${nodeName(nodeById(id))}? The next tasks download their Go modules and npm packages again.`)) { await post(`/api/nodes/${id}/package-store/clear`); toast('Clearing the package cache'); } break;
+      case 'clear-pkg': if (await askConfirm(`Clear the package cache on ${nodeName(nodeById(id))}? The next tasks download their Go modules and npm packages again.`)) { await post(`/api/nodes/${id}/package-store/clear`); toast('Clearing the package cache'); } break;
       case 'node-resume': await pauseNode(id, 'resume'); break;
       case 'idle': setNodeIdle(id); break;
       case 'health-reset': resetHealth(id); break;
@@ -269,7 +269,7 @@ document.addEventListener('click', async (e) => {
       case 'restart': {
         const n = nodeById(id);
         const jobs = n.running_jobs ? ` ${n.running_jobs} running job(s) will be cancelled.` : '';
-        if (!confirm(`Restart Outpost on ${nodeName(n)}?${jobs} Its model is loaded again afterwards.`)) return;
+        if (!await askConfirm(`Restart Outpost on ${nodeName(n)}?${jobs} Its model is loaded again afterwards.`)) return;
         await post(`/api/nodes/${id}/restart`); toast('Restarting'); break;
       }
       case 'remove': removeNode(id); break;
@@ -291,20 +291,20 @@ document.addEventListener('click', async (e) => {
       }
       case 'hf-add': { const g = hfGroups[+el.dataset.i]; await post('/api/models', { repo: hfRepo, files: g.files, mmproj: ($('hf-mmproj') || {}).value || '', storage: el.dataset.storage }); toast(el.dataset.storage === 'direct' ? 'Added. Nodes download it when you load it.' : 'Downloading to the controller'); break; }
       case 'model-store': await post(`/api/models/${encodeURIComponent(el.dataset.name)}/store`); toast('Downloading to the controller'); break;
-      case 'model-release': if (confirm(`Copy ${el.dataset.name} to a node, then delete it from the controller? It stays in the library; other nodes copy it from that node (or download it from Hugging Face if that node is gone).`)) { const r = await post(`/api/models/${encodeURIComponent(el.dataset.name)}/release`); toast(r && r.pushed ? `Copying to ${r.node}; the controller copy is freed when it arrives` : `Freed controller space; ${r && r.node} already has it`); } break;
-      case 'model-unstore': if (confirm(`Delete ${el.dataset.name}'s files from the controller? It stays in the library; nodes that need it download it from Hugging Face. Copies already on nodes stay.`)) { await post(`/api/models/${encodeURIComponent(el.dataset.name)}/unstore`); toast('Freed controller space'); } break;
+      case 'model-release': if (await askConfirm(`Copy ${el.dataset.name} to a node, then delete it from the controller? It stays in the library; other nodes copy it from that node (or download it from Hugging Face if that node is gone).`)) { const r = await post(`/api/models/${encodeURIComponent(el.dataset.name)}/release`); toast(r && r.pushed ? `Copying to ${r.node}; the controller copy is freed when it arrives` : `Freed controller space; ${r && r.node} already has it`); } break;
+      case 'model-unstore': if (await askConfirm(`Delete ${el.dataset.name}'s files from the controller? It stays in the library; nodes that need it download it from Hugging Face. Copies already on nodes stay.`)) { await post(`/api/models/${encodeURIComponent(el.dataset.name)}/unstore`); toast('Freed controller space'); } break;
       case 'model-retry': await post(`/api/models/${encodeURIComponent(el.dataset.name)}/retry`); toast('Resuming download'); break;
-      case 'model-delete': if (confirm(`Remove ${el.dataset.name} from the library (and its files from the controller, if stored there)? Copies already on nodes stay; delete those on the node card.`)) await api(`/api/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); break;
+      case 'model-delete': if (await askConfirm(`Remove ${el.dataset.name} from the library (and its files from the controller, if stored there)? Copies already on nodes stay; delete those on the node card.`)) await api(`/api/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); break;
       case 'install-tool': await post(`/api/nodes/${id}/toolchain`, { tool: el.dataset.tool }); toast('Downloading Go to the controller, then the node'); break;
       case 'node-update': await post(`/api/nodes/${id}/update`); toast('Update sent'); break;
       case 'ctl-update': await updateController(); return;
       case 'ctl-rollback': await rollbackController(); return;
       case 'node-rollback': {
         const n = nodeById(id);
-        if (!confirm(`Roll ${nodeName(n)} back to v${n.hello.rollback_to}? It restarts on that version and stays there until you update it again.`)) return;
+        if (!await askConfirm(`Roll ${nodeName(n)} back to v${n.hello.rollback_to}? It restarts on that version and stays there until you update it again.`)) return;
         await post(`/api/nodes/${id}/rollback`); toast('Rolling back'); break;
       }
-      case 'del-release': if (confirm(`Delete the uploaded ${el.dataset.platform} release?`)) await api(`/api/releases/${el.dataset.platform}`, { method: 'DELETE' }); break;
+      case 'del-release': if (await askConfirm(`Delete the uploaded ${el.dataset.platform} release?`)) await api(`/api/releases/${el.dataset.platform}`, { method: 'DELETE' }); break;
       case 'view-file': viewFile(el.dataset.path); return;
       case 'tpl-run': case 'tpl-sched': case 'tpl-del': case 'tpl-use': await templateAction(act, id); return;
       case 'wake': await post(`/api/nodes/${id}/wake`, {}); toast('Wake packet sent. A node that wakes connects within a minute or two.'); return;
