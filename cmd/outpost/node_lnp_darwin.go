@@ -10,16 +10,17 @@ import (
 	"time"
 )
 
-// lnpProbeScript opens one connection to the controller through NSURLSession
-// (Network.framework). Unlike a plain socket connect, that makes macOS show
-// "Allow outpost to find devices on local networks?". osascript runs as this
-// node's child, so the system attributes the request to the node's binary.
-// It stays alive for a while because macOS may not record the answer for a
-// process that exits straight away. The TLS result does not matter.
+// lnpProbeScript opens one connection to the controller through Foundation's
+// URL loading (Network.framework underneath). Unlike a plain socket connect,
+// that makes macOS show "Allow outpost to find devices on local networks?".
+// osascript runs as this node's child, so the system attributes the request to
+// the node's binary. NSURLSession is not in JXA's bridge metadata on macOS 15
+// ($.NSURLSession is undefined), so this uses NSData's synchronous loader,
+// which is. It stays alive afterwards because macOS may not record the answer
+// for a process that exits straight away. The TLS result does not matter.
 const lnpProbeScript = `ObjC.import('Foundation');
 function run(argv) {
-  var t = $.NSURLSession.sharedSession.dataTaskWithURL($.NSURL.URLWithString(argv[0]));
-  t.resume;
+  $.NSData.dataWithContentsOfURL($.NSURL.URLWithString(argv[0]));
   delay(20);
 }`
 
