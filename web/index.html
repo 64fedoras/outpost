@@ -369,10 +369,10 @@
           <label>Order for Auto (local + API) <span class="hint">(tried top to bottom; untick to skip a provider)</span></label>
           <div id="set-autoorder" class="auto-order"></div>
           <label class="check"><input type="checkbox" id="set-websearch"> Let the planner search the web (Claude or OpenRouter planner only; about $0.01 per search on Claude, about $0.004 per result on OpenRouter; counted against the task cap)</label>
-          <label class="check"><input type="checkbox" id="set-chatweb"> Let chats search the web (about $0.01 per search, counted in Spending and the monthly cap)</label>
+          <label class="check"><input type="checkbox" id="set-chatweb"> Let chats search the web (free with the local model; about $0.01 per search with Claude, counted in Spending and the monthly cap)</label>
           <label for="set-chatsearchwith">Search with</label>
-          <select id="set-chatsearchwith"><option value="">Claude (Claude API key and the model above)</option><option value="openrouter">OpenRouter (OpenRouter key and its model, any model, including Claude Opus)</option></select>
-          <p class="hint">Chats are answered by a local model, which cannot search. With this on, each chat message first asks a cloud model to search the web and write a short sourced brief, which the local model then uses. Claude uses its own search tool (about $0.01 per search, up to 3). OpenRouter uses its web search plugin with the OpenRouter model chosen in the OpenRouter card (roughly $0.004 per result, billed by OpenRouter on top of the model cost). Needs the matching API key; without one, or if the search fails, the chat is still answered and a note says why the web was not used. Off by default.</p>
+          <select id="set-chatsearchwith"><option value="local">The local model itself (built-in DuckDuckGo search, free; Brave as failover)</option><option value="">Claude (Claude API key and the model above)</option><option value="openrouter">OpenRouter (OpenRouter key and its model, any model, including Claude Opus)</option></select>
+          <p class="hint">With this on, chats can use the web. <b>The local model itself</b> gets two tools, web_search and read_page, and the controller runs them while it answers (up to 4 rounds): searches go to DuckDuckGo, and to Brave if you saved a key below and DuckDuckGo is blocked. Pages are read as text, never from internal addresses. Models that cannot call tools reliably (or of about 3B parameters and smaller) search once and then answer. The other two options: each chat message first asks a cloud model to search the web and write a short sourced brief, which the local model then uses. Claude uses its own search tool (about $0.01 per search, up to 3). OpenRouter uses its web search plugin with the OpenRouter model chosen in the OpenRouter card (roughly $0.004 per result, billed by OpenRouter on top of the model cost). Needs the matching API key; without one, or if the search fails, the chat is still answered and a note says why the web was not used. Off by default.</p>
           <label class="check"><input type="checkbox" id="set-webprivate"> Allow pasted links to reach internal addresses (loopback, LAN). Off blocks them.</label>
           <div class="modal-foot"><button class="primary" id="set-save">Save defaults</button></div>
         </div>
@@ -410,6 +410,12 @@
             <div><label for="set-cap">Default spending cap per task (USD)</label><input id="set-cap" type="number" min="0.05" step="0.25"></div>
           </div>
           <div class="modal-foot"><button class="primary" id="set-claude-save">Save model and cap</button></div>
+        </div>
+        <div class="section-head"><h2>Brave Search</h2></div>
+        <div class="card">
+          <p class="hint">Optional. Chat web search with the local model uses DuckDuckGo first, which needs no key but is unofficial and can be rate limited or ask for a CAPTCHA. With a Brave Search API key saved here, Outpost falls back to Brave when that happens. Get a key at brave.com/search/api; the free plan has a monthly quota.</p>
+          <label for="set-brave-key">API key <span id="set-brave-key-state"></span></label>
+          <div class="btns u3"><input id="set-brave-key" type="password" placeholder="BSA…" autocomplete="off"><button id="set-brave-key-save">Save</button><button id="set-brave-key-clear" class="danger">Remove</button></div>
         </div>
         <div class="section-head"><h2>OpenRouter</h2></div>
         <div class="card">

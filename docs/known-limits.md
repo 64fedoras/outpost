@@ -25,6 +25,10 @@ See also [SECURITY.md](../SECURITY.md) for the security model and its limits (th
   the first time you download a Vision model. The Claude web search tool name and its price are
   unverified against the live API, and so are OpenRouter's web plugin (planner and chat
   search) and its per-result price.
+- Chat web search with the local model (built-in DuckDuckGo scrape, Brave failover, `read_page`) is tested
+  only against stubs: live DuckDuckGo and Brave behaviour, real models calling the tools, the cluster, Windows
+  and macOS are untested. DuckDuckGo's page layout is unofficial and may change; CAPTCHA pages are detected
+  and answered with the Brave fallback when a key is saved.
 - Idle unload is covered by unit tests but its reload timing is **untested with a real llama-server** on
   the cluster. A request that wakes an unloaded model waits for the whole load (large models take minutes),
   and a node restart reloads a model that was unloaded for idleness.

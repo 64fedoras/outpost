@@ -329,15 +329,30 @@ func (c *Controller) answerChat(ctx context.Context, chatID, pref string, hist [
 	}
 	defer c.releaseNode(node)
 	started()
-	brief, note := c.chatSearchBrief(ctx, chatID, hist)
-	hist = withSearchBrief(hist, brief)
 	ctxTok := c.nodeCtx(node)
 	maxOut := min(4096, ctxTok/2)
-	spec := InferenceSpec{Messages: fitHistory(hist, (ctxTok-maxOut)*3), Params: InferenceParams{MaxTokens: maxOut}}
 	name := c.nodeLabel(node)
-	live := taskLive.begin("chat_"+chatID, "", "Chat", name, false)
-	out, err := c.runInferenceJobLive(ctx, node, spec, "Chat", chatTimeout, live)
-	live.End()
+	infer := func(ctx context.Context, spec InferenceSpec) (*InferenceOutput, error) {
+		live := taskLive.begin("chat_"+chatID, "", "Chat", name, false)
+		defer live.End()
+		return c.runInferenceJobLive(ctx, node, spec, "Chat", chatTimeout, live)
+	}
+	var out *InferenceOutput
+	var note string
+	if c.chatToolsOn() {
+		c.mu.Lock()
+		loaded := ""
+		if hb := c.lastHB[node]; hb != nil {
+			loaded = hb.LoadedModel
+		}
+		c.mu.Unlock()
+		out, note, err = c.answerWithWeb(ctx, infer, loaded, hist, ctxTok, maxOut)
+	} else {
+		var brief string
+		brief, note = c.chatSearchBrief(ctx, chatID, hist)
+		hist = withSearchBrief(hist, brief)
+		out, err = infer(ctx, InferenceSpec{Messages: fitHistory(hist, (ctxTok-maxOut)*3), Params: InferenceParams{MaxTokens: maxOut}})
+	}
 	switch {
 	case errors.Is(ctx.Err(), context.Canceled):
 		return ChatMsg{Role: "assistant", Node: name, Error: "stopped"}

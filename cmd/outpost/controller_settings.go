@@ -27,8 +27,9 @@ type Settings struct {
 	AutoOrder         []string       `json:"auto_order,omitempty"`      // providers "Auto (local + API)" tries, in order: local, claude, openrouter; empty = all three in that order
 	OpenRouterKeyEnc  string         `json:"openrouter_key_enc,omitempty"`
 	OpenRouterModel   string         `json:"openrouter_model,omitempty"`
+	BraveKeyEnc       string         `json:"brave_key_enc,omitempty"`     // Brave Search API key: failover for the built-in web search
 	ChatWebSearch     bool           `json:"chat_web_search,omitempty"`   // chats get a Claude web search brief first (paid per search)
-	ChatSearchWith    string         `json:"chat_search_with,omitempty"`  // "claude" (default) or "openrouter": who runs the chat search step
+	ChatSearchWith    string         `json:"chat_search_with,omitempty"`  // "" (Claude), "openrouter" or "local" (the model calls built-in search tools): who runs the chat search
 	WebSearch         bool           `json:"web_search,omitempty"`        // Claude or OpenRouter planner may search the web (paid per search)
 	WebAllowPrivate   bool           `json:"web_allow_private,omitempty"` // pasted links may reach internal addresses
 	BackupEnabled     bool           `json:"backup_enabled,omitempty"`
@@ -162,7 +163,7 @@ func keyHint(k string) string {
 }
 
 func (c *Controller) settingsView() map[string]any {
-	ak, hf, ork := c.anthropicKey(), c.hfToken(), c.openRouterKey()
+	ak, hf, ork, brk := c.anthropicKey(), c.hfToken(), c.openRouterKey(), c.braveKey()
 	fails, locked := c.lockoutStatus()
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -175,6 +176,7 @@ func (c *Controller) settingsView() map[string]any {
 		"has_anthropic_key": ak != "", "anthropic_key_hint": keyHint(ak),
 		"has_hf_token": hf != "", "claude_model": c.settings.ClaudeModel,
 		"has_openrouter_key": ork != "", "openrouter_key_hint": keyHint(ork), "openrouter_model": c.settings.OpenRouterModel,
+		"has_brave_key": brk != "", "brave_key_hint": keyHint(brk),
 		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
 		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner, "auto_order": normAutoOrder(c.settings.AutoOrder), "monthly_cap_usd": c.settings.MonthlyCapUSD,
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
@@ -211,6 +213,7 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		HealthAmber     *int      `json:"health_amber"`
 		HealthRed       *int      `json:"health_red"`
 		OpenRouterKey   *string   `json:"openrouter_key"`
+		BraveKey        *string   `json:"brave_key"`
 		OpenRouterModel *string   `json:"openrouter_model"`
 		Notify          *struct {
 			Browser    *bool           `json:"browser"`
@@ -252,11 +255,11 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, 400, map[string]string{"error": "sandbox must be off, basic or strict"})
 		return
 	}
-	var akEnc, hfEnc, orEnc *string
+	var akEnc, hfEnc, orEnc, brEnc *string
 	for _, s := range []struct {
 		in  *string
 		out **string
-	}{{req.AnthropicKey, &akEnc}, {req.OpenRouterKey, &orEnc}} {
+	}{{req.AnthropicKey, &akEnc}, {req.OpenRouterKey, &orEnc}, {req.BraveKey, &brEnc}} {
 		if s.in == nil {
 			continue
 		}
@@ -349,6 +352,9 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	if orEnc != nil {
 		c.settings.OpenRouterKeyEnc = *orEnc
 	}
+	if brEnc != nil {
+		c.settings.BraveKeyEnc = *brEnc
+	}
 	if req.AutoResume != nil {
 		c.settings.AutoResumeOff = !*req.AutoResume
 	}
@@ -385,7 +391,7 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		c.settings.ChatWebSearch = *req.ChatWebSearch
 	}
 	if req.ChatSearchWith != nil {
-		if v := strings.TrimSpace(*req.ChatSearchWith); v == "openrouter" {
+		if v := strings.TrimSpace(*req.ChatSearchWith); v == "openrouter" || v == "local" {
 			c.settings.ChatSearchWith = v
 		} else {
 			c.settings.ChatSearchWith = "" // Claude
