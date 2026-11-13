@@ -253,6 +253,8 @@ func (t *trayApp) render(st *controlStatus) {
 	t.mStop.Enable()
 	state, word := trayOnline, "online"
 	switch {
+	case !st.Online && st.Problem == problemLocalNetwork:
+		state, word = trayOffline, "blocked by macOS Local Network setting"
 	case !st.Online:
 		state, word = trayOffline, "connecting to controller…"
 	case st.Paused && st.RunningJobs > 0:
@@ -272,6 +274,8 @@ func (t *trayApp) render(st *controlStatus) {
 	t.mCtl.SetTitle("Controller: " + host)
 	t.mCtl.Show()
 	switch {
+	case !st.Online && st.Problem == problemLocalNetwork:
+		t.mModel.SetTitle("Allow it: System Settings > Privacy & Security > Local Network")
 	case st.Lending != "":
 		t.mModel.SetTitle("Lending memory to a pool")
 	case st.Model != "" && st.ModelReady:

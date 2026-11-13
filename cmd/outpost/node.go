@@ -64,6 +64,8 @@ type Node struct {
 	pausedUntil time.Time       // resume on its own after this (zero: no end)
 	stoppedJobs map[string]bool // jobs cancelled by "Pause now" in the tray; reported as retryable
 	online      bool            // connected and welcomed by the controller
+	problem     string          // why connecting fails, when the tray can help (node_lnp.go)
+	lnpAsked    time.Time       // last time the macOS Local Network prompt was requested
 	tools       toolCache
 	peer        peerState
 	artifacts   map[string]string // "<job>/<path>" -> file on disk, served to the controller
@@ -178,6 +180,9 @@ func runNode(args []string) error {
 		}
 		if welcomed {
 			lostSince, swept, backoff = time.Now(), false, time.Second
+			n.clearProblem()
+		} else {
+			n.noteConnectError(err)
 		}
 		// For the first minute after losing the controller, retry every
 		// second: a controller update restarts it in a few seconds, and
