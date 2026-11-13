@@ -43,6 +43,10 @@ func TestLoadOptionsRecommendation(t *testing.T) {
 			if o.Rank > 0 && (o.Fit == fitNo || !o.Coding) {
 				t.Errorf("%s: recommended %s with fit %s coding %v", id, o.Name, o.Fit, o.Coding)
 			}
+			// Runner-ups are shown by "Pick best": only the top pick may be called the biggest or fastest.
+			if o.Rank > 1 && (o.Reason == "" || strings.HasPrefix(o.Reason, "Biggest") || strings.HasPrefix(o.Reason, "Fastest")) {
+				t.Errorf("%s: runner-up %s has reason %q", id, o.Name, o.Reason)
+			}
 			if o.Name == "custom" && o.Rank != 0 {
 				t.Errorf("custom model was recommended")
 			}

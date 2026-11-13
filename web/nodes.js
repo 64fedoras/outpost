@@ -805,7 +805,7 @@ function bestBtn(n) {
 let bestNode = null, bestOpts = [];
 async function openBest(id) {
   const n = nodeById(id); bestNode = id;
-  const loaded = n.heartbeat && n.heartbeat.model;
+  const loaded = !n.lending_to && n.heartbeat && n.heartbeat.loaded_model;
   $('best-node').textContent = nodeName(n);
   $('best-err').classList.add('hidden');
   setHTML('best-list', '<div class="sub">Checking what fits…</div>');
