@@ -28,9 +28,9 @@ func TestLoadOptionsRecommendation(t *testing.T) {
 	// A custom (non-catalog) library model is listed but never recommended.
 	c.models["custom"] = &ModelRec{Name: "custom", Label: "custom", Status: "ready", BytesTotal: 1 << 30, Ctx: 8192}
 	want := map[string]string{
-		"gpu":    "qwen2.5-coder-14b-q4km", // fits VRAM; beats bigger models that only split
-		"novk":   "qwen3.6-35b-a3b-q4km",   // CPU build: VRAM is not counted; the biggest model that is fast enough (its header shows 3B active)
-		"tiny":   "qwen2.5-coder-3b-q4km",  // the only coding model that fits 4 GB
+		"gpu":    "qwen3.6-35b-a3b-q4km",  // sparse model split over VRAM and RAM stays fast: beats the 14B that fits VRAM
+		"novk":   "qwen3.6-35b-a3b-q4km",  // CPU build: VRAM is not counted; the biggest model that is fast enough (its header shows 3B active)
+		"tiny":   "qwen2.5-coder-3b-q4km", // the only coding model that fits 4 GB
 		"bigcpu": "qwen3-coder-next-q4km",
 		"nodisk": "qwen2.5-coder-3b-q4km", // others need more than 3 GB of disk
 	}

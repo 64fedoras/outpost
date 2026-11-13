@@ -294,15 +294,30 @@ can check detection without joining.
    speed on CPU machines, the reason and how much would be downloaded. Choose one and press **Load this
    model** (the model loaded now is unloaded first), or **See all models…** for the full Load dialog. If
    nothing fits, it says why. It uses the same ranking as **Recommended**.
-   The full card shows **Recommended**: the best coding model that fits that
-   node (fully in VRAM first, then VRAM plus RAM, then RAM; skipped if the node's disk is too small, or
-   if no llama.cpp build exists for it), with the reason and a one-click **Load**. A node running the
-   CPU build (for example a Linux node with a GPU but no Vulkan driver) is sized as a CPU machine.
-   On CPU machines the pick favours speed over size: the node times its own memory (about a second,
-   at start-up), the controller reads each model's GGUF header to see how many weights one token
-   reads (a mixture-of-experts model reads a few percent, a dense one all of it), and the card shows
-   **~N tok/s** with the reason. Under 4 tok/s it is marked slow in orange. If the node has a
-   benchmark, that measured speed replaces the estimate for that model and rescales the others.
+   The full card shows **Recommended**: the biggest coding model that should still run fast on that
+   node, with the reason and a one-click **Load**. How it is chosen:
+   - A model that fits fully in GPU memory counts as fast.
+   - A model split between GPU memory and system RAM gets a speed estimate from the share that stays
+     in VRAM. A mixture-of-experts model reads only a few percent of its weights per token, so a big
+     one split this way can beat a smaller model that fits in VRAM; a dense model that would crawl
+     cannot. This estimate is rough and has not been compared with real hardware.
+   - A CPU machine (including a Linux node with a GPU but no Vulkan driver, which runs the CPU build)
+     is ranked by speed: the node times its own memory (about a second, at start-up) and the controller
+     reads each model's GGUF header to see how many weights one token reads.
+   - An Apple Silicon Mac runs the model on its GPU from unified memory. Its estimate is the CPU one
+     times 1.5, which is a guess until that Mac has a benchmark.
+   - The pick shows **~N tok/s** where there is an estimate; under 4 tok/s it is marked slow in orange.
+     8 tok/s or more counts as fast. A benchmark of a model on the node replaces the estimate for that
+     model (and, on CPU machines and Macs, rescales the others).
+   - Sizes are checked against the memory that is free now: what other programs hold (a game, a
+     browser) is left alone and the reason says so. The node's own loaded model does not count,
+     because loading another one frees it. On CPU machines this is cautious only when the system
+     reports the memory as used.
+   - A model that is not on the node yet is skipped when the disk is too small, or when it would pass
+     the node's storage limit. If the limit is set to remove old models, their space counts as room
+     and the reason says older models will be removed.
+   - Nothing is picked when no llama.cpp build exists for the node.
+
    The estimates are conservative guesses until you compare them with real benchmarks; the full
    **Load model** list still offers every model.
    Otherwise click **Load model** on a node. **Context size** is a slider (powers of two from 2K up to the

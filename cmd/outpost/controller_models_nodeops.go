@@ -116,6 +116,16 @@ func (c *Controller) reclaimFor(nodeID, target string) *Reclaim {
 	if n == nil || n.Hello == nil || (!rp.Enabled && n.StorageLimitGB <= 0) {
 		return rp
 	}
+	rp.Names, rp.Direct, _ = c.reclaimableLocked(n, target)
+	return rp
+}
+
+// reclaimableLocked lists the models on a node that it may remove to make room
+// for target (see reclaimFor), and their total size. c.mu must be held.
+func (c *Controller) reclaimableLocked(n *NodeRec, target string) (names, direct []string, total int64) {
+	if n == nil || n.Hello == nil {
+		return nil, nil, 0
+	}
 	for _, sm := range n.Hello.Models {
 		m := c.models[sm.Name]
 		if m == nil || sm.Name == target || len(m.Files) == 0 {
@@ -123,13 +133,15 @@ func (c *Controller) reclaimFor(nodeID, target string) *Reclaim {
 		}
 		if m.Storage == "direct" {
 			if m.Repo != "" && len(m.HFFiles) == len(m.Files) {
-				rp.Direct = append(rp.Direct, sm.Name)
+				direct = append(direct, sm.Name)
+				total += sm.Bytes
 			}
 		} else if m.Status == "ready" {
-			rp.Names = append(rp.Names, sm.Name)
+			names = append(names, sm.Name)
+			total += sm.Bytes
 		}
 	}
-	return rp
+	return names, direct, total
 }
 
 func (c *Controller) nodeHasModel(nodeID, name string) bool {
