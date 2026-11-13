@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 const launchdLabel = "io.outpost.node"
@@ -66,12 +67,15 @@ func launchAgentPath(home string) string {
 	return filepath.Join(home, "Library", "LaunchAgents", launchdLabel+".plist")
 }
 
-// launchdPlist returns the LaunchAgent for a node. launchd cannot exclude an
-// exit status from KeepAlive, so a small shell wrapper turns the deliberate
-// quit code (75) into a clean exit; KeepAlive then restarts on every other exit.
+// launchdPlist returns the LaunchAgent for a node. launchd runs the Outpost
+// binary itself, not a shell wrapper: macOS Local Network privacy judges the
+// program launchd started, and a script has no identity it can allow (an
+// earlier wrapper left the node with "no route to host" and no prompt).
+// launchd cannot exclude an exit status from KeepAlive, so with
+// OUTPOST_LAUNCHD=1 a deliberate quit exits 0 instead of 75 (node_control.go)
+// and KeepAlive restarts on every other exit.
 func launchdPlist(bin, dataDir, logPath string) string {
-	script := fmt.Sprintf(`"$0" "$@"; rc=$?; if [ $rc -eq %d ]; then exit 0; fi; exit $rc`, exitQuit)
-	args := []string{"/bin/sh", "-c", script, bin, "node", "--data", dataDir}
+	args := []string{bin, "node", "--data", dataDir}
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -101,6 +105,8 @@ func launchdPlist(bin, dataDir, logPath string) string {
 	<dict>
 		<key>OUTPOST_LOG_FILE</key>
 		<string>%s</string>
+		<key>OUTPOST_LAUNCHD</key>
+		<string>1</string>
 	</dict>
 	<key>StandardOutPath</key>
 	<string>%s</string>
@@ -200,6 +206,15 @@ func installNodeDarwin(args []string) error {
 	}
 	fmt.Println("The Outpost node is a LaunchAgent now: it starts when you log in to this Mac and restarts if it stops.")
 	fmt.Println("Logs:", logPath)
+	fmt.Println("Waiting for the node to connect to the controller...")
+	switch st := waitNodeOnline(*data, 45*time.Second); {
+	case st != nil && st.Online:
+		fmt.Println("Connected. The node shows as online in the controller's web UI.")
+	case st != nil && st.Problem == problemLocalNetwork:
+		fmt.Println(lnpHelp)
+	default:
+		fmt.Println("Not connected yet. If macOS asks whether outpost may find devices on your local network, click Allow. Otherwise see", logPath)
+	}
 	return nil
 }
 

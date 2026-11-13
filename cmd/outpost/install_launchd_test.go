@@ -13,7 +13,7 @@ func TestLaunchdPlist(t *testing.T) {
 		"<string>--data</string>",
 		"<key>RunAtLoad</key>",
 		"<key>SuccessfulExit</key>",
-		"-eq 75",
+		"<key>OUTPOST_LAUNCHD</key>",
 		"<string>/tmp/node.log</string>",
 	} {
 		if !strings.Contains(p, want) {
@@ -22,6 +22,14 @@ func TestLaunchdPlist(t *testing.T) {
 	}
 	if strings.Contains(p, "a&b") {
 		t.Error("unescaped & in plist")
+	}
+	// launchd must start the Outpost binary itself: macOS Local Network
+	// privacy cannot allow a shell script.
+	if strings.Contains(p, "/bin/sh") {
+		t.Error("the node LaunchAgent must not run through a shell")
+	}
+	if !strings.Contains(p, "<array>\n\t\t<string>/Users/a&amp;b/.outpost/outpost</string>\n\t\t<string>node</string>") {
+		t.Error("the binary must be the first program argument")
 	}
 }
 

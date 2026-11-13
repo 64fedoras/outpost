@@ -156,6 +156,17 @@ node starts when you log in and restarts if it stops, with the binary in `~/.out
 `outpost uninstall node` removes it. A menu bar item (see *Tray icon* below) is installed with it and starts at login.
 *Untested on a real Mac.* Running `outpost node --join <token>` in a terminal still works.
 
+**macOS Local Network permission.** macOS 15 and later block a LaunchAgent from reaching other machines on
+your network until you allow it, even though joining from Terminal worked (Terminal is exempt). The node then
+stays on "connecting to controller…" and `node.log` shows `no route to host`. The node spots this: the menu
+bar item says "blocked by macOS Local Network setting", the log says what to do, and the node asks macOS to
+show its "find devices on local networks" prompt (click **Allow**). If no prompt appears, turn on `outpost`
+under System Settings > Privacy & Security > Local Network. `install node` waits up to 45 seconds for the
+node to connect and prints the same advice if it is blocked. The LaunchAgent starts the Outpost binary
+directly (an earlier version went through `/bin/sh`, which macOS cannot grant the permission to); run
+`install node` again without `--join` to rewrite an older LaunchAgent. Because each update is a new binary
+that is not signed, macOS may ask again after an update. *Untested on a real Mac.*
+
 **Check cluster.** Once nodes are added, **Check cluster** on the Nodes page tests every online node in one go:
 a 16-token call to its loaded model, an `echo` command (if commands are on), a connection from the controller to
 its file-sharing port, free disk on the models folder (warns under 10 GB), its clock against the controller's

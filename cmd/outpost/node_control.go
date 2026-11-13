@@ -220,7 +220,8 @@ type controlStatus struct {
 	Pooled      bool   `json:"pooled,omitempty"`     // the loaded model uses other nodes' memory
 	RunningJobs int    `json:"running_jobs"`
 	Lending     string `json:"lending,omitempty"`
-	Service     bool   `json:"service"` // started by systemd
+	Service     bool   `json:"service"`           // started by systemd
+	Problem     string `json:"problem,omitempty"` // "local_network": macOS blocks LAN access (node_lnp.go)
 }
 
 func (n *Node) startControl() {
@@ -300,6 +301,9 @@ func (n *Node) controlStatus() controlStatus {
 	if ep := n.rpc.current(); ep != "" {
 		st.Lending = ep
 	}
+	n.mu.Lock()
+	st.Problem = n.problem
+	n.mu.Unlock()
 	st.ModelCold = n.llama.coldModel()
 	n.llama.mu.Lock()
 	st.Pooled = n.llama.cmd != nil && len(n.llama.opts.RPC) > 0
@@ -339,6 +343,9 @@ func (n *Node) quit() {
 	os.Remove(controlPath(n.dataDir))
 	if os.Getenv("OUTPOST_SERVICE") == "1" {
 		os.Exit(exitQuitService)
+	}
+	if os.Getenv("OUTPOST_LAUNCHD") == "1" {
+		os.Exit(0) // the macOS LaunchAgent restarts on any other exit (install_launchd.go)
 	}
 	os.Exit(exitQuit)
 }
