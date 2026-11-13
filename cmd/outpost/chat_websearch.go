@@ -24,7 +24,7 @@ func (c *Controller) chatSearchBrief(ctx context.Context, chatID string, hist []
 	c.mu.Lock()
 	on, model, via, orModel := c.settings.ChatWebSearch, c.settings.ClaudeModel, c.settings.ChatSearchWith, c.settings.OpenRouterModel
 	c.mu.Unlock()
-	if !on {
+	if !on || via == "local" { // "local" is the tool loop in chat_tools.go
 		return "", ""
 	}
 	viaOR := via == "openrouter"

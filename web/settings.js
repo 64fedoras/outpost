@@ -30,6 +30,7 @@ async function loadSettings() {
   try { settings = await api('/api/settings'); } catch (e) { return; }
   $('set-key-state').innerHTML = settings.has_anthropic_key ? `<span class="st-done">· saved (${esc(settings.anthropic_key_hint)})</span>` : '<span class="muted">· not set</span>';
   $('set-or-key-state').innerHTML = settings.has_openrouter_key ? `<span class="st-done">· saved (${esc(settings.openrouter_key_hint)})</span>` : '<span class="muted">· not set</span>';
+  $('set-brave-key-state').innerHTML = settings.has_brave_key ? `<span class="st-done">· saved (${esc(settings.brave_key_hint)})</span>` : '<span class="muted">· not set</span>';
   $('set-or-model').value = settings.openrouter_model || '';
   if (settings.has_openrouter_key) loadOpenRouterModels();
   $('set-hf-state').innerHTML = settings.has_hf_token ? '<span class="st-done">· saved</span>' : '<span class="muted">· not set</span>';
@@ -200,6 +201,8 @@ $('set-key-save').onclick = () => { const v = $('set-key').value.trim(); if (!v)
 $('set-key-clear').onclick = async () => { if (await askConfirm('Remove the Claude API key?')) saveSettings({ anthropic_key: '' }, 'API key removed'); };
 $('set-or-key-save').onclick = () => { const v = $('set-or-key').value.trim(); if (!v) return; $('set-or-key').value = ''; orLoaded = false; saveSettings({ openrouter_key: v }, 'OpenRouter key saved'); };
 $('set-or-key-clear').onclick = async () => { if (await askConfirm('Remove the OpenRouter API key?')) saveSettings({ openrouter_key: '' }, 'OpenRouter key removed'); };
+$('set-brave-key-save').onclick = () => { const v = $('set-brave-key').value.trim(); if (!v) return; $('set-brave-key').value = ''; saveSettings({ brave_key: v }, 'Brave key saved'); };
+$('set-brave-key-clear').onclick = async () => { if (await askConfirm('Remove the Brave Search API key?')) saveSettings({ brave_key: '' }, 'Brave key removed'); };
 $('set-or-model-save').onclick = () => saveSettings({ openrouter_model: $('set-or-model').value.trim() }, 'OpenRouter model saved');
 $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) return; $('set-hf').value = ''; saveSettings({ hf_token: v }, 'Token saved'); };
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');

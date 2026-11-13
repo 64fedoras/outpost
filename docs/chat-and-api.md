@@ -19,9 +19,22 @@ up to 5 minutes and then says so. It never interrupts task work and costs no Cla
 you turn on web search below.
 
 **Web search in chats** (Settings, Tasks, Planner: "Let chats search the web", off by default). Local
-models cannot search, so with this on each chat message first asks a cloud model with web search to
+models cannot search by themselves, so a **Search with** menu picks how they get the web:
+
+- **The local model itself** (free, no cloud key). The model gets two tools, `web_search` and `read_page`,
+  and the controller runs them while it answers, for up to 4 rounds, then the model writes the answer
+  with source links. Searches go to DuckDuckGo's HTML results page (no key, but unofficial: it can be rate
+  limited or ask for a CAPTCHA). If a **Brave Search** API key is saved (Settings, API keys), Outpost
+  falls back to Brave when DuckDuckGo fails, and skips DuckDuckGo for 10 minutes after it blocked
+  us. `read_page` fetches a page and reads it as text (1 MB, 15 s, about 8,000 characters per page), and
+  always refuses loopback, LAN and other internal addresses, whatever the pasted-links setting says.
+  Models that cannot call tools reliably get "search once, then answer": a server that refuses tools, tool
+  calls that keep failing, or a model whose file name says 3B or smaller (for example `qwen2.5-3b`, `llama-3.2-1b`). The search
+  is on the chat's latest message and the results go in front of it. If every search fails the chat is still
+  answered, with a note.
+- **Claude** or **OpenRouter** (paid). With this on each chat message first asks a cloud model with web search to
 look the question up and write a short brief with source links; the local model then answers using it.
-A **Search with** menu picks who does the search: Claude (its own search tool, about $0.01 per search, up to 3 per
+For these two, Claude (its own search tool, about $0.01 per search, up to 3 per
 message) or OpenRouter (its web search plugin on the OpenRouter model you chose, any model including Claude
 Opus, roughly $0.004 per result billed by OpenRouter). Either way there is a small model call too, and it is counted
 in Spending and the monthly cap. It needs that provider's API key. If there is no key,
