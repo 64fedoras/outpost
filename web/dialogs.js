@@ -235,6 +235,15 @@ document.addEventListener('change', async (e) => {
   }
   const pz = e.target.closest('[data-pause]');
   if (pz) { if (pz.value) pauseNode(pz.dataset.pause, pz.value); return; }
+  const sl = e.target.closest('[data-storage-limit]');
+  if (sl) {
+    const v = sl.value.trim().replace(',', '.'), gb = v === '' ? 0 : Number(v);
+    if (!(gb === 0 || gb >= 1)) { toast('Enter at least 1 GB, or leave it empty for no limit'); return; }
+    setStorage(sl.dataset.storageLimit, { storage_limit_gb: gb }, gb ? `Storage limit ${gb} GB` : 'No storage limit');
+    return;
+  }
+  const sf = e.target.closest('[data-storage-full]');
+  if (sf) { setStorage(sf.dataset.storageFull, { storage_full: sf.value }, sf.value ? 'Over the limit: refuse' : 'Over the limit: remove old models'); return; }
   const sb = e.target.closest('[data-sandbox]');
   if (sb) { setSandbox(sb.dataset.sandbox, sb.value); return; }
   const cb = e.target.closest('[data-exec]');
@@ -259,6 +268,7 @@ document.addEventListener('click', async (e) => {
       case 'unload': await post(`/api/nodes/${id}/unload`); toast('Unloading'); break;
       case 'rm-node-model': if (await askConfirm(`Delete ${el.dataset.name} from this node's disk?`)) { await api(`/api/nodes/${id}/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); toast('Deleting'); } break;
       case 'clean': openClean(id); break;
+      case 'storage-raise': { const i = document.querySelector(`[data-storage-limit="${id}"]`); if (i) { i.focus(); i.select(); } break; }
       case 'rename': renameNode(id); break;
       case 'logs': openLogs(id); break;
       case 'clear-pkg': if (await askConfirm(`Clear the package cache on ${nodeName(nodeById(id))}? The next tasks download their Go modules and npm packages again.`)) { await post(`/api/nodes/${id}/package-store/clear`); toast('Clearing the package cache'); } break;

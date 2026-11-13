@@ -139,6 +139,8 @@ type Hello struct {
 	SandboxLayers     []string     `json:"sandbox_layers,omitempty"` // what that mode enforces here, e.g. landlock-v3, netns, seccomp
 	FreedNote         string       `json:"freed_note,omitempty"`     // last automatic disk cleanup, e.g. "Freed 12.0 GB by removing X"
 	FreedAt           int64        `json:"freed_at,omitempty"`       // unix seconds of that cleanup
+	LimitNote         string       `json:"limit_note,omitempty"`     // last model copy refused by the storage limit
+	LimitAt           int64        `json:"limit_at,omitempty"`       // unix seconds of that refusal
 	MACs              []string     `json:"macs,omitempty"`           // wired/wireless interfaces with an IPv4 address, for Wake-on-LAN
 }
 
@@ -175,6 +177,13 @@ type NodeSettings struct {
 	IdleUnloadS int    `json:"idle_unload_s"`       // unload the model after this many idle seconds; 0 = never
 	YieldGPU    bool   `json:"yield_gpu,omitempty"` // unload while another program uses the GPU (gpu_yield.go)
 	Sandbox     string `json:"sandbox,omitempty"`   // off | basic | strict; empty = the node's default (basic)
+	// StorageLimit is the most disk Outpost may use on this node, in bytes
+	// (models, caches, runtimes, the agent; not job folders). 0 = no limit.
+	StorageLimit int64 `json:"storage_limit,omitempty"`
+	// StorageFull says what a model copy that would pass the limit does:
+	// "" removes least recently used models the controller offers (Reclaim.Names
+	// and Direct), "refuse" fails the copy and deletes nothing.
+	StorageFull string `json:"storage_full,omitempty"`
 }
 
 type Welcome struct {
@@ -185,26 +194,41 @@ type Welcome struct {
 }
 
 type Heartbeat struct {
-	CPUPct            float64    `json:"cpu_pct"`
-	RAMUsedBytes      uint64     `json:"ram_used_bytes"`
-	RAMTotalBytes     uint64     `json:"ram_total_bytes"`
-	SwapUsedBytes     uint64     `json:"swap_used_bytes"`
-	GPUUtilPct        []int      `json:"gpu_util_pct"`
-	VRAMUsedBytes     []uint64   `json:"vram_used_bytes"`
-	RunningJobs       []string   `json:"running_jobs"`
-	Workspaces        int        `json:"workspaces"`
-	LoadedModel       string     `json:"loaded_model"`
-	InferenceRdy      bool       `json:"inference_ready"`
-	InferenceBusy     int        `json:"inference_busy"`
-	ModelsBytes       int64      `json:"models_bytes"`
-	LlamaError        string     `json:"llama_error,omitempty"`
-	RPCEndpoint       string     `json:"rpc_endpoint,omitempty"`        // set while lending memory
-	Paused            bool       `json:"paused,omitempty"`              // no new work (set from the tray icon or the web UI)
-	PausedBy          string     `json:"paused_by,omitempty"`           // tray | web
-	PausedUntil       *time.Time `json:"paused_until,omitempty"`        // a timed pause ends on its own then
-	PackageStoreBytes int64      `json:"package_store_bytes,omitempty"` // clean package store for exec jobs (node_pkgcache.go)
-	GPUYielding       bool       `json:"gpu_yielding,omitempty"`        // the model is unloaded because another program is using the GPU
-	IdleUnloaded      bool       `json:"idle_unloaded,omitempty"`       // LoadedModel was stopped for idleness; the next request loads it again
+	CPUPct            float64     `json:"cpu_pct"`
+	RAMUsedBytes      uint64      `json:"ram_used_bytes"`
+	RAMTotalBytes     uint64      `json:"ram_total_bytes"`
+	SwapUsedBytes     uint64      `json:"swap_used_bytes"`
+	GPUUtilPct        []int       `json:"gpu_util_pct"`
+	VRAMUsedBytes     []uint64    `json:"vram_used_bytes"`
+	RunningJobs       []string    `json:"running_jobs"`
+	Workspaces        int         `json:"workspaces"`
+	LoadedModel       string      `json:"loaded_model"`
+	InferenceRdy      bool        `json:"inference_ready"`
+	InferenceBusy     int         `json:"inference_busy"`
+	ModelsBytes       int64       `json:"models_bytes"`
+	LlamaError        string      `json:"llama_error,omitempty"`
+	RPCEndpoint       string      `json:"rpc_endpoint,omitempty"`        // set while lending memory
+	Paused            bool        `json:"paused,omitempty"`              // no new work (set from the tray icon or the web UI)
+	PausedBy          string      `json:"paused_by,omitempty"`           // tray | web
+	PausedUntil       *time.Time  `json:"paused_until,omitempty"`        // a timed pause ends on its own then
+	PackageStoreBytes int64       `json:"package_store_bytes,omitempty"` // clean package store for exec jobs (node_pkgcache.go)
+	GPUYielding       bool        `json:"gpu_yielding,omitempty"`        // the model is unloaded because another program is using the GPU
+	IdleUnloaded      bool        `json:"idle_unloaded,omitempty"`       // LoadedModel was stopped for idleness; the next request loads it again
+	Storage           *StorageUse `json:"storage,omitempty"`             // disk Outpost uses on this node (node_storage.go)
+}
+
+// StorageUse is what Outpost keeps on a node's disk, by kind, measured every
+// few minutes and after a model is added or removed. Job folders are left out:
+// they are deleted when each job ends.
+type StorageUse struct {
+	Models    int64  `json:"models"`
+	Packages  int64  `json:"packages"` // package store and build caches
+	Runtimes  int64  `json:"runtimes"` // llama.cpp, stable-diffusion.cpp, toolchains
+	Other     int64  `json:"other"`    // agent binaries, config, logs
+	Total     int64  `json:"total"`
+	DiskFree  uint64 `json:"disk_free"`
+	DiskTotal uint64 `json:"disk_total"`
+	At        int64  `json:"at"` // unix seconds of the measurement
 }
 
 // ---- jobs ----
@@ -482,4 +506,4 @@ type NodePause struct {
 
 // nodeFeatures lists the controller-to-node messages added after 0.8.0, so the
 // controller can tell an older node apart instead of waiting for no answer.
-var nodeFeatures = []string{"node.ask", "node.pause", "node.gen", "node.video", "cache.scope"}
+var nodeFeatures = []string{"node.ask", "node.pause", "node.gen", "node.video", "cache.scope", "storage.limit"}

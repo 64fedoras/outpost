@@ -74,6 +74,12 @@ type Node struct {
 	scopes      map[string]*cacheScope // task build caches in use (node_pkgcache.go)
 	storeMu     sync.Mutex             // guards the package store
 	storeBytes  int64
+	storage     *StorageUse   // last measurement of Outpost's folders (node_storage.go)
+	storageKick chan struct{} // asks storageLoop to measure again
+	storageMax  int64         // storage limit in bytes from the controller; 0 = none
+	storageFull string        // "" removes old models at the limit, "refuse" refuses
+	limitNote   string        // last model copy refused by the limit, shown on the node card
+	limitAt     int64
 }
 
 func (n *Node) agentDir() string { return filepath.Join(n.dataDir, "agent") }
@@ -144,6 +150,7 @@ func runNode(args []string) error {
 	log.Printf("outpost node %s starting; node id %s; work root %s (startup sweep freed %d bytes)", Version, n.cfg.NodeID, n.workRoot, freed)
 	go n.workspaceJanitor()
 	go n.sweepCaches()
+	go n.storageLoop()
 	go n.pauseTimer()
 	go n.autoload()
 	go n.verifyModelsBackground()
@@ -501,6 +508,7 @@ func (n *Node) applySettings(s NodeSettings) {
 	}
 	n.llama.setIdleAfter(time.Duration(s.IdleUnloadS) * time.Second)
 	n.llama.setYield(s.YieldGPU)
+	n.storageMax, n.storageFull = s.StorageLimit, s.StorageFull
 }
 
 func (n *Node) runningIDs() []string {
@@ -529,12 +537,13 @@ func (n *Node) hello() Hello {
 	n.mu.Lock()
 	execOn := n.execEnabled
 	freedNote, freedAt := n.freedNote, n.freedAt
+	limitNote, limitAt := n.limitNote, n.limitAt
 	n.mu.Unlock()
 	h := Hello{
 		AgentVersion: Version, Protocol: supportedProtocols(), NodeID: n.cfg.NodeID,
 		Hostname: host, OS: runtime.GOOS, Arch: runtime.GOARCH,
 		CPU: hw.CPU, RAMBytes: hw.RAMBytes, GPUs: hw.GPUs, Backends: hw.Backends,
-		Models: n.listModels(), FreedNote: freedNote, FreedAt: freedAt, WorkFreeBytes: diskFree(n.workRoot), ModelsFreeBytes: diskFree(filepath.Join(n.dataDir, "models")),
+		Models: n.listModels(), FreedNote: freedNote, FreedAt: freedAt, LimitNote: limitNote, LimitAt: limitAt, WorkFreeBytes: diskFree(n.workRoot), ModelsFreeBytes: diskFree(filepath.Join(n.dataDir, "models")),
 		MaxConcurrentJobs: autoMaxJobs(hw), ExecEnabled: execOn, RunningJobs: n.runningIDs(),
 		VulkanAvailable: vulkanAvailable(),
 		RollbackTo:      previousVersion(n.agentDir()),
@@ -596,6 +605,7 @@ func (n *Node) buildHeartbeat() Heartbeat {
 	hb.Paused, hb.PausedBy, hb.PausedUntil = n.pauseInfo()
 	n.mu.Lock()
 	hb.PackageStoreBytes = n.storeBytes
+	hb.Storage = n.storage
 	n.mu.Unlock()
 	return hb
 }

@@ -49,33 +49,26 @@ func diskShort(need int64, free uint64) error {
 	return fmt.Errorf("not enough disk space: need %s, have %s", humanBytes(need), humanBytes(int64(free)))
 }
 
-// makeRoom checks that need more bytes fit on the models disk. When they do
-// not and rp allows it, it deletes the least recently used stored models that
-// the controller can copy back (rp.Names), never a protected one and never
-// target itself, until the new model fits with some headroom (the larger of
-// 1 GiB and 5%). If deleting every eligible model would still not make room it
-// deletes nothing and returns the error. It returns nil when need fits.
-func (n *Node) makeRoom(need int64, target string, rp *Reclaim) error {
-	free := modelsDiskFree(n.modelsDir())
-	if free == 0 || need <= 0 || uint64(need) <= free {
-		return nil // fits, or the free space is unknown
-	}
-	short := diskShort(need, free)
-	if rp == nil || !rp.Enabled || len(rp.Names)+len(rp.Direct) == 0 {
-		return short
-	}
+// reclaimCand is a stored model that may be deleted to make room.
+type reclaimCand struct {
+	name   string
+	size   int64
+	used   time.Time
+	direct bool
+}
+
+// reclaimCands lists the stored models in names and direct that may be
+// deleted for target: complete, not protected (loaded, set to reload, being
+// copied) and not target itself. Controller-held copies come first, then
+// Hugging Face-only ones; least recently used first within each. The second
+// result is their total size.
+func (n *Node) reclaimCands(target string, names, direct []string) ([]reclaimCand, int64) {
 	prot := n.protectedModels()
-	type cand struct {
-		name   string
-		size   int64
-		used   time.Time
-		direct bool
-	}
-	var cands []cand
-	var reclaimable int64
+	var cands []reclaimCand
+	var total int64
 	seen := map[string]bool{}
-	collect := func(names []string, direct bool) {
-		for _, name := range names {
+	collect := func(list []string, isDirect bool) {
+		for _, name := range list {
 			if seen[name] || !validName(name) || name == target || prot[name] {
 				continue
 			}
@@ -88,17 +81,12 @@ func (n *Node) makeRoom(need int64, target string, rp *Reclaim) error {
 				continue // incomplete: not a copy anyone can vouch for
 			}
 			size := dirBytes(dir)
-			cands = append(cands, cand{name, size, n.modelLastUsed(name), direct})
-			reclaimable += size
+			cands = append(cands, reclaimCand{name, size, n.modelLastUsed(name), isDirect})
+			total += size
 		}
 	}
-	collect(rp.Names, false)
-	collect(rp.Direct, true)
-	if uint64(need) > free+uint64(reclaimable) {
-		return fmt.Errorf("%w; removing every stored model that can be restored (%s) would still not make room, so nothing was deleted",
-			short, humanBytes(reclaimable))
-	}
-	// controller-held copies first, then Hugging Face-only ones; least recently used within each
+	collect(names, false)
+	collect(direct, true)
 	sort.Slice(cands, func(i, j int) bool {
 		if cands[i].direct != cands[j].direct {
 			return !cands[i].direct
@@ -108,15 +96,16 @@ func (n *Node) makeRoom(need int64, target string, rp *Reclaim) error {
 		}
 		return cands[i].name < cands[j].name
 	})
-	headroom := need / 20
-	if headroom < reclaimHeadroomMin {
-		headroom = reclaimHeadroomMin
-	}
-	goal := uint64(need + headroom)
+	return cands, total
+}
+
+// removeUntil deletes cands in order until enough reports true, and notes what
+// it removed on the node card. why says what the room was for.
+func (n *Node) removeUntil(cands []reclaimCand, enough func(freed int64) bool, target string, need int64, why string) {
 	var removed []string
 	var freed int64
 	for _, c := range cands {
-		if modelsDiskFree(n.modelsDir()) >= goal {
+		if enough(freed) {
 			break
 		}
 		if err := os.RemoveAll(filepath.Join(n.modelsDir(), c.name)); err != nil {
@@ -130,14 +119,47 @@ func (n *Node) makeRoom(need int64, target string, rp *Reclaim) error {
 		}
 		freed += c.size
 	}
-	if len(removed) > 0 {
-		note := fmt.Sprintf("Freed %s by removing %s", humanBytes(freed), strings.Join(removed, ", "))
-		log.Printf("model %s needs %s: %s", target, humanBytes(need), note)
-		n.mu.Lock()
-		n.freedNote, n.freedAt = note, time.Now().Unix()
-		n.mu.Unlock()
-		n.resendHello()
+	if len(removed) == 0 {
+		return
 	}
+	note := fmt.Sprintf("Freed %s by removing %s%s", humanBytes(freed), strings.Join(removed, ", "), why)
+	log.Printf("model %s needs %s: %s", target, humanBytes(need), note)
+	n.mu.Lock()
+	n.freedNote, n.freedAt = note, time.Now().Unix()
+	n.mu.Unlock()
+	n.resendHello()
+}
+
+// makeRoom checks that need more bytes fit, first under this node's storage
+// limit (makeRoomUnderLimit), then on the models disk. When they do not fit on
+// the disk and rp allows it, it deletes the least recently used stored models
+// that the controller can copy back (rp.Names), never a protected one and never
+// target itself, until the new model fits with some headroom (the larger of
+// 1 GiB and 5%). If deleting every eligible model would still not make room it
+// deletes nothing and returns the error. It returns nil when need fits.
+func (n *Node) makeRoom(need int64, target string, rp *Reclaim) error {
+	if err := n.makeRoomUnderLimit(need, target, rp); err != nil {
+		return err
+	}
+	free := modelsDiskFree(n.modelsDir())
+	if free == 0 || need <= 0 || uint64(need) <= free {
+		return nil // fits, or the free space is unknown
+	}
+	short := diskShort(need, free)
+	if rp == nil || !rp.Enabled || len(rp.Names)+len(rp.Direct) == 0 {
+		return short
+	}
+	cands, reclaimable := n.reclaimCands(target, rp.Names, rp.Direct)
+	if uint64(need) > free+uint64(reclaimable) {
+		return fmt.Errorf("%w; removing every stored model that can be restored (%s) would still not make room, so nothing was deleted",
+			short, humanBytes(reclaimable))
+	}
+	headroom := need / 20
+	if headroom < reclaimHeadroomMin {
+		headroom = reclaimHeadroomMin
+	}
+	goal := uint64(need + headroom)
+	n.removeUntil(cands, func(int64) bool { return modelsDiskFree(n.modelsDir()) >= goal }, target, need, "")
 	if free = modelsDiskFree(n.modelsDir()); uint64(need) > free {
 		return diskShort(need, free)
 	}

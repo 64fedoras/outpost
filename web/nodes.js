@@ -58,6 +58,8 @@ function nodeFacts(n) {
     if (hb && hb.paused) issues.push({ lvl: 'warn', short: 'Paused', text: pauseText(n), ...(canPause(n) ? { act: 'node-resume', fix: 'Resume' } : {}) });
     if (h.os === 'linux' && (h.gpus || []).some((x) => x.vendor !== 'apple') && !h.vulkan_available) issues.push({ lvl: 'warn', short: 'No Vulkan', text: 'GPU found, but no Vulkan driver, so models run on CPU.' });
     if (h.models_free_bytes && h.models_free_bytes < 10 * 1024 ** 3) issues.push({ lvl: 'warn', short: 'Low disk', text: `${bytes(h.models_free_bytes)} free for models. The next model copy may need a cleanup.`, act: 'clean', fix: 'Clean up…' });
+    const sf = storageFacts(n);
+    if (sf && sf.full) issues.push({ lvl: 'warn', short: 'At limit', text: `Outpost uses ${bytes(sf.u.total)} of its ${bytes(sf.lim)} storage limit. New models are ${n.storage_full === 'refuse' ? 'refused' : 'only copied after old ones are removed'}.`, act: 'clean', fix: 'Clean up…' });
     if (n.update_to) issues.push({ lvl: 'info', short: 'Update', text: `Runs v${h.agent_version || '?'}; v${n.update_to} is available.`, act: 'node-update', fix: 'Update' });
   }
   const worst = ['bad', 'warn', 'info', 'off'].find((l) => issues.some((i) => i.lvl === l)) || '';
@@ -71,6 +73,7 @@ function nodeFacts(n) {
     h, hb, loaded, ready, issues, worst, model, dot,
     cpu: hb ? hb.cpu_pct : 0, ram: hb && hb.ram_total_bytes ? 100 * hb.ram_used_bytes / hb.ram_total_bytes : 0, vram,
     tps: b && n.online && !n.lending_to ? b.tok_per_s : null,
+    disk: storageFacts(n),
   };
 }
 const nvTps = (f, big) => f.tps == null ? '<span class="muted">—</span>' : big ? `<span class="nv-tps">${f.tps.toFixed(1)}</span><span class="nv-tpsu">tok/s</span>` : `<span class="nv-spd">${f.tps.toFixed(1)} tok/s</span>`;
@@ -88,7 +91,7 @@ function nodeRow(n) {
   return `<div class="nv-row nv-s-${f.worst}${open ? ' open' : ''}" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}">
     <div class="nv-c1"><span class="dot ${f.dot}"></span><div class="nv-min"><b>${esc(nodeName(n))}</b><div class="sub nv-sub">${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}${n.addr ? ' · ' + esc(n.addr.split(':')[0]) : ''}</div>${labelChips(n)}</div></div>
     <div class="nv-min"><div class="nv-ell">${f.model}</div><div class="sub nv-sub nv-wrap">${sub}</div></div>
-    <div>${n.online ? `<div class="nv-bars"><span>CPU</span>${bar(f.cpu)}<span>RAM</span>${bar(f.ram)}${f.vram != null ? `<span>VRAM</span>${bar(f.vram)}` : ''}</div>` : `<span class="sub">${n.last_seen ? 'Last seen ' + ago(n.last_seen) : 'Never connected'}</span>`}</div>
+    <div>${n.online ? `<div class="nv-bars"><span>CPU</span>${bar(f.cpu)}<span>RAM</span>${bar(f.ram)}${f.vram != null ? `<span>VRAM</span>${bar(f.vram)}` : ''}${f.disk ? `<span title="${esc(f.disk.text)}">DISK</span><span title="${esc(f.disk.text)}">${bar(f.disk.pct, f.disk.full ? 'hot' : '')}</span>` : ''}</div>` : `<span class="sub">${n.last_seen ? 'Last seen ' + ago(n.last_seen) : 'Never connected'}</span>`}</div>
     <div class="r">${nvTps(f, true)}</div>
     <div class="nv-acts">${action}<button class="small" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}" title="Show or hide all details and controls for this node">${open ? 'Hide' : 'Details'}</button></div>
   </div>${open ? `<div class="nv-exp">${nodeCard(n)}</div>` : ''}`;
@@ -216,6 +219,8 @@ function nodeGridView(nodes) {
 }
 
 function renderNodes() {
+  const a = document.activeElement;
+  if (a && a.matches && a.matches('[data-storage-limit]') && document.body.contains(a)) return; // typing a limit: redraw after
   const nodes = state.nodes;
   const online = nodes.filter((n) => n.online).length;
   setHTML('node-count', nodes.length ? `${online} of ${nodes.length} online` : '');
@@ -382,6 +387,7 @@ function nodeCard(n) {
     <div class="sub u17 wrap">Labels: ${(n.labels || []).length ? (n.labels || []).map((l) => `<span class="label-chip">${esc(l)}</span>`).join(' ') : '<span class="muted">none</span>'} · <a href="#" data-act="labels" data-id="${n.id}">edit</a>
       · Works: ${n.hours ? esc(hoursText(n.hours)) + (n.off_hours ? ' <span class="nv-chip nv-info">off hours now</span>' : '') : 'any time'} · <a href="#" data-act="hours" data-id="${n.id}">set hours</a></div>
     ${modelBox}
+    ${storageBox(n)}
     ${toolsBox(n)}
     <div class="node-foot">
       <label class="toggle" title="Allow this node to run shell commands (needed for tests)"><input type="checkbox" data-exec="${n.id}" ${n.exec_enabled ? 'checked' : ''}> exec</label>
@@ -444,7 +450,52 @@ function toolsBox(n) {
   const hasGo = tools.some((t) => t.name === 'go');
   return `<div class="sub wrap u17">Runs commands in ${esc(h.shell)} · ${chips || 'no tools found'}
     ${n.online ? `<a href="#" data-act="install-tool" data-tool="go" data-id="${n.id}">${hasGo ? 'Reinstall' : 'Install'} Go</a>` : ''}</div>
-${pkgStoreLine(n)}`;
+${storageBox(n) ? '' : pkgStoreLine(n)}`;
+}
+
+// Storage Outpost uses on a node and its optional limit (node_storage.go). The
+// bar is measured against the limit when one is set, else against the disk.
+function storageFacts(n) {
+  const u = n.online && n.heartbeat && n.heartbeat.storage;
+  if (!u) return null;
+  const lim = n.storage_limit_gb ? n.storage_limit_gb * 1024 ** 3 : 0;
+  const cap = lim ? Math.max(lim, u.total) : u.total + (u.disk_free || 0);
+  const pct = cap ? 100 * u.total / cap : 0;
+  const text = lim ? `Outpost uses ${bytes(u.total)} of its ${bytes(lim)} limit here` : `Outpost uses ${bytes(u.total)} here; no limit, ${bytes(u.disk_free)} free on the disk`;
+  return { u, lim, cap, pct, text, full: !!lim && u.total >= lim * 0.98 };
+}
+
+function storageBox(n) {
+  const h = n.hello || {};
+  if (!n.online) return '';
+  if (!(h.features || []).includes('storage.limit')) return '<div class="sub u17">Storage: usage and a limit show once this node runs the latest version.</div>';
+  const sf = storageFacts(n);
+  if (!sf) return '<div class="stor"><span class="muted">Storage: measuring…</span></div>';
+  const { u, lim, cap, pct } = sf;
+  const w = (b) => cap ? Math.min(100, Math.round(100 * b / cap)) : 0;
+  const seg = [['models', u.models, 'Models', n.online ? `<a href="#" data-act="clean" data-id="${n.id}">clean up</a>` : ''],
+    ['pkgs', u.packages, 'Package cache', u.packages ? `<a href="#" data-act="clear-pkg" data-id="${n.id}" title="Verified Go modules and npm packages that later tasks reuse. Each task's own build cache is deleted when the task ends.">clear</a>` : ''],
+    ['rt', u.runtimes, 'Toolchains, llama.cpp', ''],
+    ['other', u.other, 'Agent, other', '']];
+  const of = lim ? `of ${bytes(lim)} limit · ${Math.round(pct)}%${u.disk_free ? ' · disk has ' + bytes(u.disk_free) + ' free' : ''}` : `no limit · ${bytes(u.disk_free)} free on the disk`;
+  const recent = h.limit_note && Date.now() / 1000 - h.limit_at < 86400;
+  const gb = n.storage_limit_gb ? String(+n.storage_limit_gb.toFixed(1)) : '';
+  return `<div class="stor"><div class="stor-g">
+    <div class="stor-main">
+      <div class="stor-h"><span class="stor-t">Storage</span><span class="stor-n">${bytes(u.total)}</span><span class="muted">${of}</span>${sf.full ? '<span class="nv-chip nv-warn">At limit</span>' : ''}</div>
+      <div class="stor-bar${lim ? ' lim' : ''}" title="${esc(sf.text)}">${seg.map(([k, b]) => b ? `<i class="sg-${k}${sf.full && k === 'models' ? ' hot' : ''} w${w(b)}"></i>` : '').join('')}</div>
+      <div class="stor-leg">${seg.map(([k, b, t, a]) => `<div><b class="sg-${k}"></b><span>${t}</span><em>${bytes(b)}</em>${a}</div>`).join('')}</div>
+    </div>
+    <div class="stor-c">
+      <label class="stor-r" title="The most disk Outpost may use on this node: models, caches, toolchains, llama.cpp and the agent. Job folders are not counted; they are deleted after each job. Empty means no limit."><span>Limit</span><span class="stor-in"><input data-storage-limit="${n.id}" inputmode="decimal" value="${gb}" placeholder="none" aria-label="Storage limit in GB"> GB</span></label>
+      <label class="stor-r" title="What happens when a model copy or download would go over the limit. Lowering the limit never deletes anything by itself."><span>When full</span><select data-storage-full="${n.id}" ${lim ? '' : 'disabled'} aria-label="When the storage limit is reached">
+        <option value="" ${n.storage_full ? '' : 'selected'}>Remove old models</option><option value="refuse" ${n.storage_full === 'refuse' ? 'selected' : ''}>Refuse download</option></select></label>
+    </div>
+    ${recent ? `<div class="note warn stor-note"><span>${esc(h.limit_note)} · ${ago(new Date(h.limit_at * 1000).toISOString())}</span><button class="small" data-act="clean" data-id="${n.id}">Clean up…</button><button class="small" data-act="storage-raise" data-id="${n.id}">Raise limit</button></div>` : ''}
+  </div></div>`;
+}
+async function setStorage(id, body, msg) {
+  try { await post(`/api/nodes/${id}/settings`, body); toast(msg); refresh(); } catch (e) { toast(e.message); }
 }
 
 // The node's clean package store (verified Go modules and npm packages that

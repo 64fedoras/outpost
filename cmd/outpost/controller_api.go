@@ -269,7 +269,8 @@ func (c *Controller) nodeSettingsLocked(n *NodeRec) NodeSettings {
 	}
 	return NodeSettings{HeartbeatS: heartbeatSeconds, ExecEnabled: n.ExecEnabled,
 		IdleUnloadS: int(idle / time.Second), YieldGPU: n.YieldGPU,
-		Sandbox: effectiveSandbox(c.settings.Sandbox, n.Sandbox)}
+		Sandbox:      effectiveSandbox(c.settings.Sandbox, n.Sandbox),
+		StorageLimit: int64(n.StorageLimitGB * (1 << 30)), StorageFull: n.StorageFull}
 }
 
 // pushNodeSettings sends every connected node its settings again.
@@ -303,6 +304,8 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 		YieldGPU    *bool      `json:"yield_gpu"`
 		Hours       *WorkHours `json:"hours"` // {} or from == to... see hours.go; "clear_hours" removes them
 		ClearHours  bool       `json:"clear_hours"`
+		StorageGB   *float64   `json:"storage_limit_gb"` // 0 = no limit
+		StorageFull *string    `json:"storage_full"`     // "" (remove old models) or "refuse"
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
@@ -324,12 +327,26 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, 400, map[string]string{"error": "sandbox must be off, basic, strict or empty"})
 		return
 	}
+	if req.StorageGB != nil && (*req.StorageGB < 0 || *req.StorageGB > 1<<20 || (*req.StorageGB > 0 && *req.StorageGB < 1)) {
+		writeJSON(w, 400, map[string]string{"error": "storage limit must be at least 1 GB, or empty for no limit"})
+		return
+	}
+	if req.StorageFull != nil && *req.StorageFull != "" && *req.StorageFull != "refuse" {
+		writeJSON(w, 400, map[string]string{"error": "storage_full must be empty or refuse"})
+		return
+	}
 	c.mu.Lock()
 	n, ok := c.nodes[id]
 	if !ok {
 		c.mu.Unlock()
 		writeJSON(w, 404, map[string]string{"error": "no such node"})
 		return
+	}
+	if req.StorageGB != nil {
+		n.StorageLimitGB = *req.StorageGB
+	}
+	if req.StorageFull != nil {
+		n.StorageFull = *req.StorageFull
 	}
 	if req.Sandbox != nil {
 		n.Sandbox = normSandbox(*req.Sandbox)
