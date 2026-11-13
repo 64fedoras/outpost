@@ -262,6 +262,7 @@ document.addEventListener('click', async (e) => {
     switch (act) {
       case 'open-job': openJob(id); break;
       case 'load': openLoad(id); break;
+      case 'best': openBest(id); break;
       case 'load-rec': await loadOnNode(id, el.dataset.name, el.dataset.lib !== '1'); break;
       case 'pick-model': openPick(el.dataset.name, el.dataset.catalog === '1'); break;
       case 'benchmark': await post(`/api/nodes/${id}/benchmark`); toast('Benchmark started'); break;
