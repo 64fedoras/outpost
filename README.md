@@ -98,11 +98,11 @@ On the **Nodes** page click **Add node**, then paste the command it gives you on
 | --- | --- |
 | Linux | `sudo chmod +x ~/outpost-linux-amd64 && sudo ~/outpost-linux-amd64 install node --join <token>` |
 | Windows (Administrator PowerShell) | `.\outpost-windows-amd64.exe install node --join <token>` |
-| macOS (no sudo) | `chmod +x ./outpost-darwin-arm64 && ./outpost-darwin-arm64 install node --join <token>` |
+| macOS | `chmod +x ./outpost-darwin-arm64 && sudo ./outpost-darwin-arm64 install node --join <token>` |
 
 - **Linux** installs a systemd service that starts at boot. GPU nodes use llama.cpp's Vulkan build and need the system Vulkan driver (`sudo apt install libvulkan1 mesa-vulkan-drivers`).
 - **Windows** installs the **Outpost Node** service and adds a Microsoft Defender exclusion for `C:\ProgramData\outpost`.
-- **macOS** installs a per-user LaunchAgent so llama.cpp can use the GPU through Metal.
+- **macOS** installs a system service (LaunchDaemon) that starts at boot, plus a menu bar item; macOS blocks login items from the local network.
 
 Everything else (llama.cpp builds, models, the Go toolchain for test runs) is fetched by the
 controller and copied to nodes. More detail, options, the tray icon and troubleshooting are in the
@@ -113,7 +113,7 @@ controller and copied to nodes. More detail, options, the tray icon and troubles
 Outpost is developed and tested on Linux. **Treat everything else as untested until you have tried it:**
 
 - **Windows** (service install, tray icon, self-update, Defender exclusion, PowerShell test runs, GPU use from a service) has been built and unit-tested but never run on a real Windows machine.
-- **macOS** (LaunchAgent, menu bar item) has never run on a real Mac.
+- **macOS** (system service, menu bar item) has never run on a real Mac.
 - The newest features (project pages and the project conversation, project menu and Duplicate, the per-task package cache) have only been exercised in the local test rig and in unit tests.
 - The current release has been tested against stub Claude and OpenRouter servers and a fake llama-server, **not on the real cluster** with real GPUs and transfer speeds. The live OpenRouter API was never called.
 

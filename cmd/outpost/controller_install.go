@@ -106,7 +106,7 @@ fetch "$BASE/install/bin/$platform?t=` + q + `" "$tmp/outpost"
 if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum "$tmp/outpost" | cut -d' ' -f1); else got=$(shasum -a 256 "$tmp/outpost" | cut -d' ' -f1); fi
 if [ "$got" != "$want" ]; then echo "Checksum mismatch; not installing." >&2; exit 1; fi
 chmod +x "$tmp/outpost"
-if [ "$os" = linux ] && [ "$(id -u)" != 0 ]; then
+if [ "$(id -u)" != 0 ]; then
   sudo "$tmp/outpost" install node --join "$CODE"
 else
   "$tmp/outpost" install node --join "$CODE"

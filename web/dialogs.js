@@ -33,7 +33,7 @@ async function freshAddToken() {
 function showAddToken(note) {
   renderAddCmds();
   $('cmd-win').textContent = '.\\' + addToken.windows.replace(/^outpost\.exe/, 'outpost-windows-amd64.exe');
-  $('cmd-mac').textContent = 'chmod +x ./outpost-darwin-arm64 && ./outpost-darwin-arm64 ' + addToken.macos.replace(/^outpost /, '');
+  $('cmd-mac').textContent = 'chmod +x ./outpost-darwin-arm64 && sudo ./outpost-darwin-arm64 ' + addToken.macos.replace(/^outpost /, '');
   $('cmd-curl').textContent = addToken.curl_unix || '';
   $('cmd-curlwin').textContent = addToken.curl_win || '';
   const have = addToken.platforms || [];

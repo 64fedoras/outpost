@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -236,6 +237,13 @@ func (n *Node) startControl() {
 		log.Printf("tray control unavailable: %v", err)
 		ln.Close()
 		return
+	}
+	// The macOS node runs as root (install_launchd.go); hand the control file
+	// to the signed-in user whose menu bar item drives it.
+	if uid, err := strconv.Atoi(os.Getenv("OUTPOST_TRAY_UID")); err == nil && uid > 0 {
+		if err := os.Chown(controlPath(n.dataDir), uid, -1); err != nil {
+			log.Printf("tray control: handing control.json to uid %d: %v", uid, err)
+		}
 	}
 	mux := http.NewServeMux()
 	auth := func(h http.HandlerFunc) http.HandlerFunc {

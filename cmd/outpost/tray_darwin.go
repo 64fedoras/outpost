@@ -25,9 +25,19 @@ func trayLock(dataDir string) (func(), error) {
 
 func trayDetachConsole(string) {}
 
-// startNodeProcess asks launchd to start the node's LaunchAgent; without one
-// (the node was started by hand) it runs the node in the background.
+// startNodeProcess asks launchd to start the node: the system service (macOS
+// asks for an administrator password), else an older per-user LaunchAgent;
+// without either (the node was started by hand) it runs the node in the
+// background.
 func startNodeProcess(dataDir string) error {
+	if _, err := os.Stat(launchDaemonPath); err == nil {
+		// The node is a root system service: only an administrator can start it.
+		if exec.Command("launchctl", "kickstart", "system/"+launchdLabel).Run() == nil {
+			return nil
+		}
+		script := `do shell script "launchctl kickstart system/` + launchdLabel + `" with administrator privileges`
+		return exec.Command("/usr/bin/osascript", "-e", script).Run()
+	}
 	target := fmt.Sprintf("gui/%d/%s", os.Getuid(), launchdLabel)
 	if exec.Command("launchctl", "print", target).Run() == nil {
 		// bootstrap may be needed after a deliberate quit stopped the job
