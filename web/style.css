@@ -1165,3 +1165,14 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
   .stor-r { justify-content: space-between; }
   .stor-c select { max-width: 150px; }
 }
+
+/* Pick best model */
+.best-btn span { color: var(--accent); }
+.best-modal { width: min(620px, 100%); }
+.best-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.best-row.top { background: var(--bg); }
+.best-row:has(input:checked) { border-color: var(--accent); }
+.best-row input { margin: 3px 0 0; width: auto; flex: none; padding: 0; }
+.best-row .grow { flex: 1; min-width: 0; }
+.best-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 2px; }
+.best-foot { margin-top: 10px; }

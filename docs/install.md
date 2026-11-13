@@ -289,6 +289,11 @@ can check detection without joining.
    right with the same full card and the node's recent jobs, while the grid stays in view: click another
    card to switch, use the arrows in the panel header to step through the nodes, and close it with the
    cross or Esc. On a wide screen the grid narrows beside the panel; on a phone the panel fills the screen.
+   **Pick best** (on every Grid card, List row and the full card, next to **Load model…**) opens a short
+   list of the three best coding models for that node, best first, each with how it fits, the expected
+   speed on CPU machines, the reason and how much would be downloaded. Choose one and press **Load this
+   model** (the model loaded now is unloaded first), or **See all models…** for the full Load dialog. If
+   nothing fits, it says why. It uses the same ranking as **Recommended**.
    The full card shows **Recommended**: the best coding model that fits that
    node (fully in VRAM first, then VRAM plus RAM, then RAM; skipped if the node's disk is too small, or
    if no llama.cpp build exists for it), with the reason and a one-click **Load**. A node running the

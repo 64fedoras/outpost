@@ -86,7 +86,7 @@ function nodeRow(n) {
   const sub = first ? `${nvChips(f)} ${esc(first.text)}` : opActive(n) ? opView(n).replace(/<[^>]+>/g, ' ').trim() : n.online
     ? `${n.running_jobs}/${n.max_jobs} jobs${n.pool_names && n.pool_names.length ? ' · pooled with ' + n.pool_names.map(esc).join(', ') : ''} · exec ${n.exec_enabled ? (n.sandbox ? 'on, sandbox ' + n.sandbox : 'on') : 'off'}` : '';
   const action = fixIssue ? `<button class="small primary" data-act="${fixIssue.act}" data-id="${n.id}">${esc(fixIssue.fix)}</button>`
-    : n.online && !n.lending_to ? `<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>` : '';
+    : n.online && !n.lending_to ? `${bestBtn(n)}<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>` : '';
   const open = nodeOpen.has(n.id);
   return `<div class="nv-row nv-s-${f.worst}${open ? ' open' : ''}" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}">
     <div class="nv-c1"><span class="dot ${f.dot}"></span><div class="nv-min"><b>${esc(nodeName(n))}</b><div class="sub nv-sub">${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}${n.addr ? ' · ' + esc(n.addr.split(':')[0]) : ''}</div>${labelChips(n)}</div></div>
@@ -156,7 +156,7 @@ function gaugeCard(n) {
   const g = gpus[0];
   const ramTot = hb && hb.ram_total_bytes;
   const notes = f.issues.filter((i) => i.lvl !== 'off').map((i) => `<div class="note ${i.lvl === 'info' ? '' : i.lvl} nv-note"><span class="nv-grow">${esc(i.text)}</span>${i.act ? `<button class="small" data-act="${i.act}" data-id="${n.id}">${esc(i.fix)}</button>` : ''}</div>`).join('');
-  const btns = n.online && !n.lending_to ? `<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>${f.loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}" title="Send a Wake-on-LAN packet">Wake</button>` : '';
+  const btns = n.online && !n.lending_to ? `${bestBtn(n)}<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>${f.loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}" title="Send a Wake-on-LAN packet">Wake</button>` : '';
   const on = nodeDrawer === n.id;
   return `<div class="card gc nv-s-${f.worst}${on ? ' on' : ''}" data-act="node-detail" data-id="${n.id}">
     <div class="node-top"><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span><span class="nv-pill nv-p-${cls}"><i></i>${st}</span>
@@ -364,7 +364,7 @@ function nodeCard(n) {
       ${opView(n)}
     </div>` : `<div class="model-box">
       <div class="row"><span class="dot ${ready ? 'on' : loaded ? 'busy' : ''}"></span><span class="grow">${loaded ? `<b>${esc(loaded)}</b> · ${hb.gpu_yielding ? '<span title="Unloaded because another program is using the GPU. It loads again after five quiet minutes.">GPU in use by another program</span>' : hb.idle_unloaded ? '<span title="Stopped after sitting idle to free memory. It loads again on the next request.">idle, unloaded</span>' : ready ? (hb.inference_busy ? 'working' : 'ready') : 'starting'}` : '<span class="muted">No model loaded</span>'}</span>
-        ${n.online ? `<button class="small" data-act="load" data-id="${n.id}">${loaded ? 'Change' : 'Load model'}…</button>${loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : ''}</div>
+        ${n.online ? `${bestBtn(n)}<button class="small" data-act="load" data-id="${n.id}">${loaded ? 'Change' : 'Load model'}…</button>${loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : ''}</div>
       ${recRow(n, loaded)}
       ${h.freed_note && Date.now() / 1000 - h.freed_at < 86400 ? `<div class="sub wrap u15" title="Removed automatically to make room for a model; it can be copied or downloaded again.">${esc(h.freed_note)} · ${ago(new Date(h.freed_at * 1000).toISOString())}</div>` : ''}
       ${n.online ? `<div class="sub u15">Unloads when idle: ${esc(n.idle_unload_effective || '1h')}${n.idle_unload ? '' : ' (default)'} · <a href="#" data-act="idle" data-id="${n.id}">change</a></div>` : ''}
@@ -796,3 +796,44 @@ $('load-prof-save').onclick = async () => {
     cache_type: $('load-cache').value, flash_attn: $('load-fa').value, draft: $('load-draft').value, parallel: parseInt($('load-slots').value, 10) || 0 };
   try { await post(`/api/nodes/${loadNodeId}/profiles`, body); await refresh(); fillProfiles(nodeById(loadNodeId)); $('load-prof').value = body.name; toast('Saved'); } catch (e) { toast(e.message); }
 };
+
+// "Pick best" button and dialog: the top-ranked coding models for one node, best first, one click to load.
+function bestBtn(n) {
+  if (!n.online || n.lending_to) return '';
+  return `<button class="small best-btn" data-act="best" data-id="${n.id}" title="Pick the best coding model for this node's memory, disk and speed"><span aria-hidden="true">★</span> Pick best</button>`;
+}
+let bestNode = null, bestOpts = [];
+async function openBest(id) {
+  const n = nodeById(id); bestNode = id;
+  const loaded = !n.lending_to && n.heartbeat && n.heartbeat.loaded_model;
+  $('best-node').textContent = nodeName(n);
+  $('best-err').classList.add('hidden');
+  setHTML('best-list', '<div class="sub">Checking what fits…</div>');
+  $('best-go').disabled = true;
+  open('modal-best');
+  let r;
+  try { r = await api(`/api/nodes/${id}/load-options`); } catch (e) { $('best-err').textContent = e.message; $('best-err').classList.remove('hidden'); return; }
+  bestOpts = (r.options || []).filter((o) => o.rank > 0).sort((a, b) => a.rank - b.rank);
+  const h = n.hello || {}, g = (h.gpus || [])[0], sf = storageFacts(n);
+  const ram = n.heartbeat && n.heartbeat.ram_total_bytes;
+  $('best-hint').textContent = `Ranked for this node: ${g ? bytes(g.vram_bytes) + ' VRAM, ' : 'no GPU, '}${ram ? bytes(ram) + ' RAM' : ''}${sf ? (sf.lim ? `, ${bytes(Math.max(0, sf.lim - sf.u.total))} left under its storage limit` : `, ${bytes(sf.u.disk_free)} free disk`) : ''}. ${g ? 'Models that fit fully in VRAM come first, then the biggest.' : 'On a CPU-only node the biggest model that still runs at a usable speed comes first.'}`;
+  if (!bestOpts.length) {
+    setHTML('best-list', `<div class="note warn">${r.build_ok ? 'No coding model in the library or catalog fits this node\'s memory and disk.' : 'This node has no llama.cpp build yet, so nothing can be loaded.'}</div>`);
+    return;
+  }
+  const FITP = { vram: ['st-done', 'all in VRAM'], split: ['st-loading', 'VRAM + RAM'], ram: ['st-loading', 'CPU'] };
+  setHTML('best-list', bestOpts.map((o, i) => {
+    const cur = loaded && o.name === loaded;
+    const where = o.on_node ? 'Already on this node, loads right away' : o.in_library ? `In the library; copies ${bytes(o.bytes)} to this node` : `Not downloaded yet; downloads ${bytes(o.bytes)} to this node`;
+    return `<label class="best-row${i === 0 ? ' top' : ''}"><input type="radio" name="best-pick" value="${i}" ${i === 0 ? 'checked' : ''}>
+      <div class="grow"><div class="best-head"><b>${esc(o.label)}</b>${i === 0 ? '<span class="pill st-ready">Best pick</span>' : ''}${cur ? '<span class="pill">Loaded now</span>' : ''}
+        <span class="pill ${FITP[o.fit][0]}">${FITP[o.fit][1]}</span>${o.est_tok_s ? `<span class="pill ${o.speed_low ? 'st-warn' : 'st-ready'}">~${o.est_tok_s < 10 ? o.est_tok_s.toFixed(1) : Math.round(o.est_tok_s)} tok/s</span>` : ''}</div>
+        <div class="sub wrap">${esc(o.reason)}</div>
+        <div class="sub wrap">${where}${o.speed_note ? ' · ' + esc(o.speed_note) : ''}</div></div></label>`;
+  }).join('') + (loaded ? `<div class="sub best-foot">Loading a model here unloads <b>${esc(loaded)}</b> first.</div>` : ''));
+  const sync = () => { const o = bestOpts[+document.querySelector('input[name=best-pick]:checked').value]; $('best-go').disabled = !!(loaded && o.name === loaded); $('best-go').textContent = loaded && o.name === loaded ? 'Already loaded' : loaded ? 'Switch to this model' : 'Load this model'; };
+  document.querySelectorAll('input[name=best-pick]').forEach((x) => { x.onchange = sync; });
+  sync();
+  $('best-go').onclick = async () => { const o = bestOpts[+document.querySelector('input[name=best-pick]:checked').value]; close('modal-best'); await loadOnNode(bestNode, o.name, !o.in_library); };
+  $('best-all').onclick = () => { close('modal-best'); openLoad(bestNode); };
+}

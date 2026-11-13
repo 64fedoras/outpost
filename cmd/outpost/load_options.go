@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 )
 
 // LoadOption is one choice in the Load model dialog for one node.
@@ -163,6 +164,12 @@ func (c *Controller) loadOptionsFor(id string, maxRecommended int) ([]LoadOption
 				if o.SpeedLow {
 					what = "Fastest coding model that fits this node's CPU"
 				}
+				if r > 0 { // runner-ups (shown by "Pick best") are not the biggest or the fastest
+					what = "Also runs at a usable speed on this node's CPU"
+					if o.SpeedLow {
+						what = "Fits this node's RAM, but slow on its CPU"
+					}
+				}
 				o.Reason = fmt.Sprintf("%s (needs about %s of %s RAM)", what, humanBytes(o.Need), humanBytes(ram))
 				o.SpeedNote = speedNote(o)
 				continue
@@ -170,6 +177,8 @@ func (c *Controller) loadOptionsFor(id string, maxRecommended int) ([]LoadOption
 		}
 		if r == 0 {
 			o.Reason += ", best coding pick that fits"
+		} else if o.Fit != fitVRAM {
+			o.Reason = "Also fits: " + strings.TrimPrefix(o.Reason, "Biggest coding model that fits ")
 		}
 	}
 	for i := range opts {
