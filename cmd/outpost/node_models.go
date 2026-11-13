@@ -164,4 +164,7 @@ func humanBytes(b int64) string {
 }
 
 // resendHello refreshes the controller's view of models and runtime.
-func (n *Node) resendHello() { _ = n.send("node.hello_update", n.hello()) }
+func (n *Node) resendHello() {
+	n.storageChanged() // the hello is resent when the model list changes
+	_ = n.send("node.hello_update", n.hello())
+}

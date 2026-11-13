@@ -105,13 +105,15 @@ func (c *Controller) waitNodeOp(ctx context.Context, nodeID, op, target string, 
 // Tier 1 (Names): ones this controller holds a ready copy of. Tier 2 (Direct):
 // ones downloaded straight from Hugging Face, which the node can fetch again;
 // the node uses them only after tier 1. Models the controller does not know
-// are never offered. Disabled when the Settings option is off.
+// are never offered. Enabled (the disk-full cleanup) follows the Settings
+// option; the lists are filled either way because a node's storage limit
+// (node_storage.go) has its own per-node choice and uses them too.
 func (c *Controller) reclaimFor(nodeID, target string) *Reclaim {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	rp := &Reclaim{Enabled: !c.settings.AutoFreeOff}
 	n := c.nodes[nodeID]
-	if !rp.Enabled || n == nil || n.Hello == nil {
+	if n == nil || n.Hello == nil || (!rp.Enabled && n.StorageLimitGB <= 0) {
 		return rp
 	}
 	for _, sm := range n.Hello.Models {
