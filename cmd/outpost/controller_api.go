@@ -226,7 +226,7 @@ func (c *Controller) handleNewToken(w http.ResponseWriter, r *http.Request) {
 		"expires":   exp,
 		"linux":     "outpost install node --join " + tok,
 		"windows":   "outpost.exe install node --join " + tok,
-		"macos":     "outpost node --join " + tok,
+		"macos":     "outpost install node --join " + tok,
 		"curl_unix": cmds["curl_unix"],
 		"curl_win":  cmds["curl_win"],
 		"platforms": c.releasePlatforms(),

@@ -16,9 +16,9 @@ See also [SECURITY.md](../SECURITY.md) for the security model and its limits (th
 - The low-level job history (Home → Recent jobs) is kept in memory and clears on restart; tasks
   and their files are kept on disk.
 - Service install: systemd on Linux, the Outpost Node service on Windows (admin shell) and a per-user
-  LaunchAgent on macOS. The macOS menu bar item is built but has never run on a real Mac.
-- macOS 15 and later need the Local Network permission for the node's LaunchAgent (see install.md). The
-  Outpost binary is not signed, so macOS may ask again after each update.
+  LaunchDaemon (root system service) on macOS, because macOS blocks login items from the local network.
+  The macOS menu bar item is built but has never run on a real Mac; whether Metal works from the system
+  service is untested.
 - Files over 1 MiB travel between the controller and exec nodes through the node's file-sharing port
   (8444), which the controller must be able to reach. A failed build does not start fix rounds.
 - Agent fix rounds cost more per round than the old single request, because the conversation is sent

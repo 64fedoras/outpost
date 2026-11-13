@@ -205,7 +205,7 @@ at all is moved to `tasks/_damaged/` rather than vanishing. Either way a notice 
 until you dismiss it.
 
 **Log size.** `node.log` and `tray.log` stay under 10 MB each; the previous 10 MB is kept as `node.log.old` /
-`tray.log.old`. Crash output from a node started by the tray or the macOS LaunchAgent goes to `node-console.log`.
+`tray.log.old`. Crash output from a node started by the tray or the macOS system service goes to `node-console.log`.
 
 **Stopping and updating.** A stop from systemd (or Ctrl+C), an update and a rollback first save every task, then the
 controller exits. Tasks that were running resume when it is back (local planners on their own, Claude and OpenRouter

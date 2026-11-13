@@ -149,23 +149,25 @@ still get no rule. *Untested on real Windows.*
 when run by a service (session 0). If a GPU node shows no GPU after switching, reinstall with
 `--no-service`.
 
-**macOS:** run `chmod +x ./outpost-darwin-arm64 && ./outpost-darwin-arm64 install node --join <token>`
-(without sudo). This writes a per-user LaunchAgent (`~/Library/LaunchAgents/io.outpost.node.plist`) so the
-node starts when you log in and restarts if it stops, with the binary in `~/.outpost/outpost` and logs in
-`~/.outpost/node/node.log`. It is per-user, not a system daemon, so llama.cpp can use the GPU through Metal.
-`outpost uninstall node` removes it. A menu bar item (see *Tray icon* below) is installed with it and starts at login.
-*Untested on a real Mac.* Running `outpost node --join <token>` in a terminal still works.
+**macOS:** run `chmod +x ./outpost-darwin-arm64 && sudo ./outpost-darwin-arm64 install node --join <token>`
+(the one-paste `curl ... | sh` command asks for your password too). This installs a system service, a
+LaunchDaemon (`/Library/LaunchDaemons/io.outpost.node.plist`), that runs as root, starts at boot without
+anyone signed in and restarts if it stops, with the binary in `/usr/local/bin/outpost` and data and logs in
+`/Library/Application Support/outpost/node` (`node.log`). It is a system service because macOS 15 and later
+block per-user login items (LaunchAgents) from other machines on the local network (Local Network
+privacy), and for a command-line program macOS never shows the prompt that would allow it: the node
+joined but stayed "never connected", with `no route to host` in its log. System services are exempt.
+Running `sudo outpost install node` without `--join` on a Mac set up by Outpost 0.14.13 or older moves
+the node's config and models from `~/.outpost/node` into the new folder, keeps the same node in the
+controller, and removes the old LaunchAgent. `sudo outpost uninstall node` removes the service and
+keeps the data. Because the node runs as root, commands run on it (when **Exec** is on for this node) also
+run as root. *Untested on a real Mac*, including whether llama.cpp can use the GPU through Metal from a
+system service. Running `outpost node --join <token>` in a terminal still works.
 
-**macOS Local Network permission.** macOS 15 and later block a LaunchAgent from reaching other machines on
-your network until you allow it, even though joining from Terminal worked (Terminal is exempt). The node then
-stays on "connecting to controller…" and `node.log` shows `no route to host`. The node spots this: the menu
-bar item says "blocked by macOS Local Network setting", the log says what to do, and the node asks macOS to
-show its "find devices on local networks" prompt (click **Allow**). If no prompt appears, turn on `outpost`
-under System Settings > Privacy & Security > Local Network. `install node` waits up to 45 seconds for the
-node to connect and prints the same advice if it is blocked. The LaunchAgent starts the Outpost binary
-directly (an earlier version went through `/bin/sh`, which macOS cannot grant the permission to); run
-`install node` again without `--join` to rewrite an older LaunchAgent. Because each update is a new binary
-that is not signed, macOS may ask again after an update. *Untested on a real Mac.*
+If a Mac node still reports `no route to host` (for example one started by hand from a login item), the
+menu bar item says "blocked by macOS Local Network setting", the log says what to do, and the node asks
+macOS to show its "find devices on local networks" prompt; click **Allow**, or turn on `outpost` under
+System Settings > Privacy & Security > Local Network if it is listed.
 
 **Check cluster.** Once nodes are added, **Check cluster** on the Nodes page tests every online node in one go:
 a 16-token call to its loaded model, an `echo` command (if commands are on), a connection from the controller to
@@ -227,11 +229,14 @@ AppIndicator extension (Ubuntu Desktop includes it; on other GNOME setups instal
 data folder: it says when nothing on the desktop is listening for tray icons. Linux servers without a
 desktop get no icon. Untested on a real desktop.
 
-On macOS the same menu appears in the menu bar. `install node` adds a second per-user LaunchAgent
-(`io.outpost.tray`, logs in `tray.log` in the data folder) that starts it at login; run `outpost tray &`
-from Terminal to start it by hand. There is no cgo in Outpost's builds, so the item is drawn by a small
+On macOS the same menu appears in the menu bar. `install node` adds a per-user LaunchAgent for the user
+who ran sudo (`io.outpost.tray`, logs in `~/Library/Logs/Outpost/tray.log`) that starts it at login; run
+`/usr/local/bin/outpost tray --data "/Library/Application Support/outpost/node" &` from Terminal to start
+it by hand. There is no cgo in Outpost's builds, so the item is drawn by a small
 script run through `/usr/bin/osascript` (AppKit via the JavaScript-for-Automation bridge) that the
-binary embeds. **Start Outpost** there restarts the node's LaunchAgent. *Untested on a real Mac:* the
+binary embeds. The node hands its control file to that user, so the item works although the node runs
+as root. **Start Outpost** there starts the system service and macOS asks for an administrator
+password. *Untested on a real Mac:* the
 menu code is unit-tested and the macOS binaries compile, but the menu bar item itself has never run.
 
 
