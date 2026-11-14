@@ -190,16 +190,14 @@ func (c *Controller) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ch.mu.Lock()
-	busy := ch.Busy != ""
-	if req.Node != "" {
+	if req.Node != "" && ch.Busy == "" {
 		ch.Node = req.Node
 	}
 	ch.mu.Unlock()
-	if busy {
+	if !c.startChatReply(ch, req.Text) {
 		writeJSON(w, 409, map[string]string{"error": "wait for the answer (or stop it) first"})
 		return
 	}
-	c.startChatReply(ch, req.Text)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -257,10 +255,17 @@ func chatTitle(text string) string {
 	return t
 }
 
-// startChatReply adds the user's message and answers it in the background.
-func (c *Controller) startChatReply(ch *Chat, text string) {
-	ctx, cancel := context.WithTimeout(context.Background(), chatWait+chatTimeout)
+// startChatReply adds the user's message and answers it in the background. It
+// returns false, and changes nothing, while the chat is still answering: the
+// check and the Busy mark happen under one lock, so a double send cannot start
+// two answers.
+func (c *Controller) startChatReply(ch *Chat, text string) bool {
 	ch.mu.Lock()
+	if ch.Busy != "" {
+		ch.mu.Unlock()
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), chatWait+chatTimeout)
 	ch.Messages = append(ch.Messages, ChatMsg{ID: newID("m"), Role: "user", Text: text, At: time.Now()})
 	ch.Updated, ch.Busy, ch.cancel = time.Now(), "waiting", cancel
 	pref := ch.Node
@@ -284,6 +289,7 @@ func (c *Controller) startChatReply(ch *Chat, text string) {
 		ch.mu.Unlock()
 		taskLive.changed("chat_" + ch.ID)
 	}()
+	return true
 }
 
 // chatHistory turns the stored messages into the model's conversation.

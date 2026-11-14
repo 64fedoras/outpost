@@ -377,11 +377,21 @@ func (c *Controller) ghLoop() {
 	}
 }
 
-// tasksBusyLocked is true while a task is planning, running or testing.
-func (c *Controller) tasksBusyLocked() bool {
+// tasksBusy is true while a task is working (activeStatus: planning, running,
+// building, testing or fixing). It takes c.mu and each task's lock in turn,
+// never both at once, so the caller must not hold c.mu.
+func (c *Controller) tasksBusy() bool {
+	c.mu.Lock()
+	list := make([]*Task, 0, len(c.tasks))
 	for _, t := range c.tasks {
-		switch t.Status {
-		case "planning", "running", "fixing", "testing":
+		list = append(list, t)
+	}
+	c.mu.Unlock()
+	for _, t := range list {
+		t.mu.Lock()
+		busy := activeStatus(t.Status)
+		t.mu.Unlock()
+		if busy {
 			return true
 		}
 	}
@@ -446,12 +456,9 @@ func (c *Controller) autoInstall() {
 				ok = false
 			}
 		}
-		if c.tasksBusyLocked() {
-			ok = false
-		}
 	}
 	c.mu.Unlock()
-	if !ok {
+	if !ok || c.tasksBusy() {
 		return
 	}
 	if len(ids) > 0 {
@@ -459,6 +466,11 @@ func (c *Controller) autoInstall() {
 		// off. Wait until each node has its binary installed ("restarting") or has failed.
 		if !c.waitNodeUpdates(ids, nodeUpdateWait) {
 			log.Printf("auto-install: node updates still running after %s; updating the controller anyway", nodeUpdateWait)
+		}
+		// A task may have started while the nodes updated; the next check retries.
+		if c.tasksBusy() {
+			log.Printf("auto-install: a task started while nodes updated; the controller update waits for the next check")
+			return
 		}
 	}
 	log.Printf("auto-install: updating the controller to %s", rel.Version)

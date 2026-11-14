@@ -181,3 +181,31 @@ func TestOrphanJobs(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+// Auto-resume must not hold c.mu while it takes a task's lock: dispatch holds a
+// task's lock and then takes c.mu (nodeLabel), so the two used to deadlock.
+func TestAutoResumeLockOrder(t *testing.T) {
+	c := &Controller{dataDir: t.TempDir(), conns: map[string]*nodeConn{}, lastHB: map[string]*Heartbeat{},
+		pipelines: map[string]*pipeline{}, cooldown: map[string]time.Time{}, models: map[string]*ModelRec{}, nodes: map[string]*NodeRec{}}
+	c.resumeWake = make(chan struct{}, 1)
+	dir := filepath.Join(c.tasksDir(), "t1")
+	os.MkdirAll(dir, 0o755)
+	waiting := &Task{ID: "t1", Planner: "node:n1", Status: "interrupted", AutoResume: true, dir: dir}
+	running := &Task{ID: "t2", Planner: "node:n2", Status: "running", dir: dir}
+	c.tasks = map[string]*Task{"t1": waiting, "t2": running}
+	go c.autoResumeInterrupted(time.Second, 50*time.Microsecond)
+	done := make(chan struct{})
+	go func() {
+		for end := time.Now().Add(700 * time.Millisecond); time.Now().Before(end); {
+			running.mu.Lock() // as executeTask does: the task's lock, then c.mu in nodeLabel
+			_ = c.nodeLabel("n2")
+			running.mu.Unlock()
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("deadlock between auto-resume and task dispatch")
+	}
+}

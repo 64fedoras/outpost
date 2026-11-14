@@ -32,17 +32,24 @@ func (c *Controller) nudgeResume() {
 func (c *Controller) autoResumeInterrupted(wait, tick time.Duration) {
 	deadline := time.Now().Add(wait)
 	for {
+		// Copy the list and let go of c.mu before taking any task's lock: task
+		// dispatch holds a task's lock while it takes c.mu (nodeLabel), so
+		// holding both the other way round can freeze the controller.
 		c.mu.Lock()
 		off := c.settings.AutoResumeOff || c.safeMode
-		var cands []*Task
+		all := make([]*Task, 0, len(c.tasks))
 		for _, t := range c.tasks {
+			all = append(all, t)
+		}
+		c.mu.Unlock()
+		var cands []*Task
+		for _, t := range all {
 			t.mu.Lock()
 			if t.AutoResume {
 				cands = append(cands, t)
 			}
 			t.mu.Unlock()
 		}
-		c.mu.Unlock()
 		if len(cands) == 0 {
 			return
 		}
