@@ -51,12 +51,20 @@ function renderUpdates() {
     rel.map((r) => `<tr><td>${esc(r.platform)}</td><td>v${esc(r.version)}</td><td>${bytes(r.bytes)}</td><td class="mono" title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 12))}…</td><td>${ago(r.uploaded)}</td>
       <td class="r"><button class="small danger" data-act="del-release" data-platform="${esc(r.platform)}">Delete</button></td></tr>`).join('')}</tbody></table></div>` : '');
 }
+// everyText turns the controller's interval ("6h", "1d", "15m") into words.
+function everyText(e) {
+  const m = /^(\d+)([dhm])$/.exec(e || '6h');
+  if (!m) return e;
+  const n = +m[1], u = { d: 'day', h: 'hour', m: 'minute' }[m[2]];
+  if (m[2] === 'd' && n === 7) return 'week';
+  return n === 1 ? u : `${n} ${u}s`;
+}
 function renderGitHub() {
   const g = state.github_updates || {};
   let t;
   if (g.busy) t = g.busy.startsWith('checking') ? `Checking ${g.host || 'GitHub'}…` : 'Downloading ' + g.busy.replace('downloading ', '') + '…';
   else {
-    const mode = !g.enabled ? 'Automatic checks are off (Settings)' : g.auto_install ? 'Checks every 6 hours and installs automatically' : 'Checks every 6 hours; you click Update';
+    const mode = !g.enabled ? 'Automatic checks are off (Settings)' : g.auto_install ? `Checks every ${everyText(g.every)} and installs automatically` : `Checks every ${everyText(g.every)}; you click Update`;
     t = `${mode}. ` + (g.repo ? `Repository: ${g.repo} (${g.host}). ` : '') + (g.checked && g.checked > '2000' ? `Last checked ${ago(g.checked)}${g.latest ? ', latest is v' + g.latest : ''}.` : 'Not checked yet.');
     if (g.hold) t += ` Auto-install skips v${g.hold} and older after a rollback.`;
     t += g.catalog ? ` Suggested models: list from v${g.catalog}.` : ' Suggested models: the list built into this version.';

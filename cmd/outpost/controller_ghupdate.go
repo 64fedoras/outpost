@@ -23,7 +23,9 @@ import (
 
 const (
 	ghDefaultRepo   = "64fedoras/outpost"
-	ghCheckInterval = 6 * time.Hour
+	ghCheckInterval = 6 * time.Hour // default; Settings.UpdateCheckEvery changes it
+	ghCheckMin      = 15 * time.Minute
+	ghCheckMax      = 7 * 24 * time.Hour
 	ghFirstCheck    = 2 * time.Minute
 	maxSumsBytes    = 1 << 20
 )
@@ -308,15 +310,58 @@ func (c *Controller) ghEnabled() (check, auto bool) {
 	return !c.settings.GitHubUpdatesOff, c.settings.GitHubAutoInstall
 }
 
+// parseCheckEvery reads the "Check every" setting: a time like 15m, 1h or 1d between 15 minutes
+// and 7 days. Empty means the default.
+func parseCheckEvery(s string) (time.Duration, error) {
+	if strings.TrimSpace(s) == "" {
+		return ghCheckInterval, nil
+	}
+	d, err := parseIdleDuration(s)
+	if err != nil {
+		return 0, err
+	}
+	if d < ghCheckMin || d > ghCheckMax {
+		return 0, errors.New("check for updates between every 15 minutes and every 7 days")
+	}
+	return d, nil
+}
+
+// ghInterval is the time between automatic checks; a setting that no longer parses counts as the default.
+func (c *Controller) ghInterval() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.ghIntervalLocked()
+}
+
+func (c *Controller) ghIntervalLocked() time.Duration {
+	if d, err := parseCheckEvery(c.settings.UpdateCheckEvery); err == nil {
+		return d
+	}
+	return ghCheckInterval
+}
+
+// ghCheckDue reports whether an automatic check is due: the interval has passed since the last
+// check (manual ones count too). A changed interval applies from the next minute, measured from
+// that last check.
+func ghCheckDue(last, now time.Time, every time.Duration) bool {
+	return last.IsZero() || !now.Before(last.Add(every))
+}
+
+// ghLoopTick is how often ghLoop looks whether a check is due.
+var ghLoopTick = time.Minute
+
 func (c *Controller) ghLoop() {
 	time.Sleep(ghFirstCheck)
 	for {
-		if check, auto := c.ghEnabled(); check {
+		c.mu.Lock()
+		last := c.ghState.Checked
+		c.mu.Unlock()
+		if check, auto := c.ghEnabled(); check && ghCheckDue(last, time.Now(), c.ghInterval()) {
 			if _, err := c.checkGitHub(context.Background()); err == nil && auto && c.ghBranch() == "" {
 				c.autoInstall()
 			}
 		}
-		time.Sleep(ghCheckInterval)
+		time.Sleep(ghLoopTick)
 	}
 }
 
@@ -447,7 +492,7 @@ func (c *Controller) ghViewLocked() map[string]any {
 	return map[string]any{
 		"enabled": !c.settings.GitHubUpdatesOff, "auto_install": c.settings.GitHubAutoInstall,
 		"hold": c.settings.GitHubHoldVersion, "repo": src.URL(), "host": src.label(), "branch": c.settings.GitHubBranch,
-		"checked": s.Checked, "latest": s.Latest, "error": s.Error, "busy": s.Busy, "fetched": s.Fetched, "catalog": s.Catalog,
+		"every": formatIdleDuration(c.ghIntervalLocked()), "checked": s.Checked, "latest": s.Latest, "error": s.Error, "busy": s.Busy, "fetched": s.Fetched, "catalog": s.Catalog,
 	}
 }
 
