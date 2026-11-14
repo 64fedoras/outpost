@@ -318,3 +318,15 @@ func TestV1SpecPassesAgentSettings(t *testing.T) {
 		t.Fatalf("params not passed through: %+v", p)
 	}
 }
+
+// A second send while the chat is answering is refused and starts nothing.
+func TestChatReplyRefusedWhileBusy(t *testing.T) {
+	c := chatController(t)
+	ch := &Chat{ID: "chat_x", Busy: "answering", dir: c.chatsDir()}
+	if c.startChatReply(ch, "again") {
+		t.Fatal("a busy chat must not start a second answer")
+	}
+	if len(ch.Messages) != 0 || ch.cancel != nil {
+		t.Fatalf("busy chat changed: %+v", ch.Messages)
+	}
+}

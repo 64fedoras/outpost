@@ -45,7 +45,7 @@ type searchResult struct {
 
 var searchState struct {
 	sync.Mutex
-	last         time.Time // last DuckDuckGo request
+	last         time.Time // start of the latest booked DuckDuckGo request
 	blockedUntil time.Time
 }
 
@@ -102,17 +102,23 @@ var (
 
 // ddgSearch scrapes DuckDuckGo's HTML results page.
 func ddgSearch(ctx context.Context, query string) ([]searchResult, error) {
-	// One request at a time and a small gap between them, so a burst does not trip the rate limit.
+	// Requests start at least ddgGap apart, so a burst does not trip the rate limit. The lock is
+	// held only to book a start time, never while waiting or during the request, so a stopped
+	// chat does not wait behind other searches.
 	searchState.Lock()
-	defer searchState.Unlock()
-	if wait := ddgGap - time.Since(searchState.last); wait > 0 {
+	start := time.Now()
+	if next := searchState.last.Add(ddgGap); next.After(start) {
+		start = next
+	}
+	searchState.last = start
+	searchState.Unlock()
+	if wait := time.Until(start); wait > 0 {
 		select {
 		case <-time.After(wait):
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
 	}
-	searchState.last = time.Now()
 	ctx, cancel := context.WithTimeout(ctx, searchTimeout)
 	defer cancel()
 	form := url.Values{"q": {query}}
@@ -128,7 +134,9 @@ func ddgSearch(ctx context.Context, query string) ([]searchResult, error) {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, searchMaxBody))
 	page := string(body)
 	if resp.StatusCode == 202 || resp.StatusCode == 403 || resp.StatusCode == 429 || ddgChallenge(page) {
+		searchState.Lock()
 		searchState.blockedUntil = time.Now().Add(ddgBlockedFor)
+		searchState.Unlock()
 		return nil, errSearchBlocked
 	}
 	if resp.StatusCode != 200 {

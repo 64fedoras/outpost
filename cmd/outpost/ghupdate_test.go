@@ -308,3 +308,17 @@ func TestBranchBuildsPicksNewestPrereleasePerBranch(t *testing.T) {
 		t.Fatalf("got %+v", b)
 	}
 }
+
+// A task in its build step (or any other working state) holds the controller update back.
+func TestTasksBusyCountsEveryWorkingState(t *testing.T) {
+	c := &Controller{tasks: map[string]*Task{"a": {ID: "a", Status: "done"}}}
+	if c.tasksBusy() {
+		t.Fatal("a finished task is not busy")
+	}
+	for _, s := range []string{"planning", "running", "building", "testing", "fixing"} {
+		c.tasks["b"] = &Task{ID: "b", Status: s}
+		if !c.tasksBusy() {
+			t.Errorf("%s should count as busy", s)
+		}
+	}
+}
