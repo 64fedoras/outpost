@@ -108,28 +108,49 @@ func TestRollbackHoldBlocksOlderAutoInstall(t *testing.T) {
 	}
 }
 
-func TestParseGitHubRepo(t *testing.T) {
-	ok := map[string]string{
-		"":                                     ghDefaultRepo,
-		"https://github.com/64fedoras/outpost": "64fedoras/outpost",
-		"https://github.com/me/my.repo.git":    "me/my.repo",
-		"https://www.github.com/me/r/releases/tag/v1": "me/r",
-		"github.com/me/r/":                            "me/r",
-		"  me/r  ":                                    "me/r",
+func TestParseUpdateSource(t *testing.T) {
+	ok := []struct{ in, kind, want, wantKind string }{
+		{"", "", "https://github.com/" + ghDefaultRepo, kindGitHub},
+		{"https://github.com/64fedoras/outpost", "", "https://github.com/64fedoras/outpost", kindGitHub},
+		{"https://github.com/me/my.repo.git", "", "https://github.com/me/my.repo", kindGitHub},
+		{"https://www.github.com/me/r/releases/tag/v1", "", "https://github.com/me/r", kindGitHub},
+		{"github.com/me/r/", "", "https://github.com/me/r", kindGitHub},
+		{"  me/r  ", "", "https://github.com/me/r", kindGitHub},
+		{"git@github.com:me/r.git", "", "https://github.com/me/r", kindGitHub},
+		{"https://gitlab.com/group/sub/repo/-/releases", "", "https://gitlab.com/group/sub/repo", kindGitLab},
+		{"https://gitlab.com/group/repo.git", "", "https://gitlab.com/group/repo", kindGitLab},
+		{"https://codeberg.org/me/r/releases", "", "https://codeberg.org/me/r", kindGitea},
+		{"https://Gitea.Example.local:3000/me/r", "", "https://gitea.example.local:3000/me/r", ""},
+		{"http://192.0.2.5:3000/me/r/releases", kindGitea, "http://192.0.2.5:3000/me/r", kindGitea},
+		{"ssh://git@gitlab.example.local/a/b/c.git", kindGitLab, "https://gitlab.example.local/a/b/c", kindGitLab},
+		{"https://ghe.example.local/org/r/tree/main", kindGitHub, "https://ghe.example.local/org/r", kindGitHub},
+		{"https://gitlab.com/g/r", kindGitea, "https://gitlab.com/g/r", kindGitLab}, // a known host wins
 	}
-	for in, want := range ok {
-		if got, err := parseGitHubRepo(in); err != nil || got != want {
-			t.Errorf("%q -> %q, %v (want %q)", in, got, err, want)
+	for _, c := range ok {
+		got, err := parseUpdateSource(c.in, c.kind)
+		if err != nil || got.URL() != c.want || got.Kind != c.wantKind {
+			t.Errorf("%q/%q -> %+v, %v (want %s %q)", c.in, c.kind, got, err, c.want, c.wantKind)
 		}
 	}
 	for _, in := range []string{
-		"http://github.com/me/r", "https://gitlab.com/me/r", "https://evil.example/github.com/me/r",
-		"git@github.com:me/r.git", "https://github.com/me", "me", "https://github.com/me/r?x=1",
-		"https://user:pw@github.com/me/r", "a/b/c", "../x", "me/..",
+		"http://github.com/me/r", "ftp://example.local/me/r", "https://github.com/me", "me",
+		"https://github.com/me/r?x=1", "https://user:pw@github.com/me/r", "a/b/c", "../x", "me/..",
+		"https://example.local/me", "https://exa mple.local/me/r", "https://example.local/me/%2e%2e",
+		"https://-bad-.local/me/r", "file:///etc/passwd", "ssh://git@example.local:2222/me/r",
 	} {
-		if got, err := parseGitHubRepo(in); err == nil {
-			t.Errorf("%q accepted as %q", in, got)
+		if got, err := parseUpdateSource(in, ""); err == nil {
+			t.Errorf("%q accepted as %+v", in, got)
 		}
+	}
+	if _, err := parseUpdateSource("me/r", "svn"); err == nil {
+		t.Error("unknown server type accepted")
+	}
+	// What older versions read stays the same for github.com.
+	if s, _ := parseUpdateSource("https://github.com/me/r", ""); s.stored() != "me/r" {
+		t.Errorf("stored %q", s.stored())
+	}
+	if s, _ := parseUpdateSource("", ""); s.stored() != "" {
+		t.Errorf("default stored as %q", s.stored())
 	}
 }
 
@@ -202,7 +223,7 @@ func TestCheckGitHubPrivateRepoUsesToken(t *testing.T) {
 		}
 	}))
 	defer other.Close()
-	if resp, err := c.ghGet(context.Background(), other.URL+"/x", "*/*", "sekrit"); err == nil {
+	if resp, err := defaultSource().get(context.Background(), other.URL+"/x", "*/*", "sekrit"); err == nil {
 		resp.Body.Close()
 	}
 }
@@ -300,7 +321,7 @@ func TestBranchBuildsPicksNewestPrereleasePerBranch(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("OUTPOST_GITHUB_API", srv.URL)
 	c := &Controller{}
-	b, err := c.ghBranchBuilds(context.Background(), ghDefaultRepo, "")
+	b, err := c.ghBranchBuilds(context.Background(), defaultSource(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

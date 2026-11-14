@@ -8,22 +8,22 @@ Part of the [Outpost user guide](USER-GUIDE.md).
 
 Every merge to `main` is built by GitHub Actions as the next patch version (0.8.1, 0.8.2, ...; after patch 19 the minor rolls, so 0.8.19 is followed by 0.9.0) and published as a release `v<version>` with the five binaries, a zip and `SHA256SUMS`, so each build shows up as a newer version in the Updates tab. Major versions (1.0) are set by hand in `cmd/outpost/proto.go`, and versions compare numerically (0.8.10 is newer than 0.8.9) in `cmd/outpost/proto.go`.
 
-**From GitHub (on by default).** The controller checks this repository's latest release every 6 hours
+**From GitHub, GitLab or Gitea (on by default).** The controller checks the update repository's latest release (this project's GitHub repository unless you set another, see below) every 6 hours
 (and when you click **Check now** on the Updates tab) and downloads the binaries for its own platform
 and for the platforms of the nodes it knows. Each file must match the release's `SHA256SUMS` and be an
 Outpost binary of that version, or it is discarded; accepted ones show up under *Uploaded releases*
 exactly like a manual upload, so the Update buttons and rollback work unchanged. `SHA256SUMS` catches
 corrupt downloads but is not signed, so it does not protect against a tampered repository. Under
-**Settings → Updates from GitHub** you can switch the checks off, or switch on **Install them
+**Settings → Updates from a git host** you can switch the checks off, or switch on **Install them
 automatically**: idle nodes update first (busy ones are retried at the next check), then the
 controller (it waits up to 10 minutes for the nodes' downloads to finish first), and only when no task is planning, running or testing. **Check and install** on the Updates
 tab does the same once, on request. After a rollback, automatic install skips the version you left
 (and older ones) until a newer release appears. Nothing but the version check and the downloads goes to
-GitHub. This path has only been tested against a stub server, not the live GitHub API.
+that server. This path has only been tested against stub servers, not the live GitHub, GitLab or Gitea APIs.
 
-**Following a branch.** Under *GitHub releases* the Updates tab has an **Update channel** dropdown. *Stable*
+**Following a branch.** Under *Published releases* the Updates tab has an **Update channel** dropdown. *Stable*
 is the normal behaviour above. The other entries are branches that have a build on GitHub; the list is read
-from GitHub each time you open the dropdown. Picking one makes the controller follow that branch's newest
+from the update repository each time you open the dropdown. Picking one makes the controller follow that branch's newest
 build (shown as a version like `0.12.19-dev.7`) instead of the latest release. The build goes through the same
 SHA-256 check, preflight, one-node-first rollout, trial and rollback as any update, but automatic install is off
 while a branch is selected, so nothing installs until you click Update. Branch builds are made by the
@@ -34,24 +34,54 @@ back to Stable replaces a stored branch build with the latest release, and **Rol
 previous version if the stable release is not newer than what is running. Not yet tested against the live
 GitHub API or on the cluster.
 
-**Which repository, and private repositories.** *Settings → Updates from GitHub* has a **Repository to
-trust for updates** field. Enter a `github.com` address such as `https://github.com/64fedoras/outpost`
-(or just `owner/repo`; other hosts are refused); empty means the default. Whoever controls that
+**Which repository, and private repositories.** *Settings → Updates from a git host* has a **Repository
+to trust for updates** field. It takes a repository on **GitHub** (github.com or GitHub Enterprise),
+**GitLab** (gitlab.com or self-hosted) or **Gitea / Forgejo** (Codeberg or self-hosted): paste its web
+address (`https://github.com/64fedoras/outpost`, `https://gitlab.example.local/team/tools/outpost`,
+`https://gitea.example.local:3000/me/outpost`; pages after it such as `/releases` or `/-/releases` are
+ignored), its clone address (`git@host:owner/repo.git`), or plain `owner/repo` for github.com. Empty means
+the default. **Server type** is worked out from the name for github.com, gitlab.com and codeberg.org; for
+your own server Outpost asks it once (Gitea/Forgejo `/api/v1/version`, GitLab `/api/v4/version`, GitHub
+Enterprise `/api/v3/meta`, without the token), or you pick the type yourself. Whoever controls that
 repository can ship code that runs on the controller and every node, so only enter one you own or fully
-trust. For a **private** repository add an access token:
+trust.
 
-1. On GitHub: *Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate
-   new token*.
-2. Set *Repository access* to **Only select repositories** and pick the repository, then under
-   *Repository permissions* set **Contents: Read-only** (Metadata: Read-only is added automatically).
-   Choose an expiry you can live with; an expired token shows up as "GitHub rejected the access token".
-3. Paste the token into **Access token for a private repository**, press **Test connection**, then **Save**.
+The release must look like this project's own: a release tagged `v<version>` with the binaries named
+`outpost-<os>-<arch>[.exe]` and a `SHA256SUMS` file as release files (on GitLab, release *links*, for
+example into the generic package registry). Prereleases and drafts are skipped; on GitLab, which has no
+prerelease flag, a tag with a suffix (`v0.12.19-dev.3`) counts as one, and that is also how branch builds
+are found there. On GitHub the newest release is the one GitHub marks latest; on GitLab and Gitea the
+highest version number wins.
+
+`https://` is expected. Plain `http://` is accepted for a server on your own network, with a warning:
+the token and the binaries then travel unencrypted, and anyone on the path could replace a binary and its
+`SHA256SUMS` together. A redirect from `https://` to `http://` is refused. Self-signed certificates are not
+accepted; the controller trusts the system's certificate authorities, so add your own CA to the controller
+machine's trust store if your server uses one.
+
+For a **private** repository add a read-only access token:
+
+- **GitHub:** *Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new
+  token*, *Only select repositories* with that repository, **Contents: Read-only** (Metadata is added
+  automatically).
+- **GitLab:** a personal, group or project access token with the **read_api** scope (Reporter role or
+  higher for a project token).
+- **Gitea / Forgejo:** *Settings → Applications → Generate token* with **read:repository**.
+
+Paste it into **Access token for a private repository**, press **Test connection**, then **Save**. An
+expired token shows up as "<host> rejected the access token".
 
 The token is stored encrypted on the controller, is never sent to nodes, is not shown again after saving
-(the page only says *token set*; **Clear** removes it) and is sent only to `api.github.com`; private
-release files are downloaded through the authenticated API. Public repositories need no token. Changing
-the repository clears the rollback hold. The private-repository path has only been tested against a stub
-server, not a live private repository.
+(the page only says *token set*; **Clear** removes it) and is sent only to the repository's own server
+(`api.github.com` for github.com), never to another host or port, and is dropped from any redirect that
+leaves that server. Moving the repository to another server removes a saved token unless you paste a new
+one in the same save, and **Test connection** never sends the saved token to a different server. Public
+repositories need no token. Changing the repository clears the rollback hold. If you roll back to a
+version from before other hosts were supported while a non-GitHub repository is set, that version falls
+back to the default GitHub repository.
+
+GitLab and Gitea/Forgejo support has been tested only against stub servers in the unit tests, not against
+a real GitLab, Gitea or Forgejo instance; the private GitHub path likewise only against a stub.
 
 Or by hand:
 
@@ -62,7 +92,7 @@ Or by hand:
 Nodes verify the download's SHA-256, run it once to confirm the version, and restart into it.
 Updates need no root and survive reboots. Nodes with running jobs wait until they are idle.
 
-**One node first.** *Update N nodes* (and automatic install from GitHub) updates a single idle node first,
+**One node first.** *Update N nodes* (and automatic install from the update repository) updates a single idle node first,
 waits up to 15 minutes for it to reconnect on the new version, then checks it: a short model call if it had
 a model loaded (after waiting for the model to load again) and an `echo` command if commands are on. Only
 then are the other nodes updated. If the first node does not come back, or fails its check, it is rolled

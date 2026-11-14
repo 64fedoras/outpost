@@ -1,6 +1,6 @@
 package main
 
-// Updates from this project's GitHub releases. The controller checks the repository's latest
+// Updates from this project's releases on GitHub, GitLab or Gitea/Forgejo (update_source.go). The controller checks the repository's latest
 // release, downloads the binaries it needs (its own platform and the platforms of known nodes),
 // checks each one against the release's SHA256SUMS, and stores them as ordinary uploaded releases.
 // From there the Updates tab, node update path and rollback work exactly as for a manual upload.
@@ -54,58 +54,43 @@ func (a ghAsset) downloadURL(authed bool) string {
 	return a.URL
 }
 
-var (
-	ghOwnerRe = regexp.MustCompile(`^[A-Za-z0-9-]{1,39}$`)
-	ghRepoRe  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
-)
+var ghOwnerRe = regexp.MustCompile(`^[A-Za-z0-9-]{1,39}$`)
 
-// parseGitHubRepo turns what the owner typed into "owner/repo". It accepts a github.com URL
-// (https://github.com/owner/repo, with or without .git, a trailing path or www.), github.com/owner/repo
-// or owner/repo, and refuses every other host and scheme. Empty means the default repository.
-func parseGitHubRepo(in string) (string, error) {
-	s := strings.TrimSpace(in)
-	if s == "" {
-		return ghDefaultRepo, nil
-	}
-	if i := strings.Index(s, "://"); i >= 0 {
-		if !strings.EqualFold(s[:i], "https") {
-			return "", errors.New("use an https://github.com/owner/repo address")
-		}
-		s = s[i+3:]
-	}
-	if strings.ContainsAny(s, "?#@ \t") {
-		return "", errors.New("use an address like https://github.com/owner/repo")
-	}
-	parts := strings.Split(strings.Trim(s, "/"), "/")
-	if len(parts) >= 3 || (len(parts) == 2 && strings.Contains(parts[0], ".")) {
-		host := strings.ToLower(parts[0])
-		if host != "github.com" && host != "www.github.com" {
-			return "", errors.New("only github.com repositories can be used for updates")
-		}
-		parts = parts[1:]
-	}
-	if len(parts) < 2 {
-		return "", errors.New("use an address like https://github.com/owner/repo")
-	}
-	owner, repo := parts[0], strings.TrimSuffix(parts[1], ".git")
-	if !ghOwnerRe.MatchString(owner) || !ghRepoRe.MatchString(repo) || repo == "." || repo == ".." {
-		return "", errors.New("that does not look like a GitHub owner/repo name")
-	}
-	return owner + "/" + repo, nil
+// updConfig returns the configured source (its server type may still be unknown) and the
+// decrypted token (may be empty). An unreadable setting falls back to the default repository.
+func (c *Controller) updConfig() (updSource, string) {
+	c.mu.Lock()
+	src := c.updSourceLocked()
+	enc := c.settings.GitHubTokenEnc
+	c.mu.Unlock()
+	token, _ := c.decrypt(enc)
+	return src, token
 }
 
-// ghConfig returns the repository to trust for updates and the decrypted token (may be empty).
-func (c *Controller) ghConfig() (repo, token string) {
-	c.mu.Lock()
-	repo, enc := c.settings.GitHubRepo, c.settings.GitHubTokenEnc
-	c.mu.Unlock()
-	if r, err := parseGitHubRepo(repo); err == nil {
-		repo = r
-	} else {
-		repo = ghDefaultRepo
+func (c *Controller) updSourceLocked() updSource {
+	if src, err := parseUpdateSource(c.settings.GitHubRepo, c.settings.UpdateHostKind); err == nil {
+		return src
 	}
-	token, _ = c.decrypt(enc)
-	return repo, token
+	return defaultSource()
+}
+
+// updShownLocked is the source as the owner sees it: with the server type filled in (and the
+// path trimmed) once a self-hosted server has said what it is.
+func (c *Controller) updShownLocked() updSource {
+	src := c.updSourceLocked()
+	if k, ok := detectedKinds.Load(src.origin()); ok && src.Kind == "" {
+		if r, err := src.withKind(k.(string)); err == nil {
+			return r
+		}
+	}
+	return src
+}
+
+// updResolved is updConfig with the server type known (asking the server if needed).
+func (c *Controller) updResolved(ctx context.Context) (updSource, string, error) {
+	src, token := c.updConfig()
+	src, err := resolveSource(ctx, src)
+	return src, token, err
 }
 
 type ghLatest struct {
@@ -136,45 +121,6 @@ func parseSums(b []byte) map[string]string {
 func releaseFileName(platform string) string {
 	goos, _, _ := strings.Cut(platform, "-")
 	return "outpost-" + platform + exeSuffix(goos)
-}
-
-// ghGet fetches url from GitHub. The token, if any, goes only to the GitHub API address; the
-// redirect to the signed storage URL carries none (Go drops Authorization on a host change).
-func (c *Controller) ghGet(ctx context.Context, url, accept, token string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", accept)
-	req.Header.Set("User-Agent", "outpost/"+Version)
-	if token != "" && strings.HasPrefix(url, ghAPIBase()+"/") {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := (&http.Client{}).Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != 200 {
-		resp.Body.Close()
-		return nil, ghStatusError(resp.StatusCode, resp.Status, token != "")
-	}
-	return resp, nil
-}
-
-// ghStatusError turns a GitHub status into a message that says what to fix.
-func ghStatusError(code int, status string, hadToken bool) error {
-	switch code {
-	case 401:
-		return errors.New("GitHub rejected the access token (wrong, expired or revoked)")
-	case 404:
-		if hadToken {
-			return errors.New("GitHub: repository or release not found, or the token has no access to it (it needs read access to Contents and Metadata for that repository)")
-		}
-		return errors.New("GitHub: repository or release not found; a private repository needs an access token")
-	case 403, 429:
-		return fmt.Errorf("GitHub: %s (rate limit reached, or the token lacks permission)", status)
-	}
-	return fmt.Errorf("GitHub: %s", status)
 }
 
 // neededPlatformsLocked lists the platforms worth downloading: this controller's and every known node's.
@@ -219,7 +165,7 @@ func (c *Controller) checkGitHub(ctx context.Context) (string, error) {
 		}
 	})
 	if err != nil {
-		log.Printf("github update check: %v", err)
+		log.Printf("update check: %v", err)
 	}
 	return latest, err
 }
@@ -227,27 +173,24 @@ func (c *Controller) checkGitHub(ctx context.Context) (string, error) {
 func (c *Controller) checkGitHubRun(ctx context.Context) (latest string, fetched []string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	defer cancel()
-	repo, token := c.ghConfig()
+	src, token, err := c.updResolved(ctx)
+	if err != nil {
+		return "", nil, err
+	}
 	branch := c.ghBranch()
 	var rel ghLatest
 	if branch == "" {
-		resp, err := c.ghGet(ctx, ghAPIBase()+"/repos/"+repo+"/releases/latest", "application/vnd.github+json", token)
-		if err != nil {
-			return "", nil, err
-		}
-		err = json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&rel)
-		resp.Body.Close()
-		if err != nil {
+		if rel, err = src.latestRelease(ctx, token); err != nil {
 			return "", nil, err
 		}
 	} else {
-		builds, err := c.ghBranchBuilds(ctx, repo, token)
+		builds, err := c.ghBranchBuilds(ctx, src, token)
 		if err != nil {
 			return "", nil, err
 		}
 		b, ok := builds[branch]
 		if !ok {
-			return "", nil, fmt.Errorf("branch %q has no build on GitHub (builds are published when the branch is pushed)", branch)
+			return "", nil, fmt.Errorf("branch %q has no build on %s (builds are published when the branch is pushed)", branch, src.label())
 		}
 		rel = b
 	}
@@ -276,7 +219,7 @@ func (c *Controller) checkGitHubRun(ctx context.Context) (latest string, fetched
 	if !ok {
 		return latest, nil, errors.New("release " + rel.Tag + " has no SHA256SUMS file; not installing")
 	}
-	sr, err := c.ghGet(ctx, sumAsset.downloadURL(token != ""), "application/octet-stream", token)
+	sr, err := src.get(ctx, sumAsset.downloadURL(token != ""), "application/octet-stream", token)
 	if err != nil {
 		return latest, nil, err
 	}
@@ -287,7 +230,7 @@ func (c *Controller) checkGitHubRun(ctx context.Context) (latest string, fetched
 	}
 	sums := parseSums(sumBytes)
 	if branch == "" { // a branch build never changes the suggested-models list
-		if err := c.updateCatalog(ctx, rel, latest, sums, token); err != nil {
+		if err := c.updateCatalog(ctx, src, rel, latest, sums, token); err != nil {
 			log.Printf("model catalog update: %v", err)
 		}
 	}
@@ -304,7 +247,7 @@ func (c *Controller) checkGitHubRun(ctx context.Context) (latest string, fetched
 			continue
 		}
 		c.setGH(func(s *ghUpdateState) { s.Busy = "downloading " + p })
-		if err := c.fetchReleaseAsset(ctx, a, wantSum, latest, token); err != nil {
+		if err := c.fetchReleaseAsset(ctx, src, a, wantSum, latest, token); err != nil {
 			errs = append(errs, name+": "+err.Error())
 			continue
 		}
@@ -318,11 +261,11 @@ func (c *Controller) checkGitHubRun(ctx context.Context) (latest string, fetched
 
 // fetchReleaseAsset downloads one binary next to the stored releases, verifies its SHA-256 and
 // that it is an Outpost binary of the announced version, then stores it like an upload.
-func (c *Controller) fetchReleaseAsset(ctx context.Context, a ghAsset, wantSum, wantVersion, token string) error {
+func (c *Controller) fetchReleaseAsset(ctx context.Context, src updSource, a ghAsset, wantSum, wantVersion, token string) error {
 	if err := os.MkdirAll(c.releasesDir(), 0o700); err != nil {
 		return err
 	}
-	resp, err := c.ghGet(ctx, a.downloadURL(token != ""), "application/octet-stream", token)
+	resp, err := src.get(ctx, a.downloadURL(token != ""), "application/octet-stream", token)
 	if err != nil {
 		return err
 	}
@@ -488,13 +431,10 @@ func (c *Controller) ghView() map[string]any {
 
 func (c *Controller) ghViewLocked() map[string]any {
 	s := c.ghState
-	repo := ghDefaultRepo
-	if r, err := parseGitHubRepo(c.settings.GitHubRepo); err == nil {
-		repo = r
-	}
+	src := c.updShownLocked()
 	return map[string]any{
 		"enabled": !c.settings.GitHubUpdatesOff, "auto_install": c.settings.GitHubAutoInstall,
-		"hold": c.settings.GitHubHoldVersion, "repo": repo, "branch": c.settings.GitHubBranch,
+		"hold": c.settings.GitHubHoldVersion, "repo": src.URL(), "host": src.label(), "branch": c.settings.GitHubBranch,
 		"checked": s.Checked, "latest": s.Latest, "error": s.Error, "busy": s.Busy, "fetched": s.Fetched, "catalog": s.Catalog,
 	}
 }
@@ -527,47 +467,51 @@ func (c *Controller) handleInstallGitHub(w http.ResponseWriter, r *http.Request)
 }
 
 // handleTestGitHub checks a repository and token without saving them. Empty fields fall back to
-// the saved ones, so the owner can test the stored token without retyping it.
+// the saved ones, so the owner can test the stored token without retyping it; the saved token is
+// only used when the repository is on the same server as the saved one.
 func (c *Controller) handleTestGitHub(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Repo  string `json:"repo"`
-		Token string `json:"token"`
+		Repo  string  `json:"repo"`
+		Kind  *string `json:"kind"`
+		Token string  `json:"token"`
 	}
 	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req)
-	saved, savedTok := c.ghConfig()
-	repo, token := saved, savedTok
-	if strings.TrimSpace(req.Repo) != "" {
+	saved, savedTok := c.updConfig()
+	src := saved
+	if strings.TrimSpace(req.Repo) != "" || req.Kind != nil {
+		c.mu.Lock()
+		kind := c.settings.UpdateHostKind
+		c.mu.Unlock()
+		if req.Kind != nil {
+			kind = *req.Kind
+		}
 		var err error
-		if repo, err = parseGitHubRepo(req.Repo); err != nil {
+		if src, err = parseUpdateSource(req.Repo, kind); err != nil {
 			writeJSON(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
 	}
-	if t := strings.TrimSpace(req.Token); t != "" {
-		token = t
-	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	var meta struct {
-		Private bool `json:"private"`
-	}
-	resp, err := c.ghGet(ctx, ghAPIBase()+"/repos/"+repo, "application/vnd.github+json", token)
+	src, err := resolveSource(ctx, src)
 	if err != nil {
 		writeJSON(w, 502, map[string]string{"error": err.Error()})
 		return
 	}
-	_ = json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&meta)
-	resp.Body.Close()
-	resp, err = c.ghGet(ctx, ghAPIBase()+"/repos/"+repo+"/releases/latest", "application/vnd.github+json", token)
+	token := ""
+	if t := strings.TrimSpace(req.Token); t != "" {
+		token = t
+	} else if savedR, err := resolveSource(ctx, saved); err == nil && savedR.tokenOrigin() == src.tokenOrigin() {
+		token = savedTok
+	}
+	private, err := src.repoPrivate(ctx, token)
+	if err != nil {
+		writeJSON(w, 502, map[string]string{"error": err.Error()})
+		return
+	}
+	rel, err := src.latestRelease(ctx, token)
 	if err != nil {
 		writeJSON(w, 502, map[string]string{"error": "repository found, but no usable release: " + err.Error()})
-		return
-	}
-	var rel ghLatest
-	err = json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&rel)
-	resp.Body.Close()
-	if err != nil {
-		writeJSON(w, 502, map[string]string{"error": err.Error()})
 		return
 	}
 	hasSums := false
@@ -576,13 +520,16 @@ func (c *Controller) handleTestGitHub(w http.ResponseWriter, r *http.Request) {
 			hasSums = true
 		}
 	}
-	msg := fmt.Sprintf("Connected to %s (%s). Latest release %s", repo, map[bool]string{true: "private", false: "public"}[meta.Private], rel.Tag)
+	msg := fmt.Sprintf("Connected to %s (%s, %s). Latest release %s", src.URL(), src.label(), map[bool]string{true: "private", false: "public"}[private], rel.Tag)
 	if hasSums {
 		msg += " has a SHA256SUMS file."
 	} else {
 		msg += " has no SHA256SUMS file, so its binaries would not be installed."
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "repo": repo, "private": meta.Private, "latest": strings.TrimPrefix(rel.Tag, "v"), "sums": hasSums, "message": msg})
+	if src.Scheme == "http" {
+		msg += " The address is plain http://, so the token and the downloads are not encrypted."
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "repo": src.URL(), "host": src.label(), "private": private, "latest": strings.TrimPrefix(rel.Tag, "v"), "sums": hasSums, "message": msg})
 }
 
 // ---- branch builds ----
@@ -623,18 +570,9 @@ func ghWantFetch(branch, have string, haveOK bool, latest string) bool {
 }
 
 // ghBranchBuilds lists the repository's branch builds (prereleases), newest per branch.
-func (c *Controller) ghBranchBuilds(ctx context.Context, repo, token string) (map[string]ghLatest, error) {
-	resp, err := c.ghGet(ctx, ghAPIBase()+"/repos/"+repo+"/releases?per_page=100", "application/vnd.github+json", token)
+func (c *Controller) ghBranchBuilds(ctx context.Context, src updSource, token string) (map[string]ghLatest, error) {
+	list, err := src.listReleases(ctx, token)
 	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	var list []struct {
-		ghLatest
-		Prerelease bool `json:"prerelease"`
-		Draft      bool `json:"draft"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, int64(ghListLimit))).Decode(&list); err != nil {
 		return nil, err
 	}
 	out := map[string]ghLatest{}
@@ -653,10 +591,14 @@ func (c *Controller) ghBranchBuilds(ctx context.Context, repo, token string) (ma
 // handleGitHubBranches answers the Updates tab's dropdown with the branches that have a build
 // on GitHub right now (fetched live on every call).
 func (c *Controller) handleGitHubBranches(w http.ResponseWriter, r *http.Request) {
-	repo, token := c.ghConfig()
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	builds, err := c.ghBranchBuilds(ctx, repo, token)
+	src, token, err := c.updResolved(ctx)
+	if err != nil {
+		writeJSON(w, 502, map[string]string{"error": err.Error()})
+		return
+	}
+	builds, err := c.ghBranchBuilds(ctx, src, token)
 	if err != nil {
 		writeJSON(w, 502, map[string]string{"error": err.Error()})
 		return

@@ -309,9 +309,9 @@
       <div class="section-head"><h2>Controller and nodes</h2><span class="spacer"></span><button id="btn-upd-all">Update all</button></div>
       <div id="rollout-note" class="note hidden" role="status"></div>
       <div class="table-wrap" id="upd-table"></div>
-      <div class="section-head"><h2>GitHub releases</h2><span class="spacer"></span><button id="btn-gh-check" class="small">Check now</button> <button id="btn-gh-install" class="small primary">Check and install</button></div>
+      <div class="section-head"><h2>Published releases</h2><span class="spacer"></span><button id="btn-gh-check" class="small">Check now</button> <button id="btn-gh-install" class="small primary">Check and install</button></div>
       <p class="sub wrap" id="gh-info"></p>
-      <p class="sub wrap"><label for="gh-channel">Update channel</label> <select id="gh-channel" aria-label="Update channel" title="Stable follows the normal releases. A branch follows that branch's newest build; the list is read from GitHub when you open it."><option value="">Stable (latest release)</option></select> <span class="muted" id="gh-channel-note"></span></p>
+      <p class="sub wrap"><label for="gh-channel">Update channel</label> <select id="gh-channel" aria-label="Update channel" title="Stable follows the normal releases. A branch follows that branch's newest build; the list is read from the update repository when you open it."><option value="">Stable (latest release)</option></select> <span class="muted" id="gh-channel-note"></span></p>
       <div class="section-head"><h2>Uploaded releases</h2></div>
       <label class="drop" id="drop">
         <input type="file" id="drop-input" multiple class="hidden">
@@ -516,17 +516,20 @@
         </section>
         <section class="set-sec" id="set-upd">
           <h2 class="set-sec-title">Updates</h2>
-        <div class="section-head"><h2>Updates from GitHub</h2></div>
+        <div class="section-head"><h2>Updates from a git host</h2></div>
         <div class="card">
-          <p class="hint">Outpost can look at a GitHub repository's releases every 6 hours and download newer binaries for the controller and the platforms of your nodes. Each file is checked against the release's <code>SHA256SUMS</code> and must be an Outpost binary of that version before it is kept; it then appears in the Updates tab like an uploaded one. <code>SHA256SUMS</code> catches damaged downloads, not a tampered repository, since the releases are unsigned. Only the version check and downloads go to GitHub; nothing about your cluster is sent. Rollback works as before.</p>
-          <label for="set-ghrepo">Repository to trust for updates <span class="hint">(a github.com address or owner/repo; empty uses the default)</span></label>
+          <p class="hint">Outpost can look at a repository's releases on GitHub, GitLab, Gitea or Forgejo every 6 hours and download newer binaries for the controller and the platforms of your nodes. Each file is checked against the release's <code>SHA256SUMS</code> and must be an Outpost binary of that version before it is kept; it then appears in the Updates tab like an uploaded one. <code>SHA256SUMS</code> catches damaged downloads, not a tampered repository, since the releases are unsigned. Only the version check and downloads go to that server; nothing about your cluster is sent. Rollback works as before.</p>
+          <label for="set-ghrepo">Repository to trust for updates <span class="hint">(its web or clone address on any GitHub, GitLab, Gitea or Forgejo server, or owner/repo for github.com; empty uses the default)</span></label>
           <input id="set-ghrepo" placeholder="https://github.com/64fedoras/outpost" autocomplete="off" spellcheck="false">
+          <label for="set-ghkind">Server type <span class="hint">(github.com, gitlab.com and codeberg.org are known by name; for your own server Outpost asks it, or pick it here)</span></label>
+          <select id="set-ghkind"><option value="">Detect automatically</option><option value="github">GitHub or GitHub Enterprise</option><option value="gitlab">GitLab</option><option value="gitea">Gitea or Forgejo</option></select>
+          <div id="set-ghrepo-http" class="note warn hidden"><b>This is a plain http:// address.</b> The token and the binaries travel unencrypted, and anyone on the network path could swap a binary and its <code>SHA256SUMS</code> together. Use it only for a server on a network you control; https:// is safer.</div>
           <div class="note warn"><b>Whoever controls this repository can supply the code that runs on your controller and every node.</b> Only enter a repository you own or fully trust.</div>
           <label for="set-ghtoken">Access token for a private repository <span class="hint">(optional) <span id="set-ghtoken-state"></span></span></label>
-          <div class="btns u3"><input id="set-ghtoken" type="password" placeholder="github_pat_… (read-only)" autocomplete="new-password"><button id="set-ghtest">Test connection</button><button id="set-ghtoken-clear" class="danger">Clear</button></div>
-          <p class="hint">A fine-grained token limited to that one repository with read-only <em>Contents</em> access. It is stored encrypted on the controller, never sent to nodes, and only ever sent to <code>api.github.com</code>. It is not shown again after saving. Leave it empty for a public repository.</p>
+          <div class="btns u3"><input id="set-ghtoken" type="password" placeholder="read-only access token" autocomplete="new-password"><button id="set-ghtest">Test connection</button><button id="set-ghtoken-clear" class="danger">Clear</button></div>
+          <p class="hint">A read-only token for that one repository: on GitHub a fine-grained token with <em>Contents: Read-only</em>, on GitLab a personal or project token with the <em>read_api</em> scope, on Gitea or Forgejo a token with <em>read:repository</em>. It is stored encrypted on the controller, never sent to nodes, and only ever sent to that repository's server (<code>api.github.com</code> for github.com). Moving the repository to another server removes it. It is not shown again after saving. Leave it empty for a public repository.</p>
           <div id="set-ghtest-out" class="hint"></div>
-          <label class="check"><input type="checkbox" id="set-ghupd"> Check GitHub for new releases and download them (on by default)</label>
+          <label class="check"><input type="checkbox" id="set-ghupd"> Check for new releases and download them (on by default)</label>
           <label class="check"><input type="checkbox" id="set-ghauto"> Install them automatically: idle nodes update first, then the controller once no task is working. Off means you click Update in the Updates tab. After a rollback, the version you left is skipped.</label>
           <div class="modal-foot"><button class="primary" id="set-ghupd-save">Save</button></div>
         </div>
