@@ -11,6 +11,7 @@ package main
 import (
 	"errors"
 	"log"
+	"os"
 	"runtime"
 	"strings"
 	"syscall"
@@ -31,16 +32,19 @@ func isNoRoute(err error) bool {
 }
 
 // localNetworkBlocked reports whether a connect error on this OS looks like
-// macOS local network privacy rather than a real network fault.
-func localNetworkBlocked(goos string, err error) bool {
-	return goos == "darwin" && isNoRoute(err)
+// macOS local network privacy rather than a real network fault. A node that
+// runs as root (the LaunchDaemon that install node sets up) is exempt from
+// that privacy rule, so for it "no route to host" is a real network fault and
+// the Local Network advice would send the owner to the wrong place.
+func localNetworkBlocked(goos string, root bool, err error) bool {
+	return goos == "darwin" && !root && isNoRoute(err)
 }
 
 // noteConnectError records why the last connection attempt failed, for the
 // tray, and on macOS asks the system to show the Local Network prompt.
 func (n *Node) noteConnectError(err error) {
 	problem := ""
-	if localNetworkBlocked(runtime.GOOS, err) {
+	if localNetworkBlocked(runtime.GOOS, os.Geteuid() == 0, err) {
 		problem = problemLocalNetwork
 	}
 	n.mu.Lock()

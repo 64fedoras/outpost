@@ -167,3 +167,49 @@ func TestChatToolsOffByDefault(t *testing.T) {
 		t.Fatal("the cloud brief must not run in local mode")
 	}
 }
+
+// Several large tool results in one round must not push a request past the
+// context budget: results are cut to fit before every call to the model.
+func TestChatToolLoopStaysInBudget(t *testing.T) {
+	big := strings.Repeat("word ", 700) // 3,500 characters per snippet
+	var pageB strings.Builder
+	for i := 0; i < 6; i++ {
+		fmt.Fprintf(&pageB, `<div class="result"><a class="result__a" href="https://example.org/%d">T%d</a><a class="result__snippet" href="x">%s</a></div>`, i, i, big)
+	}
+	useSearchStubs(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, pageB.String()) }))
+	og := ddgGap
+	ddgGap = 0
+	defer func() { ddgGap = og }()
+	c := &Controller{}
+	var seen []InferenceSpec
+	five := []WireToolCall{}
+	for i := 0; i < 5; i++ {
+		five = append(five, toolCallOf(fmt.Sprint(i), "web_search", fmt.Sprintf(`{"query":"q%d"}`, i)))
+	}
+	infer := scriptedInfer([]*InferenceOutput{{ToolCalls: five}, {ToolCalls: five}, {Text: "answer"}, {Text: "answer"}}, nil, &seen)
+	const ctxTok, maxOut = 8192, 4096
+	out, st, err := c.chatWithTools(context.Background(), infer, hist("question"), ctxTok, maxOut)
+	if err != nil || out.Text != "answer" {
+		t.Fatalf("%v %+v", err, out)
+	}
+	budget := (ctxTok - maxOut) * 3
+	for i, spec := range seen {
+		if n := chatChars(spec.Messages); n > budget {
+			t.Errorf("request %d is %d characters, budget %d", i, n, budget)
+		}
+	}
+	if st.searches > 2*maxChatToolCalls {
+		t.Errorf("%d searches ran; at most %d tool calls per round", st.searches, maxChatToolCalls)
+	}
+	// Every tool call still gets an answer, or the chat template breaks.
+	m := seen[1].Messages
+	tools := 0
+	for _, x := range m {
+		if x.Role == "tool" {
+			tools++
+		}
+	}
+	if tools != 5 {
+		t.Errorf("%d tool results for 5 calls", tools)
+	}
+}

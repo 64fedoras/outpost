@@ -17,6 +17,8 @@ import (
 const (
 	maxChatToolRounds = 4 // tool-using turns before the model must answer
 	chatToolPageCap   = 8000
+	maxChatToolCalls  = 3   // tool calls run per turn; the rest are refused so results fit the context
+	chatToolKeepMin   = 300 // an older tool result is never cut below this many characters
 )
 
 const chatToolSystem = "\n\nYou can look things up on the internet with two tools: web_search (find pages) and read_page (read one page). " +
@@ -120,10 +122,13 @@ func (c *Controller) chatWithTools(ctx context.Context, infer inferFn, hist []Ch
 	st := &webStats{}
 	msgs := append([]ChatMessage(nil), fitHistory(hist, (ctxTok-maxOut)*3/2)...)
 	msgs[0].Content += chatToolSystem
-	capChars := min(chatToolPageCap, ctxTok)
 	budget := (ctxTok - maxOut) * 3
+	// One result may take about a third of the budget, so a few of them and the conversation fit.
+	capChars := max(min(chatToolPageCap, ctxTok, budget/3), chatToolKeepMin)
 	parseFails, badCalls := 0, 0
 	for round := 0; ; round++ {
+		// Cut older tool results until the request fits; when it still does not, answer now.
+		shrinkToolResults(msgs, budget)
 		final := round >= maxChatToolRounds || chatChars(msgs) > budget
 		spec := InferenceSpec{Messages: msgs, Params: InferenceParams{MaxTokens: maxOut}}
 		if !final {
@@ -147,11 +152,16 @@ func (c *Controller) chatWithTools(ctx context.Context, infer inferFn, hist []Ch
 			return out, st, nil
 		}
 		msgs = append(msgs, ChatMessage{Role: "assistant", Content: out.Text, ToolCalls: out.ToolCalls})
-		for _, call := range out.ToolCalls {
+		for i, call := range out.ToolCalls {
 			if call.Function.Name != "web_search" && call.Function.Name != "read_page" {
 				badCalls++
 			}
-			msgs = append(msgs, ChatMessage{Role: "tool", ToolCallID: call.ID, Content: c.runChatTool(ctx, call, capChars, st)})
+			// Every call gets a result (chat templates need one), but only the first few run.
+			res := fmt.Sprintf("Error: only %d tool calls run per turn. Use the results above, or ask again in the next turn.", maxChatToolCalls)
+			if i < maxChatToolCalls {
+				res = c.runChatTool(ctx, call, capChars, st)
+			}
+			msgs = append(msgs, ChatMessage{Role: "tool", ToolCallID: call.ID, Content: res})
 		}
 		if badCalls >= 2 && st.searches+st.pages == 0 {
 			return nil, st, errAgentUnsupported // the model keeps calling tools that do not exist
@@ -161,6 +171,27 @@ func (c *Controller) chatWithTools(ctx context.Context, infer inferFn, hist []Ch
 		}
 	}
 }
+
+// shrinkToolResults cuts tool results, oldest first, until msgs fit budget
+// characters. It never cuts one below chatToolKeepMin and leaves the
+// conversation itself alone, so msgs can still be over budget afterwards.
+func shrinkToolResults(msgs []ChatMessage, budget int) {
+	over := chatChars(msgs) - budget
+	for i := 0; i < len(msgs) && over > 0; i++ {
+		n := len(msgs[i].Content)
+		if msgs[i].Role != "tool" || n <= chatToolKeepMin {
+			continue
+		}
+		keep := max(n-over-len(toolCutNote), chatToolKeepMin)
+		if keep >= n {
+			continue
+		}
+		msgs[i].Content = strings.ToValidUTF8(msgs[i].Content[:keep], "") + toolCutNote
+		over -= n - len(msgs[i].Content)
+	}
+}
+
+const toolCutNote = "\n[cut to fit the model's context]"
 
 func chatChars(msgs []ChatMessage) int {
 	n := 0

@@ -23,9 +23,12 @@ const (
 	searchMaxResults = 6
 	searchMaxBody    = 1 << 20
 	searchTimeout    = 12 * time.Second
-	ddgGap           = 1500 * time.Millisecond // least time between two DuckDuckGo requests
-	ddgBlockedFor    = 10 * time.Minute        // after a CAPTCHA or rate limit, go straight to Brave for this long
+
+	ddgBlockedFor = 10 * time.Minute // after a CAPTCHA or rate limit, go straight to Brave for this long
 )
+
+// ddgGap is the least time between two DuckDuckGo requests (a variable so tests need not wait).
+var ddgGap = 1500 * time.Millisecond
 
 var (
 	ddgURL   = "https://html.duckduckgo.com/html/"

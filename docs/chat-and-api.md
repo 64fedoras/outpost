@@ -26,8 +26,10 @@ models cannot search by themselves, so a **Search with** menu picks how they get
   with source links. Searches go to DuckDuckGo's HTML results page (no key, but unofficial: it can be rate
   limited or ask for a CAPTCHA). If a **Brave Search** API key is saved (Settings, API keys), Outpost
   falls back to Brave when DuckDuckGo fails, and skips DuckDuckGo for 10 minutes after it blocked
-  us. `read_page` fetches a page and reads it as text (1 MB, 15 s, about 8,000 characters per page), and
+  us. `read_page` fetches a page and reads it as text (1 MB, 15 s, about 8,000 characters per page, less
+  with a small context: at 8k about 4,000), and
   always refuses loopback, LAN and other internal addresses, whatever the pasted-links setting says.
+  At most 3 tool calls run per round; older results are cut so the request fits the model's context.
   Models that cannot call tools reliably get "search once, then answer": a server that refuses tools, tool
   calls that keep failing, or a model whose file name says 3B or smaller (for example `qwen2.5-3b`, `llama-3.2-1b`). The search
   is on the chat's latest message and the results go in front of it. If every search fails the chat is still
