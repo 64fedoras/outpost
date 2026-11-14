@@ -46,6 +46,9 @@ async function loadSettings() {
   $('set-ghtoken').value = ''; $('set-ghtest-out').textContent = '';
   $('set-ghtoken-state').innerHTML = settings.github_token_set ? '<span class="st-done">· token set</span>' : '<span class="muted">· not set</span>';
   $('set-ghupd').checked = settings.github_updates !== false; $('set-ghauto').checked = !!settings.github_auto_install;
+  { const sel = $('set-ghevery'), v = settings.update_check_every || '6h';
+    if (![...sel.options].some((o) => o.value === v)) sel.add(new Option('Every ' + v, v));
+    sel.value = v; }
   $('set-idle').value = settings.idle_unload || '';
   if (document.activeElement !== $('set-health-amber')) $('set-health-amber').value = settings.health_amber || 5;
   if (document.activeElement !== $('set-health-red')) $('set-health-red').value = settings.health_red || 15;
@@ -210,7 +213,7 @@ $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) r
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-instr-save').onclick = () => saveSettings({ instructions: $('set-instr').value }, 'Instructions saved');
 $('set-ghupd-save').onclick = async () => {
-  const body = { github_updates: $('set-ghupd').checked, github_auto_install: $('set-ghauto').checked, github_repo: $('set-ghrepo').value.trim(), update_host_kind: $('set-ghkind').value };
+  const body = { github_updates: $('set-ghupd').checked, github_auto_install: $('set-ghauto').checked, update_check_every: $('set-ghevery').value, github_repo: $('set-ghrepo').value.trim(), update_host_kind: $('set-ghkind').value };
   const norm = (u) => u.toLowerCase().replace(/^[a-z]+:\/\//, '').replace(/^www\./, '').replace(/(\.git)?\/*$/, '');
   const cur = settings.github_repo || settings.github_repo_default || '';
   if (body.github_repo && norm(body.github_repo) !== norm(cur) && !await askConfirm('Trust ' + body.github_repo + ' to supply updates for this controller and all nodes?' + (settings.github_token_set && !$('set-ghtoken').value.trim() ? ' If it is on another server, the saved access token is removed.' : ''))) return;

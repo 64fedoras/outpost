@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // releaseStubBinary is the test binary relabelled as 99.0.0 with its SHA256SUMS line.
@@ -230,5 +231,37 @@ func TestDetectHostKindUnknown(t *testing.T) {
 	defer srv.Close()
 	if _, err := resolveSource(context.Background(), updSource{Scheme: "http", Host: strings.TrimPrefix(srv.URL, "http://"), Path: "a/b"}); err == nil || !strings.Contains(err.Error(), "server type") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestUpdateCheckEvery(t *testing.T) {
+	for in, want := range map[string]time.Duration{"": ghCheckInterval, "15m": 15 * time.Minute, "1h": time.Hour, "1d": 24 * time.Hour, "7d": 7 * 24 * time.Hour} {
+		if d, err := parseCheckEvery(in); err != nil || d != want {
+			t.Errorf("%q -> %v %v", in, d, err)
+		}
+	}
+	for _, in := range []string{"5m", "8d", "0", "soon", "10"} {
+		if _, err := parseCheckEvery(in); err == nil {
+			t.Errorf("%q accepted", in)
+		}
+	}
+	now := time.Now()
+	if !ghCheckDue(time.Time{}, now, time.Hour) || ghCheckDue(now.Add(-59*time.Minute), now, time.Hour) || !ghCheckDue(now.Add(-time.Hour), now, time.Hour) {
+		t.Error("ghCheckDue")
+	}
+	c := stubController(t, "", "", "")
+	save := func(body string) int {
+		rec := httptest.NewRecorder()
+		c.handleSaveSettings(rec, httptest.NewRequest("POST", "/", strings.NewReader(body)))
+		return rec.Code
+	}
+	if save(`{"update_check_every":"1h"}`) != 200 || c.ghInterval() != time.Hour || c.settingsView()["update_check_every"] != "1h" || c.ghView()["every"] != "1h" {
+		t.Fatalf("1h not saved: %q", c.settings.UpdateCheckEvery)
+	}
+	if save(`{"update_check_every":"1m"}`) != 400 || c.ghInterval() != time.Hour {
+		t.Fatal("1m accepted")
+	}
+	if save(`{"update_check_every":"6h"}`) != 200 || c.settings.UpdateCheckEvery != "" || c.settingsView()["update_check_every"] != "6h" {
+		t.Fatalf("default stored as %q", c.settings.UpdateCheckEvery)
 	}
 }

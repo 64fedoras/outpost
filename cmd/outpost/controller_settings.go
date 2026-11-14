@@ -46,6 +46,7 @@ type Settings struct {
 	GitHubUpdatesOff  bool           `json:"github_updates_off,omitempty"`  // default is on: check this repo's releases and download newer binaries
 	GitHubAutoInstall bool           `json:"github_auto_install,omitempty"` // also update idle nodes and the controller by itself
 	GitHubRepo        string         `json:"github_repo,omitempty"`         // repository trusted for updates: owner/repo on github.com, else its full https:// (or http://) address; empty = ghDefaultRepo
+	UpdateCheckEvery  string         `json:"update_check_every,omitempty"`  // time between automatic update checks (15m to 7d); empty = 6h
 	UpdateHostKind    string         `json:"update_host_kind,omitempty"`    // server type of GitHubRepo: "" = by host name or ask the server, github | gitlab | gitea (update_source.go)
 	GitHubTokenEnc    string         `json:"github_token_enc,omitempty"`    // optional read-only token for a private repo; controller only
 	GitHubBranch      string         `json:"github_branch,omitempty"`       // update channel: "" = Stable releases, else a branch build slug (controller_ghupdate.go)
@@ -187,7 +188,7 @@ func (c *Controller) settingsView() map[string]any {
 		"agent_mode": !c.settings.AgentOff, "web_search": c.settings.WebSearch, "chat_web_search": c.settings.ChatWebSearch, "chat_search_with": c.settings.ChatSearchWith, "web_allow_private": c.settings.WebAllowPrivate,
 		"auto_free": !c.settings.AutoFreeOff, "pooling_enabled": c.poolingOnLocked(), "pooling_notice": c.settings.PoolingNotice,
 		"github_repo": c.updShownLocked().URL(), "update_host": c.updShownLocked().label(), "github_repo_default": defaultSource().URL(), "update_host_kind": c.settings.UpdateHostKind, "github_token_set": c.settings.GitHubTokenEnc != "",
-		"github_updates": !c.settings.GitHubUpdatesOff, "github_auto_install": c.settings.GitHubAutoInstall,
+		"github_updates": !c.settings.GitHubUpdatesOff, "github_auto_install": c.settings.GitHubAutoInstall, "update_check_every": formatIdleDuration(c.ghIntervalLocked()),
 		"sandbox":      effectiveSandbox(c.settings.Sandbox, ""),
 		"health_amber": healthAmberOf(c.settings), "health_red": healthRedOf(c.settings),
 		"idle_unload": c.settings.IdleUnload, "idle_unload_effective": formatIdleDuration(idleUnloadFor(c.settings.IdleUnload, "")),
@@ -238,6 +239,7 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		AutoFree        *bool   `json:"auto_free"`
 		GitHubUpdates   *bool   `json:"github_updates"`
 		GitHubAuto      *bool   `json:"github_auto_install"`
+		CheckEvery      *string `json:"update_check_every"` // "" = default (6 hours)
 		GitHubRepo      *string `json:"github_repo"`
 		UpdateHostKind  *string `json:"update_host_kind"` // "" = automatic, github | gitlab | gitea
 		GitHubToken     *string `json:"github_token"`     // "" removes
@@ -250,6 +252,12 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.IdleUnload != nil && strings.TrimSpace(*req.IdleUnload) != "" {
 		if _, err := parseIdleDuration(*req.IdleUnload); err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	if req.CheckEvery != nil {
+		if _, err := parseCheckEvery(*req.CheckEvery); err != nil {
 			writeJSON(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
@@ -446,6 +454,13 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.GitHubUpdates != nil {
 		c.settings.GitHubUpdatesOff = !*req.GitHubUpdates
+	}
+	if req.CheckEvery != nil {
+		v := strings.TrimSpace(*req.CheckEvery)
+		if d, _ := parseCheckEvery(v); d == ghCheckInterval {
+			v = ""
+		}
+		c.settings.UpdateCheckEvery = v
 	}
 	if req.GitHubAuto != nil {
 		c.settings.GitHubAutoInstall = *req.GitHubAuto
