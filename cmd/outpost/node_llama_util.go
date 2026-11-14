@@ -213,10 +213,12 @@ func (n *Node) fetchModel(mf ModelFetch) {
 			have += st.Size()
 		}
 	}
-	if err := n.makeRoom(total-have, mf.Name, mf.Reclaim); err != nil {
+	release, err := n.reserveRoom(total-have, total, mf.Name, mf.Reclaim)
+	if err != nil {
 		fail("%v", err)
 		return
 	}
+	defer release()
 	n.opStatus(op, mf.Name, "downloading", 0, total, "")
 	client := &http.Client{}
 	var before int64

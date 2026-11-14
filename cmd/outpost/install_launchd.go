@@ -169,6 +169,13 @@ func installNodeDarwin(args []string) error {
 			return err
 		}
 	}
+	// Stop a LaunchAgent node from an older install before its config and
+	// models are moved (adoptAgentConfig): it may be using them. Its plist is
+	// removed further down, once the new service's files are in place, so a
+	// failed install leaves the old node to start again at the next login.
+	if tu != nil {
+		_ = exec.Command("launchctl", "bootout", "gui/"+tu.Uid+"/"+launchdLabel).Run()
+	}
 	cfgPath := filepath.Join(*data, "node.json")
 	if *join != "" {
 		cfg, err := doJoin(*join, *name)
@@ -211,10 +218,9 @@ func installNodeDarwin(args []string) error {
 		}
 	}
 
-	// Retire a LaunchAgent node from an older install; two nodes would fight
-	// over the same controller identity.
+	// Retire the LaunchAgent of an older install (stopped above); two nodes
+	// would fight over the same controller identity.
 	if tu != nil {
-		_ = exec.Command("launchctl", "bootout", "gui/"+tu.Uid+"/"+launchdLabel).Run()
 		if err := os.Remove(launchAgentPath(tu.HomeDir)); err == nil {
 			fmt.Println("Removed the old per-user LaunchAgent for the node.")
 		}

@@ -81,10 +81,12 @@ func (n *Node) pushModel(mp ModelPush) {
 			have += st.Size()
 		}
 	}
-	if err := n.makeRoom(total-have, mp.Name, mp.Reclaim); err != nil {
+	release, err := n.reserveRoom(total-have, total, mp.Name, mp.Reclaim)
+	if err != nil {
 		fail("%v", err)
 		return
 	}
+	defer release()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		fail("%v", err)
 		return

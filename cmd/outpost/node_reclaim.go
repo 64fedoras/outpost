@@ -141,7 +141,18 @@ func (n *Node) makeRoom(need int64, target string, rp *Reclaim) error {
 	if err := n.makeRoomUnderLimit(need, target, rp); err != nil {
 		return err
 	}
-	free := modelsDiskFree(n.modelsDir())
+	pending := uint64(n.pendingBytes(target)) // room other copies in progress will still take
+	freeNow := func() uint64 {
+		f := modelsDiskFree(n.modelsDir())
+		if f == 0 {
+			return 0 // unknown
+		}
+		if f <= pending {
+			return 1 // known, and none of it is left for this copy
+		}
+		return f - pending
+	}
+	free := freeNow()
 	if free == 0 || need <= 0 || uint64(need) <= free {
 		return nil // fits, or the free space is unknown
 	}
@@ -159,8 +170,8 @@ func (n *Node) makeRoom(need int64, target string, rp *Reclaim) error {
 		headroom = reclaimHeadroomMin
 	}
 	goal := uint64(need + headroom)
-	n.removeUntil(cands, func(int64) bool { return modelsDiskFree(n.modelsDir()) >= goal }, target, need, "")
-	if free = modelsDiskFree(n.modelsDir()); uint64(need) > free {
+	n.removeUntil(cands, func(int64) bool { return freeNow() >= goal }, target, need, "")
+	if free = freeNow(); uint64(need) > free {
 		return diskShort(need, free)
 	}
 	return nil

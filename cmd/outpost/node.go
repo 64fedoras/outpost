@@ -76,11 +76,13 @@ type Node struct {
 	scopes      map[string]*cacheScope // task build caches in use (node_pkgcache.go)
 	storeMu     sync.Mutex             // guards the package store
 	storeBytes  int64
-	storage     *StorageUse   // last measurement of Outpost's folders (node_storage.go)
-	storageKick chan struct{} // asks storageLoop to measure again
-	storageMax  int64         // storage limit in bytes from the controller; 0 = none
-	storageFull string        // "" removes old models at the limit, "refuse" refuses
-	limitNote   string        // last model copy refused by the limit, shown on the node card
+	storage     *StorageUse            // last measurement of Outpost's folders (node_storage.go)
+	storageKick chan struct{}          // asks storageLoop to measure again
+	storageMax  int64                  // storage limit in bytes from the controller; 0 = none
+	storageFull string                 // "" removes old models at the limit, "refuse" refuses
+	limitNote   string                 // last model copy refused by the limit, shown on the node card
+	roomMu      sync.Mutex             // one room check (and its cleanup) at a time (reserveRoom)
+	pendingRoom map[string]pendingCopy // model copies in progress, by model name
 	limitAt     int64
 }
 
