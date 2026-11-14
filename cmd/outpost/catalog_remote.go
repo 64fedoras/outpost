@@ -155,7 +155,7 @@ func (c *Controller) loadSavedCatalog() {
 }
 
 // updateCatalog fetches catalog.json from a release when it is newer than the one in use.
-func (c *Controller) updateCatalog(ctx context.Context, rel ghLatest, latest string, sums map[string]string, token string) error {
+func (c *Controller) updateCatalog(ctx context.Context, src updSource, rel ghLatest, latest string, sums map[string]string, token string) error {
 	c.mu.Lock()
 	have := c.ghState.Catalog
 	c.mu.Unlock()
@@ -175,7 +175,7 @@ func (c *Controller) updateCatalog(ctx context.Context, rel ghLatest, latest str
 	if asset == nil || want == "" {
 		return nil // releases before catalog updates have none
 	}
-	resp, err := c.ghGet(ctx, asset.downloadURL(token != ""), "application/octet-stream", token)
+	resp, err := src.get(ctx, asset.downloadURL(token != ""), "application/octet-stream", token)
 	if err != nil {
 		return err
 	}

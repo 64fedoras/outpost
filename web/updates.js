@@ -54,10 +54,10 @@ function renderUpdates() {
 function renderGitHub() {
   const g = state.github_updates || {};
   let t;
-  if (g.busy) t = g.busy.startsWith('checking') ? 'Checking GitHub…' : 'Downloading ' + g.busy.replace('downloading ', '') + '…';
+  if (g.busy) t = g.busy.startsWith('checking') ? `Checking ${g.host || 'GitHub'}…` : 'Downloading ' + g.busy.replace('downloading ', '') + '…';
   else {
     const mode = !g.enabled ? 'Automatic checks are off (Settings)' : g.auto_install ? 'Checks every 6 hours and installs automatically' : 'Checks every 6 hours; you click Update';
-    t = `${mode}. ` + (g.checked && g.checked > '2000' ? `Last checked ${ago(g.checked)}${g.latest ? ', latest is v' + g.latest : ''}.` : 'Not checked yet.');
+    t = `${mode}. ` + (g.repo ? `Repository: ${g.repo} (${g.host}). ` : '') + (g.checked && g.checked > '2000' ? `Last checked ${ago(g.checked)}${g.latest ? ', latest is v' + g.latest : ''}.` : 'Not checked yet.');
     if (g.hold) t += ` Auto-install skips v${g.hold} and older after a rollback.`;
     t += g.catalog ? ` Suggested models: list from v${g.catalog}.` : ' Suggested models: the list built into this version.';
   }
@@ -68,7 +68,7 @@ function renderGitHub() {
   if (document.activeElement !== sel) ensureChannelOption(g.branch || '');
   $('gh-channel-note').textContent = g.branch ? 'Branch builds are untested code: nothing installs by itself, and Roll back is kept.' : '';
 }
-// The dropdown always shows the current choice; the other branches are read from GitHub when it opens.
+// The dropdown always shows the current choice; the other branches are read from the repository when it opens.
 function ensureChannelOption(branch) {
   const sel = $('gh-channel');
   if (branch && ![...sel.options].some((o) => o.value === branch)) sel.add(new Option(branch + ' (branch build)', branch));
@@ -102,8 +102,8 @@ async function ghAction(path, msg) {
   try { await post(path); toast(msg); } catch (e) { toast(e.message, 6000); }
   refresh();
 }
-$('btn-gh-check').onclick = () => ghAction('/api/github-updates/check', 'Checked GitHub');
-$('btn-gh-install').onclick = async () => { if (await askConfirm('Check GitHub and update idle nodes and the controller to the latest release now?')) ghAction('/api/github-updates/install', 'Installing from GitHub'); };
+$('btn-gh-check').onclick = () => ghAction('/api/github-updates/check', 'Checked ' + ((state.github_updates || {}).host || 'GitHub'));
+$('btn-gh-install').onclick = async () => { if (await askConfirm('Check for a new release and update idle nodes and the controller to it now?')) ghAction('/api/github-updates/install', 'Installing the latest release'); };
 $('btn-upd-all').onclick = async () => {
   try { const r = await post('/api/update-all'); toast(r.waiting ? `Updating ${r.canary} first; ${r.waiting} more follow once it passes` : `Updating ${r.canary}`, 6000); refresh(); } catch (e) { toast(e.message); }
 };

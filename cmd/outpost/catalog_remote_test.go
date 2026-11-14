@@ -72,20 +72,20 @@ func TestCatalogUpdateFromRelease(t *testing.T) {
 	rel := ghLatest{Tag: "v99.0.0", Assets: []ghAsset{{Name: "catalog.json", URL: srv.URL + "/dl/catalog.json"}}}
 	c := &Controller{dataDir: t.TempDir()}
 	// Wrong checksum: ignored, built-in catalog stays.
-	if err := c.updateCatalog(context.Background(), rel, "99.0.0", map[string]string{"catalog.json": strings.Repeat("0", 64)}, ""); err == nil {
+	if err := c.updateCatalog(context.Background(), defaultSource(), rel, "99.0.0", map[string]string{"catalog.json": strings.Repeat("0", 64)}, ""); err == nil {
 		t.Fatal("bad checksum accepted")
 	}
 	if len(catalogNow()) != len(modelCatalog) {
 		t.Fatal("catalog changed after a failed check")
 	}
-	if err := c.updateCatalog(context.Background(), rel, "99.0.0", map[string]string{"catalog.json": sum}, ""); err != nil {
+	if err := c.updateCatalog(context.Background(), defaultSource(), rel, "99.0.0", map[string]string{"catalog.json": sum}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if cat := catalogNow(); len(cat) != len(modelCatalog)+1 || cat[len(cat)-1].ID != newE.ID || c.ghState.Catalog != "99.0.0" {
 		t.Fatalf("catalog not updated: %d entries, state %q", len(cat), c.ghState.Catalog)
 	}
 	// Same release again: not fetched again.
-	c.updateCatalog(context.Background(), rel, "99.0.0", map[string]string{"catalog.json": sum}, "")
+	c.updateCatalog(context.Background(), defaultSource(), rel, "99.0.0", map[string]string{"catalog.json": sum}, "")
 	if hits != 2 {
 		t.Fatalf("fetched %d times", hits)
 	}
