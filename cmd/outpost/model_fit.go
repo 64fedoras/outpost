@@ -76,8 +76,12 @@ func loadableMemory(h *Hello) (vram, ram int64, ok bool) {
 // fitOnNode classifies a model needing `need` bytes on a node with the given
 // memory. Headroom is left for the OS and the desktop.
 func fitOnNode(need, vram, ram int64) string {
-	usableVRAM := vram * 92 / 100
-	usableRAM := ram * 75 / 100
+	return fitWith(need, vram, vram*92/100, ram*75/100)
+}
+
+// fitWith is fitOnNode with the usable amounts given, so the ranking can pass
+// what is free right now instead of the node's totals.
+func fitWith(need, vram, usableVRAM, usableRAM int64) string {
 	switch {
 	case vram > 0 && need <= usableVRAM:
 		return fitVRAM

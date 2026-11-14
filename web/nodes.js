@@ -816,7 +816,10 @@ async function openBest(id) {
   bestOpts = (r.options || []).filter((o) => o.rank > 0).sort((a, b) => a.rank - b.rank);
   const h = n.hello || {}, g = (h.gpus || [])[0], sf = storageFacts(n);
   const ram = n.heartbeat && n.heartbeat.ram_total_bytes;
-  $('best-hint').textContent = `Ranked for this node: ${g ? bytes(g.vram_bytes) + ' VRAM, ' : 'no GPU, '}${ram ? bytes(ram) + ' RAM' : ''}${sf ? (sf.lim ? `, ${bytes(Math.max(0, sf.lim - sf.u.total))} left under its storage limit` : `, ${bytes(sf.u.disk_free)} free disk`) : ''}. ${g ? 'Models that fit fully in VRAM come first, then the biggest.' : 'On a CPU-only node the biggest model that still runs at a usable speed comes first.'}`;
+  const apple = g && g.vendor === 'apple';
+  const mem = apple ? `Apple Silicon, ${bytes(ram || g.vram_bytes)} unified memory` : `${g ? bytes(g.vram_bytes) + ' VRAM, ' : 'no GPU, '}${ram ? bytes(ram) + ' RAM' : ''}`;
+  const how = apple ? 'The biggest model that should still run fast on its GPU comes first.' : g ? 'The biggest model that should still run fast comes first, even when part of it sits in system RAM.' : 'On a CPU-only node the biggest model that still runs at a usable speed comes first.';
+  $('best-hint').textContent = `Ranked for this node: ${mem}${sf ? (sf.lim ? `, ${bytes(Math.max(0, sf.lim - sf.u.total))} left under its storage limit` : `, ${bytes(sf.u.disk_free)} free disk`) : ''}. ${how} Memory other programs hold right now is left alone.`;
   if (!bestOpts.length) {
     setHTML('best-list', `<div class="note warn">${r.build_ok ? 'No coding model in the library or catalog fits this node\'s memory and disk.' : 'This node has no llama.cpp build yet, so nothing can be loaded.'}</div>`);
     return;
@@ -827,7 +830,7 @@ async function openBest(id) {
     const where = o.on_node ? 'Already on this node, loads right away' : o.in_library ? `In the library; copies ${bytes(o.bytes)} to this node` : `Not downloaded yet; downloads ${bytes(o.bytes)} to this node`;
     return `<label class="best-row${i === 0 ? ' top' : ''}"><input type="radio" name="best-pick" value="${i}" ${i === 0 ? 'checked' : ''}>
       <div class="grow"><div class="best-head"><b>${esc(o.label)}</b>${i === 0 ? '<span class="pill st-ready">Best pick</span>' : ''}${cur ? '<span class="pill">Loaded now</span>' : ''}
-        <span class="pill ${FITP[o.fit][0]}">${FITP[o.fit][1]}</span>${o.est_tok_s ? `<span class="pill ${o.speed_low ? 'st-warn' : 'st-ready'}">~${o.est_tok_s < 10 ? o.est_tok_s.toFixed(1) : Math.round(o.est_tok_s)} tok/s</span>` : ''}</div>
+        <span class="pill ${o.unified ? 'st-done' : FITP[o.fit][0]}">${o.unified ? 'GPU, unified memory' : FITP[o.fit][1]}</span>${o.est_tok_s ? `<span class="pill ${o.speed_low ? 'st-warn' : 'st-ready'}">~${o.est_tok_s < 10 ? o.est_tok_s.toFixed(1) : Math.round(o.est_tok_s)} tok/s</span>` : ''}</div>
         <div class="sub wrap">${esc(o.reason)}</div>
         <div class="sub wrap">${where}${o.speed_note ? ' · ' + esc(o.speed_note) : ''}</div></div></label>`;
   }).join('') + (loaded ? `<div class="sub best-foot">Loading a model here unloads <b>${esc(loaded)}</b> first.</div>` : ''));
