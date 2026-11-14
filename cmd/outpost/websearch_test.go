@@ -122,3 +122,30 @@ func TestSmallModel(t *testing.T) {
 		}
 	}
 }
+
+// A slow DuckDuckGo request must not hold up a second search that is stopped:
+// the lock is not held during the request.
+func TestSearchStopDoesNotWaitForOtherSearch(t *testing.T) {
+	release := make(chan struct{})
+	useSearchStubs(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+		fmt.Fprint(w, ddgPage)
+	}))
+	c := &Controller{}
+	slow := make(chan struct{})
+	go func() { c.webSearch(context.Background(), "slow one"); close(slow) }()
+	defer func() { close(release); <-slow }() // finish before the stubs are put back
+	time.Sleep(100 * time.Millisecond)        // the first request is in flight
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { time.Sleep(50 * time.Millisecond); cancel() }()
+	start := time.Now()
+	if _, _, err := c.webSearch(ctx, "stopped"); err == nil {
+		t.Fatal("a stopped search should fail")
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("the stopped search waited %s behind the other one", d)
+	}
+}

@@ -131,7 +131,8 @@ func (n *Node) makeRoomUnderLimit(need int64, target string, rp *Reclaim) error 
 	if limit <= 0 || need <= 0 {
 		return nil
 	}
-	used := n.refreshStorage().Total
+	// Bytes that copies already in progress have still to write count as used.
+	used := n.refreshStorage().Total + n.pendingBytes(target)
 	if used+need <= limit {
 		return nil
 	}
@@ -158,8 +159,59 @@ func (n *Node) makeRoomUnderLimit(need int64, target string, rp *Reclaim) error 
 	}
 	n.removeUntil(cands, func(freed int64) bool { return freed >= over }, target, need,
 		fmt.Sprintf(" to stay under the %s storage limit", humanBytes(limit)))
-	if u := n.refreshStorage().Total; u+need > limit {
+	if u := n.refreshStorage().Total + n.pendingBytes(target); u+need > limit {
 		return fmt.Errorf("storage limit reached: %s needs %s and Outpost uses %s of this node's %s limit after cleanup", target, humanBytes(need), humanBytes(u), humanBytes(limit))
 	}
 	return nil
+}
+
+// pendingCopy is a model copy that passed the room check and is still being
+// written: dir is its folder and final its size when complete.
+type pendingCopy struct {
+	dir   string
+	final int64
+}
+
+// pendingBytes is what the copies in progress (other than except) have still
+// to write. Without it two copies that start together would each see the same
+// free room and could pass the storage limit, or fill the disk, between them.
+func (n *Node) pendingBytes(except string) int64 {
+	n.mu.Lock()
+	list := make([]pendingCopy, 0, len(n.pendingRoom))
+	for name, p := range n.pendingRoom {
+		if name != except {
+			list = append(list, p)
+		}
+	}
+	n.mu.Unlock()
+	var sum int64
+	for _, p := range list {
+		if left := p.final - dirBytes(p.dir); left > 0 {
+			sum += left
+		}
+	}
+	return sum
+}
+
+// reserveRoom is makeRoom for a copy that is about to start: it checks that
+// need more bytes fit (counting what other copies in progress will still
+// write), and on success books the room until the returned function is called.
+// total is the model's full size and target its name.
+func (n *Node) reserveRoom(need, total int64, target string, rp *Reclaim) (func(), error) {
+	n.roomMu.Lock()
+	defer n.roomMu.Unlock()
+	if err := n.makeRoom(need, target, rp); err != nil {
+		return nil, err
+	}
+	n.mu.Lock()
+	if n.pendingRoom == nil {
+		n.pendingRoom = map[string]pendingCopy{}
+	}
+	n.pendingRoom[target] = pendingCopy{dir: filepath.Join(n.modelsDir(), target), final: total}
+	n.mu.Unlock()
+	return func() {
+		n.mu.Lock()
+		delete(n.pendingRoom, target)
+		n.mu.Unlock()
+	}, nil
 }

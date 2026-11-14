@@ -15,18 +15,20 @@ func TestLocalNetworkBlocked(t *testing.T) {
 		Err: &os.SyscallError{Syscall: "connect", Err: syscall.EHOSTUNREACH}})
 	cases := []struct {
 		goos string
+		root bool
 		err  error
 		want bool
 	}{
-		{"darwin", dialErr, true},
-		{"darwin", errors.New("dial tcp 192.0.2.10:8443: connect: no route to host"), true},
-		{"linux", dialErr, false},
-		{"darwin", errors.New("dial tcp 192.0.2.10:8443: connect: connection refused"), false},
-		{"darwin", nil, false},
+		{"darwin", false, dialErr, true},
+		{"darwin", false, errors.New("dial tcp 192.0.2.10:8443: connect: no route to host"), true},
+		{"darwin", true, dialErr, false}, // the system service is exempt: a real network fault
+		{"linux", false, dialErr, false},
+		{"darwin", false, errors.New("dial tcp 192.0.2.10:8443: connect: connection refused"), false},
+		{"darwin", false, nil, false},
 	}
 	for _, c := range cases {
-		if got := localNetworkBlocked(c.goos, c.err); got != c.want {
-			t.Errorf("localNetworkBlocked(%s, %v) = %v, want %v", c.goos, c.err, got, c.want)
+		if got := localNetworkBlocked(c.goos, c.root, c.err); got != c.want {
+			t.Errorf("localNetworkBlocked(%s, root=%v, %v) = %v, want %v", c.goos, c.root, c.err, got, c.want)
 		}
 	}
 }

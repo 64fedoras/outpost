@@ -39,8 +39,10 @@ async function loadSettings() {
   $('set-autoresume').checked = !!settings.auto_resume;
   $('set-bestofn').value = settings.best_of_n || 'hard';
   $('set-instr').value = settings.instructions || '';
-  $('set-ghrepo').value = settings.github_repo ? 'https://github.com/' + settings.github_repo : '';
-  $('set-ghrepo').placeholder = 'https://github.com/' + (settings.github_repo_default || '64fedoras/outpost');
+  $('set-ghrepo').value = settings.github_repo || '';
+  $('set-ghrepo').placeholder = settings.github_repo_default || 'https://github.com/64fedoras/outpost';
+  $('set-ghkind').value = settings.update_host_kind || '';
+  ghHttpNote();
   $('set-ghtoken').value = ''; $('set-ghtest-out').textContent = '';
   $('set-ghtoken-state').innerHTML = settings.github_token_set ? '<span class="st-done">· token set</span>' : '<span class="muted">· not set</span>';
   $('set-ghupd').checked = settings.github_updates !== false; $('set-ghauto').checked = !!settings.github_auto_install;
@@ -208,19 +210,22 @@ $('set-hf-save').onclick = () => { const v = $('set-hf').value.trim(); if (!v) r
 $('set-hf-clear').onclick = () => saveSettings({ hf_token: '' }, 'Token removed');
 $('set-instr-save').onclick = () => saveSettings({ instructions: $('set-instr').value }, 'Instructions saved');
 $('set-ghupd-save').onclick = async () => {
-  const body = { github_updates: $('set-ghupd').checked, github_auto_install: $('set-ghauto').checked, github_repo: $('set-ghrepo').value.trim() };
+  const body = { github_updates: $('set-ghupd').checked, github_auto_install: $('set-ghauto').checked, github_repo: $('set-ghrepo').value.trim(), update_host_kind: $('set-ghkind').value };
+  const norm = (u) => u.toLowerCase().replace(/^[a-z]+:\/\//, '').replace(/^www\./, '').replace(/(\.git)?\/*$/, '');
   const cur = settings.github_repo || settings.github_repo_default || '';
-  if (body.github_repo && !body.github_repo.toLowerCase().endsWith('/' + cur.toLowerCase()) && !await askConfirm('Trust ' + body.github_repo + ' to supply updates for this controller and all nodes?')) return;
+  if (body.github_repo && norm(body.github_repo) !== norm(cur) && !await askConfirm('Trust ' + body.github_repo + ' to supply updates for this controller and all nodes?' + (settings.github_token_set && !$('set-ghtoken').value.trim() ? ' If it is on another server, the saved access token is removed.' : ''))) return;
   const tok = $('set-ghtoken').value.trim();
   if (tok) body.github_token = tok;
   $('set-ghtoken').value = '';
-  saveSettings(body, 'GitHub update settings saved');
+  saveSettings(body, 'Update settings saved');
 };
-$('set-ghtoken-clear').onclick = () => saveSettings({ github_token: '' }, 'GitHub token removed');
+$('set-ghtoken-clear').onclick = () => saveSettings({ github_token: '' }, 'Access token removed');
+function ghHttpNote() { $('set-ghrepo-http').classList.toggle('hidden', !/^\s*http:\/\//i.test($('set-ghrepo').value)); }
+$('set-ghrepo').addEventListener('input', ghHttpNote);
 $('set-ghtest').onclick = async () => {
   const out = $('set-ghtest-out'); out.className = 'hint'; out.textContent = 'Testing…';
   try {
-    const r = await post('/api/github-updates/test', { repo: $('set-ghrepo').value.trim(), token: $('set-ghtoken').value.trim() });
+    const r = await post('/api/github-updates/test', { repo: $('set-ghrepo').value.trim(), kind: $('set-ghkind').value, token: $('set-ghtoken').value.trim() });
     out.className = 'st-done'; out.textContent = r.message;
   } catch (e) { out.className = 'error-msg'; out.textContent = e.message; }
 };

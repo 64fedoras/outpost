@@ -169,3 +169,51 @@ func TestStorageLimitSettingsAPI(t *testing.T) {
 		t.Errorf("cleared: %+v", c.nodes["a"])
 	}
 }
+
+// Two copies that start together must not pass the limit between them: the
+// second one counts what the first has still to write.
+func TestStorageLimitCountsCopiesInProgress(t *testing.T) {
+	n := storageNode(t)
+	writeStoredModel(t, n, "old", 1000, true)
+	used := n.measureStorage().Total
+	n.applySettings(NodeSettings{StorageLimit: used + 2000, StorageFull: "refuse"})
+	release, err := n.reserveRoom(1500, 1500, "a", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := n.reserveRoom(1500, 1500, "b", nil); err == nil || !strings.Contains(err.Error(), "storage limit reached") {
+		t.Fatalf("a second 1500 must not fit in the 500 left: %v", err)
+	}
+	// What the first copy has written is counted once, not twice.
+	writeBytes(t, filepath.Join(n.modelsDir(), "a", "f.gguf.part"), 1000)
+	if got := n.pendingBytes(""); got != 500 {
+		t.Errorf("pending %d, want 500", got)
+	}
+	if r, err := n.reserveRoom(500, 500, "c", nil); err != nil {
+		t.Errorf("500 fits beside the first copy: %v", err)
+	} else {
+		r()
+	}
+	// The same copy asking again (a retry) does not count itself.
+	if _, err := n.reserveRoom(500, 1500, "a", nil); err != nil {
+		t.Errorf("a retry of the same copy: %v", err)
+	}
+	release()
+	if n.pendingBytes("") != 0 {
+		t.Error("room still booked after the copy ended")
+	}
+}
+
+// The same holds for free disk space when no limit is set.
+func TestDiskRoomCountsCopiesInProgress(t *testing.T) {
+	n := storageNode(t)
+	old := modelsDiskFree
+	modelsDiskFree = func(string) uint64 { return 2000 }
+	defer func() { modelsDiskFree = old }()
+	if _, err := n.reserveRoom(1500, 1500, "a", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := n.reserveRoom(1500, 1500, "b", nil); err == nil {
+		t.Fatal("two 1500-byte copies do not fit in 2000 free")
+	}
+}

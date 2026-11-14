@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -44,7 +45,8 @@ type Settings struct {
 	AutoFreeOff       bool           `json:"auto_free_off,omitempty"`       // default is on: a node short of disk space deletes least recently used models the controller can copy back
 	GitHubUpdatesOff  bool           `json:"github_updates_off,omitempty"`  // default is on: check this repo's releases and download newer binaries
 	GitHubAutoInstall bool           `json:"github_auto_install,omitempty"` // also update idle nodes and the controller by itself
-	GitHubRepo        string         `json:"github_repo,omitempty"`         // owner/repo trusted for updates; empty = ghDefaultRepo
+	GitHubRepo        string         `json:"github_repo,omitempty"`         // repository trusted for updates: owner/repo on github.com, else its full https:// (or http://) address; empty = ghDefaultRepo
+	UpdateHostKind    string         `json:"update_host_kind,omitempty"`    // server type of GitHubRepo: "" = by host name or ask the server, github | gitlab | gitea (update_source.go)
 	GitHubTokenEnc    string         `json:"github_token_enc,omitempty"`    // optional read-only token for a private repo; controller only
 	GitHubBranch      string         `json:"github_branch,omitempty"`       // update channel: "" = Stable releases, else a branch build slug (controller_ghupdate.go)
 	GitHubHoldVersion string         `json:"github_hold_version,omitempty"` // set by a rollback: auto-install skips this version and older
@@ -184,7 +186,7 @@ func (c *Controller) settingsView() map[string]any {
 		"auto_resume":   !c.settings.AutoResumeOff, "best_of_n": normBestOf(c.settings.BestOfN),
 		"agent_mode": !c.settings.AgentOff, "web_search": c.settings.WebSearch, "chat_web_search": c.settings.ChatWebSearch, "chat_search_with": c.settings.ChatSearchWith, "web_allow_private": c.settings.WebAllowPrivate,
 		"auto_free": !c.settings.AutoFreeOff, "pooling_enabled": c.poolingOnLocked(), "pooling_notice": c.settings.PoolingNotice,
-		"github_repo": c.ghRepoLocked(), "github_repo_default": ghDefaultRepo, "github_token_set": c.settings.GitHubTokenEnc != "",
+		"github_repo": c.updShownLocked().URL(), "update_host": c.updShownLocked().label(), "github_repo_default": defaultSource().URL(), "update_host_kind": c.settings.UpdateHostKind, "github_token_set": c.settings.GitHubTokenEnc != "",
 		"github_updates": !c.settings.GitHubUpdatesOff, "github_auto_install": c.settings.GitHubAutoInstall,
 		"sandbox":      effectiveSandbox(c.settings.Sandbox, ""),
 		"health_amber": healthAmberOf(c.settings), "health_red": healthRedOf(c.settings),
@@ -237,9 +239,10 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		GitHubUpdates   *bool   `json:"github_updates"`
 		GitHubAuto      *bool   `json:"github_auto_install"`
 		GitHubRepo      *string `json:"github_repo"`
-		GitHubToken     *string `json:"github_token"` // "" removes
-		IdleUnload      *string `json:"idle_unload"`  // "" = default (1 hour)
-		Sandbox         *string `json:"sandbox"`      // off | basic | strict
+		UpdateHostKind  *string `json:"update_host_kind"` // "" = automatic, github | gitlab | gitea
+		GitHubToken     *string `json:"github_token"`     // "" removes
+		IdleUnload      *string `json:"idle_unload"`      // "" = default (1 hour)
+		Sandbox         *string `json:"sandbox"`          // off | basic | strict
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
@@ -282,14 +285,29 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		}
 		hfEnc = &enc
 	}
-	ghRepoNew := ""
-	if req.GitHubRepo != nil {
-		r, err := parseGitHubRepo(*req.GitHubRepo)
+	var srcNew updSource
+	if req.GitHubRepo != nil || req.UpdateHostKind != nil {
+		c.mu.Lock()
+		repo, kind := c.settings.GitHubRepo, c.settings.UpdateHostKind
+		c.mu.Unlock()
+		if req.GitHubRepo != nil {
+			repo = *req.GitHubRepo
+		}
+		if req.UpdateHostKind != nil {
+			kind = strings.TrimSpace(*req.UpdateHostKind)
+		}
+		r, err := parseUpdateSource(repo, kind)
 		if err != nil {
 			writeJSON(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
-		ghRepoNew = r
+		srcNew = r
+		if req.UpdateHostKind != nil {
+			srcNew.Kind = kind // the owner's choice, even where the host name already said it
+			if name, _, _ := strings.Cut(r.Host, ":"); knownHostKinds[name] != "" {
+				srcNew.Kind = ""
+			}
+		}
 	}
 	var ghTokEnc *string
 	if req.GitHubToken != nil {
@@ -403,16 +421,21 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	if req.WebAllowPrivate != nil {
 		c.settings.WebAllowPrivate = *req.WebAllowPrivate
 	}
-	if req.GitHubRepo != nil {
-		old, _ := parseGitHubRepo(c.settings.GitHubRepo)
-		if ghRepoNew == ghDefaultRepo {
-			c.settings.GitHubRepo = ""
-		} else {
-			c.settings.GitHubRepo = ghRepoNew
+	if req.GitHubRepo != nil || req.UpdateHostKind != nil {
+		old := c.updSourceLocked()
+		oldKind := c.settings.UpdateHostKind
+		c.settings.GitHubRepo = srcNew.stored()
+		if req.UpdateHostKind != nil {
+			c.settings.UpdateHostKind = srcNew.Kind
 		}
-		if ghRepoNew != old { // another repository: its versions and rollback hold are unrelated
+		if srcNew.URL() != old.URL() || c.settings.UpdateHostKind != oldKind { // another repository: its versions and rollback hold are unrelated
 			c.settings.GitHubHoldVersion = ""
 			c.ghState = ghUpdateState{}
+		}
+		// A saved token belongs to the old server; never send it to a different one.
+		if srcNew.origin() != old.origin() && ghTokEnc == nil && c.settings.GitHubTokenEnc != "" {
+			c.settings.GitHubTokenEnc = ""
+			log.Printf("update repository moved to %s: the saved access token was removed", srcNew.origin())
 		}
 	}
 	if ghTokEnc != nil {
@@ -471,13 +494,6 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, 200, c.settingsView())
-}
-
-func (c *Controller) ghRepoLocked() string {
-	if r, err := parseGitHubRepo(c.settings.GitHubRepo); err == nil {
-		return r
-	}
-	return ghDefaultRepo
 }
 
 // normAutoOrder keeps the known providers of "Auto (local + API)" once each, in
