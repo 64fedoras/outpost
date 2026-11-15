@@ -114,9 +114,15 @@ $('btn-logout').onclick = async () => { await post('/api/logout').catch(() => {}
 // was loaded with. This app changes route with the hash and never reloads, so the
 // icon would only be stored for the first URL. Re-adding the icon links on every
 // route change makes the browser record them for the current page too.
+let iconGen = 0;
 function refreshIcons() {
+  // A clone with the same href is ignored (the browser sees no change), so each
+  // route gets a distinct query string; the file server ignores it.
+  iconGen++;
   document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]').forEach((l) => {
-    const c = l.cloneNode(); l.replaceWith(c);
+    const c = l.cloneNode();
+    c.setAttribute('href', l.getAttribute('href').split('?')[0] + '?r=' + iconGen);
+    l.replaceWith(c);
   });
 }
 const PAGES = ['new', 'image', 'task', 'chat', 'projects', 'project', 'nodes', 'models', 'updates', 'spending', 'settings'];
