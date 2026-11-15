@@ -110,6 +110,15 @@ $('setup-form').onsubmit = async (e) => {
 };
 $('btn-logout').onclick = async () => { await post('/api/logout').catch(() => {}); showLogin(); };
 
+// Browsers (Android Firefox, notably) remember a page's icon against the URL it
+// was loaded with. This app changes route with the hash and never reloads, so the
+// icon would only be stored for the first URL. Re-adding the icon links on every
+// route change makes the browser record them for the current page too.
+function refreshIcons() {
+  document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]').forEach((l) => {
+    const c = l.cloneNode(); l.replaceWith(c);
+  });
+}
 const PAGES = ['new', 'image', 'task', 'chat', 'projects', 'project', 'nodes', 'models', 'updates', 'spending', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
@@ -121,6 +130,7 @@ function route() {
   document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === (page === 'project' ? 'projects' : page)));
   document.querySelector('.page-plain').classList.toggle('hidden', !['projects', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image' }[page] || page[0].toUpperCase() + page.slice(1));
+  refreshIcons();
   document.body.classList.toggle('on-task', page === 'task' || page === 'project');
   closeSide();
   clearTimeout(taskTimer);
