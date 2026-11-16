@@ -103,7 +103,7 @@ async function ghAction(path, msg) {
   refresh();
 }
 $('btn-gh-check').onclick = () => ghAction('/api/github-updates/check', 'Checked ' + ((state.github_updates || {}).host || 'GitHub'));
-$('btn-gh-install').onclick = async () => { if (await askConfirm('Check for a new release and update idle nodes and the controller to it now?')) ghAction('/api/github-updates/install', 'Installing the latest release'); };
+$('btn-gh-install').onclick = async () => { if (await askConfirm('Update now? Outpost checks for a new release, then updates the nodes (one first, then the rest) and finally the controller, which restarts. Busy nodes wait for the next check, and the controller waits while a task is running.', { ok: 'Check and update' })) ghAction('/api/github-updates/install', 'Installing the latest release'); };
 $('btn-upd-all').onclick = async () => {
   try { const r = await post('/api/update-all'); toast(r.waiting ? `Updating ${r.canary} first; ${r.waiting} more follow once it passes` : `Updating ${r.canary}`, 6000); refresh(); } catch (e) { toast(e.message); }
 };
