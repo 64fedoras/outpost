@@ -238,6 +238,8 @@ $('set-theme').addEventListener('change', () => {
   if (v) document.documentElement.setAttribute('data-theme', v); else document.documentElement.removeAttribute('data-theme');
   toast(v ? `Theme: ${v}` : 'Theme follows the system');
 });
+try { $('set-chatkey').checked = chatCtrlSend(); } catch (e) {}
+$('set-chatkey').addEventListener('change', () => { chatSendKeySet($('set-chatkey').checked); toast($('set-chatkey').checked ? 'Chat: Ctrl+Enter sends' : 'Chat: Enter sends'); });
 try { $('set-detailed').checked = showDetailed; } catch (e) {}
 $('set-detailed').addEventListener('change', () => {
   showDetailed = $('set-detailed').checked;

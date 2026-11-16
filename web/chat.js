@@ -136,7 +136,18 @@ async function chatSend() {
   chatButtons();
 }
 $('chat-send').onclick = chatSend;
-$('chat-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); chatSend(); } });
+// Desktop: Enter sends by default; Settings → Appearance (or the key badge by Send) switches to Ctrl+Enter. Shift+Enter is always a new line.
+const chatCtrlSend = () => { try { return localStorage.getItem('outpost.chatSendKey') === 'ctrl'; } catch (e) { return false; } };
+function chatSendKeySet(ctrl) {
+  try { if (ctrl) localStorage.setItem('outpost.chatSendKey', 'ctrl'); else localStorage.removeItem('outpost.chatSendKey'); } catch (e) { /* storage optional */ }
+  chatPlaceholder();
+  const c = document.getElementById('set-chatkey'); if (c) c.checked = ctrl;
+}
+$('chat-text').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.isComposing || e.shiftKey || chatTouch()) return;
+  if (!chatCtrlSend() || e.ctrlKey || e.metaKey) { e.preventDefault(); chatSend(); }
+});
+$('chat-key').onclick = () => chatSendKeySet(!chatCtrlSend());
 const chatNew = () => { if (location.hash === '#/chat') chatOpen(null); else location.hash = '#/chat'; };
 $('chat-new').onclick = chatNew; $('chat-new2').onclick = chatNew;
 $('chat-panel-btn').onclick = () => chatPanelSet(!chatPanelOpen());
@@ -156,7 +167,11 @@ $('chat-totask').onclick = () => {
   setTimeout(() => { $('nt-prompt').value = 'Build this, based on the conversation below.\n\n' + lines.join('\n\n'); autoGrow($('nt-prompt')); }, 50);
 };
 
-function chatPlaceholder() { $('chat-text').placeholder = chatTouch() ? 'Ask anything…' : 'Ask anything… (Ctrl+Enter sends)'; }
+function chatPlaceholder() {
+  $('chat-text').placeholder = chatTouch() ? 'Ask anything…' : chatCtrlSend() ? 'Ask anything… (Ctrl+Enter sends, Enter adds a line)' : 'Ask anything… (Enter sends, Shift+Enter adds a line)';
+  $('chat-key').textContent = chatCtrlSend() ? 'Ctrl+Enter' : 'Enter';
+  $('chat-key').title = chatCtrlSend() ? 'Ctrl+Enter sends. Click to make Enter send instead.' : 'Enter sends. Click to require Ctrl+Enter instead.';
+}
 chatPlaceholder();
 // Keep the page the size of what is really visible: Chrome on Android lets the keyboard cover the page,
 // which used to scroll the header away. Size the chat page to the visual viewport and keep the page at the top.
