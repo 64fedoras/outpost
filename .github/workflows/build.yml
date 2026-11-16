@@ -8,6 +8,10 @@ name: Build binaries
 on:
   push:
     branches: [main]
+    # A merge that only touches documentation changes nothing in the binaries, so it makes no release.
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
   workflow_dispatch:
 
 permissions:

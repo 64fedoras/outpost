@@ -37,10 +37,16 @@ fast() {
 	step "JavaScript unit tests (markdown)"
 	node testing/js/markdown_test.js
 	step "cross-build all platforms"
+	# All five at once (they share the build cache); any failure fails the step.
+	pids=""
 	for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
 		echo "build $t"
-		CGO_ENABLED=0 GOOS=${t%/*} GOARCH=${t#*/} go build -o /dev/null ./cmd/outpost
+		CGO_ENABLED=0 GOOS=${t%/*} GOARCH=${t#*/} go build -o /dev/null ./cmd/outpost &
+		pids="$pids $!"
 	done
+	failed=0
+	for p in $pids; do wait "$p" || failed=1; done
+	[ "$failed" = 0 ] || { echo "a cross-build failed" >&2; exit 1; }
 }
 
 race() {

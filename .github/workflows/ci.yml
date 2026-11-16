@@ -1,13 +1,14 @@
 name: CI
 
 # Checks every pull request before it can break main, and every direct push to
-# main or dev: a push without a pull request would otherwise skip the race
-# detector and the cross-build. The release build and publishing stay in
-# build.yml, which runs on push to main.
+# dev. A merge to main is not checked again here: the pull request already ran
+# these jobs, and build.yml (which runs on push to main) vets and tests before
+# it releases. A direct push to main therefore gets only that release-job check,
+# not the race detector or the cross-build, so push to dev or open a PR instead.
 on:
   pull_request:
   push:
-    branches: [main, dev]
+    branches: [dev]
   workflow_dispatch:
 
 permissions:
