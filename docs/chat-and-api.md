@@ -11,8 +11,8 @@ need a task. A new chat opens with one card per way to answer: **Auto (local, st
 node with a model loaded (shown free, busy or paused); click a card or use the model box under the message
 box. The message box stays docked at the bottom, and the **Chats** button opens a panel with your earlier
 chats (on a phone it is a full-screen list). Replies stream in and are shown as formatted text (headings, bold, lists, tables, links and code blocks with a Copy button; HTML in an answer is shown as text, never run; the same goes for planner messages in a task and in the project chat), thinking
-models show their reasoning folded away, and each answer notes the node, model and speed. **Ctrl+Enter**
-sends (on a phone Enter adds a new line and the **Send** button sends; the model list shows just the chosen model with a **Change** link, and the page follows the on-screen keyboard), **Stop** ends a reply, and **Make this a task** copies the conversation into a new task. Chats are
+models show their reasoning folded away, and each answer notes the node, model and speed. **Enter**
+sends and Shift+Enter adds a line (Settings → Appearance, or the key badge next to Send, switches to **Ctrl+Enter** sends; the choice is kept in this browser; on a phone Enter always adds a new line and the **Send** button sends; the model list shows just the chosen model with a **Change** link, and the page follows the on-screen keyboard), **Stop** ends a reply, and **Make this a task** copies the conversation into a new task. Chats are
 kept on the controller (`chats/`, up to 500); a long chat sends only the newest messages that fit the
 model's context. Chat only uses a free model slot: while a task keeps every node busy, a message waits
 up to 5 minutes and then says so. It never interrupts task work and costs no Claude money, unless

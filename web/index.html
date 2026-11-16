@@ -248,12 +248,12 @@
           <div class="chat-dock">
             <div class="chat-col">
               <div class="chat-compose">
-                <textarea id="chat-text" rows="2" enterkeyhint="enter" placeholder="Ask anything… (Ctrl+Enter sends)" aria-label="Message"></textarea>
+                <textarea id="chat-text" rows="2" enterkeyhint="enter" placeholder="Ask anything…" aria-label="Message"></textarea>
                 <div class="chat-bar">
                   <select id="chat-node" class="chat-pill" aria-label="Which node answers"></select>
                   <span class="grow"></span>
                   <button class="small hidden" id="chat-totask" title="Start a new task with this conversation as its request">Make this a task</button>
-                  <span class="kbd hide-ph">Ctrl+Enter</span>
+                  <button type="button" class="kbd kbd-btn hide-ph" id="chat-key">Enter</button>
                   <button class="small danger hidden" id="chat-stop">Stop</button>
                   <button class="primary" id="chat-send">Send</button>
                 </div>
@@ -499,6 +499,7 @@
         <div class="section-head"><h2>Appearance</h2></div>
         <div class="card">
           <label class="chip-input">theme <select id="set-theme" aria-label="Theme"><option value="">same as the system</option><option value="light">light</option><option value="dark">dark</option></select></label>
+          <label class="check"><input type="checkbox" id="set-chatkey"> Chat: send with Ctrl+Enter (Enter adds a new line). Off by default, so Enter sends; on a phone Enter always adds a line</label>
           <label class="check"><input type="checkbox" id="set-detailed"> Show the "Detailed list" view on the Nodes page (off by default; clicking a node in the List view already opens all its controls underneath)</label>
           <p class="hint">Kept in this browser only. On a phone, use the browser's <i>Add to Home screen</i> (Safari: Share → Add to Home Screen) to open Outpost like an app; with the controller's self-signed certificate, Chrome may only offer a bookmark-style shortcut.</p>
         </div>
