@@ -1,0 +1,30 @@
+name: Lab
+
+# Runs on the home network, NOT on GitHub. A Gitea instance on the LAN holds a pull mirror of
+# this repository and an Actions runner (label lab-runner) picks these jobs up. Gitea reads
+# .gitea/workflows/ instead of .github/workflows/, so the GitHub release workflows are not run
+# there. Nothing triggers on a push or a pull request: this job talks to the real cluster, so it
+# starts only by hand (Run workflow) or on the nightly schedule.
+#
+# Secrets (the mirror's Settings, Actions, Secrets; never in the repository):
+#   OUTPOST_LAB_URL          controller address, e.g. https://192.0.2.10:8443
+#   OUTPOST_LAB_TOKEN        an API token from the controller's Settings, API tokens
+#   OUTPOST_LAB_FINGERPRINT  optional: the controller certificate's SHA-256 (Settings shows it)
+# See testing/README.md, "Lab checks".
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 8 * * *"
+
+jobs:
+  smoke:
+    runs-on: lab-runner
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Smoke checks against the real cluster
+        env:
+          OUTPOST_LAB_URL: ${{ secrets.OUTPOST_LAB_URL }}
+          OUTPOST_LAB_TOKEN: ${{ secrets.OUTPOST_LAB_TOKEN }}
+          OUTPOST_LAB_FINGERPRINT: ${{ secrets.OUTPOST_LAB_FINGERPRINT }}
+        run: python3 testing/lab_smoke.py

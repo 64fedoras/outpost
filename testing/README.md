@@ -61,6 +61,22 @@ Playwright and Chromium are expected to be installed (`pip install playwright &&
 WebSocket that executes the Chromium job locally. They use a headless Chromium found under
 `/opt/pw-browsers` or `OUTPOST_TEST_CHROME=/path/to/chrome-headless-shell`, and skip without one.
 
+## Lab checks (the real cluster)
+`testing/lab_smoke.py` talks to a real controller over its API: version and nodes, **Check cluster** on every
+online node (a failed step on an online node fails the run), `GET /v1/models` and one tiny chat message.
+It needs only Python 3 and two environment variables, so it also runs by hand:
+`OUTPOST_LAB_URL=https://192.0.2.10:8443 OUTPOST_LAB_TOKEN=<API token> python3 testing/lab_smoke.py`.
+Optional: `OUTPOST_LAB_FINGERPRINT` (pin the self-signed certificate; the run prints the value to use),
+`OUTPOST_LAB_REQUIRE` (node names that must be online) and `OUTPOST_LAB_SKIP_CHAT=1`.
+
+`.gitea/workflows/lab.yml` runs it on a LAN runner: a Gitea instance keeps a **pull mirror** of this repository
+and an `act_runner`/`gitea-runner` with the label `lab-runner` takes the job. It starts by hand or nightly, never on
+a push or pull request, so the cluster is not touched by every mirror sync. GitHub never runs it (it only reads
+`.github/workflows/`), and no cluster address or token is in the repository: they are Gitea secrets
+(`OUTPOST_LAB_URL`, `OUTPOST_LAB_TOKEN`, optionally `OUTPOST_LAB_FINGERPRINT`). Host jobs run as the runner's
+user without isolation, so only point the runner at a mirror you control.
+Not yet checked on the real cluster, and only the smoke checks exist so far: Windows, tray, GPU and phone checks are still by hand.
+
 ## Not covered by any script (test by hand)
 - Screenshots on the real nodes: Chromium on each platform (snap Chromium on Ubuntu, Chrome on Windows
   and macOS), the 390 px phone width in new headless mode, and `preview_command` apps.
