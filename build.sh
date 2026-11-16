@@ -91,13 +91,20 @@ sha256() { # sha256 FILE -> "<hash>  <name>"
 }
 mkdir -p "$D/bin"
 OUT=""
+PIDS=""
+# The targets are built at the same time (they share Go's build cache and write different files);
+# a failure in any one of them fails the whole build.
 for t in $TARGETS; do
   o=${t%-*}; a=${t#*-}; ext=""; flags="-s -w -buildid="
   if [ "$o" = windows ]; then ext=.exe; flags="-buildid="; fi
   echo "building $o/$a ..."
-  GOOS=$o GOARCH=$a go build -trimpath -ldflags="$flags" -o "$D/bin/outpost-$o-$a$ext" ./cmd/outpost
+  GOOS=$o GOARCH=$a go build -trimpath -ldflags="$flags" -o "$D/bin/outpost-$o-$a$ext" ./cmd/outpost &
+  PIDS="$PIDS $!"
   OUT="$OUT $D/bin/outpost-$o-$a$ext"
 done
+failed=""
+for p in $PIDS; do wait "$p" || failed=1; done
+[ -z "$failed" ] || die "a platform build failed (see the errors above)"
 case " $TARGETS " in *windows-amd64*) sh winres/sign.sh "$D/bin/outpost-windows-amd64.exe" ;; esac
 echo "built Outpost $V into $D/bin"
 echo "SHA-256:"
