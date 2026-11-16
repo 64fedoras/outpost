@@ -103,7 +103,7 @@
           <div class="opts-grid">
             <select id="nt-planner" class="opt-field" aria-label="Planner"></select>
             <select id="nt-model" class="opt-field" aria-label="Claude model"></select>
-            <label class="chip-input" id="nt-cap-wrap" title="Spending cap for Claude on this task">cap $<input id="nt-cap" type="number" min="0.05" step="0.25" aria-label="Spending cap in US dollars"></label>
+            <label class="chip-input" id="nt-cap-wrap" title="Spending cap for Claude on this task">cap $<input id="nt-cap" type="number" min="0.10" step="0.10" aria-label="Spending cap in US dollars"></label>
             <label class="toggle" title="A second node checks each subtask and fixes mistakes"><input type="checkbox" id="nt-review" checked> peer review</label>
             <label class="toggle" title="The plan starts with a subtask that writes the tests, and every other subtask must make them pass. Gives the fix rounds a fixed target."><input type="checkbox" id="nt-testfirst"> tests first</label>
             <label class="toggle" title="Plan 2 or 3 design variants of the page first, rendered side by side, and build the real code from the one you pick. Needs a node with exec and Chromium."><input type="checkbox" id="nt-mockup"> mockups first</label>
@@ -408,7 +408,7 @@
           <div class="btns u3"><input id="set-key" type="password" placeholder="sk-ant-…" autocomplete="off"><button id="set-key-save">Save</button><button id="set-key-clear" class="danger">Remove</button></div>
           <div class="row2">
             <div><label for="set-model">Default Claude model</label><select id="set-model"></select></div>
-            <div><label for="set-cap">Default spending cap per task (USD)</label><input id="set-cap" type="number" min="0.05" step="0.25"></div>
+            <div><label for="set-cap">Default spending cap per task (USD)</label><input id="set-cap" type="number" min="0.10" step="0.10"></div>
           </div>
           <div class="modal-foot"><button class="primary" id="set-claude-save">Save model and cap</button></div>
         </div>
