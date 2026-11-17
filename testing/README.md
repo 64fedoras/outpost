@@ -85,6 +85,14 @@ to `gitea-runner` (`--keep-hostname` skips that), installs git, Python 3, Node.j
 the pinned gitea-runner (SHA-256 checked), creates the `gitea-runner` user and systemd service, and registers with the
 single label `lab-runner:host`, never `ubuntu-24.04`. The token is never stored, and running it twice skips finished steps.
 **The script itself is untested on a real machine** (syntax-checked only; the download address and version could not be reached from the build box), so read it first.
+**Stage `inspect`** (`OUTPOST_LAB_STAGES=smoke,inspect`, also the workflow default) adds read-only checks from
+`testing/lab_features.py`: every online node runs the controller's version; Pick best (`load-options`) returns exactly
+one best pick that fits, and a GPU node's pick is not CPU-only; each node's model-sharing port is reachable from the runner
+(the Windows firewall rule; `OUTPOST_LAB_SKIP_PEER=name,name` skips nodes the runner cannot route to); Mac node logs
+have no Local Network block; Windows node logs show no service errors; the update check answers. Nothing is
+installed, loaded or restarted. Warnings say what it cannot see: tray icons, Windows service survival over a reboot,
+Defender, and Apple Silicon/Metal when no arm64 Mac is online. Stages for update/rollback and memory pooling
+(which change the cluster and will be manual-only) are not built yet.
 Not yet checked on the real cluster, and only the smoke checks exist so far: Windows, tray, GPU and phone checks are still by hand.
 
 ## Not covered by any script (test by hand)
