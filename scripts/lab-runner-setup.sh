@@ -130,6 +130,7 @@ echo "config: $CONF"
 step "registration"
 if [ -f "$HOME_DIR/.runner" ]; then
   echo "already registered ($HOME_DIR/.runner exists); delete that file and the runner in Gitea to register again"
+  echo "(a runner you set up by hand elsewhere is not detected: this script registers its own)"
 else
   [ -n "$INSTANCE" ] || die "--instance is needed to register (for example http://192.0.2.20:3000)"
   case "$INSTANCE" in http://*|https://*) ;; *) die "--instance must start with http:// or https://" ;; esac
@@ -181,4 +182,11 @@ systemctl is-active gitea-runner >/dev/null || die "the service did not start: j
 
 echo
 echo "Done. The runner '$NAME' should show as Idle in Gitea (repo Settings, Actions, Runners)."
-echo "Next: set the secrets OUTPOST_LAB_URL and OUTPOST_LAB_TOKEN, then run the Lab workflow."
+echo "Next, in the mirror's Settings, Actions, Secrets:"
+echo "  OUTPOST_LAB_URL          the controller address WITH https://, for example https://192.0.2.10:8443"
+echo "                           (the controller only serves https; plain http gets a bare 400)"
+echo "  OUTPOST_LAB_TOKEN        an API token from the controller's Settings, API tokens"
+echo "  OUTPOST_LAB_FINGERPRINT  optional: the 'certificate not verified' line in the first run's log prints the value"
+echo "Then run the Lab workflow. Keep this runner's only label as $LABELS: Gitea also lists the mirror's"
+echo "GitHub workflows, and a ubuntu-24.04 label would make it try the release build."
+echo "Tip: set the mirror's sync interval to 10m so merged changes show up quickly."
