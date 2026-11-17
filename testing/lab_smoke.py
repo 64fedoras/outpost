@@ -54,6 +54,11 @@ def need_env(name):
 
 
 BASE = need_env("OUTPOST_LAB_URL").rstrip("/")
+if urllib.parse.urlparse(BASE).scheme not in ("http", "https") or not urllib.parse.urlparse(BASE).hostname:
+    print("OUTPOST_LAB_URL must start with http:// or https:// and name the controller, "
+          "for example https://192.0.2.10:8443 (the value is not shown here in case it is private).",
+          file=sys.stderr)
+    sys.exit(2)
 TOKEN = need_env("OUTPOST_LAB_TOKEN")
 FINGERPRINT = os.environ.get("OUTPOST_LAB_FINGERPRINT", "").replace(":", "").strip().lower()
 
@@ -118,7 +123,9 @@ def report():
 def check_state():
     code, st = call("GET", "/api/state")
     if code != 200 or not isinstance(st, dict):
-        fail(f"GET /api/state returned {code}: {st} (wrong URL, or a token that is revoked or chat-only?)")
+        hint = " (the controller serves HTTPS: use https:// in OUTPOST_LAB_URL)" if code == 400 and BASE.startswith("http://") else \
+            " (wrong URL, or a token that is revoked or chat-only?)"
+        fail(f"GET /api/state returned {code}: {st}{hint}")
         report()
     nodes = st.get("nodes") or []
     online = [n for n in nodes if n.get("online")]
@@ -165,6 +172,8 @@ def check_cluster():
         for note in row.get("notes") or []:
             if note.get("level") == "bad":
                 bad.append(note.get("text", ""))
+            if note.get("fix"):
+                say("fix", f"{name}: run this on that machine: {note['fix']}")
         if bad:
             fail(f"{name}: " + "; ".join(bad))
         else:
