@@ -172,6 +172,8 @@ def check_cluster():
         for note in row.get("notes") or []:
             if note.get("level") == "bad":
                 bad.append(note.get("text", ""))
+            if note.get("fix"):
+                say("fix", f"{name}: run this on that machine: {note['fix']}")
         if bad:
             fail(f"{name}: " + "; ".join(bad))
         else:
