@@ -130,12 +130,28 @@ func cpuSpeedFor(h *Hello, bench *NodeBench, name string, m modelCost, benchCost
 	return cpuSpeed{est * f, "calibrated"}
 }
 
-// speedTier: 0 good, 1 usable, 2 slow.
-func speedTier(tps float64) int {
+// Target speed: the node's wanted tok/s (set in the Load dialog). A pick at or
+// above it is good; at or above half of it, usable; below that, slow. Zero means
+// the default (speedGood, with speedUsable as the half).
+const (
+	targetMin = 1.0
+	targetMax = 100.0
+)
+
+func effectiveTarget(t float64) float64 {
+	if t <= 0 {
+		return speedGood
+	}
+	return min(max(t, targetMin), targetMax)
+}
+
+// speedTier: 0 good, 1 usable, 2 slow, against a target speed.
+func speedTier(tps, target float64) int {
+	target = effectiveTarget(target)
 	switch {
-	case tps >= speedGood:
+	case tps >= target:
 		return 0
-	case tps >= speedUsable:
+	case tps >= target/2:
 		return 1
 	}
 	return 2

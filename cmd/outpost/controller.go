@@ -53,7 +53,9 @@ type NodeRec struct {
 	LastAddr    string        `json:"last_addr,omitempty"`     // address it last connected from, for Wake-on-LAN (wol.go)
 	// StorageLimitGB is the most disk (GiB) Outpost may use on the node; 0 = no limit (node_storage.go).
 	StorageLimitGB float64 `json:"storage_limit_gb,omitempty"`
-	StorageFull    string  `json:"storage_full,omitempty"` // "" = remove old models at the limit, "refuse" = refuse the copy
+	// TargetTPS is the generation speed (tok/s) the owner wants from this node; steers Recommended and Pick best. 0 = default (8).
+	TargetTPS   float64 `json:"target_tps,omitempty"`
+	StorageFull string  `json:"storage_full,omitempty"` // "" = remove old models at the limit, "refuse" = refuse the copy
 }
 
 type nodeConn struct {

@@ -306,8 +306,16 @@ can check detection without joining.
      reads each model's GGUF header to see how many weights one token reads.
    - An Apple Silicon Mac runs the model on its GPU from unified memory. Its estimate is the CPU one
      times 1.5, which is a guess until that Mac has a benchmark.
-   - The pick shows **~N tok/s** where there is an estimate; under 4 tok/s it is marked slow in orange.
-     8 tok/s or more counts as fast. A benchmark of a model on the node replaces the estimate for that
+   - **Target speed.** A slider beside *Context size* in the Load dialog (and one at the top of the Pick
+     best dialog) sets the tok/s you want from this node, 2 to 32 or any number from 1 to 100. The
+     default is 8. The pick is the biggest coding model estimated at or above the target; if none
+     reaches it, the biggest at half the target or better, then the fastest. It is saved per node and
+     applies to CPU machines, split GPU + RAM picks and Macs. A model that fits fully in VRAM has no speed
+     estimate, so the target never rules it out. The estimates behind it (memory speed x 0.6 on CPU,
+     x 0.7 more for mixture-of-experts, VRAM part 8x faster when split, x 1.5 on Apple Silicon) are
+     untuned guesses until compared with real hardware.
+   - The pick shows **~N tok/s** where there is an estimate; under half the target (4 tok/s by default)
+     it is marked slow in orange. At or above the target (8 by default) counts as fast. A benchmark of a model on the node replaces the estimate for that
      model (and, on CPU machines and Macs, rescales the others).
    - Sizes are checked against the memory that is free now: what other programs hold (a game, a
      browser) is left alone and the reason says so. The node's own loaded model does not count,
