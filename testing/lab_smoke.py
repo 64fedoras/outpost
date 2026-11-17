@@ -123,7 +123,9 @@ def report():
 def check_state():
     code, st = call("GET", "/api/state")
     if code != 200 or not isinstance(st, dict):
-        fail(f"GET /api/state returned {code}: {st} (wrong URL, or a token that is revoked or chat-only?)")
+        hint = " (the controller serves HTTPS: use https:// in OUTPOST_LAB_URL)" if code == 400 and BASE.startswith("http://") else \
+            " (wrong URL, or a token that is revoked or chat-only?)"
+        fail(f"GET /api/state returned {code}: {st}{hint}")
         report()
     nodes = st.get("nodes") or []
     online = [n for n in nodes if n.get("online")]
