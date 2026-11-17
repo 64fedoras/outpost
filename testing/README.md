@@ -77,22 +77,7 @@ which the lab runner does not have, so they only queue (cancel them or disable t
 the lab runner that label, or it would try the release build). No cluster address or token is in the repository: they are Gitea secrets
 (`OUTPOST_LAB_URL`, `OUTPOST_LAB_TOKEN`, optionally `OUTPOST_LAB_FINGERPRINT`). Host jobs run as the runner's
 user without isolation, so only point the runner at a mirror you control.
-**Setting up the runner machine:** `scripts/lab-runner-setup.sh` turns a fresh Ubuntu or Debian machine into that runner.
-Get a registration token from the mirror's Settings, Actions, Runners, then on the new machine:
-`sudo sh scripts/lab-runner-setup.sh --instance http://192.0.2.20:3000 --token-file ~/token`
-(or `GITEA_RUNNER_REGISTRATION_TOKEN=... sudo -E sh ...`; there is deliberately no token argument). It sets the hostname
-to `gitea-runner` (`--keep-hostname` skips that), installs git, Python 3, Node.js 24 (needed by `actions/checkout`) and
-the pinned gitea-runner (SHA-256 checked), creates the `gitea-runner` user and systemd service, and registers with the
-single label `lab-runner:host`, never `ubuntu-24.04`. The token is never stored, and running it twice skips finished steps.
-Every address, the hostname, runner name, labels, runner version, Node version (`NODE_MAJOR`) and download folder (`GITEA_RUNNER_BASE_URL`) can be changed with an option or environment variable, so nothing is tied to one home network; behind a proxy use `sudo -E`.
-**The script itself is untested on a real machine** (syntax-checked only; the download address and version could not be reached from the build box), so read it first.
-**If one node fails with a file-sharing port timeout (8444):** the lab run is fine and that node's firewall is blocking the controller or runner.
-First make sure the Windows network is **Private** (`Get-NetConnectionProfile`). A rule limited to the local subnet does not cover a
-controller on another subnet; in an Administrator PowerShell, use PowerShell's own command (a `netsh` command with a quoted rule name can
-fail silently when pasted into PowerShell), with the address range your controller and runner are in (`192.0.2.0/24` is only an example):
-`New-NetFirewallRule -DisplayName 'Outpost model sharing' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8444 -RemoteAddress 192.0.2.0/24 -Profile Private,Domain`,
-then `Get-NetFirewallRule -DisplayName 'Outpost model sharing'` should show it enabled, and **Check cluster** should pass.
-Do not judge by `ping`: Windows blocks it by default. Test the port from the runner with `nc -vz -w 5 NODE-ADDRESS 8444`.
+**To set this up on your own network from scratch** (mirror, runner machine, secrets, firewall troubleshooting, any OS mix), follow [`testing/LAB.md`](LAB.md). The runner is created by `scripts/lab-runner-setup.sh`, which is **untested on a real machine** (syntax-checked only).
 
 Not yet checked on the real cluster, and only the smoke checks exist so far: Windows, tray, GPU and phone checks are still by hand.
 
