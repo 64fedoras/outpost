@@ -1,10 +1,11 @@
 name: Lab
 
 # Runs on the home network, NOT on GitHub. A Gitea instance on the LAN holds a pull mirror of
-# this repository and an Actions runner (label lab-runner) picks these jobs up. Gitea reads
-# .gitea/workflows/ instead of .github/workflows/, so the GitHub release workflows are not run
-# there. Nothing triggers on a push or a pull request: this job talks to the real cluster, so it
-# starts only by hand (Run workflow) or on the nightly schedule.
+# this repository and an Actions runner (label lab-runner) picks these jobs up. Gitea also lists
+# the .github/workflows/ files of the mirror; they ask for ubuntu-24.04 runners, which the lab
+# runner does not have, so they only queue. Do not give the lab runner that label. Nothing here
+# triggers on a push or a pull request: this job talks to the real cluster, so it starts only by
+# hand (Run workflow) or on the nightly schedule.
 #
 # Secrets (the mirror's Settings, Actions, Secrets; never in the repository):
 #   OUTPOST_LAB_URL          controller address, e.g. https://192.0.2.10:8443

@@ -72,7 +72,9 @@ Optional: `OUTPOST_LAB_FINGERPRINT` (pin the self-signed certificate; the run pr
 `.gitea/workflows/lab.yml` runs it on a LAN runner: a Gitea instance keeps a **pull mirror** of this repository
 and an `act_runner`/`gitea-runner` with the label `lab-runner` takes the job. It starts by hand or nightly, never on
 a push or pull request, so the cluster is not touched by every mirror sync. GitHub never runs it (it only reads
-`.github/workflows/`), and no cluster address or token is in the repository: they are Gitea secrets
+`.github/workflows/`). Gitea lists the mirror's `.github/workflows/` files too, but they need `ubuntu-24.04` runners,
+which the lab runner does not have, so they only queue (cancel them or disable those workflows in Gitea; never give
+the lab runner that label, or it would try the release build). No cluster address or token is in the repository: they are Gitea secrets
 (`OUTPOST_LAB_URL`, `OUTPOST_LAB_TOKEN`, optionally `OUTPOST_LAB_FINGERPRINT`). Host jobs run as the runner's
 user without isolation, so only point the runner at a mirror you control.
 Not yet checked on the real cluster, and only the smoke checks exist so far: Windows, tray, GPU and phone checks are still by hand.
