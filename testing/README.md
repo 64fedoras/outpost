@@ -89,7 +89,7 @@ Every address, the hostname, runner name, labels, runner version, Node version (
 **If one node fails with a file-sharing port timeout (8444):** the lab run is fine and that node's firewall is blocking the controller or runner.
 First make sure the Windows network is **Private** (`Get-NetConnectionProfile`). A rule limited to the local subnet does not cover a
 controller on another subnet; in an Administrator PowerShell, use PowerShell's own command (a `netsh` command with a quoted rule name can
-fail silently when pasted into PowerShell), with your LAN range:
+fail silently when pasted into PowerShell), with the address range your controller and runner are in (`192.0.2.0/24` is only an example):
 `New-NetFirewallRule -DisplayName 'Outpost model sharing' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8444 -RemoteAddress 192.0.2.0/24 -Profile Private,Domain`,
 then `Get-NetFirewallRule -DisplayName 'Outpost model sharing'` should show it enabled, and **Check cluster** should pass.
 Do not judge by `ping`: Windows blocks it by default. Test the port from the runner with `nc -vz -w 5 NODE-ADDRESS 8444`.
