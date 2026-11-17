@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"net"
 	"strconv"
 	"strings"
 )
@@ -22,6 +23,21 @@ func PeerFirewallAddArgs(port int) []string {
 	return []string{"advfirewall", "firewall", "add", "rule", "name=" + PeerFirewallRule,
 		"dir=in", "action=allow", "protocol=TCP", "localport=" + strconv.Itoa(port),
 		"remoteip=localsubnet", "profile=private,domain"}
+}
+
+// PeerFirewallPowerShell is the same rule as PeerFirewallAddArgs, written for
+// pasting into an Administrator PowerShell. netsh with name="..." does not work
+// there (PowerShell drops the quotes, so the rule is silently not created), so
+// this uses New-NetFirewallRule with single quotes. extraRemote is an optional
+// address added next to LocalSubnet, for a node on another subnet than the
+// controller; it is checked, since the result is meant to be pasted.
+func PeerFirewallPowerShell(port int, extraRemote string) string {
+	remote := "LocalSubnet"
+	if extraRemote != "" && net.ParseIP(extraRemote) != nil {
+		remote += "," + extraRemote
+	}
+	return "New-NetFirewallRule -DisplayName '" + PeerFirewallRule + "' -Direction Inbound -Action Allow" +
+		" -Protocol TCP -LocalPort " + strconv.Itoa(port) + " -RemoteAddress " + remote + " -Profile Private,Domain"
 }
 
 func PeerFirewallDeleteArgs() []string {

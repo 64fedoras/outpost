@@ -145,6 +145,21 @@ network marked **Public**, set it to **Private** (Settings, Network, the connect
 the rule deliberately does not apply on public networks. Pool helper ports (pooling, off by default)
 still get no rule. *Untested on real Windows.*
 
+**A Windows node on a different subnet than the controller.** The installer's rule only lets the node's own
+subnet in, so a controller on another subnet or VLAN (for example controller `192.0.2.10`, node `198.51.100.20`)
+gets a timeout on port 8444 and **Check cluster** reports the file-sharing port as failed. Check cluster then shows
+a PowerShell command that also allows the controller's address; run it in an **Administrator PowerShell** on that
+PC:
+
+```
+New-NetFirewallRule -DisplayName 'Outpost model sharing' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8444 -RemoteAddress LocalSubnet,192.0.2.10 -Profile Private,Domain
+```
+
+Use the controller's own address instead of `192.0.2.10`, and add any other subnet that other nodes copy from
+this one (comma-separated, such as `198.51.100.0/24`). Use `New-NetFirewallRule` here, not `netsh ... name="..."`:
+PowerShell drops the quotes around the rule name, so `netsh` fails without creating the rule. If a rule of that
+name already exists, remove it first with `Remove-NetFirewallRule -DisplayName 'Outpost model sharing'`.
+
 *Untested on real Windows:* the service, and whether llama.cpp's Vulkan backend can use the GPU
 when run by a service (session 0). If a GPU node shows no GPU after switching, reinstall with
 `--no-service`.

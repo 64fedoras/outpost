@@ -19,6 +19,7 @@ var (
 	windowsRAM             = platform.WindowsRAM
 	acquireNodeLock        = platform.AcquireNodeLock
 	peerFirewallAddArgs    = platform.PeerFirewallAddArgs
+	peerFirewallPowerShell = platform.PeerFirewallPowerShell
 	peerFirewallDeleteArgs = platform.PeerFirewallDeleteArgs
 	peerRuleNeedsMigration = platform.PeerRuleNeedsMigration
 )
