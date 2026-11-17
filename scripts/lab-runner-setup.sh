@@ -14,6 +14,7 @@
 #   --hostname NAME    set this machine's hostname (default: gitea-runner)
 #   --keep-hostname    leave the hostname alone
 #   --version X.Y.Z    gitea-runner version to install (default below)
+#   NODE_MAJOR=N       Node.js major version to require (default 24); the NodeSource repository is used when it is missing
 #   GITEA_RUNNER_BASE_URL  download folder if the runner moves (default https://dl.gitea.com/gitea-runner;
 #                      files are <base>/<version>/gitea-runner-<version>-linux-<arch> and .sha256)
 #
@@ -22,12 +23,16 @@
 # (only if it is not registered yet), and starts it as the systemd service gitea-runner. Running it
 # again is safe: finished steps are skipped. The token is never stored by this script.
 #
+# Nothing here assumes a particular network: addresses, hostname, name, labels, versions and download
+# folder are all options or environment variables. Behind a proxy, run with sudo -E so curl and apt see it.
+#
 # Host jobs run without isolation as the gitea-runner user: only point this runner at a mirror you control.
 # Untested on a real machine at the time of writing: read it before running it.
 set -eu
 
 VERSION=5.4.1
 NAME=lab-runner
+NODE_MAJOR=${NODE_MAJOR:-24}
 LABELS=lab-runner:host
 INSTANCE=""
 TOKEN_FILE=""
@@ -48,13 +53,14 @@ while [ $# -gt 0 ]; do
     --hostname) [ $# -ge 2 ] || die "--hostname needs a value"; NEW_HOSTNAME=$2; shift 2 ;;
     --keep-hostname) NEW_HOSTNAME=""; shift ;;
     --version) [ $# -ge 2 ] || die "--version needs a value"; VERSION=$2; shift 2 ;;
-    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
   esac
 done
 
 [ "$(id -u)" = 0 ] || die "run this as root (sudo sh $0 ...)"
 command -v apt-get >/dev/null 2>&1 || die "this script supports Debian and Ubuntu (apt-get) only"
+case "$NODE_MAJOR" in ""|*[!0-9]*) die "NODE_MAJOR must be a number" ;; esac
 case "$VERSION" in [0-9]*.[0-9]*.[0-9]*) ;; *) die "--version must look like 5.4.1" ;; esac
 case "$NAME" in *[!A-Za-z0-9._-]*|"") die "--name may only use letters, digits, . _ -" ;; esac
 case "$LABELS" in *[!A-Za-z0-9._:,/-]*|"") die "--labels has odd characters" ;; esac
@@ -88,13 +94,13 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq curl ca-certificates git python3 >/dev/null
 
-step "Node.js 24"
+step "Node.js $NODE_MAJOR"
 node_major() { node --version 2>/dev/null | sed -n 's/^v\([0-9]*\)\..*/\1/p'; }
-if [ "$(node_major)" -ge 24 ] 2>/dev/null; then
+if [ "$(node_major)" -ge "$NODE_MAJOR" ] 2>/dev/null; then
   echo "Node $(node --version) is already installed"
 else
   # NodeSource's installer adds their apt repository; it is a script from their site run as root.
-  curl -fsSL https://deb.nodesource.com/setup_24.x | bash - >/dev/null
+  curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - >/dev/null
   apt-get install -y -qq nodejs >/dev/null
   echo "installed Node $(node --version)"
 fi
