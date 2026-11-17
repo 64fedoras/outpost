@@ -11,7 +11,7 @@ Gitea 1.2x.** Menu names may differ a little on your version; the ideas do not. 
 
 ## What you need
 - A running Outpost controller and at least one node (see `docs/install.md`).
-- A Gitea instance you control, reachable from the runner machine. It can be new (`docs/` in Gitea's own manual covers
+- A Gitea instance you control, reachable from the runner machine. It can be new (Gitea's own manual covers
   installing it). Forgejo should work for the Gitea parts but is untested here, and its runner is a different program,
   so `scripts/lab-runner-setup.sh` does not set it up.
 - One extra machine to be the **runner**: Debian or Ubuntu (it needs `apt`), x86-64 or arm64, with network access to
