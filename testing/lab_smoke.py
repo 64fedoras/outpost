@@ -54,6 +54,11 @@ def need_env(name):
 
 
 BASE = need_env("OUTPOST_LAB_URL").rstrip("/")
+if urllib.parse.urlparse(BASE).scheme not in ("http", "https") or not urllib.parse.urlparse(BASE).hostname:
+    print("OUTPOST_LAB_URL must start with http:// or https:// and name the controller, "
+          "for example https://192.0.2.10:8443 (the value is not shown here in case it is private).",
+          file=sys.stderr)
+    sys.exit(2)
 TOKEN = need_env("OUTPOST_LAB_TOKEN")
 FINGERPRINT = os.environ.get("OUTPOST_LAB_FINGERPRINT", "").replace(":", "").strip().lower()
 
