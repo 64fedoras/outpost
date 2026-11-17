@@ -84,6 +84,7 @@ Get a registration token from the mirror's Settings, Actions, Runners, then on t
 to `gitea-runner` (`--keep-hostname` skips that), installs git, Python 3, Node.js 24 (needed by `actions/checkout`) and
 the pinned gitea-runner (SHA-256 checked), creates the `gitea-runner` user and systemd service, and registers with the
 single label `lab-runner:host`, never `ubuntu-24.04`. The token is never stored, and running it twice skips finished steps.
+Every address, the hostname, runner name, labels, runner version, Node version (`NODE_MAJOR`) and download folder (`GITEA_RUNNER_BASE_URL`) can be changed with an option or environment variable, so nothing is tied to one home network; behind a proxy use `sudo -E`.
 **The script itself is untested on a real machine** (syntax-checked only; the download address and version could not be reached from the build box), so read it first.
 Not yet checked on the real cluster, and only the smoke checks exist so far: Windows, tray, GPU and phone checks are still by hand.
 
