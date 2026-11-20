@@ -36,7 +36,8 @@ type apiToken struct {
 	Hash     string    `json:"hash"`
 	Created  time.Time `json:"created"`
 	LastUsed time.Time `json:"last_used,omitempty"`
-	// Scope "chat" limits the token to the OpenAI-compatible /v1 API; "images" adds /v1/images; "" is full access.
+	// Scope "chat" limits the token to the OpenAI-compatible /v1 API (and the Anthropic and Ollama ones); "images" adds /v1/images;
+	// "mcp" allows only the MCP endpoint (mcp_server.go); "" is full access.
 	Scope string `json:"scope,omitempty"`
 }
 
@@ -281,7 +282,7 @@ func (c *Controller) handleNewAPIToken(w http.ResponseWriter, r *http.Request) {
 	var req struct{ Name, Scope string }
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	name := strings.TrimSpace(req.Name)
-	if req.Scope != "" && req.Scope != "chat" && req.Scope != "images" {
+	if req.Scope != "" && req.Scope != "chat" && req.Scope != "images" && req.Scope != "mcp" {
 		writeJSON(w, 400, map[string]string{"error": "scope must be empty (full access), chat or images"})
 		return
 	}

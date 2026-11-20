@@ -138,6 +138,36 @@ and `delete` are refused, because models are managed on the Models page. The app
 **Untested:** real Claude Code, real Ollama clients and real models with these APIs; tested only
 against the fake node in the unit tests.
 
+### Outpost as an MCP server (Claude Code, Claude Desktop)
+
+`https://<controller>:8443/mcp` speaks the Model Context Protocol (Streamable HTTP, plain JSON replies, no
+event stream), so an MCP client can hand work to the cluster. Create a token with **MCP only** ticked
+(Settings → Sign-in security; a full-access token works too), then, for Claude Code:
+
+```
+claude mcp add --transport http outpost https://192.0.2.10:8443/mcp --header "Authorization: Bearer <token>"
+```
+
+Claude Desktop and other clients take the same URL and header in their MCP settings (**Connect a tool →
+MCP** shows both). The tools:
+
+| Tool | What it does |
+| --- | --- |
+| `start_task` | Starts a task (prompt, optional project by id or name, optional planner) and returns its id |
+| `task_status` | Status, the planner's questions with their ids and options, the plan and subtask progress, tests, the result note |
+| `answer_task` | Answers the questions (`answers`: question id → answer, plus a note), or sends a follow-up request |
+| `approve_plan` | Approves the plan, only if allowed (below) |
+| `get_files` | Lists the task's files, or returns one file's text (up to 200 KB) |
+| `list_tasks`, `cluster_status` | Recent tasks; nodes, their models and whether they are busy |
+| `ask_local_model` | One question to a local model (free) |
+
+Two safety settings under **Connect a tool → MCP**, both off by default: **Let MCP start tasks with Claude
+or OpenRouter planners** (off: only local planners, `auto` or `node:<id>`, so a tool can never spend money)
+and **Let MCP approve plans** (off: plans wait for you in the web UI, and the tool is told to poll). The
+tools call the same code as the web UI, so caps, project rules and the one-task-per-project queue apply.
+An MCP-only token works on `/mcp` and nothing else; chat-only tokens do not work on `/mcp`.
+**Untested:** real Claude Code and Claude Desktop; tested with Go tests and curl on the local test rig.
+
 ## Claude usage and the spending cap
 
 Claude only plans, writes subtasks the local models could not finish, and fixes failing tests; all

@@ -41,6 +41,8 @@ type Settings struct {
 	BestOfN           string         `json:"best_of_n,omitempty"`           // "off", "hard" (default) or "all": extra copies of subtasks on idle nodes, a judge picks one
 	AgentOff          bool           `json:"agent_off,omitempty"`           // fixers and investigators use single-shot requests instead of tools
 	Instructions      string         `json:"instructions,omitempty"`        // standing rules copied into every new task (OUTPOST.md text)
+	MCPAllowPaid      bool           `json:"mcp_allow_paid,omitempty"`      // tasks started over MCP may use Claude or OpenRouter (mcp_server.go); default local only
+	MCPAllowApprove   bool           `json:"mcp_allow_approve,omitempty"`   // MCP clients may approve plans; default the owner approves in the web UI
 	APICORSOrigins    []string       `json:"api_cors_origins,omitempty"`    // browser origins allowed to call /v1, /anthropic and /ollama (api_core.go)
 	ChatInstructions  string         `json:"chat_instructions,omitempty"`   // default instructions for new chats (chat_versions.go)
 	PoolingEnabled    *bool          `json:"pooling_enabled,omitempty"`     // memory pooling (llama.cpp RPC); nil until decided, then off unless a pool already existed
@@ -194,7 +196,7 @@ func (c *Controller) settingsView() map[string]any {
 		"sandbox":      effectiveSandbox(c.settings.Sandbox, ""),
 		"health_amber": healthAmberOf(c.settings), "health_red": healthRedOf(c.settings),
 		"idle_unload": c.settings.IdleUnload, "idle_unload_effective": formatIdleDuration(idleUnloadFor(c.settings.IdleUnload, "")),
-		"instructions": c.settings.Instructions, "chat_instructions": c.settings.ChatInstructions, "api_cors_origins": c.settings.APICORSOrigins, "backup_enabled": c.settings.BackupEnabled, "last_backup": c.lastBackup, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
+		"instructions": c.settings.Instructions, "chat_instructions": c.settings.ChatInstructions, "api_cors_origins": c.settings.APICORSOrigins, "mcp_allow_paid": c.settings.MCPAllowPaid, "mcp_allow_approve": c.settings.MCPAllowApprove, "backup_enabled": c.settings.BackupEnabled, "last_backup": c.lastBackup, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
 	for k, x := range c.notifyView() {
 		v[k] = x
@@ -234,6 +236,8 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 		Instructions    *string   `json:"instructions"`
 		ChatInstr       *string   `json:"chat_instructions"`
 		CORSOrigins     *[]string `json:"api_cors_origins"`
+		MCPAllowPaid    *bool     `json:"mcp_allow_paid"`
+		MCPAllowApprove *bool     `json:"mcp_allow_approve"`
 		WebSearch       *bool     `json:"web_search"`
 		ChatWebSearch   *bool     `json:"chat_web_search"`
 		ChatSearchWith  *string   `json:"chat_search_with"`
@@ -406,6 +410,12 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.Instructions != nil {
 		c.settings.Instructions = clipInstructions(*req.Instructions)
+	}
+	if req.MCPAllowPaid != nil {
+		c.settings.MCPAllowPaid = *req.MCPAllowPaid
+	}
+	if req.MCPAllowApprove != nil {
+		c.settings.MCPAllowApprove = *req.MCPAllowApprove
 	}
 	if req.CORSOrigins != nil {
 		c.settings.APICORSOrigins = normCORSOrigins(*req.CORSOrigins)
