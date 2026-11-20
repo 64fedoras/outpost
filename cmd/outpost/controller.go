@@ -54,6 +54,8 @@ type NodeRec struct {
 	// StorageLimitGB is the most disk (GiB) Outpost may use on the node; 0 = no limit (node_storage.go).
 	StorageLimitGB float64 `json:"storage_limit_gb,omitempty"`
 	StorageFull    string  `json:"storage_full,omitempty"` // "" = remove old models at the limit, "refuse" = refuse the copy
+	// TaskModels lets a task load its best-fit model here before work starts (tasks_models.go).
+	TaskModels bool `json:"task_models,omitempty"`
 }
 
 type nodeConn struct {
@@ -344,6 +346,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/spending/cap", c.authSession(c.handleSpendingCap))
 	mux.HandleFunc("POST /api/tasks/{id}/meta", c.auth(c.handleTaskMeta))
 	mux.HandleFunc("POST /api/tasks/{id}/approve", c.auth(c.handleApproveTask))
+	mux.HandleFunc("GET /api/tasks/{id}/model-plan", c.auth(c.handleTaskModelPlan))
 	mux.HandleFunc("POST /api/tasks/{id}/difficulty", c.auth(c.handleSetDifficulty))
 	mux.HandleFunc("POST /api/tasks/{id}/replan", c.auth(c.handleReplanTask))
 	mux.HandleFunc("POST /api/tasks/{id}/messages", c.auth(c.handleTaskMessage))
