@@ -22,10 +22,13 @@ import (
 var apiWait = 2 * time.Minute
 
 func (c *Controller) openAIRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /v1/models", c.authAPI(c.handleV1Models))
-	mux.HandleFunc("GET /v1/models/{id...}", c.authAPI(c.handleV1Model))
-	mux.HandleFunc("POST /v1/chat/completions", c.authAPI(c.handleV1Chat))
+	mux.HandleFunc("GET /v1/models", c.apiCORS(c.authAPI(c.handleV1Models)))
+	mux.HandleFunc("GET /v1/models/{id...}", c.apiCORS(c.authAPI(c.handleV1Model)))
+	mux.HandleFunc("POST /v1/chat/completions", c.apiCORS(c.authAPI(c.handleV1Chat)))
+	mux.HandleFunc("OPTIONS /v1/", c.apiCORS(func(w http.ResponseWriter, r *http.Request) {}))
 	c.openAIImageRoutes(mux)
+	c.anthropicRoutes(mux)
+	c.ollamaRoutes(mux)
 }
 
 // oaiError writes an error in the OpenAI shape.

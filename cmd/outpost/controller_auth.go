@@ -110,10 +110,16 @@ func (c *Controller) newSessionLocked(r *http.Request) string {
 // bearerAPIToken returns the index of the API token in the request, or -1.
 func (c *Controller) bearerAPIToken(r *http.Request) int {
 	h := r.Header.Get("Authorization")
-	if !strings.HasPrefix(h, "Bearer ") {
+	tok := ""
+	switch {
+	case strings.HasPrefix(h, "Bearer "):
+		tok = strings.TrimSpace(h[7:])
+	case r.Header.Get("X-Api-Key") != "": // Anthropic clients send the key this way
+		tok = strings.TrimSpace(r.Header.Get("X-Api-Key"))
+	default:
 		return -1
 	}
-	sum := hashAPIToken(strings.TrimSpace(h[7:]))
+	sum := hashAPIToken(tok)
 	for i, t := range c.apiTokens {
 		if subtle.ConstantTimeCompare([]byte(sum), []byte(t.Hash)) == 1 {
 			return i

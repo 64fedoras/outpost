@@ -150,7 +150,8 @@ async function loadSecurity() {
     $('sec-lock').textContent = settings ? `${settings.login_failures} failed sign-in${settings.login_failures === 1 ? '' : 's'} in the last 15 minutes.` + (lk.length ? ` Locked out: ${lk.join(', ')}.` : '') + ' After 10 failures an address is blocked for 15 minutes.' : '';
     setHTML('sessions-list', ss.map((s) => `<div class="rowline"><span>${esc(s.ip || 'unknown')} · ${esc((s.ua || '').slice(0, 60))} <span class="muted">· signed in ${ago(s.created)}</span>${s.current ? ' ' + pill('done', 'this browser') : ''}</span>${s.current ? '' : `<button class="danger" data-sess="${esc(s.id)}">Sign out</button>`}</div>`).join('') || '<p class="muted">None</p>');
     setHTML('tokens-list', tk.map((t) => `<div class="rowline"><span>${esc(t.name)}${t.scope === 'chat' ? ' ' + pill('ready', 'chat only') : t.scope === 'images' ? ' ' + pill('ready', 'chat and pictures') : ''} <span class="muted">· created ${ago(t.created)}${t.last_used && !t.last_used.startsWith('0001') ? ' · last used ' + ago(t.last_used) : ' · never used'}</span></span><button class="danger" data-tok="${esc(t.id)}">Revoke</button></div>`).join('') || '<p class="muted">No tokens yet.</p>');
-    setHTML('agent-hint', `To connect an AI agent or editor (OpenAI-compatible): base URL <code>${esc(location.origin)}/v1</code>, API key = a token from here (tick Chat only), model <code>auto</code> or a name from <code>/v1/models</code>.`);
+    setHTML('agent-hint', 'To connect an editor, agent or Claude Code, create a token (tick Chat only) and see <b>Connect a tool</b> below.');
+    connectRender();
     let info = `Fingerprint <code>${esc(tl.fingerprint)}</code>`;
     if (tl.subject) info += `<br>${tl.self_signed ? 'Self-signed' : 'Issued by ' + esc(tl.issuer)} for ${esc(tl.subject)}; expires ${new Date(tl.expires).toLocaleDateString()}.`;
     if ((tl.needs_repin || []).length) info += `<br><b>Offline during the change, run <code>outpost repin --fingerprint ${esc(tl.fingerprint)}</code> on: ${tl.needs_repin.map(esc).join(', ')}</b>`;
@@ -293,3 +294,25 @@ async function loadScorecard() {
   setHTML('scorecard', `<div class="table-wrap"><table><thead><tr><th>Model</th><th>Language</th><th>Subtasks</th><th>Clean</th><th>Retries</th><th>Reviewer changed</th></tr></thead><tbody>${rows.map((x) =>
     `<tr><td>${esc(x.model)}</td><td>${esc(x.language || '—')}</td><td>${x.subtasks}</td><td>${Math.round(100 * x.clean / x.subtasks)}%</td><td>${x.retries}</td><td>${x.review_fixed}</td></tr>`).join('')}</tbody></table></div>`);
 }
+
+// ---------- Settings → Connect a tool: snippets for the OpenAI, Anthropic and Ollama APIs ----------
+let connectTab = 'openai';
+function connectRender() {
+  const o = esc(location.origin), box = (t) => `<div class="codebox"><span>${t}</span><button data-copy-text="${t.replace(/"/g, '&quot;')}">Copy</button></div>`;
+  const tabs = {
+    openai: `<p class="hint">For Continue, aider, Open WebUI, Hermes and most editors and agents.</p>
+      <label>Base URL</label>${box(`${o}/v1`)}<label>API key</label><p class="hint">A token from above. Model: <code>auto</code>, or a name from <code>/v1/models</code>.</p>`,
+    anthropic: `<p class="hint">For tools that only speak Claude's API, including Claude Code. Any <code>claude-…</code> model name means <code>auto</code>. Text, images, tool use and streaming are passed to the local model; thinking text is left out.</p>
+      <label>Base URL</label>${box(`${o}/anthropic`)}
+      <label>Claude Code (one line in a terminal)</label>${box(`ANTHROPIC_BASE_URL=${o}/anthropic ANTHROPIC_AUTH_TOKEN=your-token ANTHROPIC_MODEL=auto claude`)}
+      <p class="hint">The certificate is self-signed unless you replaced it, so Node-based tools need <code>NODE_EXTRA_CA_CERTS=/path/to/outpost.crt</code> (download it from the browser's certificate viewer) or your own certificate. Claude Code sends long prompts and many tools: use the biggest model you have.</p>`,
+    ollama: `<p class="hint">For apps that only know Ollama. They must be able to send an <code>Authorization: Bearer</code> header with the token. Pulling and deleting models is refused: use the Models page.</p>
+      <label>Ollama URL</label>${box(`${o}/ollama`)}<p class="hint">Answers <code>/api/chat</code>, <code>/api/generate</code>, <code>/api/tags</code>, <code>/api/show</code> and <code>/api/version</code>.</p>`,
+  };
+  document.querySelectorAll('#ct-tabs [data-ct]').forEach((b) => { b.classList.toggle('on', b.dataset.ct === connectTab); b.setAttribute('aria-selected', String(b.dataset.ct === connectTab)); });
+  setHTML('ct-body', tabs[connectTab] || '');
+  if (settings && document.activeElement !== $('ct-cors')) $('ct-cors').value = (settings.api_cors_origins || []).join('\n');
+}
+$('ct-tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-ct]'); if (b) { connectTab = b.dataset.ct; connectRender(); } });
+$('ct-body').addEventListener('click', async (e) => { const b = e.target.closest('[data-copy-text]'); if (b) { await copyText(b.dataset.copyText); toast('Copied'); } });
+$('ct-cors-save').onclick = () => saveSettings({ api_cors_origins: $('ct-cors').value.split(/\s+/).filter(Boolean) }, 'Origins saved');

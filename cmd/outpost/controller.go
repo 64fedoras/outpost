@@ -431,7 +431,7 @@ func logRequests(h http.Handler) http.Handler {
 			h.ServeHTTP(w, r) // polled constantly; don't log
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/v1/") {
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/v1/") || strings.HasPrefix(r.URL.Path, "/anthropic/") || strings.HasPrefix(r.URL.Path, "/ollama/") {
 			log.Printf("%s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 		}
 		h.ServeHTTP(w, r)

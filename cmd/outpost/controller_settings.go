@@ -41,6 +41,7 @@ type Settings struct {
 	BestOfN           string         `json:"best_of_n,omitempty"`           // "off", "hard" (default) or "all": extra copies of subtasks on idle nodes, a judge picks one
 	AgentOff          bool           `json:"agent_off,omitempty"`           // fixers and investigators use single-shot requests instead of tools
 	Instructions      string         `json:"instructions,omitempty"`        // standing rules copied into every new task (OUTPOST.md text)
+	APICORSOrigins    []string       `json:"api_cors_origins,omitempty"`    // browser origins allowed to call /v1, /anthropic and /ollama (api_core.go)
 	ChatInstructions  string         `json:"chat_instructions,omitempty"`   // default instructions for new chats (chat_versions.go)
 	PoolingEnabled    *bool          `json:"pooling_enabled,omitempty"`     // memory pooling (llama.cpp RPC); nil until decided, then off unless a pool already existed
 	PoolingNotice     bool           `json:"pooling_notice,omitempty"`      // pooling was switched on by the upgrade because a pool existed; shown once
@@ -193,7 +194,7 @@ func (c *Controller) settingsView() map[string]any {
 		"sandbox":      effectiveSandbox(c.settings.Sandbox, ""),
 		"health_amber": healthAmberOf(c.settings), "health_red": healthRedOf(c.settings),
 		"idle_unload": c.settings.IdleUnload, "idle_unload_effective": formatIdleDuration(idleUnloadFor(c.settings.IdleUnload, "")),
-		"instructions": c.settings.Instructions, "chat_instructions": c.settings.ChatInstructions, "backup_enabled": c.settings.BackupEnabled, "last_backup": c.lastBackup, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
+		"instructions": c.settings.Instructions, "chat_instructions": c.settings.ChatInstructions, "api_cors_origins": c.settings.APICORSOrigins, "backup_enabled": c.settings.BackupEnabled, "last_backup": c.lastBackup, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
 	for k, x := range c.notifyView() {
 		v[k] = x
@@ -228,24 +229,25 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 			DigestHour *int            `json:"digest_hour"`
 			Events     map[string]bool `json:"events"`
 		} `json:"notify"`
-		AutoResume      *bool   `json:"auto_resume"`
-		BestOfN         *string `json:"best_of_n"`
-		Instructions    *string `json:"instructions"`
-		ChatInstr       *string `json:"chat_instructions"`
-		WebSearch       *bool   `json:"web_search"`
-		ChatWebSearch   *bool   `json:"chat_web_search"`
-		ChatSearchWith  *string `json:"chat_search_with"`
-		AgentMode       *bool   `json:"agent_mode"`
-		WebAllowPrivate *bool   `json:"web_allow_private"`
-		PoolingEnabled  *bool   `json:"pooling_enabled"`
-		AutoFree        *bool   `json:"auto_free"`
-		GitHubUpdates   *bool   `json:"github_updates"`
-		GitHubAuto      *bool   `json:"github_auto_install"`
-		GitHubRepo      *string `json:"github_repo"`
-		UpdateHostKind  *string `json:"update_host_kind"` // "" = automatic, github | gitlab | gitea
-		GitHubToken     *string `json:"github_token"`     // "" removes
-		IdleUnload      *string `json:"idle_unload"`      // "" = default (1 hour)
-		Sandbox         *string `json:"sandbox"`          // off | basic | strict
+		AutoResume      *bool     `json:"auto_resume"`
+		BestOfN         *string   `json:"best_of_n"`
+		Instructions    *string   `json:"instructions"`
+		ChatInstr       *string   `json:"chat_instructions"`
+		CORSOrigins     *[]string `json:"api_cors_origins"`
+		WebSearch       *bool     `json:"web_search"`
+		ChatWebSearch   *bool     `json:"chat_web_search"`
+		ChatSearchWith  *string   `json:"chat_search_with"`
+		AgentMode       *bool     `json:"agent_mode"`
+		WebAllowPrivate *bool     `json:"web_allow_private"`
+		PoolingEnabled  *bool     `json:"pooling_enabled"`
+		AutoFree        *bool     `json:"auto_free"`
+		GitHubUpdates   *bool     `json:"github_updates"`
+		GitHubAuto      *bool     `json:"github_auto_install"`
+		GitHubRepo      *string   `json:"github_repo"`
+		UpdateHostKind  *string   `json:"update_host_kind"` // "" = automatic, github | gitlab | gitea
+		GitHubToken     *string   `json:"github_token"`     // "" removes
+		IdleUnload      *string   `json:"idle_unload"`      // "" = default (1 hour)
+		Sandbox         *string   `json:"sandbox"`          // off | basic | strict
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
@@ -404,6 +406,9 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.Instructions != nil {
 		c.settings.Instructions = clipInstructions(*req.Instructions)
+	}
+	if req.CORSOrigins != nil {
+		c.settings.APICORSOrigins = normCORSOrigins(*req.CORSOrigins)
 	}
 	if req.ChatInstr != nil {
 		c.settings.ChatInstructions = clipChatInstructions(*req.ChatInstr)

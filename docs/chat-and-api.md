@@ -98,9 +98,45 @@ Agents that call tools work when the model's own chat template supports tools (n
 with `--jinja`; `tool_choice`, `top_p`, `seed`, penalties, `response_format` and
 `stream_options.include_usage` are passed through). Requests share free model slots with chat, so a busy
 cluster makes an agent wait up to 2 minutes and then answer 503; agents should retry. Not offered yet:
-embeddings, per-token rate or spend limits, and CORS for browser-based agents. The API is plain HTTPS
+embeddings and per-token rate or spend limits. The API is plain HTTPS
 with a self-signed certificate by default; keep it on your LAN, or put a trusted certificate in front
 before exposing it. Not tested against Hermes or the real cluster.
+
+### The Anthropic and Ollama APIs
+
+Some tools only speak Claude's API or Ollama's. The same API tokens work for both; Settings → Sign-in
+security → **Connect a tool** shows the addresses with Copy buttons.
+
+**Anthropic Messages API** at `https://<controller>:8443/anthropic` (the client adds `/v1/messages`;
+`/v1/messages` on the root works too). The token goes in `x-api-key` or `Authorization: Bearer`. Any
+model name starting with `claude-` means `auto`, so Claude Code works without changing its model names:
+
+```
+ANTHROPIC_BASE_URL=https://192.0.2.10:8443/anthropic ANTHROPIC_AUTH_TOKEN=<token> ANTHROPIC_MODEL=auto claude
+```
+
+Text, base64 images, tools (`tool_use` and `tool_result` blocks, `tool_choice`), `stop_sequences`,
+`temperature`, `top_p` and streaming (Anthropic's server-sent events) are translated to the same
+inference call as the OpenAI API. Thinking text from reasoning models is left out of the reply, server
+tools (Anthropic's web search, code execution and so on) are ignored, and
+`/v1/messages/count_tokens` gives an estimate (about 4 characters per token). When every node is busy for
+2 minutes the answer is `529 overloaded_error`, which clients retry. Node.js tools such as Claude Code
+need to trust the controller's certificate (`NODE_EXTRA_CA_CERTS`) unless you installed your own.
+Claude Code sends a long system prompt and many tools, so only large local models do well with it.
+
+**Ollama API** at `https://<controller>:8443/ollama`: `/api/chat` and `/api/generate` (streamed as
+newline-delimited JSON unless `"stream": false`, with `options` for temperature, top_p, seed, num_predict
+and stop, `format` for JSON output, images and tools), `/api/tags` and `/api/ps` (the loaded models plus
+`auto`), `/api/show` and `/api/version`. A `:latest` suffix is ignored. `pull`, `push`, `create`, `copy`
+and `delete` are refused, because models are managed on the Models page. The app must be able to send
+`Authorization: Bearer <token>`; Ollama itself has no sign-in, so apps that cannot add a header cannot use it.
+
+**Browser tools (CORS).** Tools that run in a browser tab need their origin listed under Connect a tool
+(for example `http://localhost:3000`, one per line, at most 20). Listed origins get CORS headers on
+`/v1`, `/anthropic` and `/ollama`; nothing else on the controller changes.
+
+**Untested:** real Claude Code, real Ollama clients and real models with these APIs; tested only
+against the fake node in the unit tests.
 
 ## Claude usage and the spending cap
 
