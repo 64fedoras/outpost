@@ -393,6 +393,9 @@ func (a *agentRun) run(ctx context.Context, command string) string {
 
 // ---------- asking the user ----------
 
+// unattendedAnswer is the reply to ask_user in a task a schedule started.
+const unattendedAnswer = "Nobody is watching this task (a schedule started it), so nobody can answer. Decide yourself with a sensible default, carry on, and say what you assumed in your final answer."
+
 // ask posts a question in the thread and waits for the answer. The wait does
 // not count against the agent's time limit.
 func (a *agentRun) ask(ctx context.Context, question string, options []string) (string, error) {
@@ -401,6 +404,16 @@ func (a *agentRun) ask(ctx context.Context, question string, options []string) (
 		return "", errors.New("question is required")
 	}
 	t := a.t
+	t.mu.Lock()
+	unattended := t.Unattended
+	t.mu.Unlock()
+	if unattended {
+		// A schedule started this task and nobody is there to answer. Waiting
+		// would hold the task forever, and every later run of the schedule
+		// would be skipped as "still going".
+		t.logf("info", "%s wanted to ask (%s); nobody is watching this scheduled run, so it decides itself.", a.label, firstLine(question, 200))
+		return unattendedAnswer, nil
+	}
 	ch := make(chan string, 1)
 	t.mu.Lock()
 	if t.asks == nil {

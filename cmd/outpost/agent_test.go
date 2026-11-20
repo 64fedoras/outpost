@@ -578,3 +578,40 @@ func TestAgentGivesUpOnRepeatedCutOff(t *testing.T) {
 		t.Error("misclassified the parse error")
 	}
 }
+
+// A scheduled (unattended) task never waits for an answer: the agent is told
+// to decide itself, so the run cannot hang and block the schedule.
+func TestAgentAskUserUnattended(t *testing.T) {
+	tk := agentTask(t, nil)
+	tk.Unattended = true
+	tk.Subtasks = []*SubtaskState{{ID: "t1", Status: "running"}}
+	c := &Controller{}
+	step, seen := scripted(
+		&llmResponse{Calls: []toolCall{call("q", "ask_user", `{"question":"Which database?"}`)}},
+		&llmResponse{Text: "picked SQLite"},
+	)
+	a := c.newAgent(tk, "", "Investigate", "sys", "go", "t1", []agentTool{toolAskUser})
+	a.step = step
+	done := make(chan error, 1)
+	go func() { done <- a.loop(context.Background()) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("an unattended agent must not wait for an answer")
+	}
+	if tk.hasPendingAsk() || tk.Subtasks[0].Waiting {
+		t.Fatal("no question should be left pending")
+	}
+	for _, m := range tk.Messages {
+		if m.Kind == "agent_question" {
+			t.Fatal("no question should be posted in an unattended task")
+		}
+	}
+	res := (*seen)[1].Msgs[2]
+	if res.Role != "tool" || !strings.Contains(res.Text, "Decide yourself") {
+		t.Fatalf("agent not told to decide: %+v", res)
+	}
+}

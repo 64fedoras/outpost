@@ -301,7 +301,9 @@ it, **Edit first** puts it in the box to change, **Schedule…** runs it every d
 (the controller's clock).
 
 A scheduled run starts on its own: the planner is told nobody is watching and asks no questions, and the
-plan is approved without you. You get the usual *Finished* or *Failed* notification. To make sure a
+plan is approved without you. If agent mode wants to ask you something during the run, it is told nobody
+is watching and decides itself (the task log notes the question), so a run never waits for an answer.
+You get the usual *Finished* or *Failed* notification. To make sure a
 schedule never spends money, it must plan on a node (a node or *Auto*); a schedule with Claude or
 OpenRouter as the planner is refused. A run is skipped (and noted on the saved task) while the previous
 run is still going, and runs missed while the controller was off are not made up.
