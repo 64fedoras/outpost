@@ -41,6 +41,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `projectnew.py` | Projects page: "New task in this project" in a card's menu opens the new-task page with that project picked. |
 | `chatpage.py` | Chat page layout: model cards on a new chat, the docked composer, the chats panel and the phone sheet. |
 | `groups.py` | Sidebar groups: the By status / By group switch, new group, dragging a task and a chat onto a group, Move to group, rename, colour, move, delete, and the phone sheet. Runs first: it expects a controller with no groups yet. |
+| `schedules.py` | Schedule dialog: every few hours, chosen days (and refusing none), monthly on the 31st, the preview line, and the saved task's schedule pill and next-run date. |
 | `shots.py` | Screenshots of every tab (needs a task id edited into the script). |
 | `soak.py` | No browser. Runs `SOAK_TASKS` tasks (default 8) through the API and, at random (`SOAK_SEED`), kills and restarts the node, the controller or both mid-task; every task must end `done`. Presses Resume for Claude tasks after a controller restart. Runs nightly in `.github/workflows/soak.yml`. |
 

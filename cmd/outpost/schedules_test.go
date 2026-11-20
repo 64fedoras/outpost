@@ -136,6 +136,85 @@ func TestScheduleNext(t *testing.T) {
 	if (&Schedule{Every: "hourly", At: "01:00"}).check() == nil {
 		t.Fatal("hourly accepted")
 	}
+
+	// Every 6 hours from 02:15: 02:15, 08:15, 14:15, 20:15.
+	h := &Schedule{Every: "hours", At: "02:15", Hours: 6, Day: 9}
+	if err := h.check(); err != nil || h.Day != 0 {
+		t.Fatalf("hours check %v %+v", err, h)
+	}
+	if got := h.next(at(3, 1, 0)); !got.Equal(at(3, 2, 15)) {
+		t.Fatalf("hours first %v", got)
+	}
+	if got := h.next(at(3, 9, 0)); !got.Equal(at(3, 14, 15)) {
+		t.Fatalf("hours middle %v", got)
+	}
+	if got := h.next(at(3, 20, 15)); !got.Equal(at(4, 2, 15)) {
+		t.Fatalf("hours wraps %v", got)
+	}
+	for _, bad := range []int{0, 5, 7, 24} {
+		if (&Schedule{Every: "hours", At: "00:00", Hours: bad}).check() == nil {
+			t.Fatalf("every %d hours accepted", bad)
+		}
+	}
+
+	// Chosen days: Monday to Friday at 07:00. The 3rd is a Tuesday.
+	wd := &Schedule{Every: "days", At: "07:00", Days: []int{5, 1, 2, 3, 4, 3}}
+	if err := wd.check(); err != nil || len(wd.Days) != 5 || wd.Days[0] != 1 {
+		t.Fatalf("days check %v %+v", err, wd)
+	}
+	if got := wd.next(at(6, 8, 0)); !got.Equal(at(9, 7, 0)) { // Fri after 07:00 -> Mon
+		t.Fatalf("days skips weekend %v", got)
+	}
+	if (&Schedule{Every: "days", At: "07:00"}).check() == nil || (&Schedule{Every: "days", At: "07:00", Days: []int{7}}).check() == nil {
+		t.Fatal("bad days accepted")
+	}
+
+	// Monthly on the 31st: the last day in shorter months.
+	mo := &Schedule{Every: "monthly", At: "03:00", Day: 31}
+	if err := mo.check(); err != nil {
+		t.Fatal(err)
+	}
+	feb := time.Date(2026, 2, 10, 12, 0, 0, 0, time.Local)
+	if got := mo.next(feb); !got.Equal(time.Date(2026, 2, 28, 3, 0, 0, 0, time.Local)) {
+		t.Fatalf("monthly short month %v", got)
+	}
+	if got := mo.next(time.Date(2026, 2, 28, 3, 0, 0, 0, time.Local)); !got.Equal(time.Date(2026, 3, 31, 3, 0, 0, 0, time.Local)) {
+		t.Fatalf("monthly next %v", got)
+	}
+	if (&Schedule{Every: "monthly", At: "03:00", Day: 32}).check() == nil {
+		t.Fatal("day 32 accepted")
+	}
+}
+
+// A run missed by under an hour while the controller was off starts when it
+// is back and says so; an older one is skipped and noted.
+func TestScheduleCatchUp(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	recent, old := now.Add(-20*time.Minute), now.Add(-3*time.Hour)
+	list := []*Template{
+		{ID: "a", Name: "recent", Request: createReq{Prompt: "x", Planner: "node:n1"}, Schedule: &Schedule{Every: "daily", At: "02:00"}, NextRun: &recent},
+		{ID: "b", Name: "old", Request: createReq{Prompt: "y", Planner: "node:n1"}, Schedule: &Schedule{Every: "daily", At: "02:00"}, NextRun: &old},
+	}
+	b, _ := json.Marshal(list)
+	if err := os.WriteFile(filepath.Join(dir, "templates.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := &Controller{dataDir: dir, tasks: map[string]*Task{}, projects: map[string]*Project{}}
+	c.loadTemplates()
+	a, o := c.templates[0], c.templates[1]
+	if !a.NextRun.Equal(recent) || a.lateFrom.IsZero() {
+		t.Fatalf("recent miss not kept for catch-up: %+v", a)
+	}
+	if !o.NextRun.After(now) || !strings.Contains(o.LastNote, "Missed the run") {
+		t.Fatalf("old miss: %+v", o)
+	}
+	// runDue picks the caught-up run; createTask fails here (no nodes), but the
+	// late marker is spent and the next run is in the future.
+	c.runDue(time.Now())
+	if !a.lateFrom.IsZero() || !a.NextRun.After(now) {
+		t.Fatalf("after runDue: %+v", a)
+	}
 }
 
 func TestTemplatesAndSchedules(t *testing.T) {

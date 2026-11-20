@@ -2,15 +2,17 @@ package main
 
 // Saved tasks (idea 31) and schedules (idea 32). A saved task is a stored
 // new-task request (prompt and options, without images or attached files)
-// that starts again with one click. It can carry a schedule (daily or weekly
-// at a time), and the controller then starts it on its own: the planner asks
-// no questions and the plan is approved without you (Task.Unattended), and
-// the usual Finished / Failed notifications report the result.
+// that starts again with one click. It can carry a schedule (every few
+// hours, daily, on chosen days, weekly or monthly), and the controller then
+// starts it on its own: the planner asks no questions and the plan is
+// approved without you (Task.Unattended), and the usual Finished / Failed
+// notifications report the result.
 //
 // Safety: a scheduled task must plan on a node, never on a paid cloud planner,
 // so a schedule never spends money. A run is skipped while the previous run
-// of the same saved task is still going, and runs missed while the controller
-// was off are not made up (the next one is at the next scheduled time).
+// of the same saved task is still going. A run missed while the controller
+// was off starts when it is back if it is less than an hour late
+// (catchUpWindow); older ones are skipped and noted on the saved task.
 
 import (
 	"encoding/json"
@@ -28,10 +30,17 @@ import (
 const maxTemplates = 100
 
 type Schedule struct {
-	Every   string `json:"every"`             // daily | weekly
-	At      string `json:"at"`                // "02:30", controller local time
+	Every   string `json:"every"`             // hours | daily | days | weekly | monthly
+	At      string `json:"at"`                // "02:30", controller local time; for hours, the first run of the day
 	Weekday int    `json:"weekday,omitempty"` // weekly: 0 = Sunday … 6 = Saturday
+	Hours   int    `json:"hours,omitempty"`   // hours: run every this many hours (1, 2, 3, 4, 6, 8 or 12)
+	Days    []int  `json:"days,omitempty"`    // days: the weekdays it runs on, 0 = Sunday … 6 = Saturday
+	Day     int    `json:"day,omitempty"`     // monthly: day of the month, 1 to 31 (the last day in shorter months)
 }
+
+// catchUpWindow: a run missed by less than this while the controller was off
+// (a restart, an update) still starts when it is back. Older ones are skipped.
+const catchUpWindow = time.Hour
 
 type Template struct {
 	ID       string     `json:"id"`
@@ -42,40 +51,102 @@ type Template struct {
 	NextRun  *time.Time `json:"next_run,omitempty"`
 	LastRun  *time.Time `json:"last_run,omitempty"`
 	LastTask string     `json:"last_task,omitempty"`
-	LastNote string     `json:"last_note,omitempty"` // why the last scheduled run did not start
+	LastNote string     `json:"last_note,omitempty"` // why the last scheduled run did not start, or started late
+
+	lateFrom time.Time // memory only: a run missed while the controller was off, caught up by runDue
 }
 
 func (s *Schedule) check() error {
-	switch s.Every {
-	case "daily", "weekly":
-	default:
-		return errors.New("a schedule is daily or weekly")
-	}
 	m, err := parseHM(s.At)
 	if err != nil {
 		return err
 	}
-	s.At = fmt.Sprintf("%02d:%02d", m/60, m%60)
-	if s.Weekday < 0 || s.Weekday > 6 {
-		return errors.New("weekday is 0 (Sunday) to 6 (Saturday)")
-	}
-	if s.Every == "daily" {
-		s.Weekday = 0
+	keep := *s
+	*s = Schedule{Every: keep.Every, At: fmt.Sprintf("%02d:%02d", m/60, m%60)}
+	switch keep.Every {
+	case "daily":
+	case "weekly":
+		if keep.Weekday < 0 || keep.Weekday > 6 {
+			return errors.New("weekday is 0 (Sunday) to 6 (Saturday)")
+		}
+		s.Weekday = keep.Weekday
+	case "hours":
+		if keep.Hours < 1 || keep.Hours > 12 || 24%keep.Hours != 0 {
+			return errors.New("every 1, 2, 3, 4, 6, 8 or 12 hours")
+		}
+		s.Hours = keep.Hours
+	case "days":
+		var seen [7]bool
+		for _, d := range keep.Days {
+			if d < 0 || d > 6 {
+				return errors.New("days are 0 (Sunday) to 6 (Saturday)")
+			}
+			seen[d] = true
+		}
+		for d, ok := range seen {
+			if ok {
+				s.Days = append(s.Days, d)
+			}
+		}
+		if len(s.Days) == 0 {
+			return errors.New("pick at least one day")
+		}
+	case "monthly":
+		if keep.Day < 1 || keep.Day > 31 {
+			return errors.New("day of the month is 1 to 31")
+		}
+		s.Day = keep.Day
+	default:
+		return errors.New("a schedule is every few hours, daily, on chosen days, weekly or monthly")
 	}
 	return nil
 }
 
-// next is the first scheduled time strictly after t.
+func (s *Schedule) onDay(d time.Weekday) bool {
+	switch s.Every {
+	case "weekly":
+		return int(d) == s.Weekday
+	case "days":
+		for _, x := range s.Days {
+			if x == int(d) {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+// next is the first scheduled time strictly after t (wall clock, so a run
+// stays at 02:30 across daylight saving changes).
 func (s *Schedule) next(t time.Time) time.Time {
 	m, _ := parseHM(s.At)
-	d := time.Date(t.Year(), t.Month(), t.Day(), m/60, m%60, 0, 0, t.Location())
-	for i := 0; i < 8; i++ {
-		if d.After(t) && (s.Every == "daily" || int(d.Weekday()) == s.Weekday) {
-			return d
+	loc := t.Location()
+	if s.Every == "monthly" {
+		for i := 0; i < 14; i++ {
+			first := time.Date(t.Year(), t.Month()+time.Month(i), 1, 0, 0, 0, 0, loc)
+			day := min(s.Day, first.AddDate(0, 1, -1).Day())
+			if d := time.Date(first.Year(), first.Month(), day, m/60, m%60, 0, 0, loc); d.After(t) {
+				return d
+			}
 		}
-		d = time.Date(d.Year(), d.Month(), d.Day()+1, m/60, m%60, 0, 0, t.Location())
 	}
-	return d
+	step := 24 * 60
+	if s.Every == "hours" && s.Hours > 0 {
+		step = s.Hours * 60
+	}
+	for i := 0; i < 9; i++ {
+		day := time.Date(t.Year(), t.Month(), t.Day()+i, 0, 0, 0, 0, loc)
+		if !s.onDay(day.Weekday()) {
+			continue
+		}
+		for mm := m % step; mm < 24*60; mm += step {
+			if d := time.Date(day.Year(), day.Month(), day.Day(), mm/60, mm%60, 0, 0, loc); d.After(t) {
+				return d
+			}
+		}
+	}
+	return t.Add(24 * time.Hour) // not reached for a checked schedule
 }
 
 func (c *Controller) templatesPath() string { return filepath.Join(c.dataDir, "templates.json") }
@@ -92,12 +163,19 @@ func (c *Controller) loadTemplates() {
 	}
 	now := time.Now()
 	for _, t := range list {
-		if t.Schedule != nil && t.Schedule.check() == nil {
-			n := t.Schedule.next(now) // missed runs are not made up
-			t.NextRun = &n
-		} else {
+		if t.Schedule == nil || t.Schedule.check() != nil {
 			t.Schedule, t.NextRun = nil, nil
+			continue
 		}
+		if t.NextRun != nil && !t.NextRun.After(now) {
+			if now.Sub(*t.NextRun) <= catchUpWindow {
+				t.lateFrom = *t.NextRun // runDue starts it at once and says it is late
+				continue
+			}
+			t.LastNote = fmt.Sprintf("Missed the run at %s: the controller was off.", t.NextRun.Format("Mon 15:04"))
+		}
+		n := t.Schedule.next(now)
+		t.NextRun = &n
 	}
 	c.mu.Lock()
 	c.templates = list
@@ -311,6 +389,7 @@ func (c *Controller) runDue(now time.Time) {
 		id   string
 		req  createReq
 		last string
+		late time.Time
 	}
 	var list []due
 	c.mu.Lock()
@@ -320,7 +399,8 @@ func (c *Controller) runDue(now time.Time) {
 		}
 		n := t.Schedule.next(now)
 		t.NextRun = &n
-		list = append(list, due{t.ID, t.Request, t.LastTask})
+		list = append(list, due{t.ID, t.Request, t.LastTask, t.lateFrom})
+		t.lateFrom = time.Time{}
 	}
 	if len(list) > 0 {
 		c.saveTemplatesLocked()
@@ -336,6 +416,9 @@ func (c *Controller) runDue(now time.Time) {
 		} else {
 			taskID = tk.ID
 		}
+		if taskID != "" && !d.late.IsZero() {
+			note = fmt.Sprintf("Started late: the controller was off at %s.", d.late.Format("15:04"))
+		}
 		c.mu.Lock()
 		if t := c.templateLocked(d.id); t != nil {
 			t.LastNote = note
@@ -345,7 +428,7 @@ func (c *Controller) runDue(now time.Time) {
 			c.saveTemplatesLocked()
 		}
 		c.mu.Unlock()
-		if note != "" {
+		if note != "" && taskID == "" {
 			log.Printf("saved task %s: %s", d.id, note)
 			go c.deliverNotification("failed", "Scheduled task", note, "")
 		}

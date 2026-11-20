@@ -297,8 +297,11 @@ this is one small call counted in the task's cost, and it is skipped if it would
 **Save for later** (next to *Change options* on the New task page) keeps the request and its options
 (planner, project, peer review, fix rounds, test limit, node label) as a saved task. Attached files and
 images are not kept. Saved tasks are listed under the starters: **Run now** starts one as if you typed
-it, **Edit first** puts it in the box to change, **Schedule…** runs it every day or every week at a time
-(the controller's clock).
+it, **Edit first** puts it in the box to change, **Schedule…** runs it on a repeat by the controller's clock:
+every 1, 2, 3, 4, 6, 8 or 12 hours from a starting time (for example every 6 hours from 02:00 is 02:00,
+08:00, 14:00 and 20:00), every day, on chosen days (Mon to Fri, say), every week, or every month on a
+day (a day past the end of a short month means its last day). The dialog shows the result in words
+before you save.
 
 A scheduled run starts on its own: the planner is told nobody is watching and asks no questions, and the
 plan is approved without you. If agent mode wants to ask you something during the run, it is told nobody
@@ -306,7 +309,9 @@ is watching and decides itself (the task log notes the question), so a run never
 You get the usual *Finished* or *Failed* notification. To make sure a
 schedule never spends money, it must plan on a node (a node or *Auto*); a schedule with Claude or
 OpenRouter as the planner is refused. A run is skipped (and noted on the saved task) while the previous
-run is still going, and runs missed while the controller was off are not made up.
+run is still going. A run missed while the controller was off (a restart or an update) still starts
+when it comes back if it is less than an hour late, and the saved task says *Started late*; an older
+miss is skipped and noted as *Missed the run at …*.
 
 ## Projects, attachments and git
 

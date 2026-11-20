@@ -1196,3 +1196,4 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .best-row .grow { flex: 1; min-width: 0; }
 .best-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 2px; }
 .best-foot { margin-top: 10px; }
+#sched-mday { width: 4em; }
