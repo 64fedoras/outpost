@@ -130,8 +130,13 @@ function chatBubble(m, i, last) {
     }
     const src = (n) => `/api/chats/${encodeURIComponent(chatCur.id)}/image?name=${encodeURIComponent(n)}`;
     const pics = (m.images || []).length ? `<div class="bubble-imgs">${m.images.map((n) => `<a href="${src(n)}" target="_blank" rel="noopener"><img src="${src(n)}" alt="attached image" loading="lazy"></a>`).join('')}</div>` : '';
+    const dsrc = (f) => `/api/chats/${encodeURIComponent(chatCur.id)}/doc?file=${encodeURIComponent(f)}`;
+    const docs = (m.docs || []).length ? `<div class="bubble-docs">${m.docs.map((d) => {
+      const what = [d.pages && `${d.pages} ${d.kind === 'xlsx' ? (d.pages === 1 ? 'sheet' : 'sheets') : (d.pages === 1 ? 'page' : 'pages')}`, `${(d.words || 0).toLocaleString()} words`, d.cut && 'cut to fit'].filter(Boolean).join(' · ');
+      return `<span class="doc-chip${d.warning ? ' warn' : ''}"><span aria-hidden="true">📄</span> <span class="doc-n">${esc(d.name)}</span> <span class="muted">${esc(what)}</span>${d.file ? ` <a href="${dsrc(d.file)}" target="_blank" rel="noopener">Text</a>` : ''}${d.warning ? `<span class="doc-w">${esc(d.warning)}</span>` : ''}</span>`;
+    }).join('')}</div>` : '';
     const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-edit="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Change this message and answer again">✎ Edit</button><button data-copy-msg="${i}" title="Copy the text">⧉ Copy</button></div>`;
-    return `<div class="bubble-row"><div class="bubble-col"><div class="bubble">${esc(m.text)}${pics}</div>${acts}</div></div>`;
+    return `<div class="bubble-row"><div class="bubble-col"><div class="bubble">${esc(m.text)}${pics}${docs}</div>${acts}</div></div>`;
   }
   const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, m.note && esc(m.note)].filter(Boolean).join(' · ');
   const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-regen="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Answer again; this answer stays as an earlier version">↻ Regenerate</button>${chatTryOn(m, busy)}${m.text ? `<button data-copy-msg="${i}" title="Copy the answer">⧉ Copy</button>` : ''}<button data-branch="${esc(m.id)}" title="Start a new chat with the conversation up to here">⑂ Branch</button></div>`;
@@ -160,19 +165,19 @@ function chatRenderLive() {
   if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) box.scrollTop = box.scrollHeight;
 }
 async function chatSend() {
-  const text = $('chat-text').value.trim(), images = chatImg.payload();
-  if (!text && !images.length) return;
+  const text = $('chat-text').value.trim(), images = chatImg.payload(), docs = chatImg.docs();
+  if (!text && !images.length && !docs.length) return;
   $('chat-send').disabled = true;
   try {
     if (!chatCur) {
-      const body = { text, node: $('chat-node').value, images };
+      const body = { text, node: $('chat-node').value, images, docs };
       if (chatPendingInstr !== null) body.instructions = chatPendingInstr;
       const r = await post('/api/chats', body);
       $('chat-text').value = ''; $('chat-text').style.height = ''; chatImg.clear();
       location.hash = '#/chat/' + r.id;
       return;
     }
-    await post(`/api/chats/${chatCur.id}/messages`, { text, node: $('chat-node').value, images });
+    await post(`/api/chats/${chatCur.id}/messages`, { text, node: $('chat-node').value, images, docs });
     $('chat-text').value = ''; $('chat-text').style.height = ''; chatImg.clear();
     await chatLoad(chatCur.id);
   } catch (e) { toast(e.message); }

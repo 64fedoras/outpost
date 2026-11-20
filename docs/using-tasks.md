@@ -414,8 +414,11 @@ something in them is waiting on you; the pin is stored on the controller, so it 
   project's defaults, its git settings and **Delete project**; **.zip** downloads the files; **⋯** opens the project menu (Edit for the instructions, Pin to sidebar and the rest).
 
 **Attachments:** the 📎 button in the composer takes up to 50 MB in total. A `.zip` becomes the
-task's starting files (one top-level folder is stripped). Other files must be text and are shown
-to the planner as context. Images and other binary files are refused for now.
+task's starting files (one top-level folder is stripped). A PDF, Word (`.docx`), Excel (`.xlsx`) or
+OpenDocument (`.odt`) file is read into text (as in chat, see [chat-and-api.md](chat-and-api.md)) and
+kept as `attachments/<name>.txt`. Other files must be text. Documents and text files are shown to the
+planner as context, not to the writing nodes. Images go with the 🖼 Image button; other binary files
+are refused.
 
 **Git:** give a project an HTTPS (`https://…`) or SSH (`ssh://…` or `git@host:path`) URL and the
 controller clones it (needs the `git` command on the controller VM, `sudo apt install git`). Each

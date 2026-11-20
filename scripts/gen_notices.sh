@@ -40,6 +40,25 @@ cat bundled/LICENSE-libgomp.txt
 echo
 cat <<'H'
 -------------------------------------------------------------------------------
+Mermaid 11.17.2 (MIT; bundled as preview/mermaid.min.js.gz, compiled into the binary)
+-------------------------------------------------------------------------------
+
+The live-preview frame draws Mermaid diagrams with the official minified build from
+https://github.com/mermaid-js/mermaid (npm package mermaid, dist/mermaid.min.js). That build
+bundles Mermaid's own runtime dependencies: @braintree/sanitize-url, @iconify/utils,
+@mermaid-js/parser, @upsetjs/venn.js, cytoscape, cytoscape-cose-bilkent, cytoscape-fcose, d3,
+d3-sankey, dagre-d3-es, dayjs, DOMPurify, es-toolkit, fastdom, KaTeX, khroma, marked, roughjs,
+stylis, ts-dedent and uuid, each under a permissive licence (MIT, ISC, BSD-3-Clause, Apache-2.0,
+or Apache-2.0 / MPL-2.0 at the user's choice for DOMPurify). Their licence texts come with their
+npm packages; DOMPurify's notice is kept in the bundle.
+
+[LICENSE]
+
+H
+cat bundled/LICENSE-mermaid.txt
+echo
+cat <<'H'
+-------------------------------------------------------------------------------
 llama.cpp (MIT; downloaded and run by nodes, not part of the Outpost binary)
 -------------------------------------------------------------------------------
 

@@ -447,6 +447,13 @@ details.live summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .shot-pair a:first-child { flex: 3 1 0; }
 .shot-pair a:last-child { flex: 1 1 0; }
 .shot .primary { margin-top: 8px; }
+.doc-chip { position: relative; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; max-width: 100%; padding: 4px 26px 4px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; background: var(--panel); }
+.bubble-docs .doc-chip { padding-right: 8px; }
+.doc-chip .doc-n { font-weight: 600; overflow-wrap: anywhere; }
+.doc-chip button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; border-radius: 50%; line-height: 1; font-size: 14px; }
+.doc-chip.warn { border-color: var(--warn); }
+.doc-chip .doc-w { flex-basis: 100%; font-size: 12px; color: var(--warn); }
+.bubble-docs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .bubble-imgs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .bubble-imgs img { max-height: 120px; max-width: 200px; border-radius: 8px; border: 1px solid var(--line); display: block; }
 

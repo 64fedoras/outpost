@@ -116,9 +116,9 @@ func (c *Controller) handleChatEdit(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]string{"error": "no such message"})
 		return
 	}
-	imgs := ch.Messages[i].Images
+	imgs, docs := ch.Messages[i].Images, ch.Messages[i].Docs
 	all := ch.cutTail(i)
-	ch.Messages = append(ch.Messages, ChatMsg{ID: newID("m"), Role: "user", Text: text, Images: imgs, At: time.Now(), Alts: all, Ver: len(all)})
+	ch.Messages = append(ch.Messages, ChatMsg{ID: newID("m"), Role: "user", Text: text, Images: imgs, Docs: docs, At: time.Now(), Alts: all, Ver: len(all)})
 	if req.Node != "" {
 		ch.Node = req.Node
 	}
@@ -216,6 +216,9 @@ func (c *Controller) handleChatBranch(w http.ResponseWriter, r *http.Request) {
 		nc.Messages = append(nc.Messages, m)
 		for _, n := range m.Images {
 			copyChatImage(filepath.Join(ch.dir, ch.ID+"-images", n), filepath.Join(nc.dir, nc.ID+"-images", n))
+		}
+		for _, d := range m.Docs {
+			copyChatImage(filepath.Join(ch.docsDir(), d.File), filepath.Join(nc.docsDir(), d.File))
 		}
 	}
 	ch.mu.Unlock()

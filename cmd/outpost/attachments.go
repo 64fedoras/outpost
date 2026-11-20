@@ -5,6 +5,8 @@ package main
 //   - a .zip becomes the task's starting files (extracted into the task's repo,
 //     which for a project task is the project's repo); a single top-level folder
 //     in the archive is stripped, as GitHub's "Download ZIP" adds one;
+//   - a PDF, DOCX, XLSX or ODT is read into text (docextract.go) and kept as
+//     <task>/attachments/<name>.txt, shown to the planner like a text file;
 //   - any other file must be text and is kept under <task>/attachments, to be shown
 //     to the planner as context (not to the writing nodes).
 //
@@ -34,12 +36,16 @@ const (
 	maxTextAttachment = 1 << 20
 )
 
-// Attachment records a file sent with a task. Kind is "zip" or "text".
+// Attachment records a file sent with a task. Kind is "zip", "text" or "doc"
+// (a PDF, DOCX, XLSX or ODT read into text: docextract.go).
 type Attachment struct {
-	Name  string `json:"name"`
-	Kind  string `json:"kind"`
-	Bytes int64  `json:"bytes"`
-	Files int    `json:"files,omitempty"` // zip: how many files were extracted
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	Bytes   int64  `json:"bytes"`
+	Files   int    `json:"files,omitempty"`   // zip: how many files were extracted
+	Pages   int    `json:"pages,omitempty"`   // doc: PDF pages or XLSX sheets
+	Words   int    `json:"words,omitempty"`   // doc: words read
+	Warning string `json:"warning,omitempty"` // doc: e.g. no text layer
 }
 
 type createReq struct {
@@ -111,16 +117,41 @@ func readCreateRequest(w http.ResponseWriter, r *http.Request) (createReq, []att
 
 // applyAttachments stores a task's attachments; on error nothing is kept by the caller.
 func (c *Controller) applyAttachments(t *Task, files []attachedFile) error {
-	for _, f := range files { // check everything before writing anything
+	docs := map[int]chatDoc{}
+	for i, f := range files { // check everything before writing anything
+		if k := docKind(f.Name); k != "" && k != "csv" {
+			text, info, err := extractDocument(f.Name, f.Data)
+			if err != nil {
+				return err
+			}
+			docs[i] = chatDoc{info, text}
+			continue
+		}
 		if !strings.HasSuffix(strings.ToLower(f.Name), ".zip") && !looksLikeText(f.Data) {
-			return fmt.Errorf("%s is not a text file. Attach text files or a .zip (images are not supported yet)", f.Name)
+			return fmt.Errorf("%s is not a text file. Attach text files, documents (PDF, DOCX, XLSX, ODT) or a .zip; images go with the Image button", f.Name)
 		}
 		if !strings.HasSuffix(strings.ToLower(f.Name), ".zip") && len(f.Data) > maxTextAttachment {
 			return fmt.Errorf("%s is larger than 1 MB; put big files in a .zip", f.Name)
 		}
 	}
 	used := map[string]bool{}
-	for _, f := range files {
+	for i, f := range files {
+		if d, ok := docs[i]; ok {
+			name := f.Name
+			for n := 2; used[name]; n++ {
+				name = fmt.Sprintf("%d-%s", n, f.Name)
+			}
+			used[name] = true
+			dir := filepath.Join(t.dir, "attachments")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(dir, name+".txt"), []byte(d.text), 0o644); err != nil {
+				return err
+			}
+			t.Attachments = append(t.Attachments, Attachment{Name: name, Kind: "doc", Bytes: int64(len(f.Data)), Pages: d.info.Pages, Words: d.info.Words, Warning: d.info.Warning})
+			continue
+		}
 		if strings.HasSuffix(strings.ToLower(f.Name), ".zip") {
 			n, err := unpackAttachedZip(f.Data, t.repoDir())
 			if err != nil {
@@ -237,11 +268,27 @@ func attachmentContext(t *Task, budget int) string {
 		if a.Kind == "zip" {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(t.dir, "attachments", a.Name))
+		file := a.Name
+		if a.Kind == "doc" {
+			file += ".txt"
+		}
+		data, err := os.ReadFile(filepath.Join(t.dir, "attachments", file))
 		if err != nil {
 			continue
 		}
 		s := string(data)
+		if a.Kind == "doc" {
+			info := DocInfo{Name: a.Name, Kind: docKind(a.Name), Pages: a.Pages}
+			if b.Len() == 0 {
+				b.WriteString("Attached files for context:\n")
+			}
+			if budget -= len(s) + 80; budget < 0 {
+				fmt.Fprintf(&b, "Attached document %s: left out, too long for this prompt.\n", a.Name)
+				continue
+			}
+			b.WriteString(docBlock(info, s) + "\n")
+			continue
+		}
 		if budget -= len(s) + 40; budget < 0 {
 			if b.Len() == 0 {
 				b.WriteString("Attached files for context:\n")
