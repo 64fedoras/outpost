@@ -101,12 +101,14 @@ function renderPjFeed(p) {
   const showTask = (id) => byId[id] && (pjResolvedOpen || !byId[id].resolved);
   const cards = (ids) => (ids || []).filter(showTask).map((id) => pjTaskCard(byId[id], feedById[id])).join('');
   const items = [];
+  const known = new Set((ov.files || []).map((f) => f.path));
+  msgs.forEach((m) => (m.reads || []).forEach((r) => { const x = /^Read (\S+)/.exec(r); if (x) known.add(x[1]); }));
   msgs.forEach((m) => {
     let html;
     if (m.role === 'user') html = `<div class="pj-ask"><div class="bubble">${esc(m.text)}</div><span class="pj-when">${(m.tasks || []).length ? 'started as a task · ' : ''}${ago(m.time)}</span></div>${cards(m.tasks)}`;
     else {
       const meta = [m.who && esc(m.who), m.cost_usd ? usd(m.cost_usd) : '', ago(m.time)].filter(Boolean).join(' · ');
-      html = `<div class="pj-answer">${m.text ? `<div class="pj-answer-text md">${md(m.text)}</div>` : ''}${m.error ? `<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}${/planner|API key/i.test(m.error) && m.error !== 'stopped' ? `<div class="card-actions"><button class="small" data-act="proj-planner-pick" data-id="${esc(p.id)}">Pick this project's planner</button> <a href="#/settings" data-act="proj-planner-settings">Open Settings → Tasks</a></div>` : ''}</div>` : ''}${cards(m.tasks)}<div class="pj-when">${meta}</div></div>`;
+      html = `<div class="pj-answer">${pjReads(m.reads)}${m.text ? `<div class="pj-answer-text md">${pjLinkRefs(md(m.text), known)}</div>` : ''}${m.error ? `<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}${/planner|API key/i.test(m.error) && m.error !== 'stopped' ? `<div class="card-actions"><button class="small" data-act="proj-planner-pick" data-id="${esc(p.id)}">Pick this project's planner</button> <a href="#/settings" data-act="proj-planner-settings">Open Settings → Tasks</a></div>` : ''}</div>` : ''}${cards(m.tasks)}<div class="pj-when">${meta}</div></div>`;
     }
     items.push({ time: new Date(m.time).getTime(), html });
   });
@@ -118,10 +120,65 @@ function renderPjFeed(p) {
   });
   inChat.forEach((id) => { if (byId[id] && !showTask(id)) hidden++; });
   items.sort((x, y) => x.time - y.time);
-  if (ov.chat && ov.chat.busy) items.push({ html: `<div class="pj-answer pj-thinking"><span class="dots" aria-label="Thinking"><i></i><i></i><i></i></span> <span class="muted">Thinking…</span> <button class="small" data-act="proj-chat-stop">Stop</button></div>` });
+  if (ov.chat && ov.chat.busy) items.push({ html: `<div class="pj-answer pj-thinking"><span class="dots" aria-label="Thinking"><i></i><i></i><i></i></span> <span class="muted">${(ov.chat.reading || []).length ? 'Reading the project…' : 'Thinking…'}</span> <button class="small" data-act="proj-chat-stop">Stop</button>${pjReads(ov.chat.reading)}</div>` });
   const more = hidden > 0 ? `<button class="link-btn pj-showres" data-act="proj-show-resolved">${pjResolvedOpen ? 'Hide resolved tasks' : `${hidden} resolved task${hidden === 1 ? '' : 's'} hidden. Show them`}</button>` : '';
   if (!items.length) return `${more}<div class="pj-empty"><h3>What should ${esc(p.name)} do next?</h3><p class="hint">Ask about the project, or describe work to do: the planner answers here and starts tasks for it. <b>Start as task</b> skips the conversation and starts your message as a task. Every task starts from the project's current files, and one task works in the project at a time.</p></div>`;
   return more + items.map((i) => `<div class="pj-item">${i.html}</div>`).join('');
+}
+
+// pjReads shows what the planner looked at while answering, one chip per tool call.
+function pjReads(list) {
+  if (!list || !list.length) return '';
+  return `<div class="pj-reads">${list.map((r) => {
+    const x = /^Read (\S+)(?: (\d+))?/.exec(r);
+    return x ? `<a href="#" class="pj-read" data-act="proj-file" data-path="${esc(x[1])}"${x[2] ? ` data-line="${esc(x[2])}"` : ''}>${esc(r)}</a>` : `<span class="pj-read">${esc(r)}</span>`;
+  }).join('')}</div>`;
+}
+
+// pjLinkRefs turns project file names in an answer (app.go, src/app.go:42)
+// into links that open the file viewer at that line. Code blocks and links are left alone.
+function pjLinkRefs(html, known) {
+  if (!known.size) return html;
+  const base = {}; known.forEach((p) => { const b = p.split('/').pop(); base[b] = base[b] === undefined ? p : null; });
+  const tpl = document.createElement('template'); tpl.innerHTML = html;
+  const walk = document.createTreeWalker(tpl.content, NodeFilter.SHOW_TEXT);
+  const nodes = []; while (walk.nextNode()) nodes.push(walk.currentNode);
+  const re = /([\w./-]+\.[A-Za-z0-9]{1,8})(?::(\d+)(?:-\d+)?)?/g;
+  nodes.forEach((n) => {
+    if (n.parentElement && n.parentElement.closest('a, pre')) return;
+    const s = n.nodeValue; let last = 0, frag = null, m;
+    re.lastIndex = 0;
+    while ((m = re.exec(s))) {
+      const name = m[1].replace(/^\.\//, '');
+      const path = known.has(name) ? name : base[name];
+      if (!path) continue;
+      frag = frag || document.createDocumentFragment();
+      frag.append(s.slice(last, m.index));
+      const a = document.createElement('a');
+      a.href = '#'; a.className = 'pj-ref'; a.dataset.act = 'proj-file'; a.dataset.path = path;
+      if (m[2]) a.dataset.line = m[2];
+      a.textContent = m[0]; frag.append(a); last = m.index + m[0].length;
+    }
+    if (frag) { frag.append(s.slice(last)); n.replaceWith(frag); }
+  });
+  return tpl.innerHTML;
+}
+
+// The read-only file viewer for project files, scrolled to a line when given.
+async function openPjFile(path, line) {
+  const id = pageArg;
+  $('pjf-title').textContent = path + (line ? `:${line}` : '');
+  $('pjf-dl').href = `/api/projects/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}&download=1`;
+  $('pjf-body').textContent = 'Loading…';
+  open('modal-pj-file');
+  try {
+    const r = await fetch(`/api/projects/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`, { credentials: 'same-origin' });
+    const text = await r.text();
+    if (!r.ok) { $('pjf-body').textContent = 'This file is not in the project now (a later task may have moved or deleted it).'; return; }
+    setHTML('pjf-body', numbered(text, path).split('\n').map((l, i) => i + 1 === +line ? `<span class="pj-hl">${l}</span>` : l).join('\n'));
+    const hl = $('pjf-body').querySelector('.pj-hl');
+    if (hl) hl.scrollIntoView({ block: 'center' });
+  } catch (e) { $('pjf-body').textContent = e.message; }
 }
 
 function pjRow(t, f) {
@@ -235,7 +292,7 @@ function renderPjFiles(p) {
   const sug = (p.suggestions || []).length;
   setHTML('pj-files-body', `<p class="hint">Project instructions are under <b>Edit</b>: right-click the project, or press <b>⋯</b> at the top of its page.${sug ? ` <button class="link-btn" data-act="proj-edit" data-id="${esc(p.id)}">${sug} suggested rule${sug === 1 ? '' : 's'} waiting</button>` : ''}</p>
     <h4 class="pj-h4">Files <span class="muted">${total}</span></h4>
-    ${files.length ? `<ul class="pj-files">${files.map((f) => `<li><span class="mono">${esc(f.path)}</span><span class="muted">${bytes(f.bytes)}</span></li>`).join('')}</ul>${total > files.length ? `<p class="hint">Showing the first ${files.length}. The .zip has them all.</p>` : ''}` : '<p class="hint">No files yet. The first task writes them.</p>'}`);
+    ${files.length ? `<ul class="pj-files">${files.map((f) => `<li><a href="#" class="mono" data-act="proj-file" data-path="${esc(f.path)}">${esc(f.path)}</a><span class="muted">${bytes(f.bytes)}</span></li>`).join('')}</ul>${total > files.length ? `<p class="hint">Showing the first ${files.length}. The .zip has them all.</p>` : ''}` : '<p class="hint">No files yet. The first task writes them.</p>'}`);
 }
 function openPjFiles() { const p = projectById(pageArg); if (!p) return; $('pj-files-zip').href = `/api/projects/${encodeURIComponent(p.id)}/download`; renderPjFiles(p); open('modal-pj-files'); }
 $('pj-files-btn').onclick = openPjFiles;
@@ -324,6 +381,7 @@ async function projPageAction(act, el) {
       await Promise.all(list.map((t) => post(`/api/tasks/${t.id}/meta`, { resolved: true }).then((s) => Object.assign(t, s))));
       tasksSeq++; renderProjectPage(); toast(`Resolved ${list.length} task${list.length === 1 ? '' : 's'}`); return;
     }
+    case 'proj-file': await openPjFile(el.dataset.path, el.dataset.line); return;
     case 'proj-chat-stop': await post(`/api/projects/${encodeURIComponent(pageArg)}/chat/stop`); pjFetch(true); return;
     case 'proj-chat-clear':
       if (!await askConfirm('Clear this project\'s conversation? The tasks it started are kept.')) return;

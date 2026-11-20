@@ -229,6 +229,11 @@ func (a *agentRun) execute(ctx context.Context, call toolCall) string {
 }
 
 func (a *agentRun) readFile(repo, rel string, from, to int) string {
+	return readFileText(repo, rel, from, to, a.resCap)
+}
+
+// readFileText returns a text file, or lines from..to of it, clipped to resCap characters.
+func readFileText(repo, rel string, from, to, resCap int) string {
 	p, err := safeJoin(repo, rel)
 	if err != nil {
 		return "error: " + err.Error()
@@ -259,7 +264,7 @@ func (a *agentRun) readFile(repo, rel string, from, to int) string {
 		text = strings.Join(lines[from-1:to], "\n")
 		text = fmt.Sprintf("(lines %d-%d of %d)\n", from, to, len(lines)) + text
 	}
-	return clipText(text, a.resCap)
+	return clipText(text, resCap)
 }
 
 func bytesLookBinary(b []byte) bool {
@@ -281,8 +286,9 @@ func clipText(s string, max int) string {
 	return s
 }
 
-func listFilesText(repo, dir string) string {
-	files := listRepo(repo)
+func listFilesText(repo, dir string) string { return listFilesIn(listRepo(repo), dir) }
+
+func listFilesIn(files []repoFile, dir string) string {
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	var b strings.Builder
 	n := 0
@@ -304,6 +310,10 @@ func listFilesText(repo, dir string) string {
 }
 
 func searchText(repo, pattern, dir string) string {
+	return searchIn(repo, listRepo(repo), pattern, dir)
+}
+
+func searchIn(repo string, files []repoFile, pattern, dir string) string {
 	if pattern == "" {
 		return "error: pattern is required"
 	}
@@ -311,7 +321,6 @@ func searchText(repo, pattern, dir string) string {
 	if err != nil {
 		re = regexp.MustCompile(regexp.QuoteMeta(pattern))
 	}
-	files := listRepo(repo)
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	var b strings.Builder
 	hits := 0
