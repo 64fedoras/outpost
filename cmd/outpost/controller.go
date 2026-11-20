@@ -247,12 +247,7 @@ func runController(args []string) error {
 
 	mux := http.NewServeMux()
 	static, _ := fs.Sub(webFS, "web")
-	files := http.FileServer(http.FS(static))
-	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The UI ships inside the binary; make browsers revalidate so an update shows at once.
-		w.Header().Set("Cache-Control", "no-cache")
-		files.ServeHTTP(w, r)
-	}))
+	mux.Handle("GET /", staticHandler(static)) // static.go: ETag and gzip
 	mux.HandleFunc("GET /licenses", handleLicenses)
 	mux.HandleFunc("GET /healthz", c.handleHealth)
 	mux.HandleFunc("POST /api/login", c.handleLogin)

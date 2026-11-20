@@ -48,8 +48,19 @@ func TestStateStreamPushesChanges(t *testing.T) {
 	c.mu.Lock()
 	c.nodes["n1"] = &NodeRec{ID: "n1", Name: "gpu-box"}
 	c.mu.Unlock()
-	if second := next(); !strings.Contains(second, "gpu-box") {
+	second := next()
+	if !strings.Contains(second, "gpu-box") {
 		t.Fatalf("change not pushed: %.300s", second)
+	}
+	if strings.Contains(second, `"tasks"`) || strings.Contains(second, `"projects"`) {
+		t.Fatalf("unchanged task list or projects sent again: %.300s", second)
+	}
+	// A new browser notification is announced, so tabs know to fetch it.
+	c.nt.mu.Lock()
+	c.nt.seq++
+	c.nt.mu.Unlock()
+	if third := next(); !strings.Contains(third, `"notify_last":1`) {
+		t.Fatalf("notification not announced: %.300s", third)
 	}
 	// Nothing changes: nothing more is sent for a while (only pings every 20 s).
 	got := make(chan string, 1)
@@ -67,5 +78,22 @@ func TestStateStreamPushesChanges(t *testing.T) {
 			t.Fatal("unchanged state was sent again")
 		}
 	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// A payload leaves out the task list and projects when the tab already has them.
+func TestStatePayloadLeavesOutUnchangedParts(t *testing.T) {
+	p := &stateParts{state: []byte(`{"a":1}`), tasks: []byte(`[{"id":"t1"}]`), projects: []byte(`[]`), notifyLast: 3}
+	full := string(p.payload(nil))
+	if full != `{"state":{"a":1},"tasks":[{"id":"t1"}],"projects":[],"notify_last":3}` {
+		t.Fatalf("full: %s", full)
+	}
+	sent := &stateSent{tasks: p.tasks, projects: p.projects}
+	if got := string(p.payload(sent)); got != `{"state":{"a":1},"notify_last":3}` {
+		t.Fatalf("unchanged: %s", got)
+	}
+	p2 := &stateParts{state: p.state, tasks: []byte(`[{"id":"t2"}]`), projects: p.projects, notifyLast: 3}
+	if got := string(p2.payload(sent)); got != `{"state":{"a":1},"tasks":[{"id":"t2"}],"notify_last":3}` {
+		t.Fatalf("tasks changed: %s", got)
 	}
 }
