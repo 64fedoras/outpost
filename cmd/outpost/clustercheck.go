@@ -12,6 +12,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -253,18 +254,29 @@ func (c *Controller) checkPort(row *checkRow, nc *nodeConn, hello Hello) {
 		c.setStep(row, "port", "fail", shortErr(err))
 		fix := fmt.Sprintf("sudo ufw allow %d/tcp", hello.Peer.Port)
 		if hello.OS == "windows" {
-			// Same rule the installer adds (see peerFirewallAddArgs).
-			fix = "netsh " + strings.Join(peerFirewallAddArgs(hello.Peer.Port), " ")
+			// Same rule the installer adds (see peerFirewallAddArgs), written for PowerShell. The
+			// controller's own address is added so a node on another subnet is reachable too.
+			fix = peerFirewallPowerShell(hello.Peer.Port, controllerHostFromURL(c.advertise))
 		}
 		msg := fmt.Sprintf("the controller cannot reach its file-sharing port %d (%s). Large build outputs and model copies to and from this node will fail. Open the port in its firewall.", hello.Peer.Port, shortErr(err))
 		if hello.OS == "windows" {
-			msg += " The install command normally does this when run as administrator, so you only need it if the node was installed without admin rights. Run the command below in an Administrator PowerShell. The rule covers private and domain networks only, so if Windows has this network set to Public, switch it to Private."
+			msg += " The install command normally does this when run as administrator, so you only need it if the node was installed without admin rights. Run the command below in an Administrator PowerShell. The rule covers private and domain networks only, so if Windows has this network set to Public, switch it to Private. It allows this PC's own subnet and, when the controller is addressed by IP, the controller's address; if it is addressed by name and this PC is on another subnet, put its IP address after LocalSubnet (comma-separated)."
 		}
 		c.addNote(row, "bad", msg, fix)
 		return
 	}
 	conn.Close()
 	c.setStep(row, "port", "ok", fmt.Sprintf("%d, %d ms", hello.Peer.Port, time.Since(start).Milliseconds()))
+}
+
+// controllerHostFromURL returns the host part of the controller's advertised URL
+// ("https://192.0.2.10:8443" gives "192.0.2.10"), or "" if it has none.
+func controllerHostFromURL(u string) string {
+	p, err := url.Parse(u)
+	if err != nil {
+		return ""
+	}
+	return p.Hostname()
 }
 
 func shortErr(err error) string {

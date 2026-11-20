@@ -77,14 +77,7 @@ which the lab runner does not have, so they only queue (cancel them or disable t
 the lab runner that label, or it would try the release build). No cluster address or token is in the repository: they are Gitea secrets
 (`OUTPOST_LAB_URL`, `OUTPOST_LAB_TOKEN`, optionally `OUTPOST_LAB_FINGERPRINT`). Host jobs run as the runner's
 user without isolation, so only point the runner at a mirror you control.
-**Setting up the runner machine:** `scripts/lab-runner-setup.sh` turns a fresh Ubuntu or Debian machine into that runner.
-Get a registration token from the mirror's Settings, Actions, Runners, then on the new machine:
-`sudo sh scripts/lab-runner-setup.sh --instance http://192.0.2.20:3000 --token-file ~/token`
-(or `GITEA_RUNNER_REGISTRATION_TOKEN=... sudo -E sh ...`; there is deliberately no token argument). It sets the hostname
-to `gitea-runner` (`--keep-hostname` skips that), installs git, Python 3, Node.js 24 (needed by `actions/checkout`) and
-the pinned gitea-runner (SHA-256 checked), creates the `gitea-runner` user and systemd service, and registers with the
-single label `lab-runner:host`, never `ubuntu-24.04`. The token is never stored, and running it twice skips finished steps.
-**The script itself is untested on a real machine** (syntax-checked only; the download address and version could not be reached from the build box), so read it first.
+**To set this up on your own network from scratch** (mirror, runner machine, secrets, firewall troubleshooting, any OS mix), follow [`testing/LAB.md`](LAB.md). The runner is created by `scripts/lab-runner-setup.sh`, which is **untested on a real machine** (syntax-checked only).
 **Stage `inspect`** (`OUTPOST_LAB_STAGES=smoke,inspect`, also the workflow default) adds read-only checks from
 `testing/lab_features.py`: every online node runs the controller's version; Pick best (`load-options`) returns exactly
 one best pick that fits, and a GPU node's pick is not CPU-only; each node's model-sharing port is reachable from the runner
@@ -93,7 +86,7 @@ have no Local Network block; Windows node logs show no service errors; the updat
 installed, loaded or restarted. Warnings say what it cannot see: tray icons, Windows service survival over a reboot,
 Defender, and Apple Silicon/Metal when no arm64 Mac is online. Stages for update/rollback and memory pooling
 (which change the cluster and will be manual-only) are not built yet.
-Not yet checked on the real cluster, and only the smoke checks exist so far: Windows, tray, GPU and phone checks are still by hand.
+The inspect stage is not yet run on the real cluster; tray, phone, Windows install and real GPU loads are still by hand.
 
 ## Not covered by any script (test by hand)
 - Screenshots on the real nodes: Chromium on each platform (snap Chromium on Ubuntu, Chrome on Windows
