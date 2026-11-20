@@ -55,6 +55,19 @@ Outpost's pages or API and cannot load anything from the network (no external sc
 fonts; inline ones work). Mermaid 11 is bundled in the binary (about 1 MB, compressed) and loaded only
 when a diagram is shown. **Untested:** Safari and real phones; tested in Chromium on the local rig.
 
+**Memory** (Settings → Memory) is a list of short facts, each for everywhere or for one project, added
+to the start of every chat and project conversation ("Prefers Go and plain JavaScript"). Add one by
+hand, or take a suggestion: after an answer from a local model, the same node is asked once whether
+your messages state a lasting fact; if so a card under the answer offers **Remember**, **Edit first**
+or **Not this**. Nothing is saved without your click, a conversation gets at most one open suggestion
+and stops asking after 3 answers, and paid planners never make suggestions. Facts can be edited,
+moved between everywhere and a project, or forgotten; the list shows about how many tokens it adds
+to each message. Up to 100 facts of 300 characters, kept in `memory.json` on the controller and in
+backups. When Claude or OpenRouter answers a project conversation, that project's facts and the
+everywhere facts go with the request. Task planning does not use memory (use project instructions).
+Two switches: **Use memory** (`memory_on`) and **Suggest new memories** (`memory_suggest`), both on by
+default. **Untested:** how good real models' suggestions are; tested with a stub model.
+
 **Web search in chats** (Settings, Tasks, Planner: "Let chats search the web", off by default). Local
 models cannot search by themselves, so a **Search with** menu picks how they get the web:
 

@@ -404,6 +404,7 @@
       <div class="settings set-layout">
         <nav class="set-nav" id="set-nav" aria-label="Settings sections">
           <a href="#set-tasks" data-sec="tasks">Tasks</a>
+          <a href="#set-mem" data-sec="mem">Memory</a>
           <a href="#set-keys" data-sec="keys">API keys</a>
           <a href="#set-modelsec" data-sec="model">Models</a>
           <a href="#set-nodes" data-sec="nodes">Nodes</a>
@@ -449,6 +450,21 @@
           <p class="hint">How nodes run the commands tasks send them (tests, builds, fixes). <b>Basic</b>: a command can only change files in its own job folder, sees a cleaned-up environment and has no special rights; the network stays open. <b>Strict</b>: basic, with the network off unless the step downloads packages, and a deny list for dangerous system calls. <b>Off</b>: commands run with the node's own rights, as before. Linux nodes only for now; Windows and macOS nodes run commands unsandboxed. A node can override this on its card. If a build breaks and you suspect the sandbox, set it to Off to compare.</p>
           <select id="set-sandbox"><option value="basic">Basic (recommended)</option><option value="strict">Strict</option><option value="off">Off</option></select>
           <div class="modal-foot"><button class="primary" id="set-sandbox-save">Save</button></div>
+        </div>
+        </section>
+        <section class="set-sec" id="set-mem">
+          <h2 class="set-sec-title">Memory</h2>
+        <div class="card">
+          <p class="hint">Short facts added to the start of every chat and project conversation. Outpost suggests them under answers; nothing is saved without your OK. Kept on the controller and in backups. When Claude or OpenRouter answers a project conversation, the facts for it are sent along. Suggestions come only from local models.</p>
+          <label class="check"><input type="checkbox" id="set-mem-on"> Use memory in chats and project conversations</label>
+          <label class="check"><input type="checkbox" id="set-mem-suggest"> Suggest new memories after an answer (one small extra call on the same node)</label>
+          <div id="mem-list" class="mem-list"></div>
+          <div class="mem-add">
+            <input id="mem-new" maxlength="300" placeholder="Add a fact, e.g. The home lab uses Gitea for CI mirrors." aria-label="New memory">
+            <select id="mem-new-scope" aria-label="Where it applies"></select>
+            <button id="mem-add">＋ Add</button>
+          </div>
+          <p class="hint" id="mem-count"></p>
         </div>
         </section>
         <section class="set-sec" id="set-keys">
@@ -1081,6 +1097,7 @@
 <script src="app.js"></script>
 <script src="markdown.js"></script>
 <script src="preview.js"></script>
+<script src="memory.js"></script>
 <script src="confirm.js"></script>
 <script src="groups.js"></script>
 <script src="new-task.js"></script>

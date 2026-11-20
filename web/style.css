@@ -1391,3 +1391,21 @@ pre.code .pj-hl { background: var(--tint); display: inline-block; min-width: 100
 #pv-code { flex: 1; margin: 0; overflow: auto; min-height: 0; }
 .pv-note { margin: 0; font-size: 12px; }
 @media (max-width: 760px) { .pv-panel { width: 100vw; min-width: 0; border-left: 0; } }
+
+/* Memory (web/memory.js): Settings list and the suggestion under an answer. */
+.mem-list { display: flex; flex-direction: column; margin: 10px 0 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.mem-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.mem-row:first-child { border-top: 0; }
+.mem-t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.mem-t .muted { font-size: 12px; margin-top: 2px; }
+.mem-acts, .mem-sug-acts { display: flex; gap: 6px; flex: none; }
+.mem-edit { flex: 1; display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.mem-edit input { flex: 1 1 260px; }
+.mem-edit select { width: auto; }
+.mem-empty { margin: 10px 12px; }
+.mem-add { display: flex; gap: 6px; flex-wrap: wrap; }
+.mem-add input { flex: 1 1 260px; }
+.mem-add select { width: auto; max-width: 220px; }
+.mem-sug { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; max-width: 620px; margin-top: 6px; }
+.mem-sug-t { font-size: 13.5px; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .mem-row { flex-direction: column; } }

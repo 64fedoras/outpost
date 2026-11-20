@@ -42,7 +42,7 @@ func (c *Controller) chatSystemPrompt(instructions string) string {
 	if instructions = strings.TrimSpace(instructions); instructions != "" {
 		p += "\n\nFollow these instructions from the user for this chat:\n" + instructions
 	}
-	return p
+	return p + c.memoryPrompt("")
 }
 
 // msgIndex finds a message by id in the current version of the chat.

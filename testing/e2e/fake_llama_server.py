@@ -67,7 +67,11 @@ class H(BaseHTTPRequestHandler):
         if body.get("tools"):
             return self.agent_turn(body)
         system = body["messages"][0]["content"] if body["messages"][0]["role"] == "system" else ""
-        if "planner for Outpost" in system:
+        if "remember durable facts" in system:
+            # Memory suggestion (memory.go): one fact when the owner states one, else NONE.
+            m = re.search(r"\bI (?:always )?(?:use|prefer) (.{3,60}?)\.(?:\s|$)", user)
+            text = ("Prefers " + m.group(1).strip() + ".") if m else "NONE"
+        elif "planner for Outpost" in system:
             # A node as the planner: the same word-counter plan the Claude stub gives.
             text = json.dumps({"title": "Word Counter", "summary": "A tiny Python CLI. wordcount/core.py defines count_words(text) -> dict (lowercase, split on whitespace).",
                 "language": "python", "setup_command": "", "test_command": "python3 -m unittest discover -s tests -v",
