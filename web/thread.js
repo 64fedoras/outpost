@@ -344,6 +344,45 @@ function readPlanEditor() {
 // Minutes for the plan card's time estimate (estimate.go); always "about".
 function estMin(sec) { return sec < 90 ? '1 min' : Math.round(sec / 60) + ' min'; }
 
+// "Pick models for each node" on the live plan card (tasks_models.go). The
+// proposal comes from /model-plan, refreshed every 20 s; the switches live
+// here so a re-render keeps them.
+const pickModels = { task: '', at: 0, data: null, on: false, keep: false, cap: '' };
+function pickModelsBlock(t) {
+  if (pickModels.task !== t.id) Object.assign(pickModels, { task: t.id, at: 0, data: null, on: false, keep: false, cap: '' });
+  if (Date.now() - pickModels.at > 20000) {
+    pickModels.at = Date.now();
+    api(`/api/tasks/${t.id}/model-plan`).then((r) => { pickModels.data = r; if (taskDetail && taskDetail.id === t.id) renderTask(taskDetail); }).catch(() => {});
+  }
+  const d = pickModels.data;
+  const swaps = (d && d.swaps) || [], kept = (d && d.kept) || [];
+  const allowed = kept.filter((k) => k.skip !== 'not allowed to change model').length + swaps.length;
+  const head = `<div class="pm-head"><label class="pm-check"><input type="checkbox" data-pm="on" ${pickModels.on ? 'checked' : ''}> <b>Pick models for each node</b></label><span class="spacer"></span><span class="hint">Only nodes with "Let tasks change my model" on</span></div>`;
+  if (!pickModels.on) return `<div class="pm">${head}</div>`;
+  let body;
+  if (!d) body = '<p class="hint">Working out the best model for each node…</p>';
+  else if (!allowed) body = '<p class="hint">No node allows it yet. Turn on "Let tasks change my model" on a node\'s card on the Nodes page.</p>';
+  else {
+    const rows = swaps.map((s) => `<tr><td><b>${esc(s.node_name || s.node)}</b></td><td>${esc(s.label || s.model)}</td>
+      <td>${s.download ? `<span class="pill st-loading">download ${bytes(s.bytes)}</span>` : '<span class="pill st-ready">on node</span>'}</td>
+      <td class="sub">now: ${s.prev ? esc(s.prev) + (pickModels.keep ? '' : ' (put back afterwards)') : 'nothing loaded'}</td></tr>`).join('')
+      + kept.map((k) => `<tr><td><b>${esc(k.node_name || k.node)}</b></td><td colspan="3" class="sub">Keeps ${k.model ? esc(k.model) : 'no model'}: ${esc(k.skip)}</td></tr>`).join('');
+    body = `<table class="pm-table">${rows}</table>`;
+  }
+  return `<div class="pm">${head}${body}
+    <div class="pm-opts"><label class="pm-check"><input type="checkbox" data-pm="restore" ${pickModels.keep ? '' : 'checked'}> Put each node's previous model back when the task ends</label>
+    <label class="pm-check">Download cap <input type="number" data-pm="cap" min="1" step="1" value="${esc(String(pickModels.cap || (d && d.default_cap_gb) || 60))}" aria-label="Download cap in GB"> GB</label></div>
+    <p class="hint">Models change before work starts, never during a subtask. If a load fails, that node keeps its current model.</p></div>`;
+}
+
+// Model changes a task made, under its progress card.
+function modelSwapsNote(t) {
+  const sw = t.model_swaps || [];
+  if (!sw.length) return '';
+  const word = { loading: 'loading', loaded: 'loaded', failed: 'could not load', restored: 'put back', kept: 'changed by hand since, left alone' };
+  return `<p class="card-note">Models for this task: ${sw.map((s) => `${esc(s.node_name || s.node)} ${esc(s.model)} (${esc(word[s.state] || 'planned')}${s.state === 'restored' ? ': ' + esc(s.prev || 'no model') : ''})`).join(' · ')}</p>`;
+}
+
 function planCard(t, m, live) {
   if (planEdit && planEdit.id === m.id && canEditPlan(t, m)) return planEditor(t, m);
   const p = m.plan || {};
@@ -364,7 +403,7 @@ function planCard(t, m, live) {
     if (p.test_command && !t.exec_nodes) warn.push('No node has exec on, so the tests will be skipped.');
     if (!t.workers_online) warn.push('No node has a model ready; work waits until one does.');
     const est = (t.planner === 'claude' || t.planner === 'openrouter') && t.estimate_usd ? `Planning cost ${usd(t.cost_usd)}; the rest is estimated at about ${usd(Math.max(0, t.estimate_usd - t.cost_usd))}.` : '';
-    actions = `${warn.length || est ? `<p class="card-note">${esc([est, ...warn].filter(Boolean).join(' '))}</p>` : ''}
+    actions = `${pickModelsBlock(t)}${warn.length || est ? `<p class="card-note">${esc([est, ...warn].filter(Boolean).join(' '))}</p>` : ''}
       <div class="card-actions">${t.planner === 'claude' || t.planner === 'openrouter' ? `<label class="chip-input">cap $<input id="ta-cap" type="number" min="0.10" step="0.10" value="${t.cap_usd}" aria-label="Spending cap in US dollars"></label>` : ''}
       <button class="primary" data-act="task-approve">Approve and start</button><span class="hint">or reply below to change the plan</span></div>`;
   }
@@ -423,7 +462,7 @@ function progressCard(t) {
   const head = t.status === 'running' || t.status === 'testing' || t.status === 'building' || t.status === 'fixing'
     ? `Working · ${done} of ${specs.length} subtasks done` : `${done} of ${specs.length} subtasks done`;
   return `<div class="card-msg progress"><div class="card-head">${head}</div><div class="strip" role="img" aria-label="${done} of ${specs.length} subtasks done">${strip}</div>
-    <ul class="p-list">${rows}</ul>${phase ? `<p class="card-note">${esc(phase)}</p>` : ''}</div>`;
+    <ul class="p-list">${rows}</ul>${modelSwapsNote(t)}${phase ? `<p class="card-note">${esc(phase)}</p>` : ''}</div>`;
 }
 
 // "Tests and fixes": what the test-and-fix phase is doing right now and what it did, newest last.
@@ -691,7 +730,11 @@ async function taskAction(act, el) {
   try {
     switch (act) {
       case 'task-redo': openRedo(taskDetail, el.dataset.sub); return;
-      case 'task-approve': await post(`/api/tasks/${id}/approve`, { cap_usd: parseFloat(($('ta-cap') || {}).value) || 0 }); break;
+      case 'task-approve': {
+        const pm = pickModels.task === id && pickModels.on;
+        await post(`/api/tasks/${id}/approve`, { cap_usd: parseFloat(($('ta-cap') || {}).value) || 0, auto_models: pm, keep_models: pm && pickModels.keep, model_cap_gb: pm ? parseFloat(pickModels.cap) || 0 : 0 });
+        break;
+      }
       case 'task-pick': await post(`/api/tasks/${id}/pick`, { page: el.dataset.page }); toast('Building from that variant'); break;
       case 'task-msg-edit': {
         const m = ((taskDetail && taskDetail.messages) || []).find((x) => x.id === el.dataset.msg);

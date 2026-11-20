@@ -72,6 +72,19 @@ Each task is a conversation:
    (or a guess by difficulty for new files), plus about 20 seconds per call and one minute for a test run.
    Fix rounds after failing tests are not included. A node that has not been benchmarked yet counts
    as slow (8 tokens a second) and the estimate says *rough*.
+   **Pick models for each node** (a checkbox on the plan card, off by default) loads a different model
+   on each node before work starts: each node's best fit (the same pick as *Pick best* on the Nodes
+   page), only on nodes with *Let tasks change my model* on. The card lists what each node would load,
+   whether it needs a download, and what it has now. A node keeps its model when it is busy, pooled,
+   paused, already on that model or on a bigger one, or when the plan has fewer subtasks than nodes
+   (the biggest picks win). Downloads stop at a cap (60 GB by default, set on the card); models that
+   are only in the catalog are added to the library and downloaded by the node. A load waits up to
+   10 minutes for other tasks' calls on that node to end. If a load fails, that node keeps its model
+   and the task carries on. With *Put each node's previous model back* on (the default), each node gets
+   its old model back (or none, if it had none) once the task is done, failed or cancelled; a node whose
+   model you changed by hand meanwhile is left alone. A task paused for an answer or stopped by a
+   controller restart keeps its models until it ends. The progress card lists what was loaded and put
+   back. Not yet tried on a real cluster.
 4. **Progress is live.** A strip fills in as subtasks finish, with which node wrote and checked each. Each running subtask has a "live output" pane showing what the model is writing; it starts collapsed, click to expand. An expanded pane stays open and keeps its scroll position, and keeps showing the last call's output (marked "finished") until the next call starts, so it no longer goes blank between the fixer's calls. The pane names the node (and "checking" during a review) and says "waiting for output" until the first token; a thinking model's reasoning is shown there too. While a node is still reading a long prompt, its pane header says how far it has got, for example "reading the prompt: 7,420 of 18,950 tokens, about 2 min left", so a slow CPU node does not look stuck (needs a llama.cpp build that reports prompt progress; older builds just show "waiting for output").
    While the tests run and the fixer works, a **Tests and fixes** card under the subtasks lists each step: the test run and which node ran it with a count such as "4 failing of 12" (when the runner prints one), what the fixer read, ran and edited, and how long the current step has been going. If the node is offline or paused, or a model has produced no text for two minutes, a warning says so instead of the card looking busy. If the planner's node restarts or is updated in the middle of a fix round, the controller waits (up to 10 minutes) for it to come back and repeats that round without using one up. The "The controller restarted, so this task resumed automatically" line in the thread appears only after the controller restarts; a node restart shows up on this card instead.
    A running subtask expands to show the text its node is writing, with tokens per second, and

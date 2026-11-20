@@ -223,6 +223,14 @@ document.querySelectorAll('[data-copy]').forEach((b) => { b.onclick = async () =
 }; });
 
 document.addEventListener('change', async (e) => {
+  const pm = e.target.closest('[data-pm]');
+  if (pm) {
+    if (pm.dataset.pm === 'on') pickModels.on = pm.checked;
+    else if (pm.dataset.pm === 'restore') pickModels.keep = !pm.checked;
+    else if (pm.dataset.pm === 'cap') pickModels.cap = pm.value;
+    if (taskDetail) renderTask(taskDetail);
+    return;
+  }
   const diff = e.target.closest('[data-diff]');
   if (diff) {
     try { await post(`/api/tasks/${pageArg}/difficulty`, { subtask: diff.dataset.diff, difficulty: diff.value }); } catch (err) { toast(err.message); }
@@ -277,6 +285,7 @@ document.addEventListener('click', async (e) => {
       case 'idle': setNodeIdle(id); break;
       case 'health-reset': resetHealth(id); break;
       case 'yield': toggleYield(id); break;
+      case 'task-models': toggleTaskModels(id); break;
       case 'restart': {
         const n = nodeById(id);
         const jobs = n.running_jobs ? ` ${n.running_jobs} running job(s) will be cancelled.` : '';
