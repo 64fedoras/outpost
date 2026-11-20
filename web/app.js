@@ -281,7 +281,7 @@ function taskTone(t) {
   return 'idle';
 }
 
-function sideTaskHTML(t, projectName, tagGroup) {
+function sideTaskHTML(t, projectName, tagGroup, snip) {
   const cls = [page === 'task' && pageArg === t.id ? 'active' : '', ctxTaskId === t.id ? 'menu-open' : ''].join(' ');
   const title = renamingId === t.id
     ? `<input class="side-rename" id="side-rename" value="${esc(t.title)}" maxlength="120" aria-label="New name for this task">`
@@ -290,7 +290,7 @@ function sideTaskHTML(t, projectName, tagGroup) {
     <a href="#/tasks/${esc(t.id)}" class="side-task-link" draggable="false" aria-keyshortcuts="Shift+F10 F2 Delete">
       <span class="tdot ${taskTone(t)}" aria-hidden="true"></span>
       <span class="side-task-text">${title}
-      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${groupTag(tagGroup)}${projectName ? esc(projectName) + ' · ' : ''}${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>
+      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${groupTag(tagGroup)}${projectName ? esc(projectName) + ' · ' : ''}${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span>${snipHTML(snip)}</span></a>
     <button class="side-task-more" data-task-menu="${esc(t.id)}" aria-haspopup="menu" aria-expanded="${ctxTaskId === t.id}" aria-label="Actions for ${esc(t.title)}" title="Actions">⋯</button></div>`;
 }
 // renderSideTasks (the sidebar list, By status or By group) is in groups.js.

@@ -9,7 +9,8 @@ Part of the [Outpost user guide](USER-GUIDE.md).
 - **Search (Ctrl+K, or Cmd+K on a Mac)** opens a box that jumps to any task, node, project, page or
   Settings section, and runs actions such as *Check cluster*, *Add node*, *New chat*, a saved task or a
   theme. Type a few letters, use the arrow keys and Enter. The *Search* link at the bottom of the
-  sidebar opens it too.
+  sidebar opens it too. With two or more letters typed, its last entry, *Search task and chat text*, runs
+  the sidebar search below.
 - **Theme:** Settings → Display and alerts → Appearance picks light, dark or the system's setting, kept in this
   browser.
 - **On a phone:** add the page to the home screen (Safari: Share → Add to Home Screen; Chrome: menu →
@@ -40,6 +41,15 @@ or F2 / Delete on it) to **Rename**, pick a **colour**, **Move up / down** or **
 they just leave the group). A group with something waiting on you shows an amber count. Groups are stored on the controller
 (`groups.json`, up to 100), so every browser and phone sees the same ones; the chosen view and which groups are collapsed are
 remembered per browser. Dragging needs a pointer; on a phone use the menu.
+
+**Search and filters.** The box under the switch searches tasks and chats. Titles match as you type; a
+moment later the controller also looks through every task's prompt, plan and conversation and every chat's
+messages, and those rows show a short snippet of where the words were found. Every word must appear somewhere
+(in any order, any case). **Filter** opens three lists: status (*Needs you*, *Running*, *Done*, *Failed*,
+*Resolved*), project (or *No project*) and last activity (24 hours, 7 days, 30 days, or older). The button
+shows how many are set, the list shows how many items match, and **Clear filters** (or Esc in the search box)
+brings everything back. Filters work in both views. They are not remembered after a reload, so nothing stays
+hidden by a filter you forgot about.
 
 Right-click a task in the sidebar (or press its **⋯** button, which is always shown on a phone) for
 **Open in new tab**, **Rename**, **Pin to top**, **Copy prompt**, **Copy link**, **Duplicate as new

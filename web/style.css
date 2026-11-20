@@ -1260,3 +1260,16 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .hist-row .v { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .temp-hot { color: var(--bad); font-weight: 600; }
 @media (max-width: 560px) { .hist-row { grid-template-columns: 56px minmax(0, 1fr); } .hist-row .v { grid-column: 2; } }
+
+/* Sidebar search and filters (groups.js) */
+.side-filter { padding: 6px 12px 2px; }
+.sf-row { display: flex; gap: 6px; }
+.sf-row input { flex: 1; min-width: 0; font-size: 12.5px; padding: 5px 8px; border-radius: 8px; }
+.sf-btn { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 8px; padding: 0 9px; font-size: 12.5px; white-space: nowrap; }
+.sf-btn.on { color: var(--ink); border-color: var(--accent); font-weight: 550; }
+.sf-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+.sf-panel select { font-size: 12.5px; padding: 4px 6px; min-width: 0; }
+.sf-panel #sf-age { grid-column: 1 / -1; }
+.sf-panel .link-btn { grid-column: 1 / -1; justify-self: start; font-size: 12px; }
+.side-snip { display: block; font-size: 11.5px; color: var(--muted); white-space: normal; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; margin-top: 1px; }
+.sf-count { padding-top: 2px; }
