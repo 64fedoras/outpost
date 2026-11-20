@@ -173,8 +173,9 @@ type Controller struct {
 	healthOnce sync.Once
 	card       *scoreCard // per-model results (scorecard.go)
 	cardOnce   sync.Once
-	stateHub   stateHub // pushed /api/state (state_stream.go)
-	safeMode   bool     // crash-loop start: auto-resume and schedules off (safemode.go)
+	stateHub   stateHub   // pushed /api/state (state_stream.go)
+	files      asyncFiles // state files written outside c.mu (asyncwrite.go)
+	safeMode   bool       // crash-loop start: auto-resume and schedules off (safemode.go)
 }
 
 func runController(args []string) error {

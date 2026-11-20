@@ -111,6 +111,12 @@ func (c *Controller) chatRoutes(mux *http.ServeMux) {
 }
 
 func (c *Controller) handleListChats(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, c.chatSummaries())
+}
+
+// chatSummaries is the chat list for the sidebar, newest first (also pushed
+// with the state, state_stream.go).
+func (c *Controller) chatSummaries() []map[string]any {
 	c.chatMu.Lock()
 	out := []map[string]any{}
 	for _, ch := range c.chats {
@@ -120,7 +126,7 @@ func (c *Controller) handleListChats(w http.ResponseWriter, r *http.Request) {
 	}
 	c.chatMu.Unlock()
 	sort.Slice(out, func(i, j int) bool { return out[i]["updated"].(time.Time).After(out[j]["updated"].(time.Time)) })
-	writeJSON(w, 200, out)
+	return out
 }
 
 func (c *Controller) handleGetChat(w http.ResponseWriter, r *http.Request) {

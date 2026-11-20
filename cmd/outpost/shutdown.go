@@ -33,6 +33,7 @@ func (c *Controller) flushTasks() {
 	for _, t := range list {
 		t.flush()
 	}
+	c.files.flush() // nodes, sessions and API tokens (asyncwrite.go)
 }
 
 // prepareRestart is called right before this process is replaced (update,

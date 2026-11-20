@@ -47,10 +47,14 @@ func (c *Controller) handleListModels(w http.ResponseWriter, r *http.Request) {
 			recommended[id] = opts[0]
 		}
 	}
-	c.mu.Unlock()
 	sort.Slice(models, func(i, j int) bool { return models[i].Added.Before(models[j].Added) })
 	sort.Slice(rts, func(i, j int) bool { return rts[i].Variant < rts[j].Variant })
-	writeJSON(w, 200, map[string]any{"catalog": cat, "models": models, "runtimes": rts,
+	// Encode the records while c.mu is held: downloads and node messages change
+	// them under the lock, and reading them after it was a data race.
+	modelsJSON, _ := json.Marshal(models)
+	rtsJSON, _ := json.Marshal(rts)
+	c.mu.Unlock()
+	writeJSON(w, 200, map[string]any{"catalog": cat, "models": json.RawMessage(modelsJSON), "runtimes": json.RawMessage(rtsJSON),
 		"fits": fits, "catalog_fits": catFits, "suggested": suggestCoding(cat, catFits, 4), "recommended": recommended,
 		"disk_free": diskFree(c.modelsStoreDir())})
 }

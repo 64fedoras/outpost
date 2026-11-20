@@ -19,35 +19,40 @@ import (
 
 var statePushEvery = time.Second
 
-// A payload holds the cluster state, the task list and the projects. Node
-// heartbeats change the state every few seconds, but the task list (the
-// biggest part, with many tasks) changes far less often, so each tab is sent
-// the task list and the projects only when they differ from what that tab
-// last received. The browser keeps its copy of a part that is left out.
+// A payload holds the cluster state and the lists the sidebar and pages
+// show: tasks, projects, task groups and chats. Node heartbeats change the
+// state every few seconds, but the lists (the task list is the biggest part)
+// change far less often, so each tab is sent a list only when it differs
+// from what that tab last received. The browser keeps its copy of a list
+// that is left out.
 
 type stateHub struct {
 	mu   sync.Mutex
-	subs map[chan []byte]*stateSent
+	subs map[chan []byte]stateSent
 	last *stateParts
 	on   bool
 }
 
+// stateLists are the parts sent only when they changed, in payload order.
+var stateLists = []string{"tasks", "projects", "groups", "chats"}
+
 // stateParts are the encoded parts of one payload.
 type stateParts struct {
-	state, tasks, projects []byte
-	notifyLast             int // newest browser notification; the tab fetches them only when it moves
+	state      []byte
+	lists      map[string][]byte // by name in stateLists
+	notifyLast int               // newest browser notification; the tab fetches them only when it moves
 }
 
-// stateSent is what one tab last received.
-type stateSent struct {
-	tasks, projects []byte
-}
+// stateSent is what one tab last received of each list.
+type stateSent map[string][]byte
 
 func (c *Controller) stateParts() *stateParts {
-	p := &stateParts{}
+	p := &stateParts{lists: map[string][]byte{}}
 	p.state, _ = json.Marshal(c.stateView())
-	p.tasks, _ = json.Marshal(c.taskSummaries())
-	p.projects, _ = json.Marshal(c.projectViews())
+	p.lists["tasks"], _ = json.Marshal(c.taskSummaries())
+	p.lists["projects"], _ = json.Marshal(c.projectViews())
+	p.lists["groups"], _ = json.Marshal(c.groupList())
+	p.lists["chats"], _ = json.Marshal(c.chatSummaries())
 	c.nt.mu.Lock()
 	p.notifyLast = c.nt.seq
 	c.nt.mu.Unlock()
@@ -55,26 +60,42 @@ func (c *Controller) stateParts() *stateParts {
 }
 
 func (p *stateParts) equal(o *stateParts) bool {
-	return o != nil && p.notifyLast == o.notifyLast && bytes.Equal(p.state, o.state) &&
-		bytes.Equal(p.tasks, o.tasks) && bytes.Equal(p.projects, o.projects)
+	if o == nil || p.notifyLast != o.notifyLast || !bytes.Equal(p.state, o.state) {
+		return false
+	}
+	for _, k := range stateLists {
+		if !bytes.Equal(p.lists[k], o.lists[k]) {
+			return false
+		}
+	}
+	return true
 }
 
 // payload encodes p for a tab that already has sent (nil: a new tab).
-func (p *stateParts) payload(sent *stateSent) []byte {
+func (p *stateParts) payload(sent stateSent) []byte {
 	var b bytes.Buffer
-	b.Grow(len(p.state) + len(p.tasks) + len(p.projects) + 64)
+	n := len(p.state) + 64
+	for _, v := range p.lists {
+		n += len(v) + 16
+	}
+	b.Grow(n)
 	b.WriteString(`{"state":`)
 	b.Write(p.state)
-	if sent == nil || !bytes.Equal(sent.tasks, p.tasks) {
-		b.WriteString(`,"tasks":`)
-		b.Write(p.tasks)
-	}
-	if sent == nil || !bytes.Equal(sent.projects, p.projects) {
-		b.WriteString(`,"projects":`)
-		b.Write(p.projects)
+	for _, k := range stateLists {
+		if v, ok := sent[k]; !ok || !bytes.Equal(v, p.lists[k]) {
+			fmt.Fprintf(&b, `,%q:`, k)
+			b.Write(p.lists[k])
+		}
 	}
 	fmt.Fprintf(&b, `,"notify_last":%d}`, p.notifyLast)
 	return b.Bytes()
+}
+
+// sentAll records that a tab now has every list in p.
+func (p *stateParts) sentAll(sent stateSent) {
+	for _, k := range stateLists {
+		sent[k] = p.lists[k]
+	}
 }
 
 // subscribe returns a channel of payloads, starting with a full one.
@@ -90,13 +111,15 @@ func (h *stateHub) subscribe(c *Controller) (chan []byte, func()) {
 	}
 	h.mu.Lock()
 	if h.subs == nil {
-		h.subs = map[chan []byte]*stateSent{}
+		h.subs = map[chan []byte]stateSent{}
 	}
 	if h.last == nil {
 		h.last = last
 	}
 	// The tab starts from what it is sent here; later payloads are diffed against it.
-	h.subs[ch] = &stateSent{tasks: last.tasks, projects: last.projects}
+	sent := stateSent{}
+	last.sentAll(sent)
+	h.subs[ch] = sent
 	ch <- last.payload(nil)
 	h.mu.Unlock()
 	if start {
@@ -126,7 +149,7 @@ func (h *stateHub) run(c *Controller, every time.Duration) {
 			for ch, sent := range h.subs {
 				select {
 				case ch <- p.payload(sent):
-					sent.tasks, sent.projects = p.tasks, p.projects
+					p.sentAll(sent)
 				default: // a slow tab gets the next one, with whatever it missed
 				}
 			}

@@ -81,18 +81,22 @@ func TestStateStreamPushesChanges(t *testing.T) {
 	}
 }
 
-// A payload leaves out the task list and projects when the tab already has them.
+// A payload leaves out the lists the tab already has.
 func TestStatePayloadLeavesOutUnchangedParts(t *testing.T) {
-	p := &stateParts{state: []byte(`{"a":1}`), tasks: []byte(`[{"id":"t1"}]`), projects: []byte(`[]`), notifyLast: 3}
+	lists := func(tasks string) map[string][]byte {
+		return map[string][]byte{"tasks": []byte(tasks), "projects": []byte(`[]`), "groups": []byte(`[]`), "chats": []byte(`[{"id":"c1"}]`)}
+	}
+	p := &stateParts{state: []byte(`{"a":1}`), lists: lists(`[{"id":"t1"}]`), notifyLast: 3}
 	full := string(p.payload(nil))
-	if full != `{"state":{"a":1},"tasks":[{"id":"t1"}],"projects":[],"notify_last":3}` {
+	if full != `{"state":{"a":1},"tasks":[{"id":"t1"}],"projects":[],"groups":[],"chats":[{"id":"c1"}],"notify_last":3}` {
 		t.Fatalf("full: %s", full)
 	}
-	sent := &stateSent{tasks: p.tasks, projects: p.projects}
+	sent := stateSent{}
+	p.sentAll(sent)
 	if got := string(p.payload(sent)); got != `{"state":{"a":1},"notify_last":3}` {
 		t.Fatalf("unchanged: %s", got)
 	}
-	p2 := &stateParts{state: p.state, tasks: []byte(`[{"id":"t2"}]`), projects: p.projects, notifyLast: 3}
+	p2 := &stateParts{state: p.state, lists: lists(`[{"id":"t2"}]`), notifyLast: 3}
 	if got := string(p2.payload(sent)); got != `{"state":{"a":1},"tasks":[{"id":"t2"}],"notify_last":3}` {
 		t.Fatalf("tasks changed: %s", got)
 	}

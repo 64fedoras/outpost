@@ -93,10 +93,14 @@ func (c *Controller) groupRoutes(mux *http.ServeMux) {
 }
 
 func (c *Controller) handleListGroups(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, c.groupList())
+}
+
+// groupList is a copy of the task groups (also pushed with the state).
+func (c *Controller) groupList() []Group {
 	c.groupMu.Lock()
-	out := append([]Group{}, c.groups...)
-	c.groupMu.Unlock()
-	writeJSON(w, 200, out)
+	defer c.groupMu.Unlock()
+	return append([]Group{}, c.groups...)
 }
 
 func (c *Controller) handleCreateGroup(w http.ResponseWriter, r *http.Request) {

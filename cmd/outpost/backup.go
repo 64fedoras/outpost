@@ -65,6 +65,7 @@ func (c *Controller) handleBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+backupName()+`"`)
+	c.files.flush() // the latest node list, sessions and tokens (asyncwrite.go)
 	if err := writeBackup(w, c.dataDir, req.Passphrase, req.Big); err != nil {
 		log.Printf("backup: %v", err)
 	}
@@ -155,6 +156,7 @@ func (c *Controller) runScheduledBackup() error {
 	if err != nil {
 		return err
 	}
+	c.files.flush()
 	err = writeBackup(f, c.dataDir, pass, false)
 	if err == nil {
 		err = f.Sync()
