@@ -2,11 +2,11 @@
 // Chat page. Plain script, no modules: shares globals with app.js and loads after it (see index.html).
 
 // ---------- chat (chat.go) ----------
-let chatES = null, chatCur = null, chatLive = {}, chatPickOpen = false, chatEditing = null, chatPendingInstr = null;
+let chatES = null, chatCur = null, chatLive = {}, chatPickOpen = false, chatEditing = null, chatPendingInstr = null, chatPendingRun = false;
 // On a phone: Enter makes a new line (the Send button sends); Ctrl+Enter still sends from a keyboard.
 const chatTouch = () => window.matchMedia('(pointer: coarse)').matches;
 async function chatOpen(id) {
-  chatCur = null; chatLive = {}; chatPickOpen = false; chatEditing = null; chatPendingInstr = null;
+  chatCur = null; chatLive = {}; chatPickOpen = false; chatEditing = null; chatPendingInstr = null; chatPendingRun = false;
   chatPlaceholder();
   chatPanelSet(false, true);
   $('chat-title').textContent = 'New chat';
@@ -110,6 +110,38 @@ function chatButtons() {
   const instr = chatCur ? chatCur.instructions : chatPendingInstr;
   $('chat-instr-btn').classList.remove('hidden');
   $('chat-instr-btn').classList.toggle('on', !!instr);
+  const run = chatCur ? !!chatCur.run_code : chatPendingRun;
+  $('chat-run').classList.toggle('on', run);
+  $('chat-run').setAttribute('aria-pressed', String(run));
+  setHTML('chat-run', `▶ Run<span class="hide-ph"> code</span>${run ? ': on' : ''}`);
+}
+async function chatRunToggle() {
+  if (!chatCur) { chatPendingRun = !chatPendingRun; chatButtons(); if (chatPendingRun) chatRunHint(); return; }
+  try {
+    const r = await post(`/api/chats/${chatCur.id}/runcode`, { on: !chatCur.run_code });
+    chatCur.run_code = !chatCur.run_code; chatButtons();
+    if (chatCur.run_code) chatRunHint(r.langs);
+  } catch (e) { toast(e.message); }
+}
+function chatRunHint(langs) {
+  if (!execCount()) { toast('Run code is on, but no online node allows commands. Turn on exec for a node on the Nodes page.', 6000); return; }
+  toast(langs && langs.length ? `Run code on: the model can run ${langs.join(', ')}` : 'Run code on', 3500);
+}
+$('chat-run').onclick = chatRunToggle;
+
+// Code the model ran for an answer (chat_run.go): code, output and returned files.
+function chatRuns(m) {
+  if (!(m.runs || []).length) return '';
+  const src = (f, dl) => `/api/chats/${encodeURIComponent(chatCur.id)}/run-file?file=${encodeURIComponent(f)}${dl ? '&download=1' : ''}`;
+  const lang = { python: 'Python', go: 'Go', sh: 'Shell' };
+  return `<div class="runs">${m.runs.map((r) => {
+    const ok = !r.error && r.exit === 0;
+    const head = `<span class="run-st ${ok ? 'ok' : 'bad'}" aria-hidden="true">${ok ? '✓' : '✗'}</span> Ran ${lang[r.lang] || esc(r.lang)}${r.node ? ' on ' + esc(r.node) : ''} · ${r.error ? esc(r.error) : 'exit ' + r.exit}${r.ms ? ' · ' + (r.ms < 1000 ? r.ms + ' ms' : (r.ms / 1000).toFixed(1) + ' s') : ''}${(r.files || []).length ? ` · ${r.files.length} file${r.files.length === 1 ? '' : 's'}` : ''}`;
+    const outText = [r.stdout && r.stdout.trim(), r.stderr && r.stderr.trim() && 'stderr:\n' + r.stderr.trim()].filter(Boolean).join('\n');
+    const imgs = (r.files || []).filter((f) => /\.(png|jpe?g|gif|webp|svg)$/i.test(f.name));
+    const files = (r.files || []).length ? `<div class="run-files">${imgs.map((f) => `<a href="${src(f.file)}" target="_blank" rel="noopener"><img src="${src(f.file)}" alt="${esc(f.name)}" loading="lazy"></a>`).join('')}<div class="run-dl">${r.files.map((f) => `<a href="${src(f.file, true)}" download="${esc(f.name)}">⤓ ${esc(f.name)}</a> <span class="muted">${bytes(f.bytes)}</span>`).join(' · ')}</div></div>` : '';
+    return `<div class="run-card"><details><summary>${head}</summary><pre class="run-code">${esc(r.code)}</pre>${outText ? `<div class="run-lbl">Output</div><pre class="run-out">${esc(outText)}</pre>` : '<div class="run-lbl muted">No output</div>'}</details>${files}</div>`;
+  }).join('')}</div>`;
 }
 // Version arrows (‹ 2/3 ›) on a message that has other versions of the conversation from there on.
 function chatVer(m, busy) {
@@ -140,8 +172,8 @@ function chatBubble(m, i, last) {
   }
   const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, m.note && esc(m.note)].filter(Boolean).join(' · ');
   const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-regen="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Answer again; this answer stays as an earlier version">↻ Regenerate</button>${chatTryOn(m, busy)}${m.text ? `<button data-copy-msg="${i}" title="Copy the answer">⧉ Copy</button>` : ''}<button data-branch="${esc(m.id)}" title="Start a new chat with the conversation up to here">⑂ Branch</button></div>`;
-  if (m.error) return `<div class="chat-answer"><div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}${acts}</div>`;
-  return `<div class="chat-answer"><div class="chat-text md">${md(m.text)}</div>${pvCards(pvCollect(m.text))}${meta ? `<div class="sub">${meta}</div>` : ''}${acts}${memSuggestCard(m, { chat: chatCur.id })}</div>`;
+  if (m.error) return `<div class="chat-answer">${chatRuns(m)}<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}${acts}</div>`;
+  return `<div class="chat-answer">${chatRuns(m)}<div class="chat-text md">${md(m.text)}</div>${pvCards(pvCollect(m.text))}${meta ? `<div class="sub">${meta}</div>` : ''}${acts}${memSuggestCard(m, { chat: chatCur.id })}</div>`;
 }
 function chatRender() {
   if (!chatCur) return;
@@ -157,6 +189,7 @@ function chatRenderLive() {
   const el = $('chat-live');
   if (!el || !chatCur) return;
   const calls = Object.values(chatLive);
+  if (chatCur.busy === 'running') { setHTML('chat-live', `<p class="muted run-live">▶ Running code on ${esc(chatCur.run_on || 'a node')}…</p>`); return; }
   if (!calls.length) { el.innerHTML = chatCur.busy === 'waiting' ? '<p class="muted">Waiting for a free node…</p>' : ''; return; }
   const c = calls[0];
   const rate = liveRate(Object.assign({}, c, { text: c.text }));
@@ -172,6 +205,7 @@ async function chatSend() {
     if (!chatCur) {
       const body = { text, node: $('chat-node').value, images, docs };
       if (chatPendingInstr !== null) body.instructions = chatPendingInstr;
+      if (chatPendingRun) body.run_code = true;
       const r = await post('/api/chats', body);
       $('chat-text').value = ''; $('chat-text').style.height = ''; chatImg.clear();
       location.hash = '#/chat/' + r.id;

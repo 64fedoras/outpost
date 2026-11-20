@@ -815,6 +815,18 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .chat-compose > .error-msg { margin: 0 0 6px; font-size: 12.5px; }
 .chat-compose > .img-strip:not(:empty) { margin: 2px 0 6px; }
 .drop-on { outline: 2px dashed var(--accent); outline-offset: -4px; }
+.run-pill { cursor: pointer; white-space: nowrap; }
+.run-pill.on { background: var(--tint); border-color: var(--accent); color: var(--accent); }
+.runs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.run-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 13px; }
+.run-card summary { cursor: pointer; padding: 6px 10px; list-style-position: inside; }
+.run-st.ok { color: var(--good); } .run-st.bad { color: var(--bad); }
+.run-code, .run-out { margin: 0 10px 8px; padding: 8px 10px; border-radius: 6px; background: var(--code-bg); color: var(--code-ink); font: 12px/1.45 var(--mono); max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.run-lbl { margin: 0 10px 4px; font-size: 12px; color: var(--muted); }
+.run-files { padding: 0 10px 8px; }
+.run-files img { max-width: min(100%, 520px); max-height: 360px; border-radius: 6px; border: 1px solid var(--line); background: #fff; display: block; margin: 4px 0 6px; }
+.run-dl { font-size: 12.5px; }
+.run-live { display: flex; align-items: center; gap: 8px; }
 .chat-pill { width: auto; max-width: min(100%, 320px); font-size: 12.5px; border-radius: 999px; padding: 3px 10px; }
 .chat-note { font-size: 12px; color: var(--muted); text-align: center; margin: 6px 0 0; }
 .chat-panel { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: color-mix(in srgb, var(--bg) 60%, var(--panel)); }
@@ -877,6 +889,7 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
   .chat-compose { padding: 8px 10px 8px; }
   .chat-bar { flex-wrap: nowrap; }
   .chat-bar .chat-pill { flex: 1; min-width: 0; font-size: 13px; }
+  .chat-bar .run-pill { flex: 0 0 auto; }
   .chat-bar .grow { display: none; }
   .chat-dock { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
   .chat-dock:focus-within .chat-note { display: none; }

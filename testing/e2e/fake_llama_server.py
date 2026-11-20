@@ -163,6 +163,21 @@ def agent_turn(self, body):
     # Investigator: search, ask the user which splitting rule, then report.
     done = sum(1 for m in body["messages"] if m["role"] == "tool")
     system = body["messages"][0]["content"] if body["messages"][0]["role"] == "system" else ""
+    if any(t.get("function", {}).get("name") == "run_code" for t in body.get("tools", [])):
+        # Run code in chat (runcode.py): a program with a bug, the fixed one, then the answer.
+        if done == 0:
+            stream_tool_calls(self, [("run_code", {"language": "python", "code": "print(totl)"})], "")
+        elif done == 1:
+            code = ("import os\nnums = [3, 1, 4, 1, 5, 9, 2, 6]\nprint('sum', sum(nums), 'max', max(nums))\n"
+                    "bars = ''.join(f'<rect x=\"{i*30+10}\" y=\"{100-n*10}\" width=\"20\" height=\"{n*10}\" fill=\"#2a66d0\"/>' for i, n in enumerate(nums))\n"
+                    "open('out/chart.svg', 'w').write(f'<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"260\" height=\"110\">{bars}</svg>')\n"
+                    "open('out/numbers.csv', 'w').write('n\\n' + '\\n'.join(map(str, nums)))\n")
+            stream_tool_calls(self, [("run_code", {"language": "python", "code": code})], "")
+        else:
+            out = body["messages"][-1]["content"]
+            line = next((l for l in out.splitlines() if l.startswith("sum ")), "no output")
+            stream_tool_calls(self, [], f"The first try failed, so I fixed it. The program printed `{line}`, and the chart is below.")
+        return
     if "lead for the software project" in system:
         # Project conversation: look at the files, then answer with file:line references.
         if done == 0: stream_tool_calls(self, [("list_files", {}), ("search", {"pattern": "count_words"})], "")

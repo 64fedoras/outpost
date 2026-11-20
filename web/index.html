@@ -290,6 +290,7 @@
                 <div class="chat-bar">
                   <button type="button" class="tb chat-attach" id="chat-attach" title="Attach images (PNG, JPEG, WebP, GIF) or documents (PDF, DOCX, XLSX, ODT, CSV). You can also paste or drop them." aria-label="Attach images or documents">📎</button><input type="file" id="chat-file" accept="image/png,image/jpeg,image/webp,image/gif,.pdf,.docx,.xlsx,.odt,.csv" multiple hidden>
                   <select id="chat-node" class="chat-pill" aria-label="Which node answers"></select>
+                  <button type="button" class="chat-pill run-pill" id="chat-run" aria-pressed="false" title="Let the model run Python, Go or shell code on a node that allows commands (sandboxed, 60 seconds, no network). Results and files show under the answer.">▶ Run code</button>
                   <span class="grow"></span>
                   <button class="small hidden" id="chat-totask" title="Start a new task with this conversation as its request">Make this a task</button>
                   <button type="button" class="kbd kbd-btn hide-ph" id="chat-key">Enter</button>
