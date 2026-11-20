@@ -275,6 +275,7 @@
           <div class="chat-top">
             <h2 class="chat-ttl" id="chat-title">New chat</h2>
             <span class="spacer"></span>
+            <button class="tb hidden" id="chat-instr-btn" title="Standing instructions for this chat, such as language or answer style">✎ <span class="hide-ph">Instructions</span></button>
             <button class="tb" id="chat-panel-btn" aria-expanded="true" aria-controls="chat-panel" title="Show or hide the list of chats">☰ <span class="hide-ph">Chats</span> <span class="badge hidden" id="chat-count"></span></button>
             <button class="tb" id="chat-new">＋ <span class="hide-ph">New chat</span></button>
           </div>
@@ -301,6 +302,7 @@
         </div>
         <aside class="chat-panel" id="chat-panel" aria-label="Chats">
           <div class="chat-panel-h"><b>Chats</b><button class="small" id="chat-new2">＋ New</button><button class="tb chat-panel-x" id="chat-panel-x" aria-label="Close the list of chats">✕</button></div>
+          <input type="search" class="chat-find" id="chat-find" placeholder="Search chats" aria-label="Search chats by title and message text">
           <nav class="chat-list" id="chat-list" aria-label="Chats"></nav>
         </aside>
       </div>
@@ -667,6 +669,15 @@
   </div>
 </div>
 
+<div id="modal-chat-instr" class="overlay hidden">
+  <div class="modal">
+    <h3>Instructions for this chat</h3>
+    <p class="hint">Added to every message in this chat, for example "Answer in Go. Short answers, code first." Leave empty for none.</p>
+    <textarea id="chat-instr-text" rows="5" maxlength="4000" aria-label="Instructions"></textarea>
+    <label class="toggle u4"><input type="checkbox" id="chat-instr-default"> Also use these for new chats</label>
+    <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="chat-instr-save">Save</button></div>
+  </div>
+</div>
 <div id="modal-add" class="overlay hidden">
   <div class="modal">
     <h3>Add a node</h3>

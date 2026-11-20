@@ -32,6 +32,11 @@ type ChatMsg struct {
 	Error  string    `json:"error,omitempty"`
 	Note   string    `json:"note,omitempty"` // e.g. that the web was searched, or why it was not
 	At     time.Time `json:"at"`
+	// Other versions of the conversation from this message on (chat_versions.go):
+	// an edit adds one on the user message, a regenerate on the answer. Ver is
+	// this version's place among all of them, counted from 0.
+	Alts []ChatAlt `json:"alts,omitempty"`
+	Ver  int       `json:"ver,omitempty"`
 }
 
 type Chat struct {
@@ -42,7 +47,9 @@ type Chat struct {
 	Updated  time.Time `json:"updated"`
 	Messages []ChatMsg `json:"messages"`
 	GroupID  string    `json:"group_id,omitempty"` // sidebar group (groups.go)
-	Busy     string    `json:"busy,omitempty"`     // "" | waiting | answering (not saved meaningfully; reset at load)
+	// Instructions are this chat's standing rules, added to the system prompt.
+	Instructions string `json:"instructions,omitempty"`
+	Busy         string `json:"busy,omitempty"` // "" | waiting | answering (not saved meaningfully; reset at load)
 
 	dir    string
 	cancel context.CancelFunc
@@ -108,6 +115,11 @@ func (c *Controller) chatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chats/{id}/stop", c.auth(c.handleChatStop))
 	mux.HandleFunc("GET /api/chats/{id}/image", c.auth(c.handleChatImage))
 	mux.HandleFunc("GET /api/chats/{id}/events", c.authSession(c.handleChatEvents))
+	mux.HandleFunc("POST /api/chats/{id}/edit", c.auth(c.handleChatEdit))
+	mux.HandleFunc("POST /api/chats/{id}/regenerate", c.auth(c.handleChatRegenerate))
+	mux.HandleFunc("POST /api/chats/{id}/version", c.auth(c.handleChatVersion))
+	mux.HandleFunc("POST /api/chats/{id}/branch", c.auth(c.handleChatBranch))
+	mux.HandleFunc("POST /api/chats/{id}/instructions", c.auth(c.handleChatInstructions))
 }
 
 func (c *Controller) handleListChats(w http.ResponseWriter, r *http.Request) {
@@ -140,6 +152,8 @@ type chatReq struct {
 	Text   string        `json:"text"`
 	Node   string        `json:"node"` // "auto" or a node id; empty keeps the chat's choice
 	Images []imageUpload `json:"images"`
+	// Instructions (new chats only): nil takes the default from Settings.
+	Instructions *string `json:"instructions"`
 }
 
 func (req *chatReq) check() error {
@@ -185,6 +199,13 @@ func (c *Controller) handleNewChat(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	ch := &Chat{ID: newID("chat"), Title: chatTitle(firstNonEmpty(req.Text, "Image")), Node: firstNonEmpty(req.Node, "auto"), Created: now, Updated: now, dir: c.chatsDir()}
+	if req.Instructions != nil {
+		ch.Instructions = clipChatInstructions(*req.Instructions)
+	} else {
+		c.mu.Lock()
+		ch.Instructions = c.settings.ChatInstructions
+		c.mu.Unlock()
+	}
 	c.chatMu.Lock()
 	if len(c.chats) >= maxChats {
 		c.chatMu.Unlock()
@@ -299,15 +320,25 @@ func (c *Controller) startChatReplyImgs(ch *Chat, text string, imgs []llmImage) 
 		ch.mu.Unlock()
 		return false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), chatWait+chatTimeout)
 	names, err := ch.saveImages(imgs)
 	if err != nil {
 		log.Printf("chat %s: saving images failed: %v", ch.ID, err)
 	}
 	ch.Messages = append(ch.Messages, ChatMsg{ID: newID("m"), Role: "user", Text: text, Images: names, At: time.Now()})
+	c.beginAnswerLocked(ch, nil, 0)
+	return true
+}
+
+// beginAnswerLocked answers the conversation as it stands (its last message is
+// the user's) in the background. It is called with ch.mu held and Busy empty,
+// and unlocks ch.mu. alts and ver, when set, become the new answer's other
+// versions (a regenerate).
+func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
+	ctx, cancel := context.WithTimeout(context.Background(), chatWait+chatTimeout)
 	ch.Updated, ch.Busy, ch.cancel = time.Now(), "waiting", cancel
 	pref := ch.Node
 	hist := chatHistoryWith(ch.Messages, ch.imageURI)
+	hist[0].Content = c.chatSystemPrompt(ch.Instructions)
 	ch.saveLocked()
 	ch.mu.Unlock()
 	taskLive.changed("chat_" + ch.ID)
@@ -320,14 +351,13 @@ func (c *Controller) startChatReplyImgs(ch *Chat, text string, imgs []llmImage) 
 			taskLive.changed("chat_" + ch.ID)
 		})
 		ch.mu.Lock()
-		msg.ID, msg.At = newID("m"), time.Now()
+		msg.ID, msg.At, msg.Alts, msg.Ver = newID("m"), time.Now(), alts, ver
 		ch.Messages = append(ch.Messages, msg)
 		ch.Updated, ch.Busy, ch.cancel = time.Now(), "", nil
 		ch.saveLocked()
 		ch.mu.Unlock()
 		taskLive.changed("chat_" + ch.ID)
 	}()
-	return true
 }
 
 // chatHistory turns the stored messages into the model's conversation.
@@ -338,7 +368,7 @@ func chatHistory(msgs []ChatMsg) []ChatMessage { return chatHistoryWith(msgs, ni
 // newest messages that have some, at most chatHistoryImages in all; older
 // images are left out of the call but stay in the chat.
 func chatHistoryWith(msgs []ChatMsg, load func(string) string) []ChatMessage {
-	out := []ChatMessage{{Role: "system", Content: "You are a helpful, concise assistant. Format code in fenced blocks."}}
+	out := []ChatMessage{{Role: "system", Content: chatBaseSystem}}
 	left := chatHistoryImages
 	imgOf := make([][]string, len(msgs))
 	for i := len(msgs) - 1; i >= 0 && load != nil; i-- {
