@@ -330,3 +330,85 @@ func stopTaskAndWait(tk *Task) {
 		last = done
 	}
 }
+
+// Pause and Pause all stop runs without losing the schedule; resuming counts
+// the next run from now. Runs are kept as history, newest first, at most 10.
+// Editing the request of a scheduled task still refuses a paid planner.
+func TestSchedulePauseHistoryAndEdit(t *testing.T) {
+	c := &Controller{dataDir: t.TempDir(), tasks: map[string]*Task{}, projects: map[string]*Project{}}
+	c.settings.DefaultPlanner = "node:n1"
+	m := http.NewServeMux()
+	m.HandleFunc("POST /api/templates", c.handleNewTemplate)
+	m.HandleFunc("POST /api/templates/{id}", c.handleEditTemplate)
+	m.HandleFunc("POST /api/schedules/pause", c.handlePauseAll)
+	do := func(path, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		m.ServeHTTP(rec, httptest.NewRequest("POST", path, strings.NewReader(body)))
+		return rec
+	}
+	rec := do("/api/templates", `{"name":"deps","request":{"prompt":"bump deps"},"schedule":{"every":"daily","at":"02:00"}}`)
+	var tpl Template
+	json.Unmarshal(rec.Body.Bytes(), &tpl)
+	if rec.Code != 200 || tpl.Schedule == nil {
+		t.Fatalf("new %d %s", rec.Code, rec.Body)
+	}
+	tp := c.templates[0]
+	past := func() { p := time.Now().Add(-time.Minute); c.mu.Lock(); tp.NextRun = &p; c.mu.Unlock() }
+
+	// Paused: a due run does nothing at all.
+	if rec := do("/api/templates/"+tpl.ID, `{"paused":true}`); rec.Code != 200 || tp.Paused == nil {
+		t.Fatalf("pause %d %s", rec.Code, rec.Body)
+	}
+	past()
+	c.runDue(time.Now())
+	if len(tp.Runs) != 0 || tp.NextRun.After(time.Now()) {
+		t.Fatalf("paused task ran: %+v", tp)
+	}
+	if rec := do("/api/templates/"+tpl.ID, `{"paused":false}`); rec.Code != 200 || tp.Paused != nil || !tp.NextRun.After(time.Now()) {
+		t.Fatalf("resume %d %+v", rec.Code, tp)
+	}
+
+	// Pause all: same, and stored in the settings.
+	if rec := do("/api/schedules/pause", `{"paused":true}`); rec.Code != 200 || !c.settings.SchedulesPaused {
+		t.Fatalf("pause all %d %s", rec.Code, rec.Body)
+	}
+	past()
+	c.runDue(time.Now())
+	if len(tp.Runs) != 0 {
+		t.Fatalf("ran while all paused: %+v", tp.Runs)
+	}
+	if rec := do("/api/schedules/pause", `{"paused":false}`); rec.Code != 200 || c.settings.SchedulesPaused || !tp.NextRun.After(time.Now()) {
+		t.Fatalf("resume all %d %+v", rec.Code, tp)
+	}
+
+	// History: a due run whose previous task is still going is recorded as skipped.
+	c.tasks["t0"] = &Task{ID: "t0", Status: "running", Created: time.Now()}
+	c.mu.Lock()
+	tp.LastTask = "t0"
+	c.mu.Unlock()
+	for i := 0; i < 12; i++ {
+		past()
+		c.runDue(time.Now())
+	}
+	if len(tp.Runs) != maxTplRuns || tp.Runs[0].Kind != "skipped" || !strings.Contains(tp.Runs[0].Note, "still going") {
+		t.Fatalf("history %+v", tp.Runs)
+	}
+	c.mu.Lock()
+	tp.Runs[1] = TplRun{At: time.Now(), Task: "t0", Kind: "scheduled"}
+	views := c.templateViewsLocked()
+	c.mu.Unlock()
+	if r := views[0].Runs[1]; r.Status != "running" {
+		t.Fatalf("run view %+v", r)
+	}
+
+	// Editing the request: kept, cleaned, and a paid planner is refused while scheduled.
+	if rec := do("/api/templates/"+tpl.ID, `{"request":{"prompt":"bump deps","planner":"claude"}}`); rec.Code != 400 {
+		t.Fatalf("cloud planner accepted: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do("/api/templates/"+tpl.ID, `{"request":{"prompt":"  bump all deps  ","node_label":"GPU"}}`); rec.Code != 200 || tp.Request.Prompt != "bump all deps" || tp.Request.NodeLabel != "gpu" {
+		t.Fatalf("edit request %d %+v", rec.Code, tp.Request)
+	}
+	if rec := do("/api/templates/"+tpl.ID, `{"request":{"prompt":" "}}`); rec.Code != 400 {
+		t.Fatal("empty request accepted")
+	}
+}

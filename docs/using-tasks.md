@@ -336,6 +336,19 @@ run is still going. A run missed while the controller was off (a restart or an u
 when it comes back if it is less than an hour late, and the saved task says *Started late*; an older
 miss is skipped and noted as *Missed the run at …*.
 
+**The Scheduled page** (sidebar → Scheduled; the number is how many schedules are active) lists every
+saved task. Scheduled ones come first, each with its schedule in words, a dot (green active, amber when
+the last run failed or was missed, grey paused), its last 10 runs as small squares (green done, red
+failed or did not start, grey skipped or missed, amber started late, blue still going), and the next run.
+Times are by the controller's clock, whatever time zone your browser is in. **Run now**, **Pause** /
+**Resume** (the schedule is kept; on Resume the next run counts from now, nothing paused is made up) and
+**⋯** (Edit request, Edit schedule, Edit first in New task, Duplicate as an unscheduled copy, Remove
+schedule, Delete) are on each row. Click a row to see the saved request and options and a table of its
+last runs (time, result, how long it took, the note and a link to the task). **Edit request…** changes the
+name and the request text; the options stay as saved (use *Edit first in New task* and save again to change
+them). **Pause all** at the top stops every schedule at once without changing them, with a banner while it
+is on and *Resume all*; Run now still works. Saved tasks with no schedule are listed underneath.
+
 ## Projects, attachments and git
 
 **Projects** (sidebar → Projects) keep a folder of files between tasks. Pick a project in the

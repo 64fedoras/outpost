@@ -60,6 +60,7 @@
     <a class="new-task side-projects" href="#/cad" data-tab="cad"><span aria-hidden="true">◇</span> New 3D model</a>
     <a class="new-task side-projects" href="#/projects" data-tab="projects"><span aria-hidden="true">▤</span> Projects</a>
     <nav class="side-pins hidden" id="side-pins" aria-label="Pinned projects"></nav>
+    <a class="new-task side-projects" href="#/scheduled" data-tab="scheduled"><span aria-hidden="true">⏱</span> Scheduled <span class="badge hidden side-badge" id="badge-sched" title="Active schedules"></span></a>
     <a class="new-task side-projects" href="#/chat" data-tab="chat"><span aria-hidden="true">💬</span> Chat</a>
     <div class="side-groupbar" id="side-groupbar"></div>
     <div class="side-filter" id="side-filter">
@@ -378,6 +379,18 @@
     </section>
 
     <!-- PROJECTS -->
+    <section data-page="scheduled" class="hidden">
+      <div class="sc-top">
+        <h1>Scheduled</h1>
+        <span class="spacer"></span>
+        <button class="sc-switch" id="sc-pause-all" role="switch" aria-checked="false" title="Stops every schedule without changing them; Run now still works"><span class="knob" aria-hidden="true"></span> Pause all</button>
+        <button class="small primary" id="sc-new" title="Write the request on the New task page, then press Save for later">＋ New saved task</button>
+      </div>
+      <p class="sc-tz" id="sc-tz"></p>
+      <div id="sc-banner"></div>
+      <div id="sc-list"></div>
+    </section>
+
     <section data-page="projects" class="hidden">
       <div class="section-head"><h2>Projects</h2><span class="spacer"></span><button class="primary small" data-act="proj-new">＋ New project</button></div>
       <p class="hint">A project keeps its files between tasks. Every task you start in it begins from the project's current files, and one task works in a project at a time (the rest wait). Optionally it clones a git repository and commits each finished round to a branch.</p>
@@ -887,6 +900,21 @@
   </div>
 </div>
 
+<div id="modal-tpl-edit" class="overlay hidden">
+  <div class="modal">
+    <h3>Edit saved task</h3>
+    <label for="tpl-edit-name">Name</label>
+    <input id="tpl-edit-name" autocomplete="off">
+    <label for="tpl-edit-prompt">Request</label>
+    <textarea id="tpl-edit-prompt" rows="8"></textarea>
+    <p class="hint">The options (planner, project, peer review, fix rounds, node label) stay as saved. To change them, use <b>Edit first in New task</b> and save it again.</p>
+    <div class="error-msg hidden" id="tpl-edit-err"></div>
+    <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="tpl-edit-go">Save</button></div>
+  </div>
+</div>
+
+<div id="sc-ctx" class="ctx-menu hidden" role="menu"></div>
+
 <div id="modal-sched" class="overlay hidden">
   <div class="modal">
     <h3>Schedule <span id="sched-name"></span></h3>
@@ -1000,6 +1028,7 @@
 <script src="confirm.js"></script>
 <script src="groups.js"></script>
 <script src="new-task.js"></script>
+<script src="scheduled.js"></script>
 <script src="project.js"></script>
 <script src="chat.js"></script>
 <script src="thread.js"></script>

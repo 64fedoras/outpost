@@ -29,6 +29,26 @@ import (
 
 const maxTemplates = 100
 
+// maxTplRuns is how many runs each saved task remembers for the Scheduled page.
+const maxTplRuns = 10
+
+// TplRun is one entry of a saved task's run history: a task it started, or a
+// scheduled time that did not start one (skipped, missed, refused).
+type TplRun struct {
+	At   time.Time `json:"at"`
+	Task string    `json:"task,omitempty"`
+	Kind string    `json:"kind"`           // scheduled | manual | late | skipped | missed | not_started
+	Note string    `json:"note,omitempty"` // why it was skipped, missed, late or not started
+}
+
+// addRunLocked puts a run at the front of t.Runs and keeps the newest few.
+func (t *Template) addRunLocked(r TplRun) {
+	t.Runs = append([]TplRun{r}, t.Runs...)
+	if len(t.Runs) > maxTplRuns {
+		t.Runs = t.Runs[:maxTplRuns]
+	}
+}
+
 type Schedule struct {
 	Every   string `json:"every"`             // hours | daily | days | weekly | monthly
 	At      string `json:"at"`                // "02:30", controller local time; for hours, the first run of the day
@@ -52,6 +72,8 @@ type Template struct {
 	LastRun  *time.Time `json:"last_run,omitempty"`
 	LastTask string     `json:"last_task,omitempty"`
 	LastNote string     `json:"last_note,omitempty"` // why the last scheduled run did not start, or started late
+	Paused   *time.Time `json:"paused,omitempty"`    // the schedule is kept but does not run; when it was paused
+	Runs     []TplRun   `json:"runs,omitempty"`      // the last maxTplRuns runs, newest first
 
 	lateFrom time.Time // memory only: a run missed while the controller was off, caught up by runDue
 }
@@ -173,6 +195,7 @@ func (c *Controller) loadTemplates() {
 				continue
 			}
 			t.LastNote = fmt.Sprintf("Missed the run at %s: the controller was off.", t.NextRun.Format("Mon 15:04"))
+			t.addRunLocked(TplRun{At: *t.NextRun, Kind: "missed", Note: "The controller was off."})
 		}
 		n := t.Schedule.next(now)
 		t.NextRun = &n
@@ -198,20 +221,43 @@ func (c *Controller) templateLocked(id string) *Template {
 	return nil
 }
 
-// templateView adds the last run's status for the UI.
+// templateView adds the last run's status, and each run's task status and
+// running time, for the UI.
 type templateView struct {
 	*Template
-	LastStatus string `json:"last_status,omitempty"`
+	LastStatus string       `json:"last_status,omitempty"`
+	Runs       []tplRunView `json:"runs,omitempty"`
+}
+
+type tplRunView struct {
+	TplRun
+	Status  string `json:"status,omitempty"`  // the task's status, or "" when it no longer exists
+	Seconds int    `json:"seconds,omitempty"` // from start to end, or to now while it works
 }
 
 func (c *Controller) templateViewsLocked() []templateView {
 	out := make([]templateView, 0, len(c.templates))
+	now := time.Now()
 	for _, t := range c.templates {
 		v := templateView{Template: t}
 		if tk := c.tasks[t.LastTask]; tk != nil {
 			tk.mu.Lock()
 			v.LastStatus = tk.Status
 			tk.mu.Unlock()
+		}
+		for _, r := range t.Runs {
+			rv := tplRunView{TplRun: r}
+			if tk := c.tasks[r.Task]; tk != nil && r.Task != "" {
+				tk.mu.Lock()
+				rv.Status = tk.Status
+				end := now
+				if tk.Ended != nil {
+					end = *tk.Ended
+				}
+				rv.Seconds = int(end.Sub(tk.Created).Seconds())
+				tk.mu.Unlock()
+			}
+			v.Runs = append(v.Runs, rv)
 		}
 		out = append(out, v)
 	}
@@ -248,6 +294,7 @@ func (c *Controller) templateRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/templates/{id}", c.auth(c.handleEditTemplate))
 	mux.HandleFunc("DELETE /api/templates/{id}", c.auth(c.handleDeleteTemplate))
 	mux.HandleFunc("POST /api/templates/{id}/run", c.auth(c.handleRunTemplate))
+	mux.HandleFunc("POST /api/schedules/pause", c.auth(c.handlePauseAll))
 }
 
 func (c *Controller) handleNewTemplate(w http.ResponseWriter, r *http.Request) {
@@ -307,8 +354,10 @@ func (c *Controller) setSchedule(t *Template, s *Schedule) error {
 
 func (c *Controller) handleEditTemplate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name     *string   `json:"name"`
-		Schedule *Schedule `json:"schedule"` // {"every": ""} clears it
+		Name     *string    `json:"name"`
+		Schedule *Schedule  `json:"schedule"` // {"every": ""} clears it
+		Request  *createReq `json:"request"`  // replaces the saved request
+		Paused   *bool      `json:"paused"`   // pause or resume the schedule
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
@@ -326,10 +375,40 @@ func (c *Controller) handleEditTemplate(w http.ResponseWriter, r *http.Request) 
 	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
 		cp.Name = strings.TrimSpace(*req.Name)
 	}
+	if req.Request != nil {
+		nr := *req.Request
+		nr.Prompt = strings.TrimSpace(nr.Prompt)
+		nr.Images = nil
+		nr.NodeLabel = normLabel(nr.NodeLabel)
+		if nr.Prompt == "" {
+			writeJSON(w, 400, map[string]string{"error": "a saved task needs a request"})
+			return
+		}
+		cp.Request = nr
+		if cp.Schedule != nil && req.Schedule == nil {
+			if err := c.scheduleAllowed(cp.Request); err != nil {
+				writeJSON(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+	}
 	if req.Schedule != nil {
 		if err := c.setSchedule(&cp, req.Schedule); err != nil {
 			writeJSON(w, 400, map[string]string{"error": err.Error()})
 			return
+		}
+	}
+	if req.Paused != nil {
+		switch {
+		case *req.Paused && cp.Paused == nil:
+			now := time.Now()
+			cp.Paused = &now
+		case !*req.Paused && cp.Paused != nil:
+			cp.Paused = nil
+			if cp.Schedule != nil { // resume from now: what was paused is not made up
+				n := cp.Schedule.next(time.Now())
+				cp.NextRun = &n
+			}
 		}
 	}
 	c.mu.Lock()
@@ -377,8 +456,11 @@ func (c *Controller) handleRunTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	c.mu.Lock()
 	now := time.Now()
-	t.LastRun, t.LastTask, t.LastNote = &now, tk.ID, ""
-	c.saveTemplatesLocked()
+	if t := c.templateLocked(t.ID); t != nil { // it may have been deleted meanwhile
+		t.LastRun, t.LastTask, t.LastNote = &now, tk.ID, ""
+		t.addRunLocked(TplRun{At: now, Task: tk.ID, Kind: "manual"})
+		c.saveTemplatesLocked()
+	}
 	c.mu.Unlock()
 	writeJSON(w, 200, map[string]string{"id": tk.ID})
 }
@@ -393,8 +475,12 @@ func (c *Controller) runDue(now time.Time) {
 	}
 	var list []due
 	c.mu.Lock()
+	if c.settings.SchedulesPaused {
+		c.mu.Unlock()
+		return
+	}
 	for _, t := range c.templates {
-		if t.Schedule == nil || t.NextRun == nil || t.NextRun.After(now) {
+		if t.Schedule == nil || t.NextRun == nil || t.NextRun.After(now) || t.Paused != nil {
 			continue
 		}
 		n := t.Schedule.next(now)
@@ -419,12 +505,22 @@ func (c *Controller) runDue(now time.Time) {
 		if taskID != "" && !d.late.IsZero() {
 			note = fmt.Sprintf("Started late: the controller was off at %s.", d.late.Format("15:04"))
 		}
+		run := TplRun{At: now, Task: taskID, Kind: "scheduled"}
+		switch {
+		case taskID != "" && !d.late.IsZero():
+			run.Kind, run.Note = "late", note
+		case strings.HasPrefix(note, "Skipped"):
+			run.Kind, run.Note = "skipped", "The previous run was still going."
+		case note != "":
+			run.Kind, run.Note = "not_started", strings.TrimPrefix(note, "Did not start: ")
+		}
 		c.mu.Lock()
 		if t := c.templateLocked(d.id); t != nil {
 			t.LastNote = note
 			if taskID != "" {
 				t.LastRun, t.LastTask = &now, taskID
 			}
+			t.addRunLocked(run)
 			c.saveTemplatesLocked()
 		}
 		c.mu.Unlock()
@@ -454,4 +550,43 @@ func (c *Controller) templateLoop() {
 			c.runDue(time.Now())
 		}
 	}
+}
+
+// handlePauseAll stops (or starts again) every schedule at once without
+// changing them. Run now still works. On resume each next run is counted from
+// now, so what was paused is not made up.
+func (c *Controller) handlePauseAll(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Paused bool `json:"paused"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "bad json"})
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	was := c.settings.SchedulesPaused
+	c.settings.SchedulesPaused = req.Paused
+	if was && !req.Paused {
+		now := time.Now()
+		for _, t := range c.templates {
+			if t.Schedule != nil {
+				n := t.Schedule.next(now)
+				t.NextRun, t.lateFrom = &n, time.Time{}
+			}
+		}
+		c.saveTemplatesLocked()
+	}
+	if err := c.saveSettingsLocked(); err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"paused": req.Paused})
+}
+
+// utcOffsetMinutes is the controller's offset from UTC now, so the web UI can
+// show schedule times by the controller's clock whatever the browser's zone.
+func utcOffsetMinutes() int {
+	_, off := time.Now().Zone()
+	return off / 60
 }

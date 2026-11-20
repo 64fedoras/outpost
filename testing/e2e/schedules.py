@@ -65,6 +65,75 @@ async def main():
         await pg.locator("#nt-saved").screenshot(path=OUT + f"saved-{SCHEME}.png")
 
         await pg.evaluate(POST, [f"/api/templates/{tpl['id']}", None, "DELETE"])
+
+        # ---------- the Scheduled page ----------
+        a = await pg.evaluate(POST, ["/api/templates", {"name": "Nightly dependency bump", "request": {"prompt": "Bump dependencies and run the tests", "planner": "auto", "node_label": "gpu"}, "schedule": {"every": "days", "at": "02:00", "days": [1, 2, 3, 4, 5]}}])
+        b2 = await pg.evaluate(POST, ["/api/templates", {"name": "Monthly licence check", "request": {"prompt": "Check licence notices", "planner": "auto"}, "schedule": {"every": "monthly", "at": "06:00", "day": 1}}])
+        c3 = await pg.evaluate(POST, ["/api/templates", {"name": "Add a CHANGELOG entry", "request": {"prompt": "Add a CHANGELOG entry for the last release", "planner": "auto"}}])
+        await pg.goto(U + "/#/scheduled")
+        row = lambda t: f"[data-sc-row='{t['id']}']"
+        await pg.wait_for_selector(row(a))
+        assert await pg.text_content("#badge-sched") == "2"
+        assert "Weekdays at 02:00" in await pg.text_content(row(a))
+        assert "UTC" in await pg.text_content("#sc-tz")
+        # the unscheduled one is in its own group
+        assert await pg.locator(f".sc-group + .sc-list {row(c3)}").count() == 1
+
+        # Run now records a manual run; open the row to see it
+        await pg.click(f"{row(b2)} [data-act=tpl-run]")
+        await pg.wait_for_url("**/#/tasks/*")
+        await pg.goto(U + "/#/scheduled"); await pg.wait_for_selector(row(b2))
+        await pg.click(f"{row(b2)} .sc-main")
+        await pg.wait_for_selector(f"{row(b2)}.open + .sc-detail .sc-hist")
+        assert "Run now." in await pg.text_content(f"{row(b2)} + .sc-detail")
+        assert await pg.locator(f"{row(b2)} .sc-runs i").count() == 1
+
+        # Pause and Resume one
+        await pg.click(f"{row(a)} [data-act=sc-pause]")
+        await pg.wait_for_selector(f"{row(a)}.paused [data-act=sc-resume]")
+        assert await pg.text_content("#badge-sched") == "1"
+        await pg.screenshot(path=OUT + f"page-{SCHEME}.png", full_page=True)
+        await pg.click(f"{row(a)} [data-act=sc-resume]")
+        await pg.wait_for_selector(f"{row(a)} [data-act=sc-pause]")
+
+        # Pause all: banner, badge, and Resume all
+        await pg.click("#sc-pause-all")
+        await pg.wait_for_selector(".sc-banner")
+        assert await pg.get_attribute("#sc-pause-all", "aria-checked") == "true"
+        assert "all paused" in await pg.text_content(row(a))
+        await pg.screenshot(path=OUT + f"page-paused-all-{SCHEME}.png", full_page=True)
+        await pg.click(".sc-banner [data-act=sc-pause-all]")
+        await pg.wait_for_selector(".sc-banner", state="detached")
+
+        # ⋯ menu: Edit request
+        await pg.click(f"{row(a)} [data-act=sc-menu]")
+        await pg.wait_for_selector("#sc-ctx:not(.hidden) [data-act=sc-edit]")
+        await pg.locator("#sc-ctx").screenshot(path=OUT + f"menu-{SCHEME}.png")
+        await pg.click("#sc-ctx [data-act=sc-edit]")
+        await pg.fill("#tpl-edit-prompt", "Bump every dependency and run the tests")
+        await pg.click("#tpl-edit-go")
+        await pg.wait_for_selector("#modal-tpl-edit.hidden", state="attached")
+        t = [x for x in await pg.evaluate(GET, "/api/templates") if x["id"] == a["id"]][0]
+        assert t["request"]["prompt"] == "Bump every dependency and run the tests" and t["request"]["node_label"] == "gpu", t["request"]
+
+        # Duplicate (unscheduled copy), Remove schedule, Escape closes the menu
+        await pg.click(f"{row(a)} [data-act=sc-menu]"); await pg.click("#sc-ctx [data-act=sc-dup]")
+        await pg.wait_for_selector(".sc-name:has-text('Nightly dependency bump (copy)')")
+        await pg.click(f"{row(b2)} [data-act=sc-menu]"); await pg.keyboard.press("Escape")
+        await pg.wait_for_selector("#sc-ctx.hidden", state="attached")
+        await pg.click(f"{row(b2)} [data-act=sc-menu]"); await pg.click("#sc-ctx [data-act=sc-unsched]")
+        await pg.click("#modal-ask:not(.hidden) #ask-yes")
+        await pg.wait_for_selector(f".sc-group + .sc-list {row(b2)}")
+
+        # phone
+        await pg.set_viewport_size({"width": 390, "height": 844})
+        await pg.reload(); await pg.wait_for_selector(row(a)); await asyncio.sleep(0.6)
+        await pg.click(f"{row(a)} .sc-main"); await pg.wait_for_selector(f"{row(a)} + .sc-detail")
+        await pg.screenshot(path=OUT + f"page-phone-{SCHEME}.png", full_page=True)
+        await pg.set_viewport_size({"width": 1360, "height": 860})
+
+        for x in await pg.evaluate(GET, "/api/templates"):
+            await pg.evaluate(POST, [f"/api/templates/{x['id']}", None, "DELETE"])
         assert not errors, errors
         print("schedules ok")
         await b.close()

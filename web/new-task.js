@@ -152,7 +152,7 @@ function nextRunText(iso) {
 function renderSaved() {
   const list = state.templates || [];
   if (!list.length) { setHTML('nt-saved', ''); return; }
-  setHTML('nt-saved', `<div class="section-head"><h2>Saved tasks</h2></div><div class="card saved-list">${list.map((t) => {
+  setHTML('nt-saved', `<div class="section-head"><h2>Saved tasks</h2><span class="spacer"></span><a class="link-btn" href="#/scheduled">Scheduled page →</a></div><div class="card saved-list">${list.map((t) => {
     const last = t.last_task ? ` · last run <a href="#/tasks/${esc(t.last_task)}">${ago(t.last_run)}</a>${t.last_status ? ' ' + pill(t.last_status) : ''}` : '';
     const sched = t.schedule ? `<span class="pill st-ready">${esc(schedText(t))}</span> ` : '';
     return `<div class="rowline"><span class="nv-min nv-grow"><b>${esc(t.name)}</b> ${sched}<span class="sub">${t.request.project ? esc((projects.find((p) => p.id === t.request.project) || {}).name || 'project') + ' · ' : ''}${t.request.node_label ? 'nodes labelled ' + esc(t.request.node_label) + ' · ' : ''}${t.next_run ? 'next ' + nextRunText(t.next_run) : 'not scheduled'}${last}</span>${t.last_note ? `<div class="sub warn-text">${esc(t.last_note)}</div>` : ''}</span>

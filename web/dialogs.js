@@ -326,7 +326,8 @@ document.addEventListener('click', async (e) => {
       }
       case 'del-release': if (await askConfirm(`Delete the uploaded ${el.dataset.platform} release?`)) await api(`/api/releases/${el.dataset.platform}`, { method: 'DELETE' }); break;
       case 'view-file': viewFile(el.dataset.path); return;
-      case 'tpl-run': case 'tpl-sched': case 'tpl-del': case 'tpl-use': await templateAction(act, id); return;
+      case 'tpl-run': case 'tpl-sched': case 'tpl-del': case 'tpl-use': closeScMenu(false); await templateAction(act, id); return;
+      case 'sc-toggle': case 'sc-menu': case 'sc-pause': case 'sc-resume': case 'sc-edit': case 'sc-use': case 'sc-dup': case 'sc-unsched': case 'sc-pause-all': await scheduledAction(act, el); return;
       case 'wake': await post(`/api/nodes/${id}/wake`, {}); toast('Wake packet sent. A node that wakes connects within a minute or two.'); return;
       case 'labels': editLabels(id); return;
       case 'hours': openHours(id); return;
