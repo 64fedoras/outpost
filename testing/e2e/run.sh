@@ -14,6 +14,7 @@ RUN=$HERE/run
 U=https://127.0.0.1:18460
 export OUTPOST_E2E_DIR=$RUN
 export OUTPOST_ANTHROPIC_URL=http://127.0.0.1:18700
+export OUTPOST_TEST_DDG=http://127.0.0.1:18700/ddg
 
 case "${1:-up}" in
 down)

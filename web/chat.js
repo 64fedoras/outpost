@@ -57,21 +57,23 @@ function chatPanelOpen() { return chatPhone() ? $('chat-wrap').classList.contain
 // Model choice: Auto (the strongest free node) or a node with a model ready.
 function chatChoices() {
   const nodes = (state ? state.nodes : []).filter((n) => n.online && n.heartbeat && n.heartbeat.loaded_model);
-  return [{ id: 'auto', t: 'Auto (local, strongest free node)', s: 'The best free node picks up your message', tone: 'on', note: '' }].concat(nodes.map((n) => {
+  const auto = { id: 'auto', t: 'Auto (local, strongest free node)', s: 'The best free node picks up your message', tone: 'on', note: '' };
+  const research = { id: 'research', t: 'Research (across nodes)', s: 'Splits the question, searches the web on several nodes, writes a report with sources', tone: 'on', note: 'web' };
+  return [auto, research].concat(nodes.map((n) => {
     const h = n.heartbeat, busy = h.inference_busy > 0, paused = h.paused;
     return { id: n.id, t: h.loaded_model, s: nodeName(n), tone: busy || paused ? 'needs' : 'on', note: paused ? 'paused' : busy ? 'busy' : h.inference_ready === false ? 'loading' : 'local' };
   }));
 }
 function fillChatNodes() {
   const cur = $('chat-node').value || (chatCur && chatCur.node) || 'auto';
-  setHTML('chat-node', chatChoices().map((c) => `<option value="${esc(c.id)}">${esc(c.id === 'auto' ? c.t : `${c.t} on ${c.s}`)}</option>`).join(''));
+  setHTML('chat-node', chatChoices().map((c) => `<option value="${esc(c.id)}">${esc(c.id === 'auto' || c.id === 'research' ? c.t : `${c.t} on ${c.s}`)}</option>`).join(''));
   $('chat-node').value = [...$('chat-node').options].some((o) => o.value === cur) ? cur : 'auto';
   if (!chatCur && page === 'chat') chatPickRender();
 }
 // Empty state: one card per way to answer; picking one sets the model box under the composer.
 function chatPickRender() {
   if (chatCur) return;
-  const sel = $('chat-node').value || 'auto', ch = chatChoices(), ready = ch.length - 1;
+  const sel = $('chat-node').value || 'auto', ch = chatChoices(), ready = ch.length - 2;
   const card = (c) => `<button type="button" class="mcard ${c.id === sel ? 'sel' : ''}" data-model="${esc(c.id)}" aria-pressed="${c.id === sel}"><span class="tdot ${c.tone === 'on' ? 'work' : 'needs'}"></span><span class="mt">${esc(c.t)}</span><span class="mr">${c.id === sel ? '✓ selected' : esc(c.note)}</span><span class="ms">${esc(c.s)}</span></button>`;
   const shown = chatPhone() && !chatPickOpen ? ch.filter((c) => c.id === sel) : ch;
   const more = chatPhone() ? `<button type="button" class="chat-pick-more" id="chat-pick-more" aria-expanded="${chatPickOpen}">${chatPickOpen ? 'Hide' : ready ? 'Change' : ''}</button>` : '';
@@ -113,7 +115,8 @@ function chatButtons() {
   const run = chatCur ? !!chatCur.run_code : chatPendingRun;
   $('chat-run').classList.toggle('on', run);
   $('chat-run').setAttribute('aria-pressed', String(run));
-  setHTML('chat-run', `▶ Run<span class="hide-ph"> code</span>${run ? ': on' : ''}`);
+  setHTML('chat-run', `▶<span class="hide-ph"> Run code${run ? ': on' : ''}</span>`);
+  $('chat-run').setAttribute('aria-label', 'Run code');
 }
 async function chatRunToggle() {
   if (!chatCur) { chatPendingRun = !chatPendingRun; chatButtons(); if (chatPendingRun) chatRunHint(); return; }
@@ -128,6 +131,26 @@ function chatRunHint(langs) {
   toast(langs && langs.length ? `Run code on: the model can run ${langs.join(', ')}` : 'Run code on', 3500);
 }
 $('chat-run').onclick = chatRunToggle;
+
+// Research mode (research.go): lanes while it works, and a record under the report.
+const RS_ICON = { waiting: '·', working: '…', done: '✓', failed: '✗', stopped: '–' };
+const RS_STAGE = { planning: 'Splitting the question…', lanes: 'Researching sub-questions…', writing: 'Writing the report…', done: 'Done', stopped: 'Stopped', failed: 'Failed' };
+function researchLanes(r, live) {
+  return `<ol class="rs-lanes">${(r.lanes || []).map((l) => {
+    const stats = [l.node && esc(l.node), l.searches && `${l.searches} search${l.searches === 1 ? '' : 'es'}`, l.pages && `${l.pages} page${l.pages === 1 ? '' : 's'} read`, l.status === 'waiting' && 'waiting for a free node', l.note && esc(l.note)].filter(Boolean).join(' · ');
+    const body = !live && l.findings ? `<details><summary>${esc(l.q)}</summary><div class="md rs-find">${md(l.findings)}</div></details>` : `<span class="rs-q">${esc(l.q)}</span>`;
+    return `<li class="rs-lane rs-${esc(l.status)}"><span class="rs-ic" aria-hidden="true">${RS_ICON[l.status] || ''}</span><div class="rs-t">${body}${stats ? `<div class="muted rs-s">${stats}</div>` : ''}</div></li>`;
+  }).join('')}</ol>`;
+}
+function researchLive(r) {
+  return `<div class="rs-box"><div class="rs-h">🔎 Research <span class="muted">· ${esc(RS_STAGE[r.stage] || r.stage)}</span></div>${researchLanes(r, true)}</div>`;
+}
+function researchCard(m) {
+  const r = m.research;
+  if (!r) return '';
+  const n = (r.lanes || []).length;
+  return `<details class="rs-box rs-rec"><summary>🔎 Research: ${n} sub-question${n === 1 ? '' : 's'}${r.stage !== 'done' ? ' · ' + esc(RS_STAGE[r.stage] || r.stage) : ''}</summary>${researchLanes(r, false)}</details>`;
+}
 
 // Code the model ran for an answer (chat_run.go): code, output and returned files.
 function chatRuns(m) {
@@ -150,7 +173,7 @@ function chatVer(m, busy) {
   return `<button data-ver="${v - 1}" data-msg="${esc(m.id)}" ${v <= 0 || busy ? 'disabled' : ''} aria-label="Previous version">‹</button><span class="ver">${v + 1} / ${n}</span><button data-ver="${v + 1}" data-msg="${esc(m.id)}" ${v >= n - 1 || busy ? 'disabled' : ''} aria-label="Next version">›</button>`;
 }
 function chatTryOn(m, busy) {
-  const opts = chatChoices().map((c) => `<option value="${esc(c.id)}">${esc(c.id === 'auto' ? 'Auto' : `${c.t} on ${c.s}`)}</option>`).join('');
+  const opts = chatChoices().filter((c) => c.id !== 'research').map((c) => `<option value="${esc(c.id)}">${esc(c.id === 'auto' ? 'Auto' : `${c.t} on ${c.s}`)}</option>`).join('');
   return `<select data-tryon="${esc(m.id)}" ${busy ? 'disabled' : ''} aria-label="Answer again on another node"><option value="">↻ Try on…</option>${opts}</select>`;
 }
 function chatBubble(m, i, last) {
@@ -171,9 +194,9 @@ function chatBubble(m, i, last) {
     return `<div class="bubble-row"><div class="bubble-col"><div class="bubble">${esc(m.text)}${pics}${docs}</div>${acts}</div></div>`;
   }
   const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, m.note && esc(m.note)].filter(Boolean).join(' · ');
-  const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-regen="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Answer again; this answer stays as an earlier version">↻ Regenerate</button>${chatTryOn(m, busy)}${m.text ? `<button data-copy-msg="${i}" title="Copy the answer">⧉ Copy</button>` : ''}<button data-branch="${esc(m.id)}" title="Start a new chat with the conversation up to here">⑂ Branch</button></div>`;
-  if (m.error) return `<div class="chat-answer">${chatRuns(m)}<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}${acts}</div>`;
-  return `<div class="chat-answer">${chatRuns(m)}<div class="chat-text md">${md(m.text)}</div>${pvCards(pvCollect(m.text))}${meta ? `<div class="sub">${meta}</div>` : ''}${acts}${memSuggestCard(m, { chat: chatCur.id })}</div>`;
+  const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-regen="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Answer again; this answer stays as an earlier version">↻ Regenerate</button>${chatTryOn(m, busy)}${m.text ? `<button data-copy-msg="${i}" title="Copy the answer">⧉ Copy</button>` : ''}${m.research && m.text ? `<button data-rs-open="${esc(m.id)}" title="Open the report in the side panel to download it or save it to a project">¶ Open report</button>` : ''}<button data-branch="${esc(m.id)}" title="Start a new chat with the conversation up to here">⑂ Branch</button></div>`;
+  if (m.error) return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}${acts}</div>`;
+  return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}<div class="chat-text md">${md(m.text)}</div>${pvCards(pvCollect(m.text))}${meta ? `<div class="sub">${meta}</div>` : ''}${acts}${memSuggestCard(m, { chat: chatCur.id })}</div>`;
 }
 function chatRender() {
   if (!chatCur) return;
@@ -189,11 +212,13 @@ function chatRenderLive() {
   const el = $('chat-live');
   if (!el || !chatCur) return;
   const calls = Object.values(chatLive);
+  const rs = chatCur.research ? researchLive(chatCur.research) : '';
+  if (rs && (chatCur.research.stage !== 'writing' || !calls.length)) { setHTML('chat-live', rs); return; }
   if (chatCur.busy === 'running') { setHTML('chat-live', `<p class="muted run-live">▶ Running code on ${esc(chatCur.run_on || 'a node')}…</p>`); return; }
   if (!calls.length) { el.innerHTML = chatCur.busy === 'waiting' ? '<p class="muted">Waiting for a free node…</p>' : ''; return; }
   const c = calls[0];
   const rate = liveRate(Object.assign({}, c, { text: c.text }));
-  setHTML('chat-live', `<div class="chat-answer"><div class="chat-text md">${md(c.text) || '<span class="muted">…</span>'}</div><div class="sub">${esc(c.node || '')}${rate ? ' · ' + esc(rate) : ''}</div></div>`);
+  setHTML('chat-live', `${rs}<div class="chat-answer"><div class="chat-text md">${md(c.text) || '<span class="muted">…</span>'}</div><div class="sub">${esc(c.node || '')}${rate ? ' · ' + esc(rate) : ''}</div></div>`);
   const box = $('chat-msgs');
   if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) box.scrollTop = box.scrollHeight;
 }
@@ -260,6 +285,10 @@ async function chatAct(t) {
   else if ((el = b('copy-msg'))) { const m = chatCur.messages[Number(el.dataset.copyMsg)]; if (m) { await copyText(m.text || ''); toast('Copied'); } }
   else if ((el = b('branch'))) {
     try { const r = await post(`/api/chats/${chatCur.id}/branch`, { msg_id: el.dataset.branch }); toast('Branched into a new chat'); location.hash = '#/chat/' + r.id; } catch (e) { toast(e.message); }
+  }
+  else if ((el = b('rs-open'))) {
+    const m = chatCur.messages.find((x) => x.id === el.dataset.rsOpen);
+    if (m) pvShow([{ kind: 'md', name: pvSlug(chatCur.title, 'research') + '-report.md', text: m.text, ver: 1 }], 0);
   }
   else if (b('instr')) chatInstrOpen();
 }

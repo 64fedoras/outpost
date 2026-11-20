@@ -43,6 +43,8 @@ type ChatMsg struct {
 	Suggest string `json:"suggest,omitempty"`
 	// Runs are the programs the model ran for this answer (chat_run.go).
 	Runs []CodeRun `json:"runs,omitempty"`
+	// Research is the record of a research-mode answer: its sub-questions and findings (research.go).
+	Research *ResearchRun `json:"research,omitempty"`
 }
 
 type Chat struct {
@@ -59,6 +61,8 @@ type Chat struct {
 	MemTries     int    `json:"mem_tries,omitempty"` // answers that asked for a memory suggestion (memory.go)
 	RunCode      bool   `json:"run_code,omitempty"`  // the model may run code on an exec node (chat_run.go)
 	RunOn        string `json:"run_on,omitempty"`    // while Busy is "running": the node running it
+	// Research is the live state of a research answer while it works (research.go).
+	Research *ResearchRun `json:"research,omitempty"`
 
 	dir    string
 	cancel context.CancelFunc
@@ -104,7 +108,7 @@ func (c *Controller) loadChats() {
 		if json.Unmarshal(b, ch) != nil || ch.ID+".json" != e.Name() {
 			continue
 		}
-		ch.dir, ch.Busy, ch.RunOn = c.chatsDir(), "", ""
+		ch.dir, ch.Busy, ch.RunOn, ch.Research = c.chatsDir(), "", "", nil
 		c.chats[ch.ID] = ch
 	}
 }
@@ -372,9 +376,13 @@ func (c *Controller) startChatReplyAll(ch *Chat, text string, imgs []llmImage, d
 // and unlocks ch.mu. alts and ver, when set, become the new answer's other
 // versions (a regenerate).
 func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
-	ctx, cancel := context.WithTimeout(context.Background(), chatWait+chatTimeout)
-	ch.Updated, ch.Busy, ch.cancel = time.Now(), "waiting", cancel
 	pref := ch.Node
+	timeout := chatWait + chatTimeout
+	if pref == chatResearch {
+		timeout = researchTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ch.Updated, ch.Busy, ch.cancel = time.Now(), "waiting", cancel
 	hist := chatHistoryDocs(ch.Messages, ch.imageURI, ch.docText)
 	hist[0].Content = c.chatSystemPrompt(ch.Instructions)
 	askMem := ch.MemTries < maxMemoryTries && c.memorySuggestOn()
@@ -400,12 +408,18 @@ func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
 	})
 	go func() {
 		defer cancel()
-		msg := c.answerChatRun(ctx, ch.ID, pref, hist, askMem, run, func() {
+		started := func() {
 			ch.mu.Lock()
 			ch.Busy = "answering"
 			ch.mu.Unlock()
 			taskLive.changed("chat_" + ch.ID)
-		})
+		}
+		var msg ChatMsg
+		if pref == chatResearch {
+			msg = c.answerResearch(ctx, ch, hist, started)
+		} else {
+			msg = c.answerChatRun(ctx, ch.ID, pref, hist, askMem, run, started)
+		}
 		ch.mu.Lock()
 		msg.ID, msg.At, msg.Alts, msg.Ver = newID("m"), time.Now(), alts, ver
 		ch.Messages = append(ch.Messages, msg)

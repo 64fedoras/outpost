@@ -31,6 +31,18 @@ FIXED = "def count_words(text):\n    counts = {}\n    for w in text.lower().spli
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_POST(self):
+        if self.path == "/ddg":
+            # A DuckDuckGo stand-in for research mode (research.py): two results per query, under example.org.
+            from urllib.parse import parse_qs, quote
+            q = parse_qs(self.rfile.read(int(self.headers["content-length"])).decode()).get("q", [""])[0]
+            slug = re.sub(r"[^a-z0-9]+", "-", q.lower()).strip("-")[:40]
+            page = "<html><body>" + "".join(
+                f'<div class="result"><h2><a class="result__a" href="//duckduckgo.com/l/?uddg={quote(f"https://example.org/{slug}/{i}", safe="")}">{q} source {i}</a></h2>'
+                f'<a class="result__snippet" href="#">Facts about {q} from source {i}.</a></div>' for i in (1, 2)) + "</body></html>"
+            data = page.encode()
+            self.send_response(200); self.send_header("content-type", "text/html"); self.send_header("content-length", str(len(data))); self.end_headers()
+            self.wfile.write(data)
+            return
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         if self.headers.get("x-api-key") != "sk-test-key":
             return self.send(401, {"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}})
