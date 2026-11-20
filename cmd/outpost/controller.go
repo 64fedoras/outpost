@@ -253,6 +253,7 @@ func runController(args []string) error {
 	static, _ := fs.Sub(webFS, "web")
 	mux.Handle("GET /", staticHandler(static)) // static.go: ETag and gzip
 	mux.HandleFunc("GET /licenses", handleLicenses)
+	previewRoutes(mux) // preview.go: the sandboxed live-preview frame
 	mux.HandleFunc("GET /healthz", c.handleHealth)
 	mux.HandleFunc("POST /api/login", c.handleLogin)
 	mux.HandleFunc("GET /api/setup", c.handleSetupStatus)

@@ -858,6 +858,15 @@
     <div class="modal-foot"><a id="pjf-dl"><button>Download</button></a><button data-close>Close</button></div>
   </div>
 </div>
+<div id="modal-pv-save" class="overlay hidden">
+  <div class="modal">
+    <h3>Save to project</h3>
+    <label>Project <select id="pv-save-proj"></select></label>
+    <label>File name <input id="pv-save-path" class="mono" autocomplete="off" spellcheck="false"></label>
+    <p class="hint">A file with this name is replaced. Not while a task works in the project.</p>
+    <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="pv-save-go">Save</button></div>
+  </div>
+</div>
 <div id="modal-pj-dup" class="overlay hidden">
   <div class="modal">
     <h3>Duplicate a project with a git repository</h3>
@@ -1016,7 +1025,7 @@
     <div class="fb">
       <div class="fb-tree" id="tv-files"></div>
       <div class="fb-view">
-        <div class="fb-bar"><span class="mono" id="fb-title"></span><button class="small hidden" id="fb-edit" title="Change this file by hand; saved as your own round, so Changes and Undo work">Edit</button><button class="small hidden" id="fb-cancel">Cancel</button><button class="small primary hidden" id="fb-save">Save</button><a id="fb-dl" class="hidden"><button class="small">Download file</button></a></div>
+        <div class="fb-bar"><span class="mono" id="fb-title"></span><button class="small hidden" id="fb-edit" title="Change this file by hand; saved as your own round, so Changes and Undo work">Edit</button><button class="small hidden" id="fb-cancel">Cancel</button><button class="small primary hidden" id="fb-save">Save</button><button class="small hidden" id="fb-preview" title="Show this page, image, diagram or document in the preview panel">Preview</button><a id="fb-dl" class="hidden"><button class="small">Download file</button></a></div>
         <pre class="out code" id="fb-body">Pick a file.</pre>
         <textarea class="out code fb-editor hidden" id="fb-editor" spellcheck="false" aria-label="File contents"></textarea>
       </div>
@@ -1051,9 +1060,27 @@
   </div>
 </div>
 
+<aside id="pv-panel" class="pv-panel hidden" aria-label="Preview">
+  <div class="pv-bar">
+    <b id="pv-name" class="mono"></b>
+    <span class="pv-tabs"><button class="tb on" id="pv-tab-preview" aria-pressed="true">Preview</button><button class="tb" id="pv-tab-code" aria-pressed="false">Code</button></span>
+    <span class="spacer"></span>
+    <button class="tb" id="pv-x" aria-label="Close the preview">✕</button>
+  </div>
+  <div class="pv-bar">
+    <select id="pv-ver" class="hidden" aria-label="Version"></select>
+    <span class="spacer"></span>
+    <button class="small" id="pv-dl">Download</button>
+    <button class="small" id="pv-save">Save to project…</button>
+  </div>
+  <iframe id="pv-frame" sandbox="allow-scripts" title="Preview" src="about:blank"></iframe>
+  <pre id="pv-code" class="out code hidden"></pre>
+  <p class="hint pv-note">Runs in a sandboxed frame: scripts allowed, no network, no cookies, cannot reach Outpost.</p>
+</aside>
 <script src="guard.js"></script>
 <script src="app.js"></script>
 <script src="markdown.js"></script>
+<script src="preview.js"></script>
 <script src="confirm.js"></script>
 <script src="groups.js"></script>
 <script src="new-task.js"></script>

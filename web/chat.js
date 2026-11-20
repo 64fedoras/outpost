@@ -136,12 +136,13 @@ function chatBubble(m, i, last) {
   const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, m.note && esc(m.note)].filter(Boolean).join(' · ');
   const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-regen="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Answer again; this answer stays as an earlier version">↻ Regenerate</button>${chatTryOn(m, busy)}${m.text ? `<button data-copy-msg="${i}" title="Copy the answer">⧉ Copy</button>` : ''}<button data-branch="${esc(m.id)}" title="Start a new chat with the conversation up to here">⑂ Branch</button></div>`;
   if (m.error) return `<div class="chat-answer"><div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}${acts}</div>`;
-  return `<div class="chat-answer"><div class="chat-text md">${md(m.text)}</div>${meta ? `<div class="sub">${meta}</div>` : ''}${acts}</div>`;
+  return `<div class="chat-answer"><div class="chat-text md">${md(m.text)}</div>${pvCards(pvCollect(m.text))}${meta ? `<div class="sub">${meta}</div>` : ''}${acts}</div>`;
 }
 function chatRender() {
   if (!chatCur) return;
   const box = $('chat-msgs'), stick = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   const instr = chatCur.instructions ? `<div class="note chat-instr">Instructions for this chat: <i>${esc(chatCur.instructions)}</i> <button class="link-btn" data-instr>Edit</button></div>` : '';
+  pvReset();
   setHTML('chat-msgs', instr + chatCur.messages.map((m, i) => chatBubble(m, i)).join('') + '<div id="chat-live"></div>');
   chatRenderLive();
   chatButtons();
