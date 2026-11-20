@@ -42,6 +42,22 @@ node's context window, older documents are cut first and the newest message keep
 note to the model that the rest did not fit. Old `.doc` and `.xls` files are refused (save them as
 `.docx` or `.xlsx`). Encrypted or password-protected files are untested.
 
+**Run code.** **▶ Run code** in the chat bar (per chat, off by default, remembered with the chat and
+copied by **Branch**) lets the answering model run programs: Python, Go or a shell script, whichever an
+online node that allows commands (exec on) can run. Python needs `python3` (or `python`) already on that
+node, as for task tests; Go is the toolchain Outpost installs; shell needs a Linux or macOS node. Each
+program runs as an exec job on the least busy such node, in the same sandbox as task tests (no network
+in strict mode), with a 60-second limit, in an empty folder holding the chat's documents as text under
+`files/`. The model sees the output (and its errors, so it can fix the program and run it again), up to
+6 programs per answer. Files the program writes to `out/` come back: images (PNG, JPEG, GIF, WebP, SVG)
+show under the answer and every file has a download link, up to 12 files; files over 1 MB are left
+out (the model is told which). Each run shows as a card above the answer (language, node, exit
+code, time; open it for the code and output). Files are kept with the chat (`chats/<id>-runs/`) and
+deleted with it; the node keeps nothing. Later messages see a one-line summary of each run. Models of
+about 3B and smaller, and servers without tool calling, answer without running anything and the note
+under the answer says so. Untested: real models writing and fixing code in a loop, Go and shell runs on
+real nodes, and Windows nodes (shell is not offered there; Python and Go should work but are untested).
+
 **Editing, regenerating and branching.** Under your message, **Edit** changes it and answers again from
 there; under an answer, **Regenerate** asks again, **Try on…** asks again on another node (or Auto), and
 **Branch** starts a new chat with the conversation up to that point (its images and instructions come
