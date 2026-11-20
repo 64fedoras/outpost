@@ -125,7 +125,7 @@ function refreshIcons() {
     l.replaceWith(c);
   });
 }
-const PAGES = ['new', 'image', 'task', 'chat', 'projects', 'project', 'nodes', 'models', 'updates', 'spending', 'settings'];
+const PAGES = ['new', 'image', 'cad', 'task', 'chat', 'projects', 'project', 'nodes', 'models', 'updates', 'spending', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
   ntDraft.flush(); tmDraft.flush();
@@ -135,7 +135,7 @@ function route() {
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
   document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === (page === 'project' ? 'projects' : page)));
   document.querySelector('.page-plain').classList.toggle('hidden', !['projects', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
-  document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image' }[page] || page[0].toUpperCase() + page.slice(1));
+  document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image', cad: 'New 3D model' }[page] || page[0].toUpperCase() + page.slice(1));
   refreshIcons();
   document.body.classList.toggle('on-task', page === 'task' || page === 'project');
   closeSide();
@@ -148,6 +148,7 @@ function route() {
   if (page === 'chat') chatOpen(pageArg);
   if (page === 'project') projectRoute();
   if (typeof imgRoute === 'function') imgRoute(page);
+  if (typeof cadRoute === 'function') cadRoute(page);
   renderSideTasks();
   if (state) refresh();
 }

@@ -139,6 +139,7 @@ type Controller struct {
 	models     map[string]*ModelRec
 	runtimes   map[string]*RuntimeRec
 	rtCache    *runtimeCache
+	cad        *cadStore // 3D models (cad.go)
 	gens       *genStore // image generation: queue, stored results, settings (controller_images.go)
 	nodeOps    map[string]*nodeOpView
 	pipelines  map[string]*pipeline         // model setups in progress; cancel stops one
@@ -210,6 +211,7 @@ func runController(args []string) error {
 	c.loadModels()
 	c.loadRuntimes()
 	c.loadGens()
+	c.loadCad()
 	c.loadProjects()
 	c.loadChats()
 	c.loadGroups()
@@ -338,6 +340,7 @@ func runController(args []string) error {
 	c.templateRoutes(mux)
 	c.openAIRoutes(mux)
 	c.imageRoutes(mux)
+	c.cadRoutes(mux)
 	mux.HandleFunc("GET /api/tasks", c.auth(c.handleListTasks))
 	mux.HandleFunc("POST /api/tasks", c.auth(c.handleCreateTask))
 	mux.HandleFunc("GET /api/tasks/{id}", c.auth(c.handleGetTask))
@@ -395,6 +398,7 @@ func runController(args []string) error {
 	go c.catalogShapeLoop()
 	go c.hoursLoop()
 	go c.genLoop()
+	go c.cadLoop()
 	go c.templateLoop()
 	go c.modelVerifyLoop()
 	go c.stallLoop()

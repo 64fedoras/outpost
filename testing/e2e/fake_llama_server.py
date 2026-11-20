@@ -76,6 +76,8 @@ class H(BaseHTTPRequestHandler):
                 text = "<<<FILE wordcount/core.py>>>\ndef count_words(text):\n    counts = {}\n    for w in text.lower().split():\n        counts[w] = counts.get(w, 0) + 1\n    return counts\n<<<END>>>\n"
             else:
                 text = "<<<OK>>>"
+        elif "You write OpenSCAD files" in system:
+            text = scad_reply(user)  # the New 3D model page (cad.py)
         elif "markdown sample" in user:
             text = MARKDOWN_SAMPLE  # the chat page's markdown test (chatmd.py)
         elif "Write these files:" not in user:
@@ -98,6 +100,35 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(b'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n')
         self.wfile.write(b'data: {"choices":[],"usage":{"prompt_tokens":500,"completion_tokens":%d}}\n\n' % (len(text)//4))
         self.wfile.write(b"data: [DONE]\n\n")
+SCAD = """w = {w}; // [40:200] base width
+angle = 65; // [30:85] backrest angle
+slot = 12; // [6:20] phone slot
+hole = true; // M3 screw hole
+$fn = 48;
+difference() {{
+  union() {{
+    cube([w, 80, 8]);
+    translate([0, 22, 0]) rotate([90 - angle, 0, 0]) cube([w, 6, 90]);
+  }}
+  translate([8, 8, 4]) cube([w - 16, slot, 20]);
+  if (hole) translate([w / 2, 60, -1]) cylinder(d = 3.2, h = 20);
+}}
+"""
+
+def scad_reply(user):
+    # First file has a typo when asked to (the fix round test), a change request gets a
+    # wider base, and the size check passes.
+    if user.startswith("The file rendered"):
+        return "OK"
+    if user.startswith("OpenSCAD could not render"):
+        return "Fixed the missing bracket.\n```openscad\n" + SCAD.format(w=70) + "```\n"
+    if "Change it as follows" in user:
+        return "Wider base.\n```openscad\n" + SCAD.format(w=100) + "```\n"
+    code = SCAD.format(w=70)
+    if "typo" in user:
+        code = code.replace("cube([w, 80, 8]);", "cube([w, 80, 8];")
+    return "A stand with a slot and a screw hole.\n```openscad\n" + code + "```\n"
+
 def stream_tool_calls(self, calls, text):
     # Tool calls arrive the way llama-server sends them: name first, arguments in pieces.
     self.send_response(200); self.send_header("content-type", "text/event-stream"); self.end_headers()
