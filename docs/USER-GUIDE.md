@@ -10,6 +10,7 @@ The full reference for running Outpost, split by topic. New here? Start with the
 | [Nodes working together](cluster.md) | Peer review, benchmarks and routing, best of N, memory pooling, labels, working hours, Wake-on-LAN |
 | [Chat, the API and cloud planners](chat-and-api.md) | Chat, the OpenAI-compatible API, Claude and OpenRouter, the spending cap, the Spending page and monthly cap |
 | [Image generation](images-generation.md) | stable-diffusion.cpp on nodes, the image models, results and their retention, the API |
+| [3D models](3d-models.md) | The New 3D model page: a chat model writes OpenSCAD, a node renders STL, parameters, the viewer |
 | [Updating, security and operations](operations.md) | Updates and rollback, passwords, sign-in security, backups, notifications, where files live, logs, diagnostics |
 | [Known limits](known-limits.md) | What is not done yet and what is untested |
 

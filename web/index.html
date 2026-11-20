@@ -57,6 +57,7 @@
     </div>
     <a class="new-task" href="#/new"><span aria-hidden="true">＋</span> New task</a>
     <a class="new-task side-projects" href="#/image" data-tab="image"><span aria-hidden="true">✦</span> New image</a>
+    <a class="new-task side-projects" href="#/cad" data-tab="cad"><span aria-hidden="true">◇</span> New 3D model</a>
     <a class="new-task side-projects" href="#/projects" data-tab="projects"><span aria-hidden="true">▤</span> Projects</a>
     <nav class="side-pins hidden" id="side-pins" aria-label="Pinned projects"></nav>
     <a class="new-task side-projects" href="#/chat" data-tab="chat"><span aria-hidden="true">💬</span> Chat</a>
@@ -157,6 +158,30 @@
         <div id="img-earlier"></div>
         <div class="section-head"><h2>Image and video models</h2></div>
         <div id="img-models"></div>
+      </div>
+    </section>
+
+    <!-- NEW 3D MODEL (cad.js): a chat model writes OpenSCAD, a node renders STL -->
+    <section data-page="cad" class="page-new page-image page-cad hidden">
+      <div class="new-wrap">
+        <h1 class="new-title">What should the cluster model?</h1>
+        <p class="new-sub" id="cad-sub">The model writes an OpenSCAD file and a node renders it to STL. Best for precise parts and 3D printing.</p>
+        <div class="composer big">
+          <textarea id="cad-prompt" rows="3" placeholder="Describe the part with its sizes. For example: a phone stand, 70 mm wide base, 65 degree backrest, 12 mm slot, M3 screw hole in the base."></textarea>
+          <div class="composer-bar">
+            <select id="cad-node" class="chip-select" aria-label="Which node's model writes the file"></select>
+            <select id="cad-check" class="chip-select" aria-label="Size check" title="After the first good render the model sees the measured size and may correct the file"><option value="1">Check the size: on</option><option value="0">Check the size: off</option></select>
+            <select id="cad-rounds" class="chip-select" aria-label="Fix rounds" title="How many times the model may write or fix the file"><option value="2">Up to 2 rounds</option><option value="4" selected>Up to 4 rounds</option><option value="6">Up to 6 rounds</option><option value="8">Up to 8 rounds</option></select>
+            <span class="spacer"></span>
+            <button class="send" id="cad-go">Design</button>
+          </div>
+        </div>
+        <div class="optline"><span id="cad-optline"></span></div>
+        <div class="error-msg hidden" id="cad-err"></div>
+        <div id="cad-note"></div>
+        <div id="cad-busy"></div>
+        <div id="cad-result"></div>
+        <div id="cad-earlier"></div>
       </div>
     </section>
 
@@ -486,7 +511,7 @@
           <h2 class="set-sec-title">Pictures</h2>
         <div class="section-head"><h2>Pictures</h2></div>
         <div class="card">
-          <p class="hint">Pictures and clips made on the New image page are stored on this controller, never on the nodes. Old ones are deleted when they pass the age or the size limit below, whichever comes first. Pictures you mark Keep are never deleted automatically. Use <code>0</code> for no limit.</p>
+          <p class="hint">Pictures and clips made on the New image page are stored on this controller, never on the nodes. 3D models from the New 3D model page follow the same age limit. Old ones are deleted when they pass the age or the size limit below, whichever comes first. Pictures you mark Keep are never deleted automatically. Use <code>0</code> for no limit.</p>
           <div class="opts-grid">
             <label class="chip-input">keep for <input id="set-img-days" type="number" min="0" max="3650" aria-label="Days to keep pictures"> days</label>
             <label class="chip-input">at most <input id="set-img-gb" type="number" min="0" max="100000" aria-label="Gigabytes of pictures"> GB</label>
@@ -960,6 +985,8 @@
 <script src="dialogs.js"></script>
 <script src="tools.js"></script>
 <script src="images.js"></script>
+<script src="viewer3d.js"></script>
+<script src="cad.js"></script>
 <script src="boot.js"></script>
 </body>
 </html>
