@@ -1228,3 +1228,18 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .cad-item b { font-weight: 600; }
 .page-cad .gen-card .rowline .dot { margin-right: 4px; }
 @media (max-width: 760px) { .cad-two { grid-template-columns: 1fr; } .cad-view { height: 300px; } .cad-code { height: 220px; } .cad-ask { flex-direction: column; } }
+/* Pick models for each node, on the plan card (thread.js pickModelsBlock) */
+.pm { margin: 10px 0 4px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--bg); }
+.pm-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pm-head .spacer { flex: 1; }
+.pm-head .hint, .pm .hint { margin: 0; }
+.pm > .hint { margin-top: 8px; }
+.pm-check { display: inline-flex; gap: 6px; align-items: center; margin: 0; width: auto; font-size: 12.5px; }
+.pm-check input[type=checkbox] { width: auto; padding: 0; flex: none; margin: 0; }
+.pm-check input[type=number] { width: 70px; }
+.pm-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12.5px; }
+.pm-table td { padding: 5px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+.pm-table td:first-child { white-space: nowrap; }
+.pm-table .sub { color: var(--muted); font-size: 12px; }
+.pm-opts { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+@media (max-width: 700px) { .pm-table td:nth-child(4) { display: none; } }

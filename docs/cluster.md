@@ -124,6 +124,10 @@ type, flash attention, draft model, calls at once, experts-in-RAM choice and ext
 that node (up to 20). A *Saved settings for this node* list then appears at the top of the dialog; picking one
 fills the form, and *Delete* removes it. Pool helpers are not part of a saved setting.
 
+**Let tasks change my model** (per node, off by default; on the node card). A task approved with
+*Pick models for each node* may load this node's best-fit model before work starts and put the previous
+one back afterwards (see [using-tasks.md](using-tasks.md)). Off, tasks only use the model you loaded.
+
 **Yield GPU to other programs** (per node, off by default; on the node card). On a desktop that is also used
 for games, the model is unloaded when the node is not answering anything and the GPU stays more than 35% busy
 for 30 seconds, and loaded again after five minutes below 10%. While unloaded the card says *GPU in use* and the

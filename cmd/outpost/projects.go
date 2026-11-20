@@ -157,7 +157,7 @@ func (c *Controller) projectTestCommand(t *Task) string {
 func (c *Controller) execTask(ctx context.Context, t *Task) {
 	p := c.getProject(t.ProjectID)
 	if p == nil {
-		c.executeTask(ctx, t)
+		c.runWithTaskModels(ctx, t)
 		return
 	}
 	select {
@@ -178,7 +178,7 @@ func (c *Controller) execTask(ctx context.Context, t *Task) {
 		t.setStatus("running")
 	}
 	defer func() { <-p.slot }()
-	c.executeTask(ctx, t)
+	c.runWithTaskModels(ctx, t)
 	t.mu.Lock()
 	done := t.Status == "done"
 	t.mu.Unlock()

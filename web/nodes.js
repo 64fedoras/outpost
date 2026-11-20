@@ -368,6 +368,7 @@ function nodeCard(n) {
       ${recRow(n, loaded)}
       ${h.freed_note && Date.now() / 1000 - h.freed_at < 86400 ? `<div class="sub wrap u15" title="Removed automatically to make room for a model; it can be copied or downloaded again.">${esc(h.freed_note)} · ${ago(new Date(h.freed_at * 1000).toISOString())}</div>` : ''}
       ${n.online ? `<div class="sub u15">Unloads when idle: ${esc(n.idle_unload_effective || '1h')}${n.idle_unload ? '' : ' (default)'} · <a href="#" data-act="idle" data-id="${n.id}">change</a></div>` : ''}
+      ${n.online ? `<div class="sub u15" title="A task with Pick models for each node on may load its best-fit model here before work starts, and puts the previous one back afterwards.">Let tasks change my model: ${n.task_models ? 'on' : 'off'} · <a href="#" data-act="task-models" data-id="${n.id}">${n.task_models ? 'turn off' : 'turn on'}</a></div>` : ''}
       ${n.online ? `<div class="sub u15" title="Unloads the model while a game or other program keeps the GPU busy, and loads it again after five quiet minutes.">Yield GPU to other programs: ${n.yield_gpu ? 'on' : 'off'} · <a href="#" data-act="yield" data-id="${n.id}">${n.yield_gpu ? 'turn off' : 'turn on'}</a></div>` : ''}
       ${benchLine(n, loaded, ready)}
       ${n.pool_names && n.pool_names.length ? `<div class="sub wrap u15">Pooled with <b>${n.pool_names.map(esc).join(', ')}</b></div>` : ''}
@@ -527,6 +528,11 @@ async function setNodeIdle(id) {
 async function toggleYield(id) {
   const n = nodeById(id);
   try { await post(`/api/nodes/${id}/settings`, { yield_gpu: !n.yield_gpu }); toast(n.yield_gpu ? 'Off' : 'On: the model unloads while another program keeps the GPU busy'); } catch (e) { toast(e.message); }
+  refresh();
+}
+async function toggleTaskModels(id) {
+  const n = nodeById(id);
+  try { await post(`/api/nodes/${id}/settings`, { task_models: !n.task_models }); toast(n.task_models ? 'Off: tasks leave this node\'s model alone' : 'On: a task may load its best-fit model here and puts the old one back after'); } catch (e) { toast(e.message); }
   refresh();
 }
 async function removeNode(id) {

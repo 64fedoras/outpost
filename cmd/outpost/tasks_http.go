@@ -497,11 +497,18 @@ func zipDir(src, dst string) error {
 func (c *Controller) handleApproveTask(w http.ResponseWriter, r *http.Request) {
 	t := c.getTask(r.PathValue("id"))
 	var req struct {
-		CapUSD float64 `json:"cap_usd"`
+		CapUSD     float64 `json:"cap_usd"`
+		AutoModels bool    `json:"auto_models"` // pick models for each node (tasks_models.go)
+		KeepModels bool    `json:"keep_models"` // do not put the previous models back
+		ModelCapGB float64 `json:"model_cap_gb"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	if t == nil {
 		writeJSON(w, 404, map[string]string{"error": "no such task"})
+		return
+	}
+	if req.ModelCapGB < 0 || req.ModelCapGB > 1<<20 {
+		writeJSON(w, 400, map[string]string{"error": "the download cap must be 0 or more GB"})
 		return
 	}
 	t.mu.Lock()
@@ -516,6 +523,8 @@ func (c *Controller) handleApproveTask(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	t.Approved = &now
 	t.Status = "running"
+	t.AutoModels, t.KeepModels, t.ModelCapGB = req.AutoModels, req.KeepModels, req.ModelCapGB
+	t.ModelSwaps = nil // a new round picks again
 	ev := "You approved the plan."
 	if isCloudPlanner(t.Planner) {
 		ev = fmt.Sprintf("You approved the plan with a %s cap.", fmtUSD(t.CapUSD))
