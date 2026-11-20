@@ -16,15 +16,18 @@ on:
   workflow_dispatch:
     inputs:
       stages:
-        description: "Stages to run: smoke, inspect (both read-only)"
+        description: "Stages: smoke, inspect (read-only); add update to restart one node three times"
         default: "smoke,inspect"
+      update_node:
+        description: "For the update stage: name of the spare node to update, roll back and update again"
+        default: ""
   schedule:
     - cron: "30 8 * * *"
 
 jobs:
   smoke:
     runs-on: lab-runner
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Smoke checks against the real cluster
@@ -34,4 +37,5 @@ jobs:
           OUTPOST_LAB_FINGERPRINT: ${{ secrets.OUTPOST_LAB_FINGERPRINT }}
           # Scheduled runs have no inputs, so they fall back to the read-only default.
           OUTPOST_LAB_STAGES: ${{ github.event.inputs.stages || 'smoke,inspect' }}
+          OUTPOST_LAB_UPDATE_NODE: ${{ github.event.inputs.update_node }}
         run: python3 testing/lab_smoke.py

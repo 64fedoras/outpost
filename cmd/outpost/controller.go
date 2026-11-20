@@ -298,6 +298,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/github-updates/test", c.auth(c.handleTestGitHub))
 	mux.HandleFunc("GET /api/github-updates/branches", c.auth(c.handleGitHubBranches))
 	mux.HandleFunc("POST /api/github-updates/channel", c.auth(c.handleGitHubChannel))
+	mux.HandleFunc("POST /api/github-updates/hold", c.auth(c.handleGitHubHold))
 	mux.HandleFunc("POST /api/controller/rollback", c.auth(c.handleRollbackController))
 	mux.HandleFunc("POST /api/nodes/{id}/rollback", c.auth(c.handleRollbackNode))
 	mux.HandleFunc("POST /api/nodes/{id}/restart", c.auth(c.handleRestartNode))
