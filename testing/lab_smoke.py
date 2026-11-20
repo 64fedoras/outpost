@@ -22,7 +22,11 @@ Environment:
   OUTPOST_LAB_SKIP_CHAT  optional: 1 skips step 3 (it needs a free model slot on some node)
   OUTPOST_LAB_STAGES     optional: comma-separated stages, default "smoke". "inspect" adds the
                          read-only feature checks in testing/lab_features.py (versions, Pick best,
-                         model-sharing ports, Mac and Windows node logs, update check)
+                         model-sharing ports, Mac and Windows node logs, update check).
+                         "update" CHANGES the cluster: update, roll back and update again one node
+                         (testing/lab_update.py); refused on a scheduled run
+  OUTPOST_LAB_UPDATE_NODE  (update) the name of a spare node to restart three times
+  OUTPOST_LAB_UPDATE_TIMEOUT  (update) seconds each switch may take, default 600
   OUTPOST_LAB_SKIP_PEER  optional (inspect): node names the runner cannot reach on their sharing port
 Exit code 0 when every check passed, 1 otherwise. Only the Python standard library is used.
 """
@@ -214,9 +218,12 @@ def check_chat():
 
 if __name__ == "__main__":
     stages = {x.strip() for x in os.environ.get("OUTPOST_LAB_STAGES", "smoke").split(",") if x.strip()} or {"smoke"}
-    unknown = stages - {"smoke", "inspect"}
+    unknown = stages - {"smoke", "inspect", "update"}
     if unknown:
-        print(f"unknown OUTPOST_LAB_STAGES: {', '.join(sorted(unknown))} (known: smoke, inspect)", file=sys.stderr)
+        print(f"unknown OUTPOST_LAB_STAGES: {', '.join(sorted(unknown))} (known: smoke, inspect, update)", file=sys.stderr)
+        sys.exit(2)
+    if "update" in stages and os.environ.get("GITHUB_EVENT_NAME") == "schedule":
+        print("stage update changes the cluster and never runs on a schedule; start it by hand", file=sys.stderr)
         sys.exit(2)
     pin_certificate()
     state = check_state()
@@ -227,4 +234,8 @@ if __name__ == "__main__":
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import lab_features
         lab_features.run(sys.modules[__name__], state)
+    if "update" in stages:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import lab_update
+        lab_update.run(sys.modules[__name__], state)
     report()

@@ -627,6 +627,37 @@ func (c *Controller) handleGitHubBranches(w http.ResponseWriter, r *http.Request
 	writeJSON(w, 200, map[string]any{"branches": rows, "selected": c.ghBranch()})
 }
 
+// handleGitHubHold sets the rollback hold (auto-install skips that version and older) to
+// the given value, or clears it with "". A rollback sets it; the lab update check
+// (testing/lab_features.py) puts back the value it found, so a test rollback does not
+// leave auto-install held.
+func (c *Controller) handleGitHubHold(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "bad request"})
+		return
+	}
+	v := strings.TrimPrefix(strings.TrimSpace(req.Version), "v")
+	if v != "" && !holdVersionRe.MatchString(v) {
+		writeJSON(w, 400, map[string]string{"error": "not a version number"})
+		return
+	}
+	c.mu.Lock()
+	c.settings.GitHubHoldVersion = v
+	err := c.saveSettingsLocked()
+	c.mu.Unlock()
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	log.Printf("update hold set to %q", v)
+	writeJSON(w, 200, c.ghView())
+}
+
+var holdVersionRe = regexp.MustCompile(`^\d+(\.\d+){1,3}$`)
+
 // handleGitHubChannel switches between Stable ("") and a branch, then checks at once.
 func (c *Controller) handleGitHubChannel(w http.ResponseWriter, r *http.Request) {
 	var req struct {

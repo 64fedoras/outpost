@@ -87,8 +87,16 @@ one best pick that fits, and a GPU node's pick is not CPU-only; each node's mode
 have no Local Network block; Windows node logs show no service errors; the update check answers. Nothing is
 installed, loaded or restarted. Warnings say what it cannot see: tray icons, Windows service survival over a reboot,
 Defender, and Apple Silicon/Metal when no arm64 Mac is online. Stages for update/rollback and memory pooling
-(which change the cluster and will be manual-only) are not built yet.
-The inspect stage is not yet run on the real cluster; tray, phone, Windows install and real GPU loads are still by hand.
+(which change the cluster and will be manual-only) are partly built:
+**Stage `update`** (`testing/lab_update.py`) **restarts one node three times**. In the workflow, start it with Run workflow,
+stages `smoke,inspect,update` and `update_node` set to a spare node; by hand set `OUTPOST_LAB_STAGES=update` and
+`OUTPOST_LAB_UPDATE_NODE=<name>`. It is refused on a scheduled run. The node must be idle and the controller must hold a
+release for its platform (Updates tab, or fetched from the update repository). It updates the node if it is older,
+rolls it back to its previous copy, then updates it again, and after each switch checks the node is back on the right
+version within `OUTPOST_LAB_UPDATE_TIMEOUT` seconds (600), lists the same model files, kept its node settings and reloaded
+a loaded model within 5 minutes. A rollback holds auto-install at the version left; the stage puts the hold back as it was
+(`POST /api/github-updates/hold`), even after a failure. It never updates the controller. The pooling stage is not built yet.
+The inspect and update stages are not yet run on the real cluster (update tested against a stub controller only); tray, phone, Windows install and real GPU loads are still by hand.
 
 ## Not covered by any script (test by hand)
 - Screenshots on the real nodes: Chromium on each platform (snap Chromium on Ubuntu, Chrome on Windows

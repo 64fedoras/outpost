@@ -108,6 +108,26 @@ func TestRollbackHoldBlocksOlderAutoInstall(t *testing.T) {
 	}
 }
 
+func TestSetRollbackHold(t *testing.T) {
+	c := &Controller{dataDir: t.TempDir()}
+	c.holdAfterRollbackLocked("0.9.3")
+	for _, tc := range []struct {
+		body, want string
+		code       int
+	}{
+		{`{"version":""}`, "", 200},
+		{`{"version":"v0.10.2"}`, "0.10.2", 200},
+		{`{"version":"latest"}`, "0.10.2", 400},
+		{`{"version":"1.2.3; rm"}`, "0.10.2", 400},
+	} {
+		rec := httptest.NewRecorder()
+		c.handleGitHubHold(rec, httptest.NewRequest("POST", "/", strings.NewReader(tc.body)))
+		if rec.Code != tc.code || c.settings.GitHubHoldVersion != tc.want {
+			t.Fatalf("%s: code %d hold %q, want %d %q", tc.body, rec.Code, c.settings.GitHubHoldVersion, tc.code, tc.want)
+		}
+	}
+}
+
 func TestParseUpdateSource(t *testing.T) {
 	ok := []struct{ in, kind, want, wantKind string }{
 		{"", "", "https://github.com/" + ghDefaultRepo, kindGitHub},
