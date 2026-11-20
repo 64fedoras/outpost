@@ -29,13 +29,13 @@ async function refreshGroups(force) {
 
 function groupTag(g) { return g ? `<span class="gtag gc-${esc(g.color)}"><i></i>${esc(g.name)}</span> · ` : ''; }
 
-function sideChatHTML(c, tagGroup) {
+function sideChatHTML(c, tagGroup, snip) {
   const cls = [page === 'chat' && pageArg === c.id ? 'active' : '', ctxChat === c.id ? 'menu-open' : ''].join(' ');
   return `<div class="side-task side-chat ${cls}" draggable="true" data-chat="${esc(c.id)}">
     <a href="#/chat/${esc(c.id)}" class="side-task-link" draggable="false" aria-keyshortcuts="Shift+F10 Delete">
       <span class="cdot" aria-hidden="true">💬</span>
       <span class="side-task-text"><span class="side-task-title">${esc(c.title)}</span>
-      <span class="side-task-meta">${groupTag(tagGroup)}${c.busy ? 'Answering' : 'Chat'} · ${ago(c.updated)}</span></span></a>
+      <span class="side-task-meta">${groupTag(tagGroup)}${c.busy ? 'Answering' : 'Chat'} · ${ago(c.updated)}</span>${snipHTML(snip)}</span></a>
     <button class="side-task-more" data-chat-menu="${esc(c.id)}" aria-haspopup="menu" aria-expanded="${ctxChat === c.id}" aria-label="Actions for ${esc(c.title)}" title="Actions">⋯</button></div>`;
 }
 
@@ -57,10 +57,14 @@ function renderSideTasks(force) {
   const pnames = {};
   (projects || []).forEach((p) => { pnames[p.id] = p.name; });
   const gid = (x) => (groupById(x.group_id) ? x.group_id : '');
+  sfProjectOptions();
+  const filtering = sfActive();
   const items = tasks.map((t) => ({ t, g: gid(t), time: new Date(t.created).getTime() }))
-    .concat(sideChats.map((c) => ({ c, g: gid(c), time: new Date(c.updated).getTime() })));
+    .concat(sideChats.map((c) => ({ c, g: gid(c), time: new Date(c.updated).getTime() })))
+    .filter(sfKeep);
   const byNewest = (a, b) => b.time - a.time;
-  const html = (it, tag) => it.t ? sideTaskHTML(it.t, pnames[it.t.project_id], tag ? groupById(it.g) : null) : sideChatHTML(it.c, tag ? groupById(it.g) : null);
+  const snip = (it) => sfSnippet(it.t ? 'task' : 'chat', it.t ? it.t.id : it.c.id);
+  const html = (it, tag) => it.t ? sideTaskHTML(it.t, pnames[it.t.project_id], tag ? groupById(it.g) : null, snip(it)) : sideChatHTML(it.c, tag ? groupById(it.g) : null, snip(it));
   const tone = (it) => it.t && taskTone(it.t);
   const pinned = items.filter((i) => i.t && i.t.pinned);
   const rest = items.filter((i) => !(i.t && i.t.pinned));
@@ -76,7 +80,7 @@ function renderSideTasks(force) {
       const id = g ? g.id : '';
       const list = others.filter((i) => i.g === id).sort((a, b) => (running(b) - running(a)) || byNewest(a, b));
       const nd = needs.filter((i) => i.g === id).length;
-      if (!g && !list.length) return '';
+      if ((!g || filtering) && !list.length && !nd) return '';
       const closed = !!groupClosed[id || '_none'];
       const head = g ? groupHeadHTML(g, list.length, nd, closed)
         : `<div class="gsec-h gc-none" data-gtoggle="_none" tabindex="0" role="button" aria-expanded="${!closed}"><span class="gchev" aria-hidden="true">${closed ? '▸' : '▾'}</span><i class="gsq" aria-hidden="true"></i><span class="gname">No group</span><span class="gct">${list.length}</span></div>`;
@@ -85,8 +89,95 @@ function renderSideTasks(force) {
     };
     out += groups.map(sec).join('') + sec(null);
   }
-  setHTML('side-tasks', out || `<p class="side-empty">Nothing here yet.</p>`);
+  const head = filtering ? `<p class="side-empty sf-count" role="status">${sfCountText(items.length)}</p>` : '';
+  setHTML('side-tasks', head + (out || (filtering ? '' : `<p class="side-empty">Nothing here yet.</p>`)));
 }
+
+// ---------- search and filters ----------
+// The search box matches every word against titles at once, and asks the
+// controller (GET /api/search, tasks_search.go) for tasks and chats whose
+// prompt, plan or messages contain them; those rows show a snippet. The Filter
+// panel narrows by status, project and last activity. Nothing is remembered
+// across reloads, so no task stays hidden by a forgotten filter.
+let sfQ = '', sfHits = new Map(), sfSeq = 0, sfTimer = null;
+const sfWords = () => sfQ.toLowerCase().replace(/"/g, ' ').split(/\s+/).filter(Boolean);
+function sfActive() { return !!(sfQ.trim() || $('sf-status').value || $('sf-project').value || $('sf-age').value); }
+function sfSnippet(kind, id) { const h = sfQ.trim() && sfHits.get(kind + ':' + id); return h && h.snippet ? h.snippet : ''; }
+function snipHTML(s) { return s ? `<span class="side-snip">${esc(s)}</span>` : ''; }
+function sfCountText(n) { return n ? `${n} match${n === 1 ? '' : 'es'}` : 'Nothing matches. <button class="link-btn" data-sf-clear>Clear search and filters</button>'; }
+function sfKeep(it) {
+  const st = $('sf-status').value, pr = $('sf-project').value, age = $('sf-age').value;
+  const t = it.t;
+  if (st) {
+    if (!t) { if (st !== 'running' || !it.c.busy) return false; }
+    else if (st === 'needs' ? taskTone(t) !== 'needs'
+      : st === 'running' ? !(ACTIVE.includes(t.status) && taskTone(t) !== 'needs')
+        : st === 'resolved' ? !t.resolved
+          : t.status !== st) return false;
+  }
+  if (pr && (pr === '_none' ? t && t.project_id : !t || t.project_id !== pr)) return false;
+  if (age) {
+    const upd = new Date(t ? t.updated : it.c.updated).getTime(), days = (Date.now() - upd) / 864e5;
+    if (age === 'old' ? days < 30 : days > +age) return false;
+  }
+  const words = sfWords();
+  if (!words.length) return true;
+  const title = (t ? t.title : it.c.title || '').toLowerCase();
+  return words.every((w) => title.includes(w)) || sfHits.has((t ? 'task:' + t.id : 'chat:' + it.c.id));
+}
+function sfProjectOptions() {
+  const sel = $('sf-project');
+  const opts = '<option value="">Any project</option><option value="_none">No project</option>' +
+    (projects || []).map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  if (sel._h === opts) return;
+  const v = sel.value;
+  sel.innerHTML = opts; sel._h = opts;
+  sel.value = [...sel.options].some((o) => o.value === v) ? v : '';
+}
+function sfBadge() {
+  const n = ['sf-status', 'sf-project', 'sf-age'].filter((id) => $(id).value).length;
+  const b = $('sf-toggle');
+  b.textContent = n ? `Filter · ${n}` : 'Filter';
+  b.classList.toggle('on', n > 0);
+}
+async function sfFetch() {
+  const q = sfQ.trim(), seq = ++sfSeq;
+  if (!q) { sfHits = new Map(); renderSideTasks(true); return; }
+  try {
+    const hits = await api('/api/search?q=' + encodeURIComponent(q));
+    if (seq !== sfSeq) return;
+    sfHits = new Map(hits.map((h) => [h.kind + ':' + h.id, h]));
+  } catch (e) { if (seq === sfSeq) sfHits = new Map(); }
+  renderSideTasks(true);
+}
+function sideSearch(q) {
+  $('sf-q').value = q; sfQ = q;
+  if (getComputedStyle($('side')).position === 'fixed') openSide(); // the drawer on narrow screens
+  sfFetch();
+  $('sf-q').focus();
+}
+function sfClear() {
+  ['sf-status', 'sf-project', 'sf-age'].forEach((id) => { $(id).value = ''; });
+  $('sf-q').value = ''; sfQ = ''; sfHits = new Map(); sfSeq++;
+  sfBadge(); renderSideTasks(true);
+}
+(function wireSideFilter() {
+  $('sf-q').addEventListener('input', (e) => {
+    sfQ = e.target.value;
+    renderSideTasks(true); // titles match at once
+    clearTimeout(sfTimer); sfTimer = setTimeout(sfFetch, 250);
+  });
+  $('sf-q').addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('sf-q').value) { e.preventDefault(); e.stopPropagation(); sfClear(); } });
+  $('sf-toggle').addEventListener('click', () => {
+    const p = $('sf-panel'), show = p.classList.contains('hidden');
+    p.classList.toggle('hidden', !show);
+    $('sf-toggle').setAttribute('aria-expanded', String(show));
+    if (show) $('sf-status').focus();
+  });
+  ['sf-status', 'sf-project', 'sf-age'].forEach((id) => $(id).addEventListener('change', () => { sfBadge(); renderSideTasks(true); }));
+  $('sf-clear').addEventListener('click', sfClear);
+  $('side-tasks').addEventListener('click', (e) => { if (e.target.closest('[data-sf-clear]')) sfClear(); });
+})();
 
 // ---------- the view switch and "New group" ----------
 function renderGroupBar() {

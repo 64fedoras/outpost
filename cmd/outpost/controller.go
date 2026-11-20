@@ -341,6 +341,7 @@ func runController(args []string) error {
 	c.imageRoutes(mux)
 	c.cadRoutes(mux)
 	mux.HandleFunc("GET /api/tasks", c.auth(c.handleListTasks))
+	mux.HandleFunc("GET /api/search", c.auth(c.handleSearch))
 	mux.HandleFunc("POST /api/tasks", c.auth(c.handleCreateTask))
 	mux.HandleFunc("GET /api/tasks/{id}", c.auth(c.handleGetTask))
 	mux.HandleFunc("DELETE /api/tasks/{id}", c.auth(c.handleDeleteTask))

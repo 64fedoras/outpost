@@ -152,6 +152,7 @@ function palRender() {
   const all = palSource();
   palItems = (words.length ? all.filter((i) => { const h = (i.t + ' ' + i.k + ' ' + (i.sub || '')).toLowerCase(); return words.every((w) => h.includes(w)); })
     : all.filter((i) => i.k === 'page' && !i.t.startsWith('Settings:') || i.k === 'task').slice(0, 14)).slice(0, 40);
+  if (q.length > 1) palItems.push({ t: `Search task and chat text for “${$('pal-q').value.trim()}”`, k: 'search', run: () => sideSearch($('pal-q').value.trim()) });
   palSel = Math.min(palSel, Math.max(0, palItems.length - 1));
   setHTML('pal-list', palItems.length ? palItems.map((i, n) => `<div class="pal-item${n === palSel ? ' on' : ''}" role="option" id="pal-${n}" aria-selected="${n === palSel}" data-pal="${n}"><span class="pal-k">${esc(i.k)}</span><span class="nv-grow nv-ell">${esc(i.t)}</span>${i.sub ? `<span class="sub">${esc(i.sub)}</span>` : ''}</div>`).join('') : '<div class="pal-empty muted">Nothing matches.</div>');
   $('pal-q').setAttribute('aria-activedescendant', palItems.length ? 'pal-' + palSel : '');
