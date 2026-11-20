@@ -58,6 +58,10 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         user = body["messages"][-1]["content"]
+        imgs = 0
+        if isinstance(user, list):  # a message with images (vision models): text part plus image_url parts
+            imgs = sum(1 for p in user if p.get("type") == "image_url")
+            user = " ".join(p.get("text", "") for p in user if p.get("type") == "text")
         with open(os.path.join(os.environ.get("OUTPOST_E2E_DIR", "."), "prompts.log"), "a") as lf:
             lf.write("=====\n" + user + "\n")
         if body.get("tools"):
@@ -78,6 +82,8 @@ class H(BaseHTTPRequestHandler):
                 text = "<<<OK>>>"
         elif "You write OpenSCAD files" in system:
             text = scad_reply(user)  # the New 3D model page (cad.py)
+        elif imgs:
+            text = f"I can see {imgs} image(s). The screenshot shows a terminal with an error message."  # chat screenshots (chatimages.py)
         elif "markdown sample" in user:
             text = MARKDOWN_SAMPLE  # the chat page's markdown test (chatmd.py)
         elif "Write these files:" not in user:

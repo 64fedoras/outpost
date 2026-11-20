@@ -18,6 +18,16 @@ model's context. Chat only uses a free model slot: while a task keeps every node
 up to 5 minutes and then says so. It never interrupts task work and costs no Claude money, unless
 you turn on web search below.
 
+**Screenshots in chats.** Paste a screenshot into the message box (Ctrl+V), drop image files on it, or
+use the 📎 button: up to 5 PNG, JPEG, WebP or GIF images per message, 5 MB each (bigger photos are scaled
+down in the browser first). A message can be just an image ("Describe this image." is asked for you). Only a
+**Vision** model can read images: one with its projector file (`mmproj`), such as Qwen3.6 or Gemma 4 from
+the Models page. With **Auto** the chat goes to a free node that has one loaded; if no ready node has one
+(or the node you picked does not), the message box says so and the message is not sent. The images are
+saved with the chat on the controller (`chats/<id>-images/`), shown again when you reopen it, and deleted
+with the chat. A node gets them only inside the request, in memory, and keeps nothing. Later messages
+resend only the newest 3 images, so a long chat does not fill the model's context.
+
 **Web search in chats** (Settings, Tasks, Planner: "Let chats search the web", off by default). Local
 models cannot search by themselves, so a **Search with** menu picks how they get the web:
 
