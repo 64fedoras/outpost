@@ -20,6 +20,10 @@ Environment:
                          (acceptable on a LAN, but set it when you can).
   OUTPOST_LAB_REQUIRE    optional: comma-separated node names that must be online
   OUTPOST_LAB_SKIP_CHAT  optional: 1 skips step 3 (it needs a free model slot on some node)
+  OUTPOST_LAB_STAGES     optional: comma-separated stages, default "smoke". "inspect" adds the
+                         read-only feature checks in testing/lab_features.py (versions, Pick best,
+                         model-sharing ports, Mac and Windows node logs, update check)
+  OUTPOST_LAB_SKIP_PEER  optional (inspect): node names the runner cannot reach on their sharing port
 Exit code 0 when every check passed, 1 otherwise. Only the Python standard library is used.
 """
 import hashlib
@@ -209,8 +213,18 @@ def check_chat():
 
 
 if __name__ == "__main__":
+    stages = {x.strip() for x in os.environ.get("OUTPOST_LAB_STAGES", "smoke").split(",") if x.strip()} or {"smoke"}
+    unknown = stages - {"smoke", "inspect"}
+    if unknown:
+        print(f"unknown OUTPOST_LAB_STAGES: {', '.join(sorted(unknown))} (known: smoke, inspect)", file=sys.stderr)
+        sys.exit(2)
     pin_certificate()
-    check_state()
-    check_cluster()
-    check_chat()
+    state = check_state()
+    if "smoke" in stages:
+        check_cluster()
+        check_chat()
+    if "inspect" in stages:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import lab_features
+        lab_features.run(sys.modules[__name__], state)
     report()
