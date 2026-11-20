@@ -1362,3 +1362,9 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
   .sc-detail { grid-template-columns: 1fr; padding: 4px 12px 14px; gap: 4px; }
   .sc-top h1 { font-size: 18px; }
 }
+
+/* Settings → Connect a tool (settings.js connectRender) */
+.ct-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 6px 0 10px; flex-wrap: wrap; }
+.ct-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 6px 12px; color: var(--muted); font-size: 13px; }
+.ct-tabs button.on { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+#ct-body label { margin-top: 8px; }
