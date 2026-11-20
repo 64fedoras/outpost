@@ -236,10 +236,12 @@ func (c *Controller) runBestOf(ctx context.Context, t *Task, spec PlanSubtask, n
 	}
 	// Syntax check each candidate; if none passes keep them all and let the tests decide.
 	var passing []*bonCand
+	dropped := map[*bonCand]string{}
 	for _, cd := range cands {
 		if ok, why := c.syntaxCheck(ctx, t, spec, cd); ok {
 			passing = append(passing, cd)
 		} else {
+			dropped[cd] = why
 			t.logf("info", "%s: copy from %s dropped: %s", spec.ID, c.nodeLabel(cd.node), why)
 		}
 	}
@@ -256,14 +258,15 @@ func (c *Controller) runBestOf(ctx context.Context, t *Task, spec PlanSubtask, n
 		reason = "the only copy that passed the syntax check"
 	}
 	var win *bonCand
+	judge, plainReason := "", reason
 	if len(pool) == 1 {
 		win = pool[0]
 	} else {
-		var judge string
 		win, reason, judge = c.judgeCandidates(ctx, t, spec, pool)
 		if ctx.Err() != nil {
 			return node, errCancelled
 		}
+		plainReason = reason
 		if judge != "" {
 			reason = c.nodeLabel(judge) + " judged: " + reason
 		}
@@ -277,6 +280,7 @@ func (c *Controller) runBestOf(ctx context.Context, t *Task, spec PlanSubtask, n
 		return node, err
 	}
 	c.setBestOfNote(t, spec.ID, win.node, reason)
+	c.keepBestOf(t, spec, cands, dropped, win, judge, plainReason)
 	t.logf("info", "%s: best of %d: %s won — %s", spec.ID, len(cands), c.nodeLabel(win.node), reason)
 	return win.node, nil
 }

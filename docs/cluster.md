@@ -56,6 +56,16 @@ makes hard subtasks a little slower. Choose **Off**, **Hard subtasks** (default)
 under **Best of N on local nodes** in Settings. Tested against stub nodes only, not on a real cluster; the syntax check
 needs an exec-enabled node with the language installed and is skipped otherwise.
 
+**Comparing the versions.** When two or more versions finished, the subtask line on the task page gets a
+**Compare N** button. It shows the versions side by side, one column per node with its model and speed, and a tab
+per file. The judge's pick and the version now in the project are marked, a version the syntax check dropped
+says why, and lines that the version in use does not have are highlighted. Once the task has finished or been
+stopped, **Use this version** writes that version's files into the task and runs the tests (and fixes) again. Undo
+on the latest request puts the earlier files back. Subtasks that build on this one were written against the
+earlier version, and later fixes to these files are replaced, so check the test result. The versions are kept with
+the task on the controller (`tasks/<id>/rounds/<n>/bestof/`) and are deleted with it. Tasks that ran before this
+change have no saved versions. Tested with stub nodes and a faked comparison in the UI, not on a real cluster.
+
 ### Pooling memory (experimental, off by default, trusted LANs only)
 
 Pooling is **off by default**. Read the security model below before switching it on; it is meant for a

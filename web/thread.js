@@ -451,7 +451,8 @@ function progressCard(t) {
     const lives = liveFor((c) => c.sub === s.id).map(([id, c]) => livePane(c, id)).join('');
     const idle = ['done', 'failed', 'cancelled'].includes(t.status) && s.kind !== 'investigate' && (x.status === 'done' || x.status === 'failed');
     const redo = idle ? `<button class="small p-redo" data-act="task-redo" data-sub="${esc(s.id)}" title="Write this subtask again on a node you pick, then re-run the tests">Redo…</button>` : '';
-    return `<li class="p-${x.status}"><span class="p-ico" aria-hidden="true">${ST_ICON[x.status] || ''}</span><span class="p-title">${esc(s.title)}</span><span class="p-who">${who}</span>${redo}${lives}</li>`;
+    const cmp = x.best_of_n > 1 && x.status === 'done' ? `<button class="small p-cmp" data-act="task-bestof" data-sub="${esc(s.id)}" title="See the versions side by side with the judge's reason, and use a different one">Compare ${x.best_of_n}</button>` : '';
+    return `<li class="p-${x.status}"><span class="p-ico" aria-hidden="true">${ST_ICON[x.status] || ''}</span><span class="p-title">${esc(s.title)}</span><span class="p-who">${who}</span>${cmp ? `<span class="p-redo p-acts">${cmp}${redo}</span>` : redo}${lives}</li>`;
   }).join('');
   let phase = '';
   if (t.activity) phase = '';   // the "Tests and fixes" card below says it in more detail
@@ -527,6 +528,67 @@ $('redo-go').onclick = async () => {
   try { await post(`/api/tasks/${redoSub.task}/subtasks/${encodeURIComponent(redoSub.sub)}/redo`, { node: $('redo-node').value, note: $('redo-note').value }); close('modal-redo'); toast('Redoing'); pollTask(); }
   catch (e) { toast(e.message); }
 };
+
+// Best-of-N comparison (bestofn_compare.go): every version side by side, the
+// judge's reason, and "Use this version" while the task is stopped.
+let bo = null; // { task, sub, data, file }
+async function openBestOf(t, sid) {
+  try {
+    const data = await api(`/api/tasks/${t.id}/subtasks/${encodeURIComponent(sid)}/bestof`);
+    bo = { task: t.id, sub: sid, data, file: data.files[0] };
+    renderBestOf();
+    open('modal-bestof');
+  } catch (e) { toast(e.message); }
+}
+function renderBestOf() {
+  const d = bo.data;
+  $('bo-title').textContent = d.title;
+  const byLabel = (l) => d.cands.find((c) => c.label === l);
+  const win = byLabel(d.winner);
+  const judged = d.judge ? `${d.judge} judged: ${d.reason}` : d.reason || 'picked without a judge';
+  $('bo-why').textContent = `${d.cands.length} nodes wrote this subtask. ${judged} (version ${d.winner}, from ${win ? win.node_name : '?'}).` +
+    (d.picked ? ` You then picked version ${d.picked}.` : '');
+  setHTML('bo-files', d.files.length > 1 ? d.files.map((f) => `<button role="tab" class="small${f === bo.file ? ' on' : ''}" aria-selected="${f === bo.file}" data-bo-file="${esc(f)}">${esc(f)}</button>`).join('') : `<span class="hint">${esc(d.files[0] || '')}</span>`);
+  // Lines that the version in use does not have are marked, so the differences stand out.
+  const ref = byLabel(d.current || d.picked || d.winner) || win;
+  const refLines = new Set(((ref && ref.files[bo.file]) || '').split('\n'));
+  const col = (c) => {
+    const text = c.files[bo.file] || '';
+    const lines = text.split('\n');
+    if (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const uniq = c === ref ? 0 : lines.filter((l) => !refLines.has(l)).length;
+    const body = lines.map((l) => c !== ref && !refLines.has(l) ? `<span class="bo-uniq">${esc(l) || ' '}</span>` : esc(l)).join('\n');
+    const tags = [
+      c.label === d.winner ? '<span class="pill">Judge’s pick</span>' : '',
+      c.label === d.current ? '<span class="pill good">In use</span>' : '',
+      c.dropped ? `<span class="pill bad" title="${esc(c.dropped)}">Failed syntax check</span>` : '',
+    ].join('');
+    const meta = [c.model, c.tok_per_s ? c.tok_per_s.toFixed(1) + ' tok/s' : '', lines.length + ' lines', c === ref ? '' : uniq + (uniq === 1 ? ' line differs' : ' lines differ')].filter(Boolean).map(esc).join(' · ');
+    const use = d.can_pick && c.label !== d.current ? `<button class="small" data-bo-use="${esc(c.label)}">Use this version</button>` : '';
+    return `<section class="bo-col${c.label === d.current ? ' cur' : ''}" aria-label="Version ${esc(c.label)}">
+      <div class="bo-head"><b>${esc(c.label)}</b><span class="nv-ell">${esc(c.node_name)}</span>${tags}<span class="nv-grow"></span>${use}</div>
+      <div class="bo-meta">${meta}</div>${c.dropped ? `<div class="bo-meta bad">${esc(c.dropped)}</div>` : ''}
+      <pre class="out bo-code">${body || '<span class="muted">(empty)</span>'}</pre></section>`;
+  };
+  setHTML('bo-cols', d.cands.map(col).join(''));
+  $('bo-cols').dataset.n = String(d.cands.length);
+  $('bo-note').textContent = d.can_pick
+    ? `Use this version writes its ${d.files.length === 1 ? 'file' : 'files'} into the task (Undo on the latest request puts the old ones back) and runs the tests again. Subtasks that build on this one were written against the version in use, and later fixes to ${d.files.length === 1 ? 'this file' : 'these files'} are replaced.`
+      + (d.current ? '' : ' The files have changed since (a fix or an edit), so no version matches them exactly.')
+    : 'You can use a different version once the task has finished or is stopped.';
+}
+$('bo-files').addEventListener('click', (e) => { const b = e.target.closest('[data-bo-file]'); if (b && bo) { bo.file = b.dataset.boFile; renderBestOf(); } });
+$('bo-cols').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-bo-use]');
+  if (!b || !bo) return;
+  b.disabled = true;
+  try {
+    const r = await post(`/api/tasks/${bo.task}/subtasks/${encodeURIComponent(bo.sub)}/bestof`, { label: b.dataset.boUse });
+    close('modal-bestof');
+    toast(r.tests ? `Using version ${b.dataset.boUse}; running the tests again` : `Using version ${b.dataset.boUse}`);
+    pollTask();
+  } catch (err) { b.disabled = false; toast(err.message); }
+});
 
 // The one-line summary under a Finished card (stats.go).
 function statsLine(s) {
@@ -730,6 +792,7 @@ async function taskAction(act, el) {
   try {
     switch (act) {
       case 'task-redo': openRedo(taskDetail, el.dataset.sub); return;
+      case 'task-bestof': openBestOf(taskDetail, el.dataset.sub); return;
       case 'task-approve': {
         const pm = pickModels.task === id && pickModels.on;
         await post(`/api/tasks/${id}/approve`, { cap_usd: parseFloat(($('ta-cap') || {}).value) || 0, auto_models: pm, keep_models: pm && pickModels.keep, model_cap_gb: pm ? parseFloat(pickModels.cap) || 0 : 0 });

@@ -362,6 +362,8 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/tasks/{id}/resume", c.auth(c.handleResumeTask))
 	mux.HandleFunc("POST /api/tasks/{id}/rerun", c.auth(c.handleRerunPlan))
 	mux.HandleFunc("POST /api/tasks/{id}/subtasks/{sid}/redo", c.auth(c.handleRedoSubtask))
+	mux.HandleFunc("GET /api/tasks/{id}/subtasks/{sid}/bestof", c.auth(c.handleBestOfView))
+	mux.HandleFunc("POST /api/tasks/{id}/subtasks/{sid}/bestof", c.auth(c.handleBestOfPick))
 	mux.HandleFunc("POST /api/tasks/{id}/plan/edit", c.auth(c.handleEditPlan))
 	mux.HandleFunc("GET /api/tasks/{id}/events", c.auth(c.handleTaskEvents))
 	mux.HandleFunc("GET /api/tasks/{id}/file", c.auth(c.handleTaskFile))

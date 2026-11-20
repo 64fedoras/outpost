@@ -133,6 +133,7 @@ func (c *Controller) handleRedoSubtask(w http.ResponseWriter, r *http.Request) {
 	t.mu.Lock()
 	st.Status, st.Node, st.NodeName, st.Error = "pending", "", "", ""
 	st.Attempts, st.ByPlanner, st.Reviewer, st.ReviewFix, st.ReviewNote, st.BestOf = 0, false, "", false, "", ""
+	st.BestOfN, st.BestOfRound = 0, 0
 	st.Started, st.Ended = nil, nil
 	st.Prefer, st.RedoNote = req.Node, req.Note
 	t.applyRerunCap(req.CapUSD)

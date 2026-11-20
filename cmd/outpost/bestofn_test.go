@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -343,4 +345,83 @@ func TestSettingsBestOfN(t *testing.T) {
 func decodeInline(f FileEntry) (string, error) {
 	b, err := base64.StdEncoding.DecodeString(f.InlineB64)
 	return string(b), err
+}
+
+// The candidates are kept for the comparison view, and the owner can pick another one.
+func TestBestOfKeptAndPicked(t *testing.T) {
+	r := newBonRig(t, map[string]string{"n1": "big-32b", "n2": "mid-14b", "n3": "mid-14b"})
+	c := r.c
+	c.tasks = map[string]*Task{"t1": r.task}
+	c.tryReserve("n1")
+	c.tryReserve("n2")
+	c.tryReserve("n3")
+	g := &bonGroup{}
+	c.launchExtras(context.Background(), r.task, g, r.spec, []string{"n2", "n3"})
+	if _, err := c.runBestOf(context.Background(), r.task, r.spec, "n1", g, func() { c.releaseNode("n1") }); err != nil {
+		t.Fatal(err)
+	}
+	st := r.task.subtask("s1")
+	if st.BestOfN != 3 || st.BestOfRound != 1 {
+		t.Fatalf("subtask %+v", st)
+	}
+
+	view := func() bonView {
+		req := httptest.NewRequest("GET", "/api/tasks/t1/subtasks/s1/bestof", nil)
+		req.SetPathValue("id", "t1")
+		req.SetPathValue("sid", "s1")
+		rr := httptest.NewRecorder()
+		c.handleBestOfView(rr, req)
+		if rr.Code != 200 {
+			t.Fatalf("view %d %s", rr.Code, rr.Body)
+		}
+		var v struct {
+			bonRecord
+			Current string `json:"current"`
+			CanPick bool   `json:"can_pick"`
+		}
+		json.Unmarshal(rr.Body.Bytes(), &v)
+		return bonView{bonRecord: &v.bonRecord, Current: v.Current, CanPick: v.CanPick}
+	}
+	v := view()
+	if len(v.Cands) != 3 || v.Winner != "B" || v.Current != "B" || v.Reason != "B has the edge cases." || v.Judge == "" || v.CanPick {
+		t.Fatalf("view %+v", v)
+	}
+	if v.Cands[0].Files["dice.py"] != "code from n1\n" {
+		t.Fatalf("candidate A %+v", v.Cands[0])
+	}
+
+	pick := func(label string) int {
+		req := httptest.NewRequest("POST", "/api/tasks/t1/subtasks/s1/bestof", strings.NewReader(`{"label":"`+label+`"}`))
+		req.SetPathValue("id", "t1")
+		req.SetPathValue("sid", "s1")
+		rr := httptest.NewRecorder()
+		c.handleBestOfPick(rr, req)
+		return rr.Code
+	}
+	r.task.Status = "running"
+	if code := pick("C"); code != 409 {
+		t.Fatalf("pick while running: %d", code)
+	}
+	r.task.Status = "done"
+	if code := pick("Z"); code != 400 {
+		t.Fatalf("unknown label: %d", code)
+	}
+	if code := pick("c"); code != 200 {
+		t.Fatalf("pick: %d", code)
+	}
+	want := v.Cands[2].Files["dice.py"]
+	if r.written(t) != want {
+		t.Fatalf("file %q, want %q", r.written(t), want)
+	}
+	if v := view(); v.Picked != "C" || v.Current != "C" || !v.CanPick {
+		t.Fatalf("after pick %+v", v)
+	}
+	if st := r.task.subtask("s1"); st.Node != v.Cands[2].Node || !strings.Contains(st.BestOf, "you picked") {
+		t.Fatalf("subtask after pick %+v", st)
+	}
+	// Editing the file afterwards means no version matches.
+	os.WriteFile(filepath.Join(r.task.repoDir(), "dice.py"), []byte("edited\n"), 0o644)
+	if v := view(); v.Current != "" {
+		t.Fatalf("current after edit %q", v.Current)
+	}
 }
