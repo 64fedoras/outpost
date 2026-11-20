@@ -22,15 +22,16 @@ import (
 )
 
 type ChatMsg struct {
-	ID    string    `json:"id"`
-	Role  string    `json:"role"` // user | assistant
-	Text  string    `json:"text"`
-	Node  string    `json:"node,omitempty"`  // who answered
-	Model string    `json:"model,omitempty"` // the model that answered
-	TPS   float64   `json:"tok_s,omitempty"`
-	Error string    `json:"error,omitempty"`
-	Note  string    `json:"note,omitempty"` // e.g. that the web was searched, or why it was not
-	At    time.Time `json:"at"`
+	ID     string    `json:"id"`
+	Role   string    `json:"role"` // user | assistant
+	Text   string    `json:"text"`
+	Images []string  `json:"images,omitempty"` // user: screenshots saved with the chat (chat_images.go)
+	Node   string    `json:"node,omitempty"`   // who answered
+	Model  string    `json:"model,omitempty"`  // the model that answered
+	TPS    float64   `json:"tok_s,omitempty"`
+	Error  string    `json:"error,omitempty"`
+	Note   string    `json:"note,omitempty"` // e.g. that the web was searched, or why it was not
+	At     time.Time `json:"at"`
 }
 
 type Chat struct {
@@ -105,6 +106,7 @@ func (c *Controller) chatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/chats/{id}", c.auth(c.handleDeleteChat))
 	mux.HandleFunc("POST /api/chats/{id}/messages", c.auth(c.handleChatSend))
 	mux.HandleFunc("POST /api/chats/{id}/stop", c.auth(c.handleChatStop))
+	mux.HandleFunc("GET /api/chats/{id}/image", c.auth(c.handleChatImage))
 	mux.HandleFunc("GET /api/chats/{id}/events", c.authSession(c.handleChatEvents))
 }
 
@@ -135,13 +137,14 @@ func (c *Controller) handleGetChat(w http.ResponseWriter, r *http.Request) {
 }
 
 type chatReq struct {
-	Text string `json:"text"`
-	Node string `json:"node"` // "auto" or a node id; empty keeps the chat's choice
+	Text   string        `json:"text"`
+	Node   string        `json:"node"` // "auto" or a node id; empty keeps the chat's choice
+	Images []imageUpload `json:"images"`
 }
 
 func (req *chatReq) check() error {
 	req.Text = strings.TrimSpace(req.Text)
-	if req.Text == "" {
+	if req.Text == "" && len(req.Images) == 0 {
 		return errors.New("type a message first")
 	}
 	if len(req.Text) > maxChatMsgChars {
@@ -150,18 +153,38 @@ func (req *chatReq) check() error {
 	return nil
 }
 
+// checked validates the message and its images (type, size, count) and, when
+// there are images, that a node that can read them is ready.
+func (req *chatReq) checked(c *Controller) ([]llmImage, error) {
+	if err := req.check(); err != nil {
+		return nil, err
+	}
+	if len(req.Images) == 0 {
+		return nil, nil
+	}
+	imgs, err := decodeImages(req.Images)
+	if err != nil {
+		return nil, err
+	}
+	if !c.anyVisionNode(firstNonEmpty(req.Node, "auto")) {
+		return nil, errNoVisionChat
+	}
+	return imgs, nil
+}
+
 func (c *Controller) handleNewChat(w http.ResponseWriter, r *http.Request) {
 	var req chatReq
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10)).Decode(&req); err != nil {
+	if err := readJSONBody(w, r, &req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad request"})
 		return
 	}
-	if err := req.check(); err != nil {
+	imgs, err := req.checked(c)
+	if err != nil {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
 	now := time.Now()
-	ch := &Chat{ID: newID("chat"), Title: chatTitle(req.Text), Node: firstNonEmpty(req.Node, "auto"), Created: now, Updated: now, dir: c.chatsDir()}
+	ch := &Chat{ID: newID("chat"), Title: chatTitle(firstNonEmpty(req.Text, "Image")), Node: firstNonEmpty(req.Node, "auto"), Created: now, Updated: now, dir: c.chatsDir()}
 	c.chatMu.Lock()
 	if len(c.chats) >= maxChats {
 		c.chatMu.Unlock()
@@ -170,7 +193,7 @@ func (c *Controller) handleNewChat(w http.ResponseWriter, r *http.Request) {
 	}
 	c.chats[ch.ID] = ch
 	c.chatMu.Unlock()
-	c.startChatReply(ch, req.Text)
+	c.startChatReplyImgs(ch, req.Text, imgs)
 	writeJSON(w, 200, map[string]string{"id": ch.ID})
 }
 
@@ -181,11 +204,17 @@ func (c *Controller) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req chatReq
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10)).Decode(&req); err != nil {
+	if err := readJSONBody(w, r, &req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad request"})
 		return
 	}
-	if err := req.check(); err != nil {
+	ch.mu.Lock()
+	if req.Node == "" {
+		req.Node = ch.Node
+	}
+	ch.mu.Unlock()
+	imgs, err := req.checked(c)
+	if err != nil {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
@@ -194,7 +223,7 @@ func (c *Controller) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		ch.Node = req.Node
 	}
 	ch.mu.Unlock()
-	if !c.startChatReply(ch, req.Text) {
+	if !c.startChatReplyImgs(ch, req.Text, imgs) {
 		writeJSON(w, 409, map[string]string{"error": "wait for the answer (or stop it) first"})
 		return
 	}
@@ -231,6 +260,7 @@ func (c *Controller) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 	}
 	ch.mu.Unlock()
 	os.Remove(filepath.Join(c.chatsDir(), id+".json"))
+	os.RemoveAll(filepath.Join(c.chatsDir(), id+"-images"))
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -260,16 +290,24 @@ func chatTitle(text string) string {
 // check and the Busy mark happen under one lock, so a double send cannot start
 // two answers.
 func (c *Controller) startChatReply(ch *Chat, text string) bool {
+	return c.startChatReplyImgs(ch, text, nil)
+}
+
+func (c *Controller) startChatReplyImgs(ch *Chat, text string, imgs []llmImage) bool {
 	ch.mu.Lock()
 	if ch.Busy != "" {
 		ch.mu.Unlock()
 		return false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), chatWait+chatTimeout)
-	ch.Messages = append(ch.Messages, ChatMsg{ID: newID("m"), Role: "user", Text: text, At: time.Now()})
+	names, err := ch.saveImages(imgs)
+	if err != nil {
+		log.Printf("chat %s: saving images failed: %v", ch.ID, err)
+	}
+	ch.Messages = append(ch.Messages, ChatMsg{ID: newID("m"), Role: "user", Text: text, Images: names, At: time.Now()})
 	ch.Updated, ch.Busy, ch.cancel = time.Now(), "waiting", cancel
 	pref := ch.Node
-	hist := chatHistory(ch.Messages)
+	hist := chatHistoryWith(ch.Messages, ch.imageURI)
 	ch.saveLocked()
 	ch.mu.Unlock()
 	taskLive.changed("chat_" + ch.ID)
@@ -294,13 +332,35 @@ func (c *Controller) startChatReply(ch *Chat, text string) bool {
 
 // chatHistory turns the stored messages into the model's conversation.
 // Failed answers are left out.
-func chatHistory(msgs []ChatMsg) []ChatMessage {
+func chatHistory(msgs []ChatMsg) []ChatMessage { return chatHistoryWith(msgs, nil) }
+
+// chatHistoryWith also attaches saved images (read through load) to the
+// newest messages that have some, at most chatHistoryImages in all; older
+// images are left out of the call but stay in the chat.
+func chatHistoryWith(msgs []ChatMsg, load func(string) string) []ChatMessage {
 	out := []ChatMessage{{Role: "system", Content: "You are a helpful, concise assistant. Format code in fenced blocks."}}
-	for _, m := range msgs {
-		if m.Error != "" || m.Text == "" {
+	left := chatHistoryImages
+	imgOf := make([][]string, len(msgs))
+	for i := len(msgs) - 1; i >= 0 && load != nil; i-- {
+		if msgs[i].Error != "" {
 			continue
 		}
-		out = append(out, ChatMessage{Role: m.Role, Content: m.Text})
+		for j := len(msgs[i].Images) - 1; j >= 0 && left > 0; j-- {
+			if u := load(msgs[i].Images[j]); u != "" {
+				imgOf[i] = append([]string{u}, imgOf[i]...)
+				left--
+			}
+		}
+	}
+	for i, m := range msgs {
+		if m.Error != "" || (m.Text == "" && len(m.Images) == 0) {
+			continue
+		}
+		text := m.Text
+		if text == "" {
+			text = "Describe this image."
+		}
+		out = append(out, ChatMessage{Role: m.Role, Content: text, Images: imgOf[i]})
 	}
 	return out
 }
@@ -329,7 +389,13 @@ func fitHistory(msgs []ChatMessage, budget int) []ChatMessage {
 
 // answerChat waits for a free node, runs the call and returns the assistant message.
 func (c *Controller) answerChat(ctx context.Context, chatID, pref string, hist []ChatMessage, started func()) ChatMsg {
-	node, err := c.acquireModelNode(ctx, pref, "", chatWait)
+	var want func(string) bool
+	for _, m := range hist {
+		if len(m.Images) > 0 {
+			want = c.nodeVision // an image in the call needs a node that can read it
+		}
+	}
+	node, err := c.acquireNodeWhere(ctx, pref, want, errNoVisionChat, chatWait)
 	if err != nil {
 		return ChatMsg{Role: "assistant", Error: err.Error()}
 	}
@@ -376,23 +442,34 @@ func (c *Controller) answerChat(ctx context.Context, chatID, pref string, hist [
 // takes the strongest free node, a node id waits for that node, and model
 // (when set) only accepts nodes with that model loaded. It gives up after wait.
 func (c *Controller) acquireModelNode(ctx context.Context, pref, model string, wait time.Duration) (string, error) {
+	var want func(string) bool
+	if model != "" {
+		want = func(id string) bool {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			hb := c.lastHB[id]
+			return hb != nil && hb.LoadedModel == model
+		}
+	}
+	return c.acquireNodeWhere(ctx, pref, want, fmt.Errorf("no ready node has %s loaded", model), wait)
+}
+
+// acquireNodeWhere is acquireModelNode with any test on the node (nil takes
+// every ready node); noneErr is what it says when no ready node passes it.
+func (c *Controller) acquireNodeWhere(ctx context.Context, pref string, want func(string) bool, noneErr error, wait time.Duration) (string, error) {
 	deadline := time.Now().Add(wait)
 	for {
 		ready := c.workerNodes()
 		var cands []string
-		c.mu.Lock()
 		for _, id := range ready {
 			if pref != "" && pref != "auto" && id != pref {
 				continue
 			}
-			if model != "" {
-				if hb := c.lastHB[id]; hb == nil || hb.LoadedModel != model {
-					continue
-				}
+			if want != nil && !want(id) {
+				continue
 			}
 			cands = append(cands, id)
 		}
-		c.mu.Unlock()
 		for _, id := range cands {
 			if c.tryReserve(id) {
 				return id, nil
@@ -400,8 +477,8 @@ func (c *Controller) acquireModelNode(ctx context.Context, pref, model string, w
 		}
 		if time.Now().After(deadline) {
 			switch {
-			case len(cands) == 0 && model != "":
-				return "", fmt.Errorf("no ready node has %s loaded", model)
+			case len(cands) == 0 && want != nil:
+				return "", noneErr
 			case len(cands) == 0 && pref != "" && pref != "auto":
 				return "", errors.New("that node is offline, paused or has no model ready")
 			case len(cands) == 0:

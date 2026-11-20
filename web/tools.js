@@ -26,7 +26,13 @@ function readImage(file) {
   });
 }
 // visionProblem says why a planner cannot read images, or '' if it can (or we cannot tell here; the controller checks again).
+// 'chat:auto' (the Chat page's Auto) asks whether any ready node has a vision model loaded.
 function visionProblem(planner) {
+  if (planner === 'chat:auto') {
+    if (!state || !models) return '';
+    const ok = state.nodes.some((n) => n.heartbeat && n.heartbeat.loaded_model && (models.models.find((m) => m.name === n.heartbeat.loaded_model) || {}).vision);
+    return ok ? '' : 'No node has a Vision model loaded, so nothing can read this image. Load Qwen3.6 or Gemma 4 from the Models page, or pick a node that has one.';
+  }
   if (!planner || !planner.startsWith('node:')) return '';
   const n = state && state.nodes.find((x) => 'node:' + x.id === planner), hb = n && n.heartbeat;
   const name = hb && hb.loaded_model;
@@ -55,15 +61,17 @@ function imageAttach(pre, getPlanner, warnEl) {
   $(pre + '-attach').onclick = () => file.click();
   file.onchange = () => { add([...file.files]); file.value = ''; };
   strip.onclick = (e) => { const b = e.target.closest('button[data-i]'); if (b) { items.splice(+b.dataset.i, 1); refresh(); } };
-  const box = pre === 'nt' ? $('nt-prompt') : $('tm-text');
+  const box = pre === 'nt' ? $('nt-prompt') : $(pre + '-text');
   box.addEventListener('paste', (e) => { const fs = [...(e.clipboardData ? e.clipboardData.files : [])].filter((f) => f.type.startsWith('image/')); if (fs.length) { e.preventDefault(); add(fs); } });
-  const comp = box.closest('.composer');
-  comp.addEventListener('dragover', (e) => { if ([...(e.dataTransfer.types || [])].includes('Files')) e.preventDefault(); });
-  comp.addEventListener('drop', (e) => { const fs = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/')); if (fs.length) { e.preventDefault(); add(fs); } });
+  const comp = box.closest('.composer, .chat-compose');
+  comp.addEventListener('dragover', (e) => { if ([...(e.dataTransfer.types || [])].includes('Files')) { e.preventDefault(); comp.classList.add('drop-on'); } });
+  comp.addEventListener('dragleave', (e) => { if (!comp.contains(e.relatedTarget)) comp.classList.remove('drop-on'); });
+  comp.addEventListener('drop', (e) => { comp.classList.remove('drop-on'); const fs = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/')); if (fs.length) { e.preventDefault(); add(fs); } });
   return { payload: () => items.map((i) => ({ name: i.name, data: i.data })), clear: () => { items = []; refresh(); }, refresh };
 }
 const ntImg = imageAttach('nt', () => $('nt-planner').value, $('nt-img-warn'));
 const tmImg = imageAttach('tm', () => taskDetail && taskDetail.planner, $('tm-img-warn'));
+const chatImg = imageAttach('chat', () => { const v = $('chat-node').value || 'auto'; return v === 'auto' ? 'chat:auto' : 'node:' + v; }, $('chat-img-warn'));
 const ntDraft = Drafts.bind($('nt-prompt'), $('nt-draft')), tmDraft = Drafts.bind($('tm-text'), $('tm-draft'));
 
 // ---- Check cluster (clustercheck.go) ----

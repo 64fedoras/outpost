@@ -248,8 +248,11 @@
           <div class="chat-dock">
             <div class="chat-col">
               <div class="chat-compose">
+                <div class="error-msg hidden" id="chat-img-warn"></div>
+                <div class="img-strip" id="chat-imgs"></div>
                 <textarea id="chat-text" rows="2" enterkeyhint="enter" placeholder="Ask anything…" aria-label="Message"></textarea>
                 <div class="chat-bar">
+                  <button type="button" class="tb chat-attach" id="chat-attach" title="Attach screenshots or images (PNG, JPEG, WebP, GIF). You can also paste or drop them." aria-label="Attach images">📎</button><input type="file" id="chat-file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
                   <select id="chat-node" class="chat-pill" aria-label="Which node answers"></select>
                   <span class="grow"></span>
                   <button class="small hidden" id="chat-totask" title="Start a new task with this conversation as its request">Make this a task</button>
