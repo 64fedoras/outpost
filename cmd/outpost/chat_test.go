@@ -92,6 +92,7 @@ func chatController(t *testing.T) *Controller {
 		jobs: map[string]*JobRec{}, waiters: map[string]chan *JobResult{}, reserved: map[string]int{}, pipelines: map[string]*pipeline{},
 		cooldown: map[string]time.Time{}, nodes: map[string]*NodeRec{"n": {ID: "n", Name: "gpu-box", LoadPrefs: &ModelLoad{Name: "m", Ctx: 4096}}},
 		chats: map[string]*Chat{}, models: map[string]*ModelRec{}}
+	c.settings.MemorySuggestOff = true // tests that count calls; memory_test.go turns it on
 	return c
 }
 

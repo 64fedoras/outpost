@@ -60,6 +60,7 @@ async function loadSettings() {
   if (state) $('set-planner').innerHTML = plannerOptions(settings.default_planner);
   renderAutoOrder(settings.auto_order || ['local', 'claude', 'openrouter']);
   loadNotifySettings();
+  loadMemory();
   loadSecurity();
   loadStorage();
   loadScorecard();

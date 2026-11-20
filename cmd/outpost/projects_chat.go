@@ -36,12 +36,15 @@ type ProjectChatMsg struct {
 	Error string    `json:"error,omitempty"`
 	Cost  float64   `json:"cost_usd,omitempty"`
 	Reads []string  `json:"reads,omitempty"` // assistant: files it listed, read, searched or outlined
+	// Suggest is a fact for this project's memory offered by a node planner (memory.go).
+	Suggest string `json:"suggest,omitempty"`
 }
 
 type projectChat struct {
 	mu       sync.Mutex
 	path     string
 	Messages []ProjectChatMsg `json:"messages"`
+	MemTries int              `json:"mem_tries,omitempty"` // answers that asked for a memory suggestion
 	busy     bool
 	cancel   context.CancelFunc
 	reading  []string // chips of the answer being written
@@ -302,6 +305,7 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 	var who string
 	var cost float64
 	var step projectStep
+	var memInfer inferFn // the node planner, for a memory suggestion
 	maxOut, resCap, budget := projectChatOut, agentResultCap/2, 200000
 	if isCloudPlanner(planner) {
 		if planner == "openrouter" {
@@ -366,6 +370,9 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 			}
 			return &llmResponse{Text: out.Text, Calls: fromWireCalls(out.ToolCalls)}, nil
 		}
+		memInfer = func(ctx context.Context, spec InferenceSpec) (*InferenceOutput, error) {
+			return c.runInferenceJob(ctx, node, spec, "Project chat: memory", 2*time.Minute)
+		}
 	}
 	pr := newProjectReads(repo)
 	onNote := func(n []string) {
@@ -398,6 +405,26 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 	}
 	reply, asks := splitTaskBlocks(text)
 	msg := ProjectChatMsg{Text: reply, Who: who, Cost: cost, Reads: pr.Notes}
+	if memInfer != nil && c.memorySuggestOn() {
+		pc.mu.Lock()
+		ask := pc.MemTries < maxMemoryTries
+		for _, m := range pc.Messages {
+			ask = ask && m.Suggest == ""
+		}
+		if ask {
+			pc.MemTries++
+		}
+		pc.mu.Unlock()
+		if ask {
+			var owner []string
+			for _, m := range hist {
+				if m.Role == "user" {
+					owner = append(owner, m.Text)
+				}
+			}
+			msg.Suggest = suggestMemory(ctx, memInfer, owner, c.mem().forScope(p.ID))
+		}
+	}
 	var failed []string
 	for _, prompt := range asks {
 		t, _, terr := c.createTask(createReq{Prompt: prompt, Project: p.ID}, nil, createOpts{})
@@ -485,6 +512,9 @@ Rules: start a task only when the owner asks for work or agrees to your suggesti
 	}
 	if s := strings.TrimSpace(instr); s != "" {
 		fmt.Fprintf(&b, "\nProject instructions (the owner's standing rules):\n%s\n", clip(s, 3000))
+	}
+	if m := c.memoryPrompt(p.ID); m != "" {
+		b.WriteString(m + "\n")
 	}
 
 	c.mu.Lock()

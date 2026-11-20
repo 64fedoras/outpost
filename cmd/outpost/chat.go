@@ -37,6 +37,9 @@ type ChatMsg struct {
 	// this version's place among all of them, counted from 0.
 	Alts []ChatAlt `json:"alts,omitempty"`
 	Ver  int       `json:"ver,omitempty"`
+	// Suggest is a fact the answering model offered to remember (memory.go),
+	// shown under the answer until the owner remembers or dismisses it.
+	Suggest string `json:"suggest,omitempty"`
 }
 
 type Chat struct {
@@ -49,7 +52,8 @@ type Chat struct {
 	GroupID  string    `json:"group_id,omitempty"` // sidebar group (groups.go)
 	// Instructions are this chat's standing rules, added to the system prompt.
 	Instructions string `json:"instructions,omitempty"`
-	Busy         string `json:"busy,omitempty"` // "" | waiting | answering (not saved meaningfully; reset at load)
+	Busy         string `json:"busy,omitempty"`      // "" | waiting | answering (not saved meaningfully; reset at load)
+	MemTries     int    `json:"mem_tries,omitempty"` // answers that asked for a memory suggestion (memory.go)
 
 	dir    string
 	cancel context.CancelFunc
@@ -345,12 +349,21 @@ func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
 	pref := ch.Node
 	hist := chatHistoryWith(ch.Messages, ch.imageURI)
 	hist[0].Content = c.chatSystemPrompt(ch.Instructions)
+	askMem := ch.MemTries < maxMemoryTries && c.memorySuggestOn()
+	if askMem {
+		for _, m := range ch.Messages {
+			askMem = askMem && m.Suggest == ""
+		}
+	}
+	if askMem {
+		ch.MemTries++
+	}
 	ch.saveLocked()
 	ch.mu.Unlock()
 	taskLive.changed("chat_" + ch.ID)
 	go func() {
 		defer cancel()
-		msg := c.answerChat(ctx, ch.ID, pref, hist, func() {
+		msg := c.answerChatMem(ctx, ch.ID, pref, hist, askMem, func() {
 			ch.mu.Lock()
 			ch.Busy = "answering"
 			ch.mu.Unlock()
@@ -425,6 +438,12 @@ func fitHistory(msgs []ChatMessage, budget int) []ChatMessage {
 
 // answerChat waits for a free node, runs the call and returns the assistant message.
 func (c *Controller) answerChat(ctx context.Context, chatID, pref string, hist []ChatMessage, started func()) ChatMsg {
+	return c.answerChatMem(ctx, chatID, pref, hist, false, started)
+}
+
+// answerChatMem is answerChat that, with askMem, also asks the same node for a
+// fact to remember once the answer is in (memory.go).
+func (c *Controller) answerChatMem(ctx context.Context, chatID, pref string, hist []ChatMessage, askMem bool, started func()) ChatMsg {
 	var want func(string) bool
 	for _, m := range hist {
 		if len(m.Images) > 0 {
@@ -471,7 +490,20 @@ func (c *Controller) answerChat(ctx context.Context, chatID, pref string, hist [
 	if out.FinishReason == "length" {
 		text += "\n\n…(cut off at the length limit)"
 	}
-	return ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note}
+	msg := ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note}
+	if askMem {
+		var owner []string
+		for _, m := range hist {
+			if m.Role == "user" {
+				owner = append(owner, m.Content)
+			}
+		}
+		plain := func(ctx context.Context, spec InferenceSpec) (*InferenceOutput, error) {
+			return c.runInferenceJob(ctx, node, spec, "Chat: memory", 2*time.Minute)
+		}
+		msg.Suggest = suggestMemory(ctx, plain, owner, c.mem().forScope(""))
+	}
+	return msg
 }
 
 // acquireModelNode reserves a free slot on a ready node: pref "auto" (or "")

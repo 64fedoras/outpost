@@ -344,6 +344,7 @@ func runController(args []string) error {
 	c.templateRoutes(mux)
 	c.openAIRoutes(mux)
 	c.mcpRoutes(mux)
+	c.memoryRoutes(mux) // memory.go
 	c.imageRoutes(mux)
 	c.cadRoutes(mux)
 	mux.HandleFunc("GET /api/tasks", c.auth(c.handleListTasks))
