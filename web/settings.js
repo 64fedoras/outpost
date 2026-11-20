@@ -126,8 +126,10 @@ $('nf-test').onclick = async () => {
   try { await post('/api/settings', { notify: notifyBody() }); $('nf-ntfy-token').value = ''; await post('/api/notifications/test'); toast('Test sent'); loadSettings(); } catch (e) { toast(e.message); }
 };
 // Desktop notifications: the controller keeps recent events; each tab asks for the ones after its last position.
-let notifyLast = null;
+// The pushed state carries the newest id (notify_last), so a tab on the stream asks only when it moves.
+let notifyLast = null, notifyPushed;
 async function pollNotifications() {
+  if (notifyLast !== null && notifyPushed === notifyLast) return;
   try {
     const r = await api('/api/notifications' + (notifyLast === null ? '' : '?since=' + notifyLast));
     notifyLast = r.last;

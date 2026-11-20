@@ -10,6 +10,8 @@
 ## Connection and security
 A node joins with a one-time code containing the controller URL, its certificate fingerprint and a secret. After joining it keeps a WebSocket to `/v1/node/ws`, pinned to that fingerprint, and sends a hello plus heartbeats (hardware, loaded model, paused flag, running jobs). The controller pushes jobs, settings, model files, runtime installs and updates over the same socket. Exec jobs run commands as the node's service user and are off unless enabled per node.
 
+**Browser updates.** The UI files are served from the binary with a content ETag and a gzip copy (`static.go`), so a reload revalidates instead of downloading the UI again. Each tab holds one server-sent event stream, `/api/state/events` (`state_stream.go`): the controller rebuilds the cluster state once a second while a tab listens and sends it when it changed; the task list and projects are left out of a payload when that tab already has them, and `notify_last` tells the tab when to fetch browser notifications. If the stream fails the tab polls `/api/state` every 2 s.
+
 ## Task lifecycle
 Statuses: `planning`, `awaiting_answers`, `awaiting_approval`, `running`, `testing`, `fixing`, `queued` (waiting for the project slot), `paused_cap`, `done`, `failed`, `cancelled`, `interrupted` (set for in-flight tasks at controller restart; Resume continues from finished subtasks, and `tasks_autoresume.go` resumes local-planner tasks by itself once a node with a model reconnects). Subtask states: `pending`, `running`, `written`, `reviewing`, `done`, `failed`.
 1. A message creates a **round**. The planner (Claude API or a local node) returns either questions or a plan: title, summary, language, setup and test commands, and subtasks with files, dependencies and instructions.

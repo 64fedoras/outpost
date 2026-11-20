@@ -237,7 +237,7 @@ func (c *Controller) projectViews() []projectView {
 			GitToken: p.GitTokenEnc != "", GitKey: p.GitKeyEnc != "", GitPush: p.GitPush, GitPR: p.GitPR,
 			LastPush: p.LastPush, LastPR: p.LastPR, Pinned: p.Pinned, Tasks: counts[p.ID]})
 		p.mu.Unlock()
-		out[len(out)-1].Files = len(listRepo(p.repoDir()))
+		out[len(out)-1].Files = countRepoFiles(p.repoDir()) // repocount.go
 	}
 	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
 	return out

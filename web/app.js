@@ -182,7 +182,7 @@ $('recovered-banner').addEventListener('click', async (e) => {
 // ---------- polling ----------
 let failures = 0;
 async function refresh() {
-  try { state = await api('/api/state'); failures = 0; $('offline-banner').classList.add('hidden'); }
+  try { state = await api('/api/state'); failures = 0; $('offline-banner').classList.add('hidden'); notifyPushed = undefined; } // polling: ask for notifications each time
   catch (e) {
     if (e.message === 'login required') return;
     if (++failures >= 2) $('offline-banner').classList.remove('hidden');
@@ -198,11 +198,13 @@ async function refresh() {
   refreshGroups();
 }
 let modelsAt = 0, pushSeq = 0;
-// applyPushed takes one pushed payload: state, task list and projects together.
+// applyPushed takes one pushed payload: state, and the task list and projects when they changed.
 // The model list is not pushed; on the pages that show it, it is fetched at most every 5 s.
 async function applyPushed(d) {
   const seq = tasksSeq, mine = ++pushSeq;
-  state = d.state; if (seq === tasksSeq) tasks = d.tasks; projects = d.projects;
+  // The task list and projects are left out when they have not changed since the last payload.
+  state = d.state; if ('tasks' in d && seq === tasksSeq) tasks = d.tasks; if ('projects' in d) projects = d.projects;
+  if ('notify_last' in d) notifyPushed = d.notify_last;
   failures = 0; $('offline-banner').classList.add('hidden');
   if ((['nodes', 'models', 'new'].includes(page) || !models) && Date.now() - modelsAt > 5000) {
     modelsAt = Date.now();

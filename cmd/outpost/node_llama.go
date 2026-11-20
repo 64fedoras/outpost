@@ -514,7 +514,8 @@ func (l *llamaMgr) baseURL() string {
 }
 
 func (l *llamaMgr) waitReady(timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
+	start := time.Now()
+	deadline := start.Add(timeout)
 	client := &http.Client{Timeout: 3 * time.Second}
 	for time.Now().Before(deadline) {
 		l.mu.Lock()
@@ -538,7 +539,13 @@ func (l *llamaMgr) waitReady(timeout time.Duration) error {
 				return nil
 			}
 		}
-		time.Sleep(time.Second)
+		// Small models load in a second or two: check often at first so the
+		// first request is not held up to a second longer than needed.
+		if time.Since(start) < 30*time.Second {
+			time.Sleep(250 * time.Millisecond)
+		} else {
+			time.Sleep(time.Second)
+		}
 	}
 	return errors.New("timed out waiting for llama-server to load the model")
 }
