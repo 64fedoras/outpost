@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -107,5 +109,85 @@ func TestProjectChatSystemPrompt(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("system prompt lacks %q:\n%s", want, s)
 		}
+	}
+}
+
+func TestProjectReadTools(t *testing.T) {
+	repo := t.TempDir()
+	os.MkdirAll(filepath.Join(repo, "src"), 0o755)
+	os.WriteFile(filepath.Join(repo, "src", "app.go"), []byte("package app\n\nfunc Total(a, b int) int {\n\treturn a + b\n}\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "secret.env"), []byte("KEY=x\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, ".outpostignore"), []byte("*.env\n"), 0o644)
+	pr := newProjectReads(repo)
+	call := func(name, args string) string { return pr.run(toolCall{ID: "1", Name: name, Args: args}, 5000) }
+	if out := call("list_files", `{}`); !strings.Contains(out, "src/app.go") || strings.Contains(out, "secret.env") {
+		t.Fatalf("list: %s", out)
+	}
+	if out := call("read_file", `{"path":"./src/app.go","start_line":3,"end_line":4}`); !strings.Contains(out, "lines 3-4 of") || !strings.Contains(out, "func Total") {
+		t.Fatalf("read: %s", out)
+	}
+	if out := call("read_file", `{"path":"secret.env"}`); !strings.Contains(out, "outpostignore") {
+		t.Fatalf("ignored file was read: %s", out)
+	}
+	if out := call("read_file", `{"path":"../../etc/passwd"}`); !strings.HasPrefix(out, "error") {
+		t.Fatalf("escape: %s", out)
+	}
+	if out := call("search", `{"pattern":"KEY|Total"}`); !strings.Contains(out, "src/app.go:3:") || strings.Contains(out, "secret") {
+		t.Fatalf("search: %s", out)
+	}
+	if out := call("outline", `{"path":"src"}`); !strings.Contains(out, "func Total") {
+		t.Fatalf("outline: %s", out)
+	}
+	if out := call("write_file", `{"path":"x","content":"y"}`); !strings.Contains(out, "no such tool") {
+		t.Fatalf("write must not exist: %s", out)
+	}
+	want := []string{"Listed the project", "Read src/app.go 3-4", "Read etc/passwd", `Searched "KEY|Total"`, "Outline of src"}
+	if strings.Join(pr.Notes, ",") != strings.Join(want, ",") {
+		t.Fatalf("notes %q", pr.Notes)
+	}
+	// Fallback for models without tools: files the message names, by path or base name.
+	files, names := namedFiles(repo, "why does app.go add? also see secret.env", 10000)
+	if len(names) != 1 || names[0] != "src/app.go" || !strings.Contains(files, "func Total") {
+		t.Fatalf("named %v %s", names, files)
+	}
+}
+
+func TestProjectToolLoop(t *testing.T) {
+	repo := t.TempDir()
+	os.WriteFile(filepath.Join(repo, "a.py"), []byte("def roll():\n    return 4\n"), 0o644)
+	var reqs []llmRequest
+	step := func(ctx context.Context, req llmRequest) (*llmResponse, error) {
+		reqs = append(reqs, req)
+		if len(reqs) == 1 {
+			return &llmResponse{Calls: []toolCall{{ID: "c1", Name: "read_file", Args: `{"path":"a.py"}`}}}, nil
+		}
+		return &llmResponse{Text: "roll() returns 4 (a.py:2)"}, nil
+	}
+	pr := newProjectReads(repo)
+	var seen []string
+	resp, err := projectToolLoop(context.Background(), step, "sys", "Owner: what does roll do?", 500, 4000, 100000, pr, func(n []string) { seen = n })
+	if err != nil || resp.Text != "roll() returns 4 (a.py:2)" || len(seen) != 1 {
+		t.Fatalf("resp %+v err %v seen %v", resp, err, seen)
+	}
+	last := reqs[1].Msgs[len(reqs[1].Msgs)-1]
+	if last.Role != "tool" || last.CallID != "c1" || !strings.Contains(last.Text, "return 4") {
+		t.Fatalf("tool result %+v", last)
+	}
+	// A model that keeps calling tools is made to answer.
+	reqs = nil
+	loop := func(ctx context.Context, req llmRequest) (*llmResponse, error) {
+		reqs = append(reqs, req)
+		return &llmResponse{Text: "partial", Calls: []toolCall{{ID: "x", Name: "list_files", Args: `{}`}}}, nil
+	}
+	resp, err = projectToolLoop(context.Background(), loop, "sys", "u", 500, 4000, 100000, newProjectReads(repo), nil)
+	if err != nil || resp.Text != "partial" || len(reqs) != maxProjectToolRounds+1 {
+		t.Fatalf("rounds %d resp %+v err %v", len(reqs), resp, err)
+	}
+	// A server without tool support: the caller falls back.
+	_, err = projectToolLoop(context.Background(), func(ctx context.Context, req llmRequest) (*llmResponse, error) {
+		return nil, errors.New("tools param requires --jinja flag")
+	}, "s", "u", 500, 4000, 100000, newProjectReads(repo), nil)
+	if !errors.Is(err, errAgentUnsupported) {
+		t.Fatalf("unsupported: %v", err)
 	}
 }

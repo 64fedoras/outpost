@@ -41,6 +41,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `projectnew.py` | Projects page: "New task in this project" in a card's menu opens the new-task page with that project picked. |
 | `chatpage.py` | Chat page layout: model cards on a new chat, the docked composer, the chats panel and the phone sheet. |
 | `chatversions.py` | Chat edit and resend, regenerate, version arrows, branch, per-chat instructions and the Chats search box (desktop light and dark, phone). |
+| `projectreads.py` | Project conversation reads files: chips for list, search and read calls, `path:line` links opening the read-only file viewer (light and dark). |
 | `cad.py` | New 3D model page: a scripted model writes OpenSCAD (a typo first, fixed in round 2), the node renders it with the real OpenSCAD (needs `openscad` on PATH), the viewer draws it, a parameter re-renders and "Ask for changes" edits it. |
 | `chatimages.py` | Chat screenshots: `novision` checks the warning and refusal with the text-only rig model; `vision` (after adding `mmproj-F16.gguf` to `run/ctl/models/tiny-test/model.json` `hf_files` and restarting the controller) sends a pasted image and checks the thumbnail and that the fake server got it. |
 | `groups.py` | Sidebar groups: the By status / By group switch, new group, dragging a task and a chat onto a group, Move to group, rename, colour, move, delete, and the phone sheet. Runs first: it expects a controller with no groups yet. |

@@ -382,11 +382,19 @@ something in them is waiting on you; the pin is stored on the controller, so it 
   with what it can see (the project's tasks and their results, the file list, the instructions) and
   starts tasks for work you ask for, at most 3 per answer. Each task it starts appears under its answer
   as a live card (status, the subtask progress strip, the result note, **Answer** / **Review plan** /
-  **✓ Resolve**), so questions and results come back into the conversation. It cannot open files or
-  run commands itself; tasks do that. **Start as task** skips the conversation and starts your message
+  **✓ Resolve**), so questions and results come back into the conversation.
+  Before answering it can **read the project's files** with read-only tools: list files, read a file
+  or a range of lines, search (plain text or a regular expression) and outline (declarations only),
+  at most 12 calls per answer. Each call shows as a chip above the answer ("Read src/app.go 1-80");
+  file names and `path:line` references in the answer are links that open a read-only viewer at that
+  line (the **Files** list opens it too). Files hidden by `.outpostignore` stay hidden. It still cannot
+  change files or run commands; tasks do that. Models that cannot call tools (llama-server without tool
+  support, or the call fails on the first try) answer as before, with the files your message names
+  put in front of them. With a paid planner every tool round is a separate call, so an answer that
+  reads files costs a few times more. **Start as task** skips the conversation and starts your message
   as a task at once; **More options…** opens the full new-task form with the project chosen. Tasks
   started elsewhere (the New task page, a schedule) show up in time order with their request.
-  With Claude or OpenRouter each answer is one small paid call, on the Spending page as
+  With Claude or OpenRouter each answer is one or more small paid calls, on the Spending page as
   "*project* · project chat"; an answer that would pass the monthly cap or cost more than the
   default task cap is refused with a note. A node planner waits for a free slot on its node.
   **Stop** cancels an answer in progress; **⚙ → Clear conversation** empties it (tasks are kept).

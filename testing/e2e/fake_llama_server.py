@@ -152,6 +152,13 @@ def stream_tool_calls(self, calls, text):
 def agent_turn(self, body):
     # Investigator: search, ask the user which splitting rule, then report.
     done = sum(1 for m in body["messages"] if m["role"] == "tool")
+    system = body["messages"][0]["content"] if body["messages"][0]["role"] == "system" else ""
+    if "lead for the software project" in system:
+        # Project conversation: look at the files, then answer with file:line references.
+        if done == 0: stream_tool_calls(self, [("list_files", {}), ("search", {"pattern": "count_words"})], "")
+        elif done == 2: stream_tool_calls(self, [("read_file", {"path": "wordcount/core.py", "start_line": 1, "end_line": 5})], "")
+        else: stream_tool_calls(self, [], "count_words is defined in wordcount/core.py:1 and lowercases the text first; the CLI in `cli.py` calls it.")
+        return
     if done == 0: stream_tool_calls(self, [("search", {"pattern": "split"}), ("list_files", {})], "")
     elif done == 2: stream_tool_calls(self, [("ask_user", {"question": "Split words on whitespace only?", "options": ["Yes", "No"]})], "")
     else: stream_tool_calls(self, [], "Words are split on whitespace (the user confirmed: " + body["messages"][-1]["content"][-20:] + ").")

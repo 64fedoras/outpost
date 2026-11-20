@@ -35,6 +35,7 @@ type ProjectChatMsg struct {
 	Who   string    `json:"who,omitempty"`   // assistant: the model or node that answered
 	Error string    `json:"error,omitempty"`
 	Cost  float64   `json:"cost_usd,omitempty"`
+	Reads []string  `json:"reads,omitempty"` // assistant: files it listed, read, searched or outlined
 }
 
 type projectChat struct {
@@ -43,11 +44,13 @@ type projectChat struct {
 	Messages []ProjectChatMsg `json:"messages"`
 	busy     bool
 	cancel   context.CancelFunc
+	reading  []string // chips of the answer being written
 }
 
 type projectChatView struct {
 	Messages []ProjectChatMsg `json:"messages"`
 	Busy     bool             `json:"busy"`
+	Reading  []string         `json:"reading,omitempty"`
 }
 
 const (
@@ -95,7 +98,7 @@ func (pc *projectChat) saveLocked() {
 func (pc *projectChat) view() projectChatView {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
-	return projectChatView{Messages: append([]ProjectChatMsg{}, pc.Messages...), Busy: pc.busy}
+	return projectChatView{Messages: append([]ProjectChatMsg{}, pc.Messages...), Busy: pc.busy, Reading: pc.reading}
 }
 
 func (pc *projectChat) add(m ProjectChatMsg) {
@@ -109,6 +112,39 @@ func (c *Controller) projectChatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/projects/{id}/chat", c.auth(c.handleProjectChat))
 	mux.HandleFunc("POST /api/projects/{id}/chat/stop", c.auth(c.handleProjectChatStop))
 	mux.HandleFunc("DELETE /api/projects/{id}/chat", c.auth(c.handleProjectChatClear))
+	mux.HandleFunc("GET /api/projects/{id}/file", c.auth(c.handleProjectFile))
+}
+
+// handleProjectFile returns one of the project's files as text, for the file
+// viewer that file:line links in answers open.
+func (c *Controller) handleProjectFile(w http.ResponseWriter, r *http.Request) {
+	p := c.getProject(r.PathValue("id"))
+	if p == nil {
+		writeJSON(w, 404, map[string]string{"error": "no such project"})
+		return
+	}
+	p.mu.Lock()
+	repo := p.repoDir()
+	p.mu.Unlock()
+	fp, err := safeJoin(repo, r.URL.Query().Get("path"))
+	if err != nil {
+		writeJSON(w, 400, map[string]string{"error": "bad path"})
+		return
+	}
+	b, err := os.ReadFile(fp)
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "no such file"})
+		return
+	}
+	if len(b) > maxRepoFileSize {
+		b = b[:maxRepoFileSize]
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if r.URL.Query().Get("download") != "" {
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+strings.ReplaceAll(filepath.Base(fp), "\"", "")+"\"")
+	}
+	w.Write(b)
 }
 
 // handleProjectChat takes one message. mode "task" starts it as a task at once;
@@ -239,7 +275,8 @@ func (c *Controller) projectPlanner(p *Project) (planner, model, orModel string,
 	return
 }
 
-// answerProjectChat runs one answer and starts the tasks it asks for.
+// answerProjectChat runs one answer and starts the tasks it asks for. The
+// planner may read the project's files first (projects_chat_tools.go).
 func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *projectChat) ProjectChatMsg {
 	planner, model, orModel, maxUSD, err := c.projectPlanner(p)
 	if err != nil {
@@ -248,71 +285,118 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 	pc.mu.Lock()
 	hist := append([]ProjectChatMsg(nil), pc.Messages...)
 	pc.mu.Unlock()
+	p.mu.Lock()
+	repo, name := p.repoDir(), p.Name
+	p.mu.Unlock()
 	system := c.projectChatSystem(p)
 	user := projectChatTranscript(hist, projectChatHistory)
+	last := ""
+	for i := len(hist) - 1; i >= 0; i-- {
+		if hist[i].Role == "user" {
+			last = hist[i].Text
+			break
+		}
+	}
 
-	var text, who string
+	var who string
 	var cost float64
+	var step projectStep
+	maxOut, resCap, budget := projectChatOut, agentResultCap/2, 200000
 	if isCloudPlanner(planner) {
-		req := llmRequest{System: system, User: user, MaxTokens: projectChatOut, Label: "Project chat"}
-		var est float64
-		if planner == "openrouter" {
-			_ = openRouterCatalog().Refresh(ctx, c.openRouterKey(), false)
-			est = openRouterEstimate(orModel, req.Size(), req.MaxTokens/2)
-		} else {
-			est = estimateCost(model, req.Size(), req.MaxTokens/2)
-		}
-		if limit, spent := c.monthlyCap(); limit > 0 && spent+est > limit {
-			return ProjectChatMsg{Error: fmt.Sprintf("this answer (about %s) would pass the monthly spending cap; raise it on the Spending page or give the project a node planner", fmtUSD(est))}
-		}
-		if maxUSD > 0 && est > maxUSD {
-			return ProjectChatMsg{Error: fmt.Sprintf("this answer would cost about %s, more than the default task cap (%s)", fmtUSD(est), fmtUSD(maxUSD))}
-		}
-		var resp *llmResponse
 		if planner == "openrouter" {
 			who = "OpenRouter · " + openRouterLabel(orModel)
-			resp, err = callOpenRouter(ctx, c.openRouterKey(), orModel, req)
 		} else {
 			who = c.spendPlannerLabel("claude", model, "")
-			resp, err = callClaude(ctx, c.anthropicKey(), model, req)
 		}
-		if err == nil {
-			p.mu.Lock()
-			name := p.Name
-			p.mu.Unlock()
+		step = func(ctx context.Context, req llmRequest) (*llmResponse, error) {
+			var est float64
+			if planner == "openrouter" {
+				_ = openRouterCatalog().Refresh(ctx, c.openRouterKey(), false)
+				est = openRouterEstimate(orModel, req.Size(), req.MaxTokens/2)
+			} else {
+				est = estimateCost(model, req.Size(), req.MaxTokens/2)
+			}
+			if limit, spent := c.monthlyCap(); limit > 0 && spent+est > limit {
+				return nil, fmt.Errorf("this answer (about %s more) would pass the monthly spending cap; raise it on the Spending page or give the project a node planner", fmtUSD(est))
+			}
+			if maxUSD > 0 && cost+est > maxUSD {
+				return nil, fmt.Errorf("this answer would cost about %s, more than the default task cap (%s)", fmtUSD(cost+est), fmtUSD(maxUSD))
+			}
+			var resp *llmResponse
+			var err error
+			if planner == "openrouter" {
+				resp, err = callOpenRouter(ctx, c.openRouterKey(), orModel, req)
+			} else {
+				resp, err = callClaude(ctx, c.anthropicKey(), model, req)
+			}
+			if err != nil {
+				return nil, err
+			}
 			if serr := c.recordSpendFor(planner, "projchat_"+p.ID, name+" · project chat", c.spendPlannerLabel(planner, model, orModel), resp); serr != nil {
 				log.Printf("project chat: could not save the spending ledger: %v", serr)
 			}
-			text, cost = resp.Text, resp.CostUSD
+			cost += resp.CostUSD
+			return resp, nil
 		}
 	} else {
 		node, aerr := c.acquireModelNode(ctx, strings.TrimPrefix(planner, "node:"), "", chatWait)
 		if aerr != nil {
 			return ProjectChatMsg{Error: aerr.Error()}
 		}
+		defer c.releaseNode(node)
 		ctxTok := c.nodeCtx(node)
-		maxOut := min(projectChatOut, ctxTok/2)
-		budget := (ctxTok - maxOut) * 3
-		if len(system)+len(user) > budget {
-			user = projectChatTranscript(hist, max(2000, budget-len(system)))
+		maxOut = min(projectChatOut, ctxTok/2)
+		budget = (ctxTok - maxOut) * 3
+		if len(system)+len(user) > budget*2/3 {
+			user = projectChatTranscript(hist, max(2000, budget*2/3-len(system)))
 		}
+		budget = max(budget-len(system)-len(projectToolsHelp), 4000)
+		resCap = min(max(budget/4, 1500), agentResultCap/2)
 		who = c.nodeLabel(node)
-		spec := InferenceSpec{Messages: []ChatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}}, Params: InferenceParams{MaxTokens: maxOut}}
-		var out *InferenceOutput
-		out, err = c.runInferenceJob(ctx, node, spec, "Project chat", projectChatMax)
-		c.releaseNode(node)
-		if err == nil {
-			text = out.Text
+		step = func(ctx context.Context, req llmRequest) (*llmResponse, error) {
+			spec := InferenceSpec{Messages: []ChatMessage{{Role: "system", Content: req.System}, {Role: "user", Content: req.User}}, Params: InferenceParams{MaxTokens: req.MaxTokens}}
+			if len(req.Msgs) > 0 {
+				spec.Messages = append(spec.Messages[:1], openAIMessages(req.Msgs)...)
+				spec.Tools = toolDefs(req.Tools)
+			}
+			out, err := c.runInferenceJob(ctx, node, spec, "Project chat", projectChatMax)
+			if err != nil {
+				return nil, err
+			}
+			return &llmResponse{Text: out.Text, Calls: fromWireCalls(out.ToolCalls)}, nil
 		}
+	}
+	pr := newProjectReads(repo)
+	onNote := func(n []string) {
+		pc.mu.Lock()
+		pc.reading = n
+		pc.mu.Unlock()
+	}
+	defer onNote(nil)
+	var text string
+	resp, err := projectToolLoop(ctx, step, system+projectToolsHelp, user, maxOut, resCap, budget, pr, onNote)
+	if errors.Is(err, errAgentUnsupported) && ctx.Err() == nil {
+		// No tools: put the files the owner's message names in front of the model.
+		u := user
+		if files, names := namedFiles(repo, last, budget/3); files != "" {
+			u += "\n\nProject files the owner's last message names:\n" + files
+			for _, n := range names {
+				pr.note("Read " + n)
+			}
+		}
+		resp, err = step(ctx, llmRequest{System: system, User: u, MaxTokens: maxOut, Label: "Project chat"})
+	}
+	if err == nil {
+		text = resp.Text
 	}
 	switch {
 	case errors.Is(ctx.Err(), context.Canceled):
-		return ProjectChatMsg{Who: who, Error: "stopped"}
+		return ProjectChatMsg{Who: who, Error: "stopped", Cost: cost, Reads: pr.Notes}
 	case err != nil:
-		return ProjectChatMsg{Who: who, Error: err.Error()}
+		return ProjectChatMsg{Who: who, Error: err.Error(), Cost: cost, Reads: pr.Notes}
 	}
 	reply, asks := splitTaskBlocks(text)
-	msg := ProjectChatMsg{Text: reply, Who: who, Cost: cost}
+	msg := ProjectChatMsg{Text: reply, Who: who, Cost: cost, Reads: pr.Notes}
 	var failed []string
 	for _, prompt := range asks {
 		t, _, terr := c.createTask(createReq{Prompt: prompt, Project: p.ID}, nil, createOpts{})
@@ -382,7 +466,7 @@ func (c *Controller) projectChatSystem(p *Project) string {
 	repo := p.repoDir()
 	p.mu.Unlock()
 	var b strings.Builder
-	fmt.Fprintf(&b, `You are the lead for the software project %q in Outpost, a self-hosted cluster that plans and writes code with the computers on the owner's network. You talk with the owner about this project. You can see the project's state below; you cannot open files or run commands yourself.
+	fmt.Fprintf(&b, `You are the lead for the software project %q in Outpost, a self-hosted cluster that plans and writes code with the computers on the owner's network. You talk with the owner about this project. You can see the project's state below; you cannot change files or run commands yourself.
 
 When the owner wants something built, changed, fixed or checked, start a task. The cluster plans it, writes the files, runs the tests and reports back here. Write each task on its own like this:
 
