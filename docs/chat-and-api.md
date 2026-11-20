@@ -28,6 +28,21 @@ saved with the chat on the controller (`chats/<id>-images/`), shown again when y
 with the chat. A node gets them only inside the request, in memory, and keeps nothing. Later messages
 resend only the newest 3 images, so a long chat does not fill the model's context.
 
+**Editing, regenerating and branching.** Under your message, **Edit** changes it and answers again from
+there; under an answer, **Regenerate** asks again, **Try on…** asks again on another node (or Auto), and
+**Branch** starts a new chat with the conversation up to that point (its images and instructions come
+too). Nothing is thrown away: the earlier message or answer, and everything that followed it, stays as a
+version, and the **‹ 1 / 2 ›** arrows switch between versions (up to 20 per message; beyond that the oldest
+goes). Only the version on screen is sent to the model. **Copy** copies a message's text.
+
+**Instructions** (top bar) are standing rules for one chat, for example "Answer in Go. Short answers,
+code first.", added to the system prompt of every message in it (up to 4,000 characters) and shown as a
+strip at the top. Tick **Also use these for new chats** to make them the default; new chats then start
+with them (the setting is `chat_instructions`, kept with the other settings and in backups).
+
+**Search chats** at the top of the Chats panel filters by title as you type and finds chats whose
+messages contain every word (the same search as the sidebar's "Search tasks and chats").
+
 **Web search in chats** (Settings, Tasks, Planner: "Let chats search the web", off by default). Local
 models cannot search by themselves, so a **Search with** menu picks how they get the web:
 

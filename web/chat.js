@@ -2,11 +2,11 @@
 // Chat page. Plain script, no modules: shares globals with app.js and loads after it (see index.html).
 
 // ---------- chat (chat.go) ----------
-let chatES = null, chatCur = null, chatLive = {}, chatPickOpen = false;
+let chatES = null, chatCur = null, chatLive = {}, chatPickOpen = false, chatEditing = null, chatPendingInstr = null;
 // On a phone: Enter makes a new line (the Send button sends); Ctrl+Enter still sends from a keyboard.
 const chatTouch = () => window.matchMedia('(pointer: coarse)').matches;
 async function chatOpen(id) {
-  chatCur = null; chatLive = {}; chatPickOpen = false;
+  chatCur = null; chatLive = {}; chatPickOpen = false; chatEditing = null; chatPendingInstr = null;
   chatPlaceholder();
   chatPanelSet(false, true);
   $('chat-title').textContent = 'New chat';
@@ -19,12 +19,27 @@ async function chatList() {
   let list = [];
   try { list = await api('/api/chats'); } catch (e) { /* offline */ }
   const n = $('chat-count'); n.textContent = list.length; n.classList.toggle('hidden', !list.length);
-  setHTML('chat-list', list.map((c) => `<a href="#/chat/${esc(c.id)}" class="${c.id === pageArg ? 'active' : ''}"><span class="cm"><span class="ct">${esc(c.title)}</span><span class="cs">${c.messages} message${c.messages === 1 ? '' : 's'}</span></span><span class="cr">${c.busy ? '<span class="dot" aria-label="answering"></span>' : esc(ago(c.updated))}</span></a>`).join(''));
+  const q = $('chat-find').value.trim();
+  let snips = {};
+  if (q) {
+    // Title matches as you type; message text through the same search the sidebar uses.
+    let hits = [];
+    try { hits = await api('/api/search?q=' + encodeURIComponent(q)); } catch (e) { /* offline */ }
+    if ($('chat-find').value.trim() !== q) return; // a newer search is on its way
+    (hits || []).filter((h) => h.kind === 'chat').forEach((h) => { snips[h.id] = h.snippet || ''; });
+    const words = q.toLowerCase().split(/\s+/);
+    list = list.filter((c) => c.id in snips || words.every((w) => (c.title || '').toLowerCase().includes(w)));
+  }
+  setHTML('chat-list', list.map((c) => `<a href="#/chat/${esc(c.id)}" class="${c.id === pageArg ? 'active' : ''}"><span class="cm"><span class="ct">${esc(c.title)}</span>${snips[c.id] ? `<span class="snip">${esc(snips[c.id])}</span>` : `<span class="cs">${c.messages} message${c.messages === 1 ? '' : 's'}</span>`}</span><span class="cr">${c.busy ? '<span class="dot" aria-label="answering"></span>' : esc(ago(c.updated))}</span></a>`).join(''));
   if (!list.length) setHTML('chat-list', '');
   const p = document.querySelector('.chat-panel > .muted');
-  if (!list.length && !p) $('chat-list').insertAdjacentHTML('beforebegin', '<p class="muted u6">No chats yet.</p>');
+  const empty = q ? 'No chats match.' : 'No chats yet.';
+  if (!list.length && !p) $('chat-list').insertAdjacentHTML('beforebegin', `<p class="muted u6">${empty}</p>`);
+  else if (!list.length && p) p.textContent = empty;
   else if (list.length && p) p.remove();
 }
+let chatFindT = null;
+$('chat-find').addEventListener('input', () => { clearTimeout(chatFindT); chatFindT = setTimeout(chatList, 200); });
 // The chats panel: open by default on a wide screen (remembered), a full-screen sheet on a phone.
 const chatPhone = () => window.matchMedia('(max-width: 860px)').matches;
 function chatPanelSet(open, reset) {
@@ -92,21 +107,42 @@ function chatButtons() {
   $('chat-stop').classList.toggle('hidden', !busy);
   $('chat-send').disabled = !!busy;
   $('chat-totask').classList.toggle('hidden', !(chatCur && chatCur.messages.some((m) => m.role === 'assistant' && m.text)));
+  const instr = chatCur ? chatCur.instructions : chatPendingInstr;
+  $('chat-instr-btn').classList.remove('hidden');
+  $('chat-instr-btn').classList.toggle('on', !!instr);
 }
-function chatBubble(m) {
+// Version arrows (‹ 2/3 ›) on a message that has other versions of the conversation from there on.
+function chatVer(m, busy) {
+  const n = (m.alts || []).length + 1, v = m.ver || 0;
+  if (n < 2) return '';
+  return `<button data-ver="${v - 1}" data-msg="${esc(m.id)}" ${v <= 0 || busy ? 'disabled' : ''} aria-label="Previous version">‹</button><span class="ver">${v + 1} / ${n}</span><button data-ver="${v + 1}" data-msg="${esc(m.id)}" ${v >= n - 1 || busy ? 'disabled' : ''} aria-label="Next version">›</button>`;
+}
+function chatTryOn(m, busy) {
+  const opts = chatChoices().map((c) => `<option value="${esc(c.id)}">${esc(c.id === 'auto' ? 'Auto' : `${c.t} on ${c.s}`)}</option>`).join('');
+  return `<select data-tryon="${esc(m.id)}" ${busy ? 'disabled' : ''} aria-label="Answer again on another node"><option value="">↻ Try on…</option>${opts}</select>`;
+}
+function chatBubble(m, i, last) {
+  const busy = !!(chatCur && chatCur.busy);
   if (m.role === 'user') {
+    if (chatEditing === m.id) {
+      return `<div class="bubble-row"><div class="bubble-edit"><textarea id="chat-edit-text" rows="3" aria-label="Edit message">${esc(m.text)}</textarea>
+        <div class="bubble-edit-actions"><span class="hint">Sending answers again from here. The old message and what followed stay as an earlier version.</span><button class="small" data-edit-cancel>Cancel</button><button class="small primary" data-edit-send="${esc(m.id)}">Send</button></div></div></div>`;
+    }
     const src = (n) => `/api/chats/${encodeURIComponent(chatCur.id)}/image?name=${encodeURIComponent(n)}`;
     const pics = (m.images || []).length ? `<div class="bubble-imgs">${m.images.map((n) => `<a href="${src(n)}" target="_blank" rel="noopener"><img src="${src(n)}" alt="attached image" loading="lazy"></a>`).join('')}</div>` : '';
-    return `<div class="bubble-row"><div class="bubble">${esc(m.text)}${pics}</div></div>`;
+    const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-edit="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Change this message and answer again">✎ Edit</button><button data-copy-msg="${i}" title="Copy the text">⧉ Copy</button></div>`;
+    return `<div class="bubble-row"><div class="bubble-col"><div class="bubble">${esc(m.text)}${pics}</div>${acts}</div></div>`;
   }
   const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, m.note && esc(m.note)].filter(Boolean).join(' · ');
-  if (m.error) return `<div class="chat-answer error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}</div>`;
-  return `<div class="chat-answer"><div class="chat-text md">${md(m.text)}</div>${meta ? `<div class="sub">${meta}</div>` : ''}</div>`;
+  const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-regen="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Answer again; this answer stays as an earlier version">↻ Regenerate</button>${chatTryOn(m, busy)}${m.text ? `<button data-copy-msg="${i}" title="Copy the answer">⧉ Copy</button>` : ''}<button data-branch="${esc(m.id)}" title="Start a new chat with the conversation up to here">⑂ Branch</button></div>`;
+  if (m.error) return `<div class="chat-answer"><div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}${acts}</div>`;
+  return `<div class="chat-answer"><div class="chat-text md">${md(m.text)}</div>${meta ? `<div class="sub">${meta}</div>` : ''}${acts}</div>`;
 }
 function chatRender() {
   if (!chatCur) return;
   const box = $('chat-msgs'), stick = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-  setHTML('chat-msgs', chatCur.messages.map(chatBubble).join('') + '<div id="chat-live"></div>');
+  const instr = chatCur.instructions ? `<div class="note chat-instr">Instructions for this chat: <i>${esc(chatCur.instructions)}</i> <button class="link-btn" data-instr>Edit</button></div>` : '';
+  setHTML('chat-msgs', instr + chatCur.messages.map((m, i) => chatBubble(m, i)).join('') + '<div id="chat-live"></div>');
   chatRenderLive();
   chatButtons();
   if (stick) box.scrollTop = box.scrollHeight;
@@ -128,7 +164,9 @@ async function chatSend() {
   $('chat-send').disabled = true;
   try {
     if (!chatCur) {
-      const r = await post('/api/chats', { text, node: $('chat-node').value, images });
+      const body = { text, node: $('chat-node').value, images };
+      if (chatPendingInstr !== null) body.instructions = chatPendingInstr;
+      const r = await post('/api/chats', body);
       $('chat-text').value = ''; $('chat-text').style.height = ''; chatImg.clear();
       location.hash = '#/chat/' + r.id;
       return;
@@ -158,7 +196,58 @@ $('chat-panel-btn').onclick = () => chatPanelSet(!chatPanelOpen());
 $('chat-panel-x').onclick = () => chatPanelSet(false);
 $('chat-node').addEventListener('change', () => { chatPickRender(); if (typeof chatImg !== 'undefined') chatImg.refresh(); });
 $('chat-msgs').addEventListener('click', (e) => { const b = e.target.closest('[data-model]'); if (b) { $('chat-node').value = b.dataset.model; chatPickOpen = false; chatPickRender(); $('chat-text').focus(); return; }
-  if (e.target.closest('#chat-pick-more')) { chatPickOpen = !chatPickOpen; chatPickRender(); } });
+  if (e.target.closest('#chat-pick-more')) { chatPickOpen = !chatPickOpen; chatPickRender(); return; }
+  chatAct(e.target); });
+$('chat-msgs').addEventListener('change', (e) => {
+  const sel = e.target.closest('[data-tryon]');
+  if (sel && sel.value) chatDo('regenerate', { msg_id: sel.dataset.tryon, node: sel.value });
+});
+// Edit, regenerate, versions, copy, branch and the instructions strip.
+async function chatAct(t) {
+  if (!chatCur) return;
+  const b = (k) => t.closest(`[data-${k}]`);
+  let el;
+  if ((el = b('edit'))) { chatEditing = el.dataset.edit; chatRender(); const ta = $('chat-edit-text'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
+  else if (b('edit-cancel')) { chatEditing = null; chatRender(); }
+  else if ((el = b('edit-send'))) {
+    const text = $('chat-edit-text').value.trim();
+    if (!text) return;
+    chatEditing = null;
+    await chatDo('edit', { msg_id: el.dataset.editSend, text, node: $('chat-node').value });
+  }
+  else if ((el = b('regen'))) await chatDo('regenerate', { msg_id: el.dataset.regen });
+  else if ((el = b('ver')) && !el.disabled) await chatDo('version', { msg_id: el.dataset.msg, ver: Number(el.dataset.ver) });
+  else if ((el = b('copy-msg'))) { const m = chatCur.messages[Number(el.dataset.copyMsg)]; if (m) { await copyText(m.text || ''); toast('Copied'); } }
+  else if ((el = b('branch'))) {
+    try { const r = await post(`/api/chats/${chatCur.id}/branch`, { msg_id: el.dataset.branch }); toast('Branched into a new chat'); location.hash = '#/chat/' + r.id; } catch (e) { toast(e.message); }
+  }
+  else if (b('instr')) chatInstrOpen();
+}
+async function chatDo(what, body) {
+  try { await post(`/api/chats/${chatCur.id}/${what}`, body); await chatLoad(chatCur.id); chatList(); } catch (e) { toast(e.message); chatRender(); }
+}
+async function chatInstrOpen() {
+  let val = chatCur ? chatCur.instructions || '' : chatPendingInstr;
+  if (val === null) { try { val = (await api('/api/settings')).chat_instructions || ''; } catch (e) { val = ''; } }
+  $('chat-instr-text').value = val;
+  $('chat-instr-default').checked = false;
+  open('modal-chat-instr');
+  setTimeout(() => $('chat-instr-text').focus(), 0);
+}
+$('chat-instr-btn').onclick = chatInstrOpen;
+$('chat-instr-save').onclick = async () => {
+  const text = $('chat-instr-text').value.trim(), def = $('chat-instr-default').checked;
+  try {
+    if (chatCur) { await post(`/api/chats/${chatCur.id}/instructions`, { instructions: text, default: def }); await chatLoad(chatCur.id); }
+    else {
+      chatPendingInstr = text;
+      if (def) await post('/api/settings', { chat_instructions: text });
+      chatButtons();
+    }
+    close('modal-chat-instr');
+    toast(text ? 'Instructions saved' : 'Instructions removed');
+  } catch (e) { toast(e.message); }
+};
 $('chat-text').addEventListener('input', () => { const t = $('chat-text'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, window.innerHeight * 0.4) + 'px'; });
 $('chat-stop').onclick = async () => { if (chatCur) { try { await post(`/api/chats/${chatCur.id}/stop`, {}); } catch (e) { toast(e.message); } } };
 // Make this a task: the conversation becomes the new task's request.
