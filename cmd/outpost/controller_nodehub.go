@@ -185,6 +185,7 @@ func (c *Controller) handleNodeMessage(nodeID string, env *Envelope) {
 		var hb Heartbeat
 		if json.Unmarshal(env.Body, &hb) == nil {
 			c.lastHB[nodeID] = &hb
+			c.recordHistLocked(nodeID, &hb, time.Now())
 			if !env.TS.IsZero() {
 				if c.clockSkew == nil {
 					c.clockSkew = map[string]time.Duration{}

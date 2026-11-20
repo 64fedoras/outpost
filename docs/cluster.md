@@ -117,6 +117,20 @@ on the same network segment: the packet is a broadcast (to `255.255.255.255` and
 does not cross routers.
 
 
+## Last-hour charts and GPU temperature
+
+Each node card in the Grid view shows small charts under its gauges: CPU, GPU (or RAM when the node has no
+GPU), VRAM and speed. The node's details (click the card, or *Details*) show a *Last hour* box with one row per
+value: the chart, the latest value and the range. Points are 30-second averages of the heartbeats; speed is the
+measured benchmark speed of the loaded model, so it shows a gap while no model is loaded.
+
+The history is kept in the controller's memory only. Nothing is written to disk and nodes keep nothing, so a
+controller restart or update starts the charts empty again.
+
+**GPU temperature** is read on Linux from the GPU's hwmon sensor (AMD and Intel drivers). It shows next to the
+GPU on the card and as a chart, and turns red at 85 °C. NVIDIA cards on the proprietary driver, Windows and
+macOS report no temperature, and the row is left out. Untested on real GPUs so far.
+
 ## Saved load settings and yielding the GPU
 
 **Saved settings.** In the Load dialog, *Save these settings…* stores the model, context size, GPU layers, cache

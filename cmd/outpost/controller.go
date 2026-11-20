@@ -122,6 +122,7 @@ type Controller struct {
 	nodes      map[string]*NodeRec
 	conns      map[string]*nodeConn
 	lastHB     map[string]*Heartbeat
+	hist       map[string]*nodeHist // last hour per node, memory only (nodehist.go)
 	lastSeen   map[string]time.Time
 	tokens     map[string]time.Time
 	usedTok    map[string]usedToken // token id -> who used it (so the Add node dialog can move on)
@@ -274,6 +275,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/storage", c.auth(c.handleStorage))
 	mux.HandleFunc("POST /api/storage", c.authSession(c.handleStorageSettings))
 	mux.HandleFunc("GET /api/nodes/{id}/logs", c.auth(c.handleNodeLogs))
+	mux.HandleFunc("GET /api/node-history", c.auth(c.handleNodeHistory))
 	mux.HandleFunc("GET /api/cluster/check", c.auth(c.handleGetClusterCheck))
 	mux.HandleFunc("POST /api/cluster/check", c.auth(c.handleStartClusterCheck))
 	mux.HandleFunc("POST /api/tokens", c.auth(c.handleNewToken))
