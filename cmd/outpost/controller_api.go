@@ -51,7 +51,7 @@ func (c *Controller) saveNodesLocked() {
 	}
 	b, err := json.MarshalIndent(list, "", "  ")
 	if err == nil {
-		err = writeFileAtomicBackup(c.nodesPath(), b, 0o600)
+		c.files.write(c.nodesPath(), b, 0o600, true) // asyncwrite.go: written outside c.mu
 	}
 	if err != nil {
 		// Losing this file loses every node's key: say so instead of failing silently.

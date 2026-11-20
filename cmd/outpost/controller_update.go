@@ -259,9 +259,9 @@ func (c *Controller) loadSessions() {
 // saveSessionsLocked must be called with c.mu held.
 func (c *Controller) saveSessionsLocked() {
 	b, _ := json.Marshal(c.sessions)
-	_ = writeFileAtomic(c.sessionsPath(), b, 0o600)
+	c.files.write(c.sessionsPath(), b, 0o600, false) // asyncwrite.go
 	mb, _ := json.Marshal(c.sessMeta)
-	_ = writeFileAtomic(c.sessionsPath()+".meta", mb, 0o600)
+	c.files.write(c.sessionsPath()+".meta", mb, 0o600, false)
 }
 
 func (c *Controller) handleRollbackNode(w http.ResponseWriter, r *http.Request) {

@@ -258,7 +258,7 @@ func (c *Controller) loadAPITokens() {
 // saveAPITokensLocked must be called with c.mu held.
 func (c *Controller) saveAPITokensLocked() {
 	b, _ := json.MarshalIndent(c.apiTokens, "", "  ")
-	_ = writeFileAtomic(c.apiTokensPath(), b, 0o600)
+	c.files.write(c.apiTokensPath(), b, 0o600, false) // asyncwrite.go
 }
 
 func (c *Controller) handleListAPITokens(w http.ResponseWriter, r *http.Request) {

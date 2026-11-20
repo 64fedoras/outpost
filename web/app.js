@@ -183,7 +183,7 @@ $('recovered-banner').addEventListener('click', async (e) => {
 // ---------- polling ----------
 let failures = 0;
 async function refresh() {
-  try { state = await api('/api/state'); failures = 0; $('offline-banner').classList.add('hidden'); notifyPushed = undefined; } // polling: ask for notifications each time
+  try { state = await api('/api/state'); failures = 0; $('offline-banner').classList.add('hidden'); notifyPushed = undefined; if (!stateES) groupsPushed = false; } // polling: ask for notifications (and groups, off the stream) each time
   catch (e) {
     if (e.message === 'login required') return;
     if (++failures >= 2) $('offline-banner').classList.remove('hidden');
@@ -199,12 +199,14 @@ async function refresh() {
   refreshGroups();
 }
 let modelsAt = 0, pushSeq = 0;
-// applyPushed takes one pushed payload: state, and the task list and projects when they changed.
+// applyPushed takes one pushed payload: state, plus each list that changed.
 // The model list is not pushed; on the pages that show it, it is fetched at most every 5 s.
 async function applyPushed(d) {
   const seq = tasksSeq, mine = ++pushSeq;
-  // The task list and projects are left out when they have not changed since the last payload.
+  // A list (tasks, projects, groups, chats) is left out when it has not changed since the last payload.
   state = d.state; if ('tasks' in d && seq === tasksSeq) tasks = d.tasks; if ('projects' in d) projects = d.projects;
+  if ('groups' in d) { groups = d.groups; groupsPushed = true; }
+  if ('chats' in d) sideChats = d.chats;
   if ('notify_last' in d) notifyPushed = d.notify_last;
   failures = 0; $('offline-banner').classList.add('hidden');
   if ((['nodes', 'models', 'new'].includes(page) || !models) && Date.now() - modelsAt > 5000) {
@@ -213,7 +215,7 @@ async function applyPushed(d) {
     if (mine !== pushSeq) return; // a newer payload already rendered
   }
   renderAll();
-  refreshGroups();
+  if (!groupsPushed) refreshGroups(); // a controller that does not push them yet
 }
 // Screen readers hear a task's status change (Plan ready, Done, Failed) without visiting it.
 let lastStatuses = null;

@@ -5,7 +5,7 @@
 // Tasks and chats both live in it. Move an item into a group by dragging its row onto
 // a group, or from the row's menu: Move to group ▸.
 
-let groups = [], sideChats = [], groupsAt = 0, sideSeq = 0;
+let groups = [], sideChats = [], groupsAt = 0, sideSeq = 0, groupsPushed = false; // groupsPushed: the state stream carries groups and chats
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 let sideMode = lsGet('outpost.sidemode') === 'group' ? 'group' : 'status';
@@ -16,6 +16,7 @@ const groupById = (id) => groups.find((g) => g.id === id);
 const chatById = (id) => sideChats.find((c) => c.id === id);
 
 // refreshGroups fetches the group list and the chat list for the sidebar (at most every 2.5 s unless forced).
+// On the state stream they arrive with the state instead; this is the polling fallback.
 async function refreshGroups(force) {
   if (!force && Date.now() - groupsAt < 2500) return;
   groupsAt = Date.now();

@@ -14,6 +14,10 @@ func TestMain(m *testing.M) {
 		runSandboxChild(os.Args[2:])
 		return
 	}
+	// Tests delete their temporary folders as soon as they end; a state file
+	// still being written in the background would break that, so tests write
+	// in place. asyncwrite_test.go tests the background writer directly.
+	asyncStateWrites = false
 	os.Exit(m.Run())
 }
 

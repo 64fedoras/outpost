@@ -5,6 +5,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -372,10 +373,28 @@ func (c *Controller) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	if status == "awaiting_approval" {
 		est = c.estimatePlan(t)
 	}
-	var copyT Task
-	_ = json.Unmarshal(b, &copyT)
-	writeJSON(w, 200, taskDetail{Task: &copyT, Files: listRepo(t.repoDir()), PlannerLabel: c.plannerLabel(planner, model, orModel),
+	// The task was encoded under its lock; the extra fields are added to that
+	// object as it is, instead of decoding it into a copy and encoding it again.
+	extra, _ := json.Marshal(taskDetail{Files: listRepo(t.repoDir()), PlannerLabel: c.plannerLabel(planner, model, orModel),
 		ClaudeKeySet: c.anthropicKey() != "", WorkersOnline: workers, ExecNodes: execs, Activity: c.activityFor(t), Estimate: est})
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write(mergeJSONObjects(b, extra))
+}
+
+// mergeJSONObjects joins two encoded JSON objects whose keys do not overlap.
+func mergeJSONObjects(a, b []byte) []byte {
+	a, b = bytes.TrimSpace(a), bytes.TrimSpace(b)
+	if len(b) <= 2 {
+		return a
+	}
+	if len(a) <= 2 {
+		return b
+	}
+	out := make([]byte, 0, len(a)+len(b))
+	out = append(out, a[:len(a)-1]...)
+	out = append(out, ',')
+	return append(out, b[1:]...)
 }
 
 func (c *Controller) handleTaskFile(w http.ResponseWriter, r *http.Request) {
