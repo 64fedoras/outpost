@@ -28,6 +28,20 @@ saved with the chat on the controller (`chats/<id>-images/`), shown again when y
 with the chat. A node gets them only inside the request, in memory, and keeps nothing. Later messages
 resend only the newest 3 images, so a long chat does not fill the model's context.
 
+**Documents in chats.** The 📎 button (or drop, or paste) also takes up to 5 documents per message, 25 MB
+together: PDF, Word (`.docx`), Excel (`.xlsx`), OpenDocument text (`.odt`) and CSV. The controller reads
+each into plain text when you send (a pure-Go reader, nothing to install): PDF text with `[page N]`
+marks, Word and ODT paragraphs and tables, each Excel sheet as tab-separated rows under `[sheet name]`
+(formulas as their last saved values), CSV as it is. The message shows a chip per document with its
+pages or sheets and word count, and **Text** opens what was read. The text is kept with the chat
+(`chats/<id>-docs/`, deleted with the chat, copied by **Branch**) and goes to the model with that
+message every time the chat is answered, so any model can use it, not only Vision models. Limits: a
+scanned PDF has no text layer and is not read as images (the chip warns "a scan?"); text past about
+400,000 characters is cut (the chip says "cut to fit"); and when the conversation is longer than the
+node's context window, older documents are cut first and the newest message keeps the most, with a
+note to the model that the rest did not fit. Old `.doc` and `.xls` files are refused (save them as
+`.docx` or `.xlsx`). Encrypted or password-protected files are untested.
+
 **Editing, regenerating and branching.** Under your message, **Edit** changes it and answers again from
 there; under an answer, **Regenerate** asks again, **Try on…** asks again on another node (or Auto), and
 **Branch** starts a new chat with the conversation up to that point (its images and instructions come

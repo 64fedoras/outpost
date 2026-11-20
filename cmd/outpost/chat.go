@@ -26,6 +26,7 @@ type ChatMsg struct {
 	Role   string    `json:"role"` // user | assistant
 	Text   string    `json:"text"`
 	Images []string  `json:"images,omitempty"` // user: screenshots saved with the chat (chat_images.go)
+	Docs   []DocInfo `json:"docs,omitempty"`   // user: documents read into text (chat_docs.go)
 	Node   string    `json:"node,omitempty"`   // who answered
 	Model  string    `json:"model,omitempty"`  // the model that answered
 	TPS    float64   `json:"tok_s,omitempty"`
@@ -118,6 +119,7 @@ func (c *Controller) chatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chats/{id}/messages", c.auth(c.handleChatSend))
 	mux.HandleFunc("POST /api/chats/{id}/stop", c.auth(c.handleChatStop))
 	mux.HandleFunc("GET /api/chats/{id}/image", c.auth(c.handleChatImage))
+	mux.HandleFunc("GET /api/chats/{id}/doc", c.auth(c.handleChatDoc))
 	mux.HandleFunc("GET /api/chats/{id}/events", c.authSession(c.handleChatEvents))
 	mux.HandleFunc("POST /api/chats/{id}/edit", c.auth(c.handleChatEdit))
 	mux.HandleFunc("POST /api/chats/{id}/regenerate", c.auth(c.handleChatRegenerate))
@@ -162,13 +164,14 @@ type chatReq struct {
 	Text   string        `json:"text"`
 	Node   string        `json:"node"` // "auto" or a node id; empty keeps the chat's choice
 	Images []imageUpload `json:"images"`
+	Docs   []imageUpload `json:"docs"` // PDF, DOCX, XLSX, ODT, CSV (chat_docs.go)
 	// Instructions (new chats only): nil takes the default from Settings.
 	Instructions *string `json:"instructions"`
 }
 
 func (req *chatReq) check() error {
 	req.Text = strings.TrimSpace(req.Text)
-	if req.Text == "" && len(req.Images) == 0 {
+	if req.Text == "" && len(req.Images) == 0 && len(req.Docs) == 0 {
 		return errors.New("type a message first")
 	}
 	if len(req.Text) > maxChatMsgChars {
@@ -182,6 +185,9 @@ func (req *chatReq) check() error {
 func (req *chatReq) checked(c *Controller) ([]llmImage, error) {
 	if err := req.check(); err != nil {
 		return nil, err
+	}
+	if len(req.Docs) > 0 && req.Text == "" && len(req.Images) == 0 {
+		req.Text = "Read the attached document and summarise it."
 	}
 	if len(req.Images) == 0 {
 		return nil, nil
@@ -203,6 +209,10 @@ func (c *Controller) handleNewChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	imgs, err := req.checked(c)
+	var docs []chatDoc
+	if err == nil {
+		docs, err = readChatDocs(req.Docs)
+	}
 	if err != nil {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
@@ -224,7 +234,7 @@ func (c *Controller) handleNewChat(w http.ResponseWriter, r *http.Request) {
 	}
 	c.chats[ch.ID] = ch
 	c.chatMu.Unlock()
-	c.startChatReplyImgs(ch, req.Text, imgs)
+	c.startChatReplyAll(ch, req.Text, imgs, docs)
 	writeJSON(w, 200, map[string]string{"id": ch.ID})
 }
 
@@ -245,6 +255,10 @@ func (c *Controller) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	}
 	ch.mu.Unlock()
 	imgs, err := req.checked(c)
+	var docs []chatDoc
+	if err == nil {
+		docs, err = readChatDocs(req.Docs)
+	}
 	if err != nil {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
@@ -254,7 +268,7 @@ func (c *Controller) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		ch.Node = req.Node
 	}
 	ch.mu.Unlock()
-	if !c.startChatReplyImgs(ch, req.Text, imgs) {
+	if !c.startChatReplyAll(ch, req.Text, imgs, docs) {
 		writeJSON(w, 409, map[string]string{"error": "wait for the answer (or stop it) first"})
 		return
 	}
@@ -292,6 +306,7 @@ func (c *Controller) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 	ch.mu.Unlock()
 	os.Remove(filepath.Join(c.chatsDir(), id+".json"))
 	os.RemoveAll(filepath.Join(c.chatsDir(), id+"-images"))
+	os.RemoveAll(filepath.Join(c.chatsDir(), id+"-docs"))
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -325,6 +340,10 @@ func (c *Controller) startChatReply(ch *Chat, text string) bool {
 }
 
 func (c *Controller) startChatReplyImgs(ch *Chat, text string, imgs []llmImage) bool {
+	return c.startChatReplyAll(ch, text, imgs, nil)
+}
+
+func (c *Controller) startChatReplyAll(ch *Chat, text string, imgs []llmImage, docs []chatDoc) bool {
 	ch.mu.Lock()
 	if ch.Busy != "" {
 		ch.mu.Unlock()
@@ -334,7 +353,8 @@ func (c *Controller) startChatReplyImgs(ch *Chat, text string, imgs []llmImage) 
 	if err != nil {
 		log.Printf("chat %s: saving images failed: %v", ch.ID, err)
 	}
-	ch.Messages = append(ch.Messages, ChatMsg{ID: newID("m"), Role: "user", Text: text, Images: names, At: time.Now()})
+	id := newID("m")
+	ch.Messages = append(ch.Messages, ChatMsg{ID: id, Role: "user", Text: text, Images: names, Docs: ch.saveDocs(id, docs), At: time.Now()})
 	c.beginAnswerLocked(ch, nil, 0)
 	return true
 }
@@ -347,7 +367,7 @@ func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
 	ctx, cancel := context.WithTimeout(context.Background(), chatWait+chatTimeout)
 	ch.Updated, ch.Busy, ch.cancel = time.Now(), "waiting", cancel
 	pref := ch.Node
-	hist := chatHistoryWith(ch.Messages, ch.imageURI)
+	hist := chatHistoryDocs(ch.Messages, ch.imageURI, ch.docText)
 	hist[0].Content = c.chatSystemPrompt(ch.Instructions)
 	askMem := ch.MemTries < maxMemoryTries && c.memorySuggestOn()
 	if askMem {
@@ -387,6 +407,11 @@ func chatHistory(msgs []ChatMsg) []ChatMessage { return chatHistoryWith(msgs, ni
 // newest messages that have some, at most chatHistoryImages in all; older
 // images are left out of the call but stay in the chat.
 func chatHistoryWith(msgs []ChatMsg, load func(string) string) []ChatMessage {
+	return chatHistoryDocs(msgs, load, nil)
+}
+
+// chatHistoryDocs also puts each message's documents (read through doc) after its text.
+func chatHistoryDocs(msgs []ChatMsg, load func(string) string, doc func(DocInfo) string) []ChatMessage {
 	out := []ChatMessage{{Role: "system", Content: chatBaseSystem}}
 	left := chatHistoryImages
 	imgOf := make([][]string, len(msgs))
@@ -408,6 +433,11 @@ func chatHistoryWith(msgs []ChatMsg, load func(string) string) []ChatMessage {
 		text := m.Text
 		if text == "" {
 			text = "Describe this image."
+		}
+		for _, d := range m.Docs {
+			if doc != nil {
+				text += "\n\n" + docBlock(d, doc(d))
+			}
 		}
 		out = append(out, ChatMessage{Role: m.Role, Content: text, Images: imgOf[i]})
 	}
@@ -459,6 +489,8 @@ func (c *Controller) answerChatMem(ctx context.Context, chatID, pref string, his
 	ctxTok := c.nodeCtx(node)
 	maxOut := min(4096, ctxTok/2)
 	name := c.nodeLabel(node)
+	hist = append([]ChatMessage(nil), hist...)
+	clipForContext(hist, max((ctxTok-maxOut)*3-len(hist[0].Content)-2000, 2000)) // a long document must still leave room
 	infer := func(ctx context.Context, spec InferenceSpec) (*InferenceOutput, error) {
 		live := taskLive.begin("chat_"+chatID, "", "Chat", name, false)
 		defer live.End()

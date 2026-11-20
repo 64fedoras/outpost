@@ -88,6 +88,10 @@ class H(BaseHTTPRequestHandler):
             text = scad_reply(user)  # the New 3D model page (cad.py)
         elif imgs:
             text = f"I can see {imgs} image(s). The screenshot shows a terminal with an error message."  # chat screenshots (chatimages.py)
+        elif "<<<DOCUMENT>>>" in user:
+            # Documents in chat (docs.py): say which documents arrived and quote the first line of each.
+            docs = re.findall(r"Attached document (\S+) \(([A-Z]+)[^\n]*\n<<<DOCUMENT>>>\n(?:\[[^\]\n]*\]\n)?(.*)", user)
+            text = "I read " + ", ".join(f"{n} ({k}) starting “{first.strip()[:60]}”" for n, k, first in docs) + "."
         elif "markdown sample" in user:
             text = MARKDOWN_SAMPLE  # the chat page's markdown test (chatmd.py)
         elif "```html" in user or "```mermaid" in user:

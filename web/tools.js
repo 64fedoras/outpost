@@ -42,17 +42,34 @@ function visionProblem(planner) {
   if (!models) return '';
   return `${name} cannot read images. Load a Vision model (Qwen3.6 or Gemma 4 from the Models page) on that node, or plan with Claude or OpenRouter.`;
 }
-function imageAttach(pre, getPlanner, warnEl) {
-  let items = [];
+// Documents (chat only): read into text by the controller (docextract.go).
+const DOC_MAX = 5, DOC_EXT = /\.(pdf|docx|xlsx|odt|csv)$/i;
+function readDoc(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error(file.name + ': could not read'));
+    fr.onload = () => resolve({ name: file.name, size: file.size, data: fr.result });
+    fr.readAsDataURL(file);
+  });
+}
+function imageAttach(pre, getPlanner, warnEl, withDocs) {
+  let items = [], docs = [];
   const strip = $(pre + '-imgs'), file = $(pre + '-file');
   function refresh() {
-    setHTML(strip, items.map((it, i) => `<span class="img-chip"><img src="${it.data}" alt=""><button type="button" data-i="${i}" aria-label="Remove image">×</button></span>`).join(''));
+    setHTML(strip, items.map((it, i) => `<span class="img-chip"><img src="${it.data}" alt=""><button type="button" data-i="${i}" aria-label="Remove image">×</button></span>`).join('') +
+      docs.map((d, i) => `<span class="doc-chip"><span aria-hidden="true">📄</span> <span class="doc-n">${esc(d.name)}</span> <span class="muted">${bytes(d.size)}</span><button type="button" data-d="${i}" aria-label="Remove ${esc(d.name)}">×</button></span>`).join(''));
     const w = items.length ? visionProblem(getPlanner()) : '';
     warnEl.textContent = w; warnEl.classList.toggle('hidden', !w);
   }
   async function add(files) {
     for (const f of files) {
-      if (!IMG_TYPES.includes(f.type)) { toast(`${f.name || 'That file'} is not a PNG, JPEG, WebP or GIF image`, 4000); continue; }
+      if (withDocs && DOC_EXT.test(f.name || '')) {
+        if (docs.length >= DOC_MAX) { toast(`At most ${DOC_MAX} documents per message`, 4000); continue; }
+        if (f.size > 25 * 1024 * 1024) { toast(`${f.name} is over 25 MB`, 4000); continue; }
+        try { docs.push(await readDoc(f)); } catch (e) { toast(e.message, 4000); }
+        continue;
+      }
+      if (!IMG_TYPES.includes(f.type)) { toast(`${f.name || 'That file'} is not ${withDocs ? 'an image or a PDF, DOCX, XLSX, ODT or CSV document' : 'a PNG, JPEG, WebP or GIF image'}`, 4000); continue; }
       if (items.length >= IMG_MAX) { toast(`At most ${IMG_MAX} images per message`, 4000); break; }
       try { items.push(await readImage(f)); } catch (e) { toast(e.message, 4000); }
     }
@@ -60,18 +77,22 @@ function imageAttach(pre, getPlanner, warnEl) {
   }
   $(pre + '-attach').onclick = () => file.click();
   file.onchange = () => { add([...file.files]); file.value = ''; };
-  strip.onclick = (e) => { const b = e.target.closest('button[data-i]'); if (b) { items.splice(+b.dataset.i, 1); refresh(); } };
+  strip.onclick = (e) => {
+    const b = e.target.closest('button[data-i]'); if (b) { items.splice(+b.dataset.i, 1); refresh(); return; }
+    const d = e.target.closest('button[data-d]'); if (d) { docs.splice(+d.dataset.d, 1); refresh(); }
+  };
+  const wanted = (f) => f.type.startsWith('image/') || (withDocs && DOC_EXT.test(f.name || ''));
   const box = pre === 'nt' ? $('nt-prompt') : $(pre + '-text');
-  box.addEventListener('paste', (e) => { const fs = [...(e.clipboardData ? e.clipboardData.files : [])].filter((f) => f.type.startsWith('image/')); if (fs.length) { e.preventDefault(); add(fs); } });
+  box.addEventListener('paste', (e) => { const fs = [...(e.clipboardData ? e.clipboardData.files : [])].filter(wanted); if (fs.length) { e.preventDefault(); add(fs); } });
   const comp = box.closest('.composer, .chat-compose');
   comp.addEventListener('dragover', (e) => { if ([...(e.dataTransfer.types || [])].includes('Files')) { e.preventDefault(); comp.classList.add('drop-on'); } });
   comp.addEventListener('dragleave', (e) => { if (!comp.contains(e.relatedTarget)) comp.classList.remove('drop-on'); });
-  comp.addEventListener('drop', (e) => { comp.classList.remove('drop-on'); const fs = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/')); if (fs.length) { e.preventDefault(); add(fs); } });
-  return { payload: () => items.map((i) => ({ name: i.name, data: i.data })), clear: () => { items = []; refresh(); }, refresh };
+  comp.addEventListener('drop', (e) => { comp.classList.remove('drop-on'); const fs = [...e.dataTransfer.files].filter(wanted); if (fs.length) { e.preventDefault(); add(fs); } });
+  return { payload: () => items.map((i) => ({ name: i.name, data: i.data })), docs: () => docs.map((d) => ({ name: d.name, data: d.data })), clear: () => { items = []; docs = []; refresh(); }, refresh };
 }
 const ntImg = imageAttach('nt', () => $('nt-planner').value, $('nt-img-warn'));
 const tmImg = imageAttach('tm', () => taskDetail && taskDetail.planner, $('tm-img-warn'));
-const chatImg = imageAttach('chat', () => { const v = $('chat-node').value || 'auto'; return v === 'auto' ? 'chat:auto' : 'node:' + v; }, $('chat-img-warn'));
+const chatImg = imageAttach('chat', () => { const v = $('chat-node').value || 'auto'; return v === 'auto' ? 'chat:auto' : 'node:' + v; }, $('chat-img-warn'), true);
 const ntDraft = Drafts.bind($('nt-prompt'), $('nt-draft')), tmDraft = Drafts.bind($('tm-text'), $('tm-draft'));
 
 // ---- Check cluster (clustercheck.go) ----
