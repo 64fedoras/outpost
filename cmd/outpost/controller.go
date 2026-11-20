@@ -159,6 +159,8 @@ type Controller struct {
 	projects   map[string]*Project      // see projects.go
 	chats      map[string]*Chat         // chat.go, guarded by chatMu
 	chatMu     sync.Mutex
+	mcpMuxOnce sync.Once // in-process mux for MCP tools (mcp_server.go)
+	mcpMuxV    *http.ServeMux
 	groups     []Group // sidebar groups (groups.go), guarded by groupMu
 	groupMu    sync.Mutex
 	// resumeWake wakes autoResumeInterrupted on node heartbeats (nudgeResume).
@@ -340,6 +342,7 @@ func runController(args []string) error {
 	c.groupRoutes(mux)
 	c.templateRoutes(mux)
 	c.openAIRoutes(mux)
+	c.mcpRoutes(mux)
 	c.imageRoutes(mux)
 	c.cadRoutes(mux)
 	mux.HandleFunc("GET /api/tasks", c.auth(c.handleListTasks))

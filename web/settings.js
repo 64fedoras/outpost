@@ -149,7 +149,7 @@ async function loadSecurity() {
     const lk = settings ? settings.locked_ips || [] : [];
     $('sec-lock').textContent = settings ? `${settings.login_failures} failed sign-in${settings.login_failures === 1 ? '' : 's'} in the last 15 minutes.` + (lk.length ? ` Locked out: ${lk.join(', ')}.` : '') + ' After 10 failures an address is blocked for 15 minutes.' : '';
     setHTML('sessions-list', ss.map((s) => `<div class="rowline"><span>${esc(s.ip || 'unknown')} · ${esc((s.ua || '').slice(0, 60))} <span class="muted">· signed in ${ago(s.created)}</span>${s.current ? ' ' + pill('done', 'this browser') : ''}</span>${s.current ? '' : `<button class="danger" data-sess="${esc(s.id)}">Sign out</button>`}</div>`).join('') || '<p class="muted">None</p>');
-    setHTML('tokens-list', tk.map((t) => `<div class="rowline"><span>${esc(t.name)}${t.scope === 'chat' ? ' ' + pill('ready', 'chat only') : t.scope === 'images' ? ' ' + pill('ready', 'chat and pictures') : ''} <span class="muted">· created ${ago(t.created)}${t.last_used && !t.last_used.startsWith('0001') ? ' · last used ' + ago(t.last_used) : ' · never used'}</span></span><button class="danger" data-tok="${esc(t.id)}">Revoke</button></div>`).join('') || '<p class="muted">No tokens yet.</p>');
+    setHTML('tokens-list', tk.map((t) => `<div class="rowline"><span>${esc(t.name)}${t.scope === 'chat' ? ' ' + pill('ready', 'chat only') : t.scope === 'images' ? ' ' + pill('ready', 'chat and pictures') : t.scope === 'mcp' ? ' ' + pill('ready', 'MCP only') : ''} <span class="muted">· created ${ago(t.created)}${t.last_used && !t.last_used.startsWith('0001') ? ' · last used ' + ago(t.last_used) : ' · never used'}</span></span><button class="danger" data-tok="${esc(t.id)}">Revoke</button></div>`).join('') || '<p class="muted">No tokens yet.</p>');
     setHTML('agent-hint', 'To connect an editor, agent or Claude Code, create a token (tick Chat only) and see <b>Connect a tool</b> below.');
     connectRender();
     let info = `Fingerprint <code>${esc(tl.fingerprint)}</code>`;
@@ -173,8 +173,8 @@ $('sess-all').onclick = async () => { if (await askConfirm('Sign out every brows
 $('tok-create').onclick = async () => {
   const name = $('tok-name').value.trim(); if (!name) return;
   try {
-    const img = $('tok-img').checked, chat = $('tok-chat').checked || img;
-    const t = await post('/api/apitokens', { name, scope: img ? 'images' : chat ? 'chat' : '' }); $('tok-name').value = ''; $('tok-chat').checked = false; $('tok-img').checked = false;
+    const img = $('tok-img').checked, chat = $('tok-chat').checked || img, mcp = $('tok-mcp').checked && !chat;
+    const t = await post('/api/apitokens', { name, scope: img ? 'images' : chat ? 'chat' : mcp ? 'mcp' : '' }); $('tok-name').value = ''; $('tok-chat').checked = false; $('tok-img').checked = false; $('tok-mcp').checked = false;
     const n = $('tok-new'); n.classList.remove('hidden');
     setHTML('tok-new', `Copy this now, it is shown only once:<div class="codebox"><span id="tok-val">${esc(t.token)}</span><button id="tok-copy">Copy</button></div>${chat ? `<p class="hint u6">In your editor or chat app use the OpenAI provider with base URL <code>${esc(location.origin)}/v1</code>, this token as the API key, and model <code>auto</code> (or a model name from <code>/v1/models</code>). The controller's certificate is self-signed unless you replaced it, so the app may need to trust it.</p>` : ''}`);
     $('tok-copy').onclick = async () => { try { await navigator.clipboard.writeText(t.token); toast('Copied'); } catch (e) { toast('Select the token and press Ctrl+C'); } };
@@ -308,11 +308,21 @@ function connectRender() {
       <p class="hint">The certificate is self-signed unless you replaced it, so Node-based tools need <code>NODE_EXTRA_CA_CERTS=/path/to/outpost.crt</code> (download it from the browser's certificate viewer) or your own certificate. Claude Code sends long prompts and many tools: use the biggest model you have.</p>`,
     ollama: `<p class="hint">For apps that only know Ollama. They must be able to send an <code>Authorization: Bearer</code> header with the token. Pulling and deleting models is refused: use the Models page.</p>
       <label>Ollama URL</label>${box(`${o}/ollama`)}<p class="hint">Answers <code>/api/chat</code>, <code>/api/generate</code>, <code>/api/tags</code>, <code>/api/show</code> and <code>/api/version</code>.</p>`,
+    mcp: `<p class="hint">Outpost as an MCP server: Claude Code, Claude Desktop and other MCP clients can start tasks on the cluster, answer their questions, check progress, read the files and ask a local model. Use a token with <b>MCP only</b> ticked.</p>
+      <label>Claude Code (one line in a terminal)</label>${box(`claude mcp add --transport http outpost ${o}/mcp --header "Authorization: Bearer your-token"`)}
+      <label>Claude Desktop and others (MCP config file)</label>${box(`{"mcpServers":{"outpost":{"type":"http","url":"${o}/mcp","headers":{"Authorization":"Bearer your-token"}}}}`)}
+      <p class="hint">Tools: <code>start_task</code>, <code>task_status</code>, <code>answer_task</code>, <code>approve_plan</code>, <code>get_files</code>, <code>list_tasks</code>, <code>ask_local_model</code>, <code>cluster_status</code>. The certificate must be trusted (<code>NODE_EXTRA_CA_CERTS</code>, or your own certificate).</p>
+      <label class="toggle"><input type="checkbox" id="ct-mcp-paid" ${settings && settings.mcp_allow_paid ? 'checked' : ''}> Let MCP start tasks with Claude or OpenRouter planners (off: local planners only)</label>
+      <label class="toggle"><input type="checkbox" id="ct-mcp-approve" ${settings && settings.mcp_allow_approve ? 'checked' : ''}> Let MCP approve plans (off: you approve each plan here)</label>`,
   };
   document.querySelectorAll('#ct-tabs [data-ct]').forEach((b) => { b.classList.toggle('on', b.dataset.ct === connectTab); b.setAttribute('aria-selected', String(b.dataset.ct === connectTab)); });
   setHTML('ct-body', tabs[connectTab] || '');
   if (settings && document.activeElement !== $('ct-cors')) $('ct-cors').value = (settings.api_cors_origins || []).join('\n');
 }
 $('ct-tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-ct]'); if (b) { connectTab = b.dataset.ct; connectRender(); } });
+$('ct-body').addEventListener('change', (e) => {
+  if (e.target.id === 'ct-mcp-paid') saveSettings({ mcp_allow_paid: e.target.checked }, e.target.checked ? 'MCP may use paid planners' : 'MCP uses local planners only');
+  if (e.target.id === 'ct-mcp-approve') saveSettings({ mcp_allow_approve: e.target.checked }, e.target.checked ? 'MCP may approve plans' : 'You approve MCP plans');
+});
 $('ct-body').addEventListener('click', async (e) => { const b = e.target.closest('[data-copy-text]'); if (b) { await copyText(b.dataset.copyText); toast('Copied'); } });
 $('ct-cors-save').onclick = () => saveSettings({ api_cors_origins: $('ct-cors').value.split(/\s+/).filter(Boolean) }, 'Origins saved');

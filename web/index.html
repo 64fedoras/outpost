@@ -614,13 +614,14 @@
           <p class="hint u3" id="agent-hint"></p>
           <div class="btns u3"><input id="tok-name" placeholder="Token name, e.g. nightly script" autocomplete="off"><button id="tok-create">Create token</button></div>
           <label class="toggle u3"><input type="checkbox" id="tok-chat"> <span>Chat only: works with the OpenAI-compatible API (<code>/v1/chat/completions</code>, <code>/v1/models</code>) and nothing else. Use this for editors and chat apps.</span></label>
+          <label class="toggle u3"><input type="checkbox" id="tok-mcp"> <span>MCP only: works with the MCP server (<code>/mcp</code>) and nothing else. Use this for Claude Code, Claude Desktop and other MCP clients.</span></label>
           <label class="toggle u3"><input type="checkbox" id="tok-img"> <span>Chat and pictures: like chat only, and also allows <code>/v1/images/generations</code> while the image API is switched on (Settings, Pictures).</span></label>
           <div class="note hidden u6" id="tok-new"></div>
         </div>
         <div class="section-head"><h2>Connect a tool</h2></div>
         <div class="card" id="connect-card">
           <p class="hint">One API token, several ways in. Pick what your tool speaks. Requests use a free node (model <code>auto</code> is the strongest free one) and never interrupt tasks.</p>
-          <div class="ct-tabs" role="tablist" id="ct-tabs"><button role="tab" data-ct="openai" class="on">OpenAI API</button><button role="tab" data-ct="anthropic">Anthropic API</button><button role="tab" data-ct="ollama">Ollama API</button></div>
+          <div class="ct-tabs" role="tablist" id="ct-tabs"><button role="tab" data-ct="openai" class="on">OpenAI API</button><button role="tab" data-ct="anthropic">Anthropic API</button><button role="tab" data-ct="ollama">Ollama API</button><button role="tab" data-ct="mcp">MCP</button></div>
           <div id="ct-body"></div>
           <label class="u5" for="ct-cors">Browser tools allowed to call these APIs (CORS), one origin per line, e.g. <code>http://localhost:3000</code></label>
           <textarea id="ct-cors" rows="2" spellcheck="false" placeholder="Leave empty unless a tool runs in a browser tab"></textarea>
