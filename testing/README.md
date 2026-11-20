@@ -40,6 +40,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `mobile.py` | The same pages at phone width. |
 | `projectnew.py` | Projects page: "New task in this project" in a card's menu opens the new-task page with that project picked. |
 | `chatpage.py` | Chat page layout: model cards on a new chat, the docked composer, the chats panel and the phone sheet. |
+| `chatimages.py` | Chat screenshots: `novision` checks the warning and refusal with the text-only rig model; `vision` (after adding `mmproj-F16.gguf` to `run/ctl/models/tiny-test/model.json` `hf_files` and restarting the controller) sends a pasted image and checks the thumbnail and that the fake server got it. |
 | `groups.py` | Sidebar groups: the By status / By group switch, new group, dragging a task and a chat onto a group, Move to group, rename, colour, move, delete, and the phone sheet. Runs first: it expects a controller with no groups yet. |
 | `shots.py` | Screenshots of every tab (needs a task id edited into the script). |
 | `soak.py` | No browser. Runs `SOAK_TASKS` tasks (default 8) through the API and, at random (`SOAK_SEED`), kills and restarts the node, the controller or both mid-task; every task must end `done`. Presses Resume for Claude tasks after a controller restart. Runs nightly in `.github/workflows/soak.yml`. |
@@ -78,8 +79,15 @@ the lab runner that label, or it would try the release build). No cluster addres
 (`OUTPOST_LAB_URL`, `OUTPOST_LAB_TOKEN`, optionally `OUTPOST_LAB_FINGERPRINT`). Host jobs run as the runner's
 user without isolation, so only point the runner at a mirror you control.
 **To set this up on your own network from scratch** (mirror, runner machine, secrets, firewall troubleshooting, any OS mix), follow [`testing/LAB.md`](LAB.md). The runner is created by `scripts/lab-runner-setup.sh`, which is **untested on a real machine** (syntax-checked only).
-
-Not yet checked on the real cluster, and only the smoke checks exist so far: Windows, tray, GPU and phone checks are still by hand.
+**Stage `inspect`** (`OUTPOST_LAB_STAGES=smoke,inspect`, also the workflow default) adds read-only checks from
+`testing/lab_features.py`: every online node runs the controller's version; Pick best (`load-options`) returns exactly
+one best pick that fits, and a GPU node's pick is not CPU-only; each node's model-sharing port is reachable from the runner
+(the Windows firewall rule; `OUTPOST_LAB_SKIP_PEER=name,name` skips nodes the runner cannot route to); Mac node logs
+have no Local Network block; Windows node logs show no service errors; the update check answers. Nothing is
+installed, loaded or restarted. Warnings say what it cannot see: tray icons, Windows service survival over a reboot,
+Defender, and Apple Silicon/Metal when no arm64 Mac is online. Stages for update/rollback and memory pooling
+(which change the cluster and will be manual-only) are not built yet.
+The inspect stage is not yet run on the real cluster; tray, phone, Windows install and real GPU loads are still by hand.
 
 ## Not covered by any script (test by hand)
 - Screenshots on the real nodes: Chromium on each platform (snap Chromium on Ubuntu, Chrome on Windows

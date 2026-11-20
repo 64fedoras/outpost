@@ -605,6 +605,10 @@ function openLoad(id, prefOverride) {
   $('load-pool-wrap').open = inPool.size > 0;
   $('load-pool').querySelectorAll('.pool-cb').forEach((cb) => cb.addEventListener('change', () => onLoadModelChange(parseInt($('load-ctx').value, 10))));
   onLoadModelChange(pref.ctx);
+  const tgt = n.target_tps || 8;
+  tpsSet('load-tps', tgt);
+  setHTML('load-tps-hint', '');
+  api(`/api/nodes/${id}/load-options`).then((r) => { if (id === loadNodeId) setHTML('load-tps-hint', tpsHint(r.options, r.target_tps || tgt)); }).catch(() => {});
   open('modal-load');
 }
 // Memory available to a load on node n, including ticked pool helpers.
@@ -761,7 +765,50 @@ function syncCtxRange() {
 }
 $('load-ctx-range').addEventListener('input', () => { $('load-ctx').value = CTX_STOPS[parseInt($('load-ctx-range').value, 10)]; updateCtxHint(); });
 $('load-ctx').addEventListener('input', () => { syncCtxRange(); updateCtxHint(); });
-$('load-model').addEventListener('change', () => onLoadModelChange());
+
+// Target speed slider (Load dialog and Pick best dialog): the tok/s the owner wants from a node. It steers which
+// model is recommended (best_fit.go) and is saved per node. Stops mirror the mockup; the number box keeps exact values.
+const TPS_STOPS = [2, 4, 6, 8, 12, 16, 24, 32];
+const tpsFmt = (v) => v < 10 ? v.toFixed(1) : String(Math.round(v));
+function tpsWire(id, onChange) {
+  const r = $(id + '-r'), num = $(id + '-n');
+  let t = null;
+  const fire = () => { clearTimeout(t); t = setTimeout(() => onChange(parseFloat(num.value) || 8), 250); };
+  r.oninput = () => { num.value = TPS_STOPS[+r.value]; fire(); };
+  num.oninput = () => { tpsSet(id, parseFloat(num.value) || 8, true); fire(); };
+  $(id + '-reset').onclick = () => { tpsSet(id, 8); onChange(8); };
+}
+function tpsSet(id, v, keepBox) {
+  let b = 0;
+  TPS_STOPS.forEach((s, i) => { if (Math.abs(s - v) < Math.abs(TPS_STOPS[b] - v)) b = i; });
+  $(id + '-r').value = b;
+  if (!keepBox) $(id + '-n').value = v;
+}
+// The sentence under a slider: what the target picks, or why nothing meets it.
+function tpsHint(opts, target) {
+  const top = (opts || []).find((o) => o.rank === 1);
+  if (!top) return 'No coding model in the library or catalog fits this node.';
+  if (!top.est_tok_s) return `Picks the biggest coding model that fits: <b>${esc(top.label)}</b>. It runs entirely in VRAM, so the target does not limit it.`;
+  const tps = tpsFmt(top.est_tok_s);
+  if (top.est_tok_s >= target) return `Picks the biggest coding model estimated at <b>${target}</b> tok/s or more: <b>${esc(top.label)}</b>, ~${tps} tok/s (an estimate, not yet measured). Saved for this node.`;
+  const lead = top.est_tok_s >= target / 2 ? `No model is estimated at ${target} tok/s here; the biggest at half that or better is <b>${esc(top.label)}</b>, ~${tps} tok/s.` : `No model is estimated at ${target} tok/s here; the fastest is <b>${esc(top.label)}</b>, ~${tps} tok/s.`;
+  return `<span class="speed-low">${lead}</span> A node with a GPU would do better.`;
+}
+async function tpsSave(id, v) {
+  try { await post(`/api/nodes/${id}/settings`, { target_tps: v }); } catch (e) { toast(e.message); }
+}
+function loadTpsRefresh(target, save = true) {
+  const nid = loadNodeId;
+  api(`/api/nodes/${nid}/load-options?target_tps=${target}`).then((r) => {
+    if (nid !== loadNodeId) return;
+    const sel = (r.options || []).find((o) => o.name === $('load-model').value);
+    const own = sel && sel.est_tok_s ? ` The selected model is estimated at ~${tpsFmt(sel.est_tok_s)} tok/s.` : '';
+    setHTML('load-tps-hint', tpsHint(r.options, target) + own);
+  }).catch(() => {});
+  if (save) tpsSave(nid, target);
+}
+tpsWire('load-tps', loadTpsRefresh);
+$('load-model').addEventListener('change', () => { onLoadModelChange(); loadTpsRefresh(parseFloat($('load-tps-n').value) || 8, false); });
 $('load-go').onclick = async () => {
   $('load-err').classList.add('hidden');
   const body = { name: $('load-model').value, ctx: parseInt($('load-ctx').value, 10) || 0, gpu_layers: $('load-ngl').value,
@@ -811,20 +858,31 @@ function bestBtn(n) {
 let bestNode = null, bestOpts = [];
 async function openBest(id) {
   const n = nodeById(id); bestNode = id;
-  const loaded = !n.lending_to && n.heartbeat && n.heartbeat.loaded_model;
   $('best-node').textContent = nodeName(n);
   $('best-err').classList.add('hidden');
   setHTML('best-list', '<div class="sub">Checking what fits…</div>');
   $('best-go').disabled = true;
+  tpsSet('best-tps', n.target_tps || 8);
   open('modal-best');
+  await bestLoad(id, 0);
+}
+tpsWire('best-tps', (t) => { bestLoad(bestNode, t); tpsSave(bestNode, t); });
+// Fetch and draw the picks for a target speed (0 = the node's saved one).
+async function bestLoad(id, target) {
+  const n = nodeById(id);
+  const loaded = !n.lending_to && n.heartbeat && n.heartbeat.loaded_model;
+  $('best-err').classList.add('hidden');
+  $('best-go').disabled = true;
   let r;
-  try { r = await api(`/api/nodes/${id}/load-options`); } catch (e) { $('best-err').textContent = e.message; $('best-err').classList.remove('hidden'); return; }
+  try { r = await api(`/api/nodes/${id}/load-options${target ? '?target_tps=' + target : ''}`); } catch (e) { $('best-err').textContent = e.message; $('best-err').classList.remove('hidden'); return; }
+  if (id !== bestNode) return;
+  setHTML('best-tps-hint', tpsHint(r.options, target || r.target_tps || 8));
   bestOpts = (r.options || []).filter((o) => o.rank > 0).sort((a, b) => a.rank - b.rank);
   const h = n.hello || {}, g = (h.gpus || [])[0], sf = storageFacts(n);
   const ram = n.heartbeat && n.heartbeat.ram_total_bytes;
   const apple = g && g.vendor === 'apple';
   const mem = apple ? `Apple Silicon, ${bytes(ram || g.vram_bytes)} unified memory` : `${g ? bytes(g.vram_bytes) + ' VRAM, ' : 'no GPU, '}${ram ? bytes(ram) + ' RAM' : ''}`;
-  const how = apple ? 'The biggest model that should still run fast on its GPU comes first.' : g ? 'The biggest model that should still run fast comes first, even when part of it sits in system RAM.' : 'On a CPU-only node the biggest model that still runs at a usable speed comes first.';
+  const how = apple ? 'The biggest model that should reach your target speed on its GPU comes first.' : g ? 'The biggest model that reaches your target speed comes first, even when part of it sits in system RAM.' : 'On a CPU-only node the biggest model that reaches your target speed comes first.';
   $('best-hint').textContent = `Ranked for this node: ${mem}${sf ? (sf.lim ? `, ${bytes(Math.max(0, sf.lim - sf.u.total))} left under its storage limit` : `, ${bytes(sf.u.disk_free)} free disk`) : ''}. ${how} Memory other programs hold right now is left alone.`;
   if (!bestOpts.length) {
     setHTML('best-list', `<div class="note warn">${r.build_ok ? 'No coding model in the library or catalog fits this node\'s memory and disk.' : 'This node has no llama.cpp build yet, so nothing can be loaded.'}</div>`);

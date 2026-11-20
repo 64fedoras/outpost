@@ -248,8 +248,11 @@
           <div class="chat-dock">
             <div class="chat-col">
               <div class="chat-compose">
+                <div class="error-msg hidden" id="chat-img-warn"></div>
+                <div class="img-strip" id="chat-imgs"></div>
                 <textarea id="chat-text" rows="2" enterkeyhint="enter" placeholder="Ask anything…" aria-label="Message"></textarea>
                 <div class="chat-bar">
+                  <button type="button" class="tb chat-attach" id="chat-attach" title="Attach screenshots or images (PNG, JPEG, WebP, GIF). You can also paste or drop them." aria-label="Attach images">📎</button><input type="file" id="chat-file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
                   <select id="chat-node" class="chat-pill" aria-label="Which node answers"></select>
                   <span class="grow"></span>
                   <button class="small hidden" id="chat-totask" title="Start a new task with this conversation as its request">Make this a task</button>
@@ -670,10 +673,16 @@
       <div><label for="load-ctx-range">Context size (tokens)</label>
         <div class="ctx-slider"><input id="load-ctx-range" type="range" min="0" max="6" step="1" aria-label="Context size"><input id="load-ctx" type="number" min="512" step="1024" aria-label="Exact context size in tokens"></div>
         <div class="ctx-ticks" aria-hidden="true"><span>2K</span><button type="button" class="small" id="load-ctx-fit" title="Set the biggest context that fits this node's memory, leaving 10% spare">Largest that fits</button><span id="load-ctx-max">128K</span></div></div>
+      <div><label for="load-tps-r">Target speed (tokens/s)</label>
+        <div class="tps-slider"><input id="load-tps-r" type="range" min="0" max="7" step="1" aria-label="Target speed"><input id="load-tps-n" type="number" min="1" max="100" step="1" aria-label="Exact target speed in tokens per second"></div>
+        <div class="tps-ticks" aria-hidden="true"><span>2</span><button type="button" class="small" id="load-tps-reset" title="Back to the default of 8 tokens/s">Default (8)</button><span>32+</span></div></div>
+    </div>
+    <p id="load-tps-hint" class="hint u6"></p>
+    <div class="row2">
       <div><label for="load-ngl">GPU layers</label><select id="load-ngl"><option value="">Automatic (fit to VRAM)</option><option value="all">All on GPU</option><option value="0">CPU only</option></select></div>
+      <div><label for="load-cache">Context cache</label><select id="load-cache"><option value="">16-bit (default)</option><option value="q8_0">8-bit (half the memory)</option><option value="q4_0">4-bit (a quarter, slight quality loss)</option></select></div>
     </div>
     <div class="row2">
-      <div><label for="load-cache">Context cache</label><select id="load-cache"><option value="">16-bit (default)</option><option value="q8_0">8-bit (half the memory)</option><option value="q4_0">4-bit (a quarter, slight quality loss)</option></select></div>
       <div><label for="load-slots">Calls at once</label><select id="load-slots"><option value="0">1 (default)</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
     </div>
     <div class="row2 hidden" id="load-moe-wrap">
@@ -813,6 +822,9 @@
   <div class="modal best-modal">
     <h3>Best model for <span id="best-node"></span></h3>
     <p class="hint" id="best-hint"></p>
+    <div class="tps-bar"><label for="best-tps-r">Target speed</label><div class="grow"><div class="tps-slider"><input id="best-tps-r" type="range" min="0" max="7" step="1" aria-label="Target speed"><input id="best-tps-n" type="number" min="1" max="100" step="1" aria-label="Exact target speed in tokens per second"></div>
+        <div class="tps-ticks" aria-hidden="true"><span>2</span><button type="button" class="small" id="best-tps-reset" title="Back to the default of 8 tokens/s">Default (8)</button><span>32+</span></div></div></div>
+    <p class="hint" id="best-tps-hint"></p>
     <div id="best-list"></div>
     <div class="error-msg hidden" id="best-err"></div>
     <div class="modal-foot"><button id="best-all">See all models…</button><span class="spacer"></span><button data-close>Cancel</button><button class="primary" id="best-go">Load this model</button></div>

@@ -14,6 +14,10 @@ name: Lab
 # See testing/README.md, "Lab checks".
 on:
   workflow_dispatch:
+    inputs:
+      stages:
+        description: "Stages to run: smoke, inspect (both read-only)"
+        default: "smoke,inspect"
   schedule:
     - cron: "30 8 * * *"
 
@@ -28,4 +32,6 @@ jobs:
           OUTPOST_LAB_URL: ${{ secrets.OUTPOST_LAB_URL }}
           OUTPOST_LAB_TOKEN: ${{ secrets.OUTPOST_LAB_TOKEN }}
           OUTPOST_LAB_FINGERPRINT: ${{ secrets.OUTPOST_LAB_FINGERPRINT }}
+          # Scheduled runs have no inputs, so they fall back to the read-only default.
+          OUTPOST_LAB_STAGES: ${{ github.event.inputs.stages || 'smoke,inspect' }}
         run: python3 testing/lab_smoke.py
