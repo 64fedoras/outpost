@@ -320,14 +320,34 @@ this is one small call counted in the task's cost, and it is skipped if it would
 **Save for later** (next to *Change options* on the New task page) keeps the request and its options
 (planner, project, peer review, fix rounds, test limit, node label) as a saved task. Attached files and
 images are not kept. Saved tasks are listed under the starters: **Run now** starts one as if you typed
-it, **Edit first** puts it in the box to change, **Schedule…** runs it every day or every week at a time
-(the controller's clock).
+it, **Edit first** puts it in the box to change, **Schedule…** runs it on a repeat by the controller's clock:
+every 1, 2, 3, 4, 6, 8 or 12 hours from a starting time (for example every 6 hours from 02:00 is 02:00,
+08:00, 14:00 and 20:00), every day, on chosen days (Mon to Fri, say), every week, or every month on a
+day (a day past the end of a short month means its last day). The dialog shows the result in words
+before you save.
 
 A scheduled run starts on its own: the planner is told nobody is watching and asks no questions, and the
-plan is approved without you. You get the usual *Finished* or *Failed* notification. To make sure a
+plan is approved without you. If agent mode wants to ask you something during the run, it is told nobody
+is watching and decides itself (the task log notes the question), so a run never waits for an answer.
+You get the usual *Finished* or *Failed* notification. To make sure a
 schedule never spends money, it must plan on a node (a node or *Auto*); a schedule with Claude or
 OpenRouter as the planner is refused. A run is skipped (and noted on the saved task) while the previous
-run is still going, and runs missed while the controller was off are not made up.
+run is still going. A run missed while the controller was off (a restart or an update) still starts
+when it comes back if it is less than an hour late, and the saved task says *Started late*; an older
+miss is skipped and noted as *Missed the run at …*.
+
+**The Scheduled page** (sidebar → Scheduled; the number is how many schedules are active) lists every
+saved task. Scheduled ones come first, each with its schedule in words, a dot (green active, amber when
+the last run failed or was missed, grey paused), its last 10 runs as small squares (green done, red
+failed or did not start, grey skipped or missed, amber started late, blue still going), and the next run.
+Times are by the controller's clock, whatever time zone your browser is in. **Run now**, **Pause** /
+**Resume** (the schedule is kept; on Resume the next run counts from now, nothing paused is made up) and
+**⋯** (Edit request, Edit schedule, Edit first in New task, Duplicate as an unscheduled copy, Remove
+schedule, Delete) are on each row. Click a row to see the saved request and options and a table of its
+last runs (time, result, how long it took, the note and a link to the task). **Edit request…** changes the
+name and the request text; the options stay as saved (use *Edit first in New task* and save again to change
+them). **Pause all** at the top stops every schedule at once without changing them, with a banner while it
+is on and *Resume all*; Run now still works. Saved tasks with no schedule are listed underneath.
 
 ## Projects, attachments and git
 

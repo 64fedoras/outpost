@@ -125,7 +125,7 @@ function refreshIcons() {
     l.replaceWith(c);
   });
 }
-const PAGES = ['new', 'image', 'cad', 'task', 'chat', 'projects', 'project', 'nodes', 'models', 'updates', 'spending', 'settings'];
+const PAGES = ['new', 'image', 'cad', 'task', 'chat', 'scheduled', 'projects', 'project', 'nodes', 'models', 'updates', 'spending', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
   ntDraft.flush(); tmDraft.flush();
@@ -134,7 +134,7 @@ function route() {
   pageArg = page === 'task' || page === 'chat' || page === 'project' ? m[2] || null : null;
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
   document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === (page === 'project' ? 'projects' : page)));
-  document.querySelector('.page-plain').classList.toggle('hidden', !['projects', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
+  document.querySelector('.page-plain').classList.toggle('hidden', !['scheduled', 'projects', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image', cad: 'New 3D model' }[page] || page[0].toUpperCase() + page.slice(1));
   refreshIcons();
   document.body.classList.toggle('on-task', page === 'task' || page === 'project');
@@ -242,6 +242,7 @@ function renderAll() {
   renderSideCluster();
   if (page === 'new') renderNew();
   if (page === 'projects' || page === 'project') renderProjects();
+  if (page === 'scheduled') renderScheduled();
   if (page === 'chat' && document.activeElement !== $('chat-node')) fillChatNodes();
   if (page === 'nodes') { renderNodes(); renderJobs(); }
   if (page === 'models') renderModels();
@@ -259,6 +260,9 @@ function renderBadges() {
   const offline = state.nodes.filter((n) => !n.online).length;
   const bn = $('badge-nodes'); bn.textContent = offline; bn.className = 'badge warn' + (offline ? '' : ' hidden'); bn.title = `${offline} offline`;
   const up = updatesAvailable();
+  const sc = (state.templates || []).filter((t) => t.schedule && !t.paused).length;
+  const bs = $('badge-sched'); bs.textContent = state.schedules_paused ? '⏸' : sc; bs.className = 'badge side-badge' + (state.schedules_paused ? ' warn' : '') + (sc || state.schedules_paused ? '' : ' hidden');
+  bs.title = state.schedules_paused ? 'All schedules are paused' : `${sc} active schedule${sc === 1 ? '' : 's'}`;
   const bu = $('badge-updates'); bu.textContent = up; bu.className = 'badge' + (up ? '' : ' hidden');
 }
 

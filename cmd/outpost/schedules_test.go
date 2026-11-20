@@ -136,6 +136,85 @@ func TestScheduleNext(t *testing.T) {
 	if (&Schedule{Every: "hourly", At: "01:00"}).check() == nil {
 		t.Fatal("hourly accepted")
 	}
+
+	// Every 6 hours from 02:15: 02:15, 08:15, 14:15, 20:15.
+	h := &Schedule{Every: "hours", At: "02:15", Hours: 6, Day: 9}
+	if err := h.check(); err != nil || h.Day != 0 {
+		t.Fatalf("hours check %v %+v", err, h)
+	}
+	if got := h.next(at(3, 1, 0)); !got.Equal(at(3, 2, 15)) {
+		t.Fatalf("hours first %v", got)
+	}
+	if got := h.next(at(3, 9, 0)); !got.Equal(at(3, 14, 15)) {
+		t.Fatalf("hours middle %v", got)
+	}
+	if got := h.next(at(3, 20, 15)); !got.Equal(at(4, 2, 15)) {
+		t.Fatalf("hours wraps %v", got)
+	}
+	for _, bad := range []int{0, 5, 7, 24} {
+		if (&Schedule{Every: "hours", At: "00:00", Hours: bad}).check() == nil {
+			t.Fatalf("every %d hours accepted", bad)
+		}
+	}
+
+	// Chosen days: Monday to Friday at 07:00. The 3rd is a Tuesday.
+	wd := &Schedule{Every: "days", At: "07:00", Days: []int{5, 1, 2, 3, 4, 3}}
+	if err := wd.check(); err != nil || len(wd.Days) != 5 || wd.Days[0] != 1 {
+		t.Fatalf("days check %v %+v", err, wd)
+	}
+	if got := wd.next(at(6, 8, 0)); !got.Equal(at(9, 7, 0)) { // Fri after 07:00 -> Mon
+		t.Fatalf("days skips weekend %v", got)
+	}
+	if (&Schedule{Every: "days", At: "07:00"}).check() == nil || (&Schedule{Every: "days", At: "07:00", Days: []int{7}}).check() == nil {
+		t.Fatal("bad days accepted")
+	}
+
+	// Monthly on the 31st: the last day in shorter months.
+	mo := &Schedule{Every: "monthly", At: "03:00", Day: 31}
+	if err := mo.check(); err != nil {
+		t.Fatal(err)
+	}
+	feb := time.Date(2026, 2, 10, 12, 0, 0, 0, time.Local)
+	if got := mo.next(feb); !got.Equal(time.Date(2026, 2, 28, 3, 0, 0, 0, time.Local)) {
+		t.Fatalf("monthly short month %v", got)
+	}
+	if got := mo.next(time.Date(2026, 2, 28, 3, 0, 0, 0, time.Local)); !got.Equal(time.Date(2026, 3, 31, 3, 0, 0, 0, time.Local)) {
+		t.Fatalf("monthly next %v", got)
+	}
+	if (&Schedule{Every: "monthly", At: "03:00", Day: 32}).check() == nil {
+		t.Fatal("day 32 accepted")
+	}
+}
+
+// A run missed by under an hour while the controller was off starts when it
+// is back and says so; an older one is skipped and noted.
+func TestScheduleCatchUp(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	recent, old := now.Add(-20*time.Minute), now.Add(-3*time.Hour)
+	list := []*Template{
+		{ID: "a", Name: "recent", Request: createReq{Prompt: "x", Planner: "node:n1"}, Schedule: &Schedule{Every: "daily", At: "02:00"}, NextRun: &recent},
+		{ID: "b", Name: "old", Request: createReq{Prompt: "y", Planner: "node:n1"}, Schedule: &Schedule{Every: "daily", At: "02:00"}, NextRun: &old},
+	}
+	b, _ := json.Marshal(list)
+	if err := os.WriteFile(filepath.Join(dir, "templates.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := &Controller{dataDir: dir, tasks: map[string]*Task{}, projects: map[string]*Project{}}
+	c.loadTemplates()
+	a, o := c.templates[0], c.templates[1]
+	if !a.NextRun.Equal(recent) || a.lateFrom.IsZero() {
+		t.Fatalf("recent miss not kept for catch-up: %+v", a)
+	}
+	if !o.NextRun.After(now) || !strings.Contains(o.LastNote, "Missed the run") {
+		t.Fatalf("old miss: %+v", o)
+	}
+	// runDue picks the caught-up run; createTask fails here (no nodes), but the
+	// late marker is spent and the next run is in the future.
+	c.runDue(time.Now())
+	if !a.lateFrom.IsZero() || !a.NextRun.After(now) {
+		t.Fatalf("after runDue: %+v", a)
+	}
 }
 
 func TestTemplatesAndSchedules(t *testing.T) {
@@ -249,5 +328,87 @@ func stopTaskAndWait(tk *Task) {
 		cancel()
 		<-done
 		last = done
+	}
+}
+
+// Pause and Pause all stop runs without losing the schedule; resuming counts
+// the next run from now. Runs are kept as history, newest first, at most 10.
+// Editing the request of a scheduled task still refuses a paid planner.
+func TestSchedulePauseHistoryAndEdit(t *testing.T) {
+	c := &Controller{dataDir: t.TempDir(), tasks: map[string]*Task{}, projects: map[string]*Project{}}
+	c.settings.DefaultPlanner = "node:n1"
+	m := http.NewServeMux()
+	m.HandleFunc("POST /api/templates", c.handleNewTemplate)
+	m.HandleFunc("POST /api/templates/{id}", c.handleEditTemplate)
+	m.HandleFunc("POST /api/schedules/pause", c.handlePauseAll)
+	do := func(path, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		m.ServeHTTP(rec, httptest.NewRequest("POST", path, strings.NewReader(body)))
+		return rec
+	}
+	rec := do("/api/templates", `{"name":"deps","request":{"prompt":"bump deps"},"schedule":{"every":"daily","at":"02:00"}}`)
+	var tpl Template
+	json.Unmarshal(rec.Body.Bytes(), &tpl)
+	if rec.Code != 200 || tpl.Schedule == nil {
+		t.Fatalf("new %d %s", rec.Code, rec.Body)
+	}
+	tp := c.templates[0]
+	past := func() { p := time.Now().Add(-time.Minute); c.mu.Lock(); tp.NextRun = &p; c.mu.Unlock() }
+
+	// Paused: a due run does nothing at all.
+	if rec := do("/api/templates/"+tpl.ID, `{"paused":true}`); rec.Code != 200 || tp.Paused == nil {
+		t.Fatalf("pause %d %s", rec.Code, rec.Body)
+	}
+	past()
+	c.runDue(time.Now())
+	if len(tp.Runs) != 0 || tp.NextRun.After(time.Now()) {
+		t.Fatalf("paused task ran: %+v", tp)
+	}
+	if rec := do("/api/templates/"+tpl.ID, `{"paused":false}`); rec.Code != 200 || tp.Paused != nil || !tp.NextRun.After(time.Now()) {
+		t.Fatalf("resume %d %+v", rec.Code, tp)
+	}
+
+	// Pause all: same, and stored in the settings.
+	if rec := do("/api/schedules/pause", `{"paused":true}`); rec.Code != 200 || !c.settings.SchedulesPaused {
+		t.Fatalf("pause all %d %s", rec.Code, rec.Body)
+	}
+	past()
+	c.runDue(time.Now())
+	if len(tp.Runs) != 0 {
+		t.Fatalf("ran while all paused: %+v", tp.Runs)
+	}
+	if rec := do("/api/schedules/pause", `{"paused":false}`); rec.Code != 200 || c.settings.SchedulesPaused || !tp.NextRun.After(time.Now()) {
+		t.Fatalf("resume all %d %+v", rec.Code, tp)
+	}
+
+	// History: a due run whose previous task is still going is recorded as skipped.
+	c.tasks["t0"] = &Task{ID: "t0", Status: "running", Created: time.Now()}
+	c.mu.Lock()
+	tp.LastTask = "t0"
+	c.mu.Unlock()
+	for i := 0; i < 12; i++ {
+		past()
+		c.runDue(time.Now())
+	}
+	if len(tp.Runs) != maxTplRuns || tp.Runs[0].Kind != "skipped" || !strings.Contains(tp.Runs[0].Note, "still going") {
+		t.Fatalf("history %+v", tp.Runs)
+	}
+	c.mu.Lock()
+	tp.Runs[1] = TplRun{At: time.Now(), Task: "t0", Kind: "scheduled"}
+	views := c.templateViewsLocked()
+	c.mu.Unlock()
+	if r := views[0].Runs[1]; r.Status != "running" {
+		t.Fatalf("run view %+v", r)
+	}
+
+	// Editing the request: kept, cleaned, and a paid planner is refused while scheduled.
+	if rec := do("/api/templates/"+tpl.ID, `{"request":{"prompt":"bump deps","planner":"claude"}}`); rec.Code != 400 {
+		t.Fatalf("cloud planner accepted: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do("/api/templates/"+tpl.ID, `{"request":{"prompt":"  bump all deps  ","node_label":"GPU"}}`); rec.Code != 200 || tp.Request.Prompt != "bump all deps" || tp.Request.NodeLabel != "gpu" {
+		t.Fatalf("edit request %d %+v", rec.Code, tp.Request)
+	}
+	if rec := do("/api/templates/"+tpl.ID, `{"request":{"prompt":" "}}`); rec.Code != 400 {
+		t.Fatal("empty request accepted")
 	}
 }

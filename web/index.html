@@ -60,6 +60,7 @@
     <a class="new-task side-projects" href="#/cad" data-tab="cad"><span aria-hidden="true">◇</span> New 3D model</a>
     <a class="new-task side-projects" href="#/projects" data-tab="projects"><span aria-hidden="true">▤</span> Projects</a>
     <nav class="side-pins hidden" id="side-pins" aria-label="Pinned projects"></nav>
+    <a class="new-task side-projects" href="#/scheduled" data-tab="scheduled"><span aria-hidden="true">⏱</span> Scheduled <span class="badge hidden side-badge" id="badge-sched" title="Active schedules"></span></a>
     <a class="new-task side-projects" href="#/chat" data-tab="chat"><span aria-hidden="true">💬</span> Chat</a>
     <div class="side-groupbar" id="side-groupbar"></div>
     <div class="side-filter" id="side-filter">
@@ -378,6 +379,18 @@
     </section>
 
     <!-- PROJECTS -->
+    <section data-page="scheduled" class="hidden">
+      <div class="sc-top">
+        <h1>Scheduled</h1>
+        <span class="spacer"></span>
+        <button class="sc-switch" id="sc-pause-all" role="switch" aria-checked="false" title="Stops every schedule without changing them; Run now still works"><span class="knob" aria-hidden="true"></span> Pause all</button>
+        <button class="small primary" id="sc-new" title="Write the request on the New task page, then press Save for later">＋ New saved task</button>
+      </div>
+      <p class="sc-tz" id="sc-tz"></p>
+      <div id="sc-banner"></div>
+      <div id="sc-list"></div>
+    </section>
+
     <section data-page="projects" class="hidden">
       <div class="section-head"><h2>Projects</h2><span class="spacer"></span><button class="primary small" data-act="proj-new">＋ New project</button></div>
       <p class="hint">A project keeps its files between tasks. Every task you start in it begins from the project's current files, and one task works in a project at a time (the rest wait). Optionally it clones a git repository and commits each finished round to a branch.</p>
@@ -887,15 +900,36 @@
   </div>
 </div>
 
+<div id="modal-tpl-edit" class="overlay hidden">
+  <div class="modal">
+    <h3>Edit saved task</h3>
+    <label for="tpl-edit-name">Name</label>
+    <input id="tpl-edit-name" autocomplete="off">
+    <label for="tpl-edit-prompt">Request</label>
+    <textarea id="tpl-edit-prompt" rows="8"></textarea>
+    <p class="hint">The options (planner, project, peer review, fix rounds, node label) stay as saved. To change them, use <b>Edit first in New task</b> and save it again.</p>
+    <div class="error-msg hidden" id="tpl-edit-err"></div>
+    <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="tpl-edit-go">Save</button></div>
+  </div>
+</div>
+
+<div id="sc-ctx" class="ctx-menu hidden" role="menu"></div>
+
 <div id="modal-sched" class="overlay hidden">
   <div class="modal">
     <h3>Schedule <span id="sched-name"></span></h3>
-    <p class="hint">A scheduled run starts on its own: the planner asks no questions and the plan is approved without you. It must plan on a node (never Claude or OpenRouter), so a schedule never spends money. A run is skipped while the previous one is still going, and you get the usual Finished or Failed notification.</p>
+    <p class="hint">A scheduled run starts on its own: the planner asks no questions and the plan is approved without you. It must plan on a node (never Claude or OpenRouter), so a schedule never spends money. A run is skipped while the previous one is still going; a run missed by less than an hour while the controller was off starts when it is back. You get the usual Finished or Failed notification.</p>
     <div class="btns u3">
-      <label class="chip-input">runs <select id="sched-every"><option value="">never</option><option value="daily">every day</option><option value="weekly">every week</option></select></label>
+      <label class="chip-input">runs <select id="sched-every"><option value="">never</option><option value="hours">every few hours</option><option value="daily">every day</option><option value="days">on chosen days</option><option value="weekly">every week</option><option value="monthly">every month</option></select></label>
+      <label class="chip-input" id="sched-hours-wrap">every <select id="sched-hours"><option value="1">1 hour</option><option value="2">2 hours</option><option value="3">3 hours</option><option value="4">4 hours</option><option value="6">6 hours</option><option value="8">8 hours</option><option value="12">12 hours</option></select></label>
       <label class="chip-input" id="sched-day-wrap">on <select id="sched-day"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select></label>
-      <label class="chip-input">at <input type="time" id="sched-at" value="02:00"></label>
+      <label class="chip-input" id="sched-mday-wrap">on day <input type="number" id="sched-mday" min="1" max="31" value="1" class="sched-mday"></label>
+      <label class="chip-input"><span id="sched-at-label">at</span> <input type="time" id="sched-at" value="02:00"></label>
     </div>
+    <div class="btns sched-days" id="sched-days-wrap" role="group" aria-label="Days it runs on">
+      <label class="toggle"><input type="checkbox" value="1"> Mon</label><label class="toggle"><input type="checkbox" value="2"> Tue</label><label class="toggle"><input type="checkbox" value="3"> Wed</label><label class="toggle"><input type="checkbox" value="4"> Thu</label><label class="toggle"><input type="checkbox" value="5"> Fri</label><label class="toggle"><input type="checkbox" value="6"> Sat</label><label class="toggle"><input type="checkbox" value="0"> Sun</label>
+    </div>
+    <p class="hint" id="sched-preview"></p>
     <div class="error-msg hidden" id="sched-err"></div>
     <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="sched-go">Save</button></div>
   </div>
@@ -994,6 +1028,7 @@
 <script src="confirm.js"></script>
 <script src="groups.js"></script>
 <script src="new-task.js"></script>
+<script src="scheduled.js"></script>
 <script src="project.js"></script>
 <script src="chat.js"></script>
 <script src="thread.js"></script>

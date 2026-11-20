@@ -134,15 +134,28 @@ const DAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 function schedText(t) {
   const s = t.schedule;
   if (!s) return '';
+  if (s.every === 'hours') return (s.hours === 1 ? 'Every hour' : `Every ${s.hours} hours`) + ` from ${s.at}`;
+  if (s.every === 'monthly') return `Monthly on day ${s.day} at ${s.at}`;
+  if (s.every === 'days') {
+    const d = (s.days || []).slice().sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+    const txt = d.join() === '1,2,3,4,5' ? 'Weekdays' : d.join() === '6,0' ? 'Weekends' : d.map((x) => DAYS[x]).join(', ');
+    return `${txt} at ${s.at}`;
+  }
   return (s.every === 'weekly' ? `Every ${DAYS_LONG[s.weekday]}` : 'Every day') + ` at ${s.at}`;
+}
+// nextRunText: the weekday is enough within a week; further out (monthly) the date is shown too.
+function nextRunText(iso) {
+  const d = new Date(iso);
+  const far = d - Date.now() > 6 * 86400e3;
+  return d.toLocaleString([], far ? { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' } : { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 }
 function renderSaved() {
   const list = state.templates || [];
   if (!list.length) { setHTML('nt-saved', ''); return; }
-  setHTML('nt-saved', `<div class="section-head"><h2>Saved tasks</h2></div><div class="card saved-list">${list.map((t) => {
+  setHTML('nt-saved', `<div class="section-head"><h2>Saved tasks</h2><span class="spacer"></span><a class="link-btn" href="#/scheduled">Scheduled page →</a></div><div class="card saved-list">${list.map((t) => {
     const last = t.last_task ? ` · last run <a href="#/tasks/${esc(t.last_task)}">${ago(t.last_run)}</a>${t.last_status ? ' ' + pill(t.last_status) : ''}` : '';
     const sched = t.schedule ? `<span class="pill st-ready">${esc(schedText(t))}</span> ` : '';
-    return `<div class="rowline"><span class="nv-min nv-grow"><b>${esc(t.name)}</b> ${sched}<span class="sub">${t.request.project ? esc((projects.find((p) => p.id === t.request.project) || {}).name || 'project') + ' · ' : ''}${t.request.node_label ? 'nodes labelled ' + esc(t.request.node_label) + ' · ' : ''}${t.next_run ? 'next ' + new Date(t.next_run).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : 'not scheduled'}${last}</span>${t.last_note ? `<div class="sub warn-text">${esc(t.last_note)}</div>` : ''}</span>
+    return `<div class="rowline"><span class="nv-min nv-grow"><b>${esc(t.name)}</b> ${sched}<span class="sub">${t.request.project ? esc((projects.find((p) => p.id === t.request.project) || {}).name || 'project') + ' · ' : ''}${t.request.node_label ? 'nodes labelled ' + esc(t.request.node_label) + ' · ' : ''}${t.next_run ? 'next ' + nextRunText(t.next_run) : 'not scheduled'}${last}</span>${t.last_note ? `<div class="sub warn-text">${esc(t.last_note)}</div>` : ''}</span>
       <button class="small" data-act="tpl-use" data-id="${esc(t.id)}" title="Put the request in the box above to change it first">Edit first</button><button class="small" data-act="tpl-sched" data-id="${esc(t.id)}">Schedule…</button><button class="small primary" data-act="tpl-run" data-id="${esc(t.id)}">Run now</button><button class="small danger" data-act="tpl-del" data-id="${esc(t.id)}" aria-label="Delete saved task">×</button></div>`;
   }).join('')}</div>`);
 }
@@ -161,15 +174,35 @@ function openSched(id) {
   const s = schedTpl.schedule || {};
   $('sched-name').textContent = schedTpl.name;
   $('sched-every').value = s.every || ''; $('sched-day').value = String(s.weekday || 1); $('sched-at').value = s.at || '02:00';
+  $('sched-hours').value = String(s.hours || 6); $('sched-mday').value = String(s.day || 1);
+  const days = s.days || [1, 2, 3, 4, 5];
+  document.querySelectorAll('#sched-days-wrap input').forEach((c) => { c.checked = days.includes(+c.value); });
   $('sched-err').classList.add('hidden');
   schedShow(); open('modal-sched');
 }
-function schedShow() { $('sched-day-wrap').classList.toggle('hidden', $('sched-every').value !== 'weekly'); }
+function schedValue() {
+  return { every: $('sched-every').value, at: $('sched-at').value, weekday: +$('sched-day').value, hours: +$('sched-hours').value, day: +$('sched-mday').value,
+    days: [...document.querySelectorAll('#sched-days-wrap input:checked')].map((c) => +c.value) };
+}
+function schedShow() {
+  const e = $('sched-every').value;
+  $('sched-day-wrap').classList.toggle('hidden', e !== 'weekly');
+  $('sched-hours-wrap').classList.toggle('hidden', e !== 'hours');
+  $('sched-mday-wrap').classList.toggle('hidden', e !== 'monthly');
+  $('sched-days-wrap').classList.toggle('hidden', e !== 'days');
+  $('sched-at-label').textContent = e === 'hours' ? 'starting at' : 'at';
+  const v = schedValue();
+  let p = e ? schedText({ schedule: v }) + ' (controller time).' : 'Not scheduled.';
+  if (e === 'monthly' && v.day > 28) p += ' In shorter months it runs on the last day.';
+  $('sched-preview').textContent = p;
+}
+['sched-every', 'sched-hours', 'sched-day', 'sched-mday', 'sched-at'].forEach((id) => $(id).addEventListener('input', schedShow));
 $('sched-every').addEventListener('change', schedShow);
+$('sched-days-wrap').addEventListener('change', schedShow);
 $('sched-go').onclick = async () => {
   const every = $('sched-every').value;
   try {
-    await post(`/api/templates/${schedTpl.id}`, { schedule: { every, at: $('sched-at').value, weekday: +$('sched-day').value } });
+    await post(`/api/templates/${schedTpl.id}`, { schedule: schedValue() });
     close('modal-sched'); toast(every ? 'Scheduled' : 'Schedule removed'); refresh();
   } catch (e) { $('sched-err').textContent = e.message; $('sched-err').classList.remove('hidden'); }
 };
