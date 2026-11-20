@@ -151,6 +151,13 @@ type Task struct {
 	// plan is approved on its own (templates.go). Template is the saved task.
 	Unattended bool   `json:"unattended,omitempty"`
 	Template   string `json:"template,omitempty"`
+	// Per-node models (tasks_models.go): load a best-fit model on each opted-in
+	// node before work starts, and put the previous ones back afterwards unless
+	// KeepModels. ModelSwaps is what was done, saved so a resume does not redo it.
+	AutoModels bool        `json:"auto_models,omitempty"`
+	KeepModels bool        `json:"keep_models,omitempty"`
+	ModelCapGB float64     `json:"model_cap_gb,omitempty"` // download cap; 0 = defaultModelCapGB
+	ModelSwaps []ModelSwap `json:"model_swaps,omitempty"`
 	// Stalled: no sign of life for stallAfter (tasks_stalled.go); memory only.
 	Stalled   bool      `json:"-"`
 	stallNote time.Time // time of the stall warning event, so it is not counted as life
