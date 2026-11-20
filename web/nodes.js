@@ -166,9 +166,10 @@ function gaugeCard(n) {
     <div class="gc-rings">
       ${ring(f.cpu, 'CPU', `${cpu.cores || '?'}C/${cpu.threads || '?'}T`)}
       ${ring(f.ram, 'RAM', ramTot ? bytes(ramTot) : '—')}
-      ${g ? ring(f.vram || 0, g.vendor === 'apple' ? 'GPU' : 'VRAM', bytes(g.vram_bytes)) : ringNone('no GPU')}
+      ${g ? ring(f.vram || 0, g.vendor === 'apple' ? 'GPU' : 'VRAM', bytes(g.vram_bytes) + (hb && hb.gpu_temp_c && hb.gpu_temp_c[0] > 0 ? ` · ${hb.gpu_temp_c[0]} °C` : '')) : ringNone('no GPU')}
       <div class="ring gc-speed"><div>${nvTps(f, true)}</div><div class="sub">${n.online ? `${n.running_jobs}/${n.max_jobs} jobs` : n.last_seen ? 'seen ' + ago(n.last_seen) : 'never connected'}</div></div>
     </div>
+    ${gaugeSparks(n)}
     ${notes}${opActive(n) ? opView(n) : ''}
     <div class="gc-model"><span class="nv-grow nv-ell">${f.model}</span>${btns}</div>
   </div>`;
@@ -232,6 +233,7 @@ function renderNodes() {
   const shown = nodeLabel ? nodes.filter((n) => (n.labels || []).includes(nodeLabel)) : nodes;
   const chips = labels.length ? `<div class="label-filter" role="group" aria-label="Show nodes with label">${['', ...labels].map((l) => `<button class="small${l === nodeLabel ? ' on' : ''}" data-act="label-filter" data-label="${esc(l)}" aria-pressed="${l === nodeLabel}">${l ? esc(l) + ' · ' + nodes.filter((n) => (n.labels || []).includes(l)).length : 'All nodes'}</button>`).join('')}</div>` : '';
   if (nodeView !== 'grid' || !nodeById(nodeDrawer)) nodeDrawer = null;
+  loadNodeHistory();
   setHTML('nodes', clusterSummary(nodes) + chips + (nodeView === 'list' ? nodeListView(shown) : nodeView === 'detail' ? nodeDetailView(shown) : nodeGridView(shown)));
   renderNodeDrawer(shown);
 }
@@ -349,7 +351,8 @@ function nodeCard(n) {
   const gpus = (h.gpus || []).map((g, i) => {
     const used = hb && hb.vram_used_bytes ? hb.vram_used_bytes[i] : 0;
     const util = hb && hb.gpu_util_pct ? hb.gpu_util_pct[i] : 0;
-    return `<div class="metric"><span class="k">GPU</span>${bar(util)}<span class="v">${util || 0}% · ${bytes(used)}/${bytes(g.vram_bytes)}</span></div>
+    const temp = hb && hb.gpu_temp_c && hb.gpu_temp_c[i] > 0 ? hb.gpu_temp_c[i] : 0;
+    return `<div class="metric"><span class="k">GPU</span>${bar(util)}<span class="v">${util || 0}% · ${bytes(used)}/${bytes(g.vram_bytes)}${temp ? ` · <span class="${temp >= 85 ? 'temp-hot' : ''}">${temp} °C</span>` : ''}</span></div>
       <div class="sub u19">${esc(g.name)}</div>`;
   }).join('');
   const status = n.online ? `online · ${n.running_jobs}/${n.max_jobs} jobs` : (n.last_seen ? `offline · seen ${ago(n.last_seen)}` : 'never connected');
@@ -383,6 +386,7 @@ function nodeCard(n) {
     <div class="metric"><span class="k">CPU</span>${bar(hb ? hb.cpu_pct : 0)}<span class="v">${hb ? hb.cpu_pct.toFixed(1) + '%' : '—'}</span></div>
     <div class="metric"><span class="k">RAM</span>${bar(ramPct)}<span class="v">${hb ? bytes(hb.ram_used_bytes) + '/' + bytes(hb.ram_total_bytes) : '—'}</span></div>
     ${gpus}
+    ${histBox(n)}
     ${paused ? `<div class="note warn u17 nv-note"><span class="nv-grow">${esc(pauseText(n))}</span>${canPause(n) ? `<button class="small" data-act="node-resume" data-id="${n.id}">Resume</button>` : ''}</div>` : ''}
     <div class="sub u17">${status}${hb && hb.swap_used_bytes ? ` · swap ${bytes(hb.swap_used_bytes)}` : ''}${n.addr ? ` · ${esc(n.addr.split(':')[0])}` : ''}${!n.online && n.can_wake ? ` · <a href="#" data-act="wake" data-id="${n.id}">Wake</a>` : ''}</div>
     <div class="sub u17 wrap">Labels: ${(n.labels || []).length ? (n.labels || []).map((l) => `<span class="label-chip">${esc(l)}</span>`).join(' ') : '<span class="muted">none</span>'} · <a href="#" data-act="labels" data-id="${n.id}">edit</a>
@@ -402,6 +406,70 @@ function nodeCard(n) {
       <button class="small" data-act="run" data-id="${n.id}" ${n.online && n.exec_enabled ? '' : 'disabled'} title="${n.exec_enabled ? '' : 'Enable exec first'}">Run…</button>
     </div>
   </div>`;
+}
+
+// ---------- last hour (nodehist.go) ----------
+// The controller keeps 30 s averages of each node's CPU, RAM, GPU, VRAM, GPU
+// temperature and measured speed for an hour, in memory. The Nodes page fetches
+// them every 30 s and draws sparklines on the Grid cards and in the full card.
+let nodeHist = {}, nodeHistAt = 0, nodeHistBusy = false;
+function loadNodeHistory(force) {
+  if (nodeHistBusy || (!force && Date.now() - nodeHistAt < 30000)) return;
+  nodeHistBusy = true; nodeHistAt = Date.now();
+  api('/api/node-history').then((r) => { nodeHist = r.nodes || {}; if (page === 'nodes') renderNodes(); }).catch(() => {}).finally(() => { nodeHistBusy = false; });
+}
+const HIST_SERIES = {
+  cpu: { label: 'CPU', unit: '%', max: () => 100 },
+  ram: { label: 'RAM', unit: '%', max: () => 100 },
+  gpu: { label: 'GPU', unit: '%', max: () => 100 },
+  vram: { label: 'VRAM', unit: '%', max: () => 100 },
+  temp: { label: 'GPU temp', unit: ' °C', max: () => 100, min: 20, hot: 85 },
+  tps: { label: 'Speed', unit: ' tok/s', max: (pts) => Math.max(1, ...pts.map((p) => p.tps)) * 1.15 },
+};
+function histHas(pts, key) { return pts.some((p) => p[key] >= 0); }
+// spark draws one series as an SVG line with a light fill, gaps where it was not
+// reported. The time axis covers the data shown (at least 10 minutes, at most the
+// hour), so the first minutes after a restart are not squeezed into one corner.
+function spark(pts, key, h) {
+  const s = HIST_SERIES[key], W = 120, lo = s.min || 0, hi = s.max(pts);
+  const end = pts.length ? pts[pts.length - 1].t + 30 : 0, start = Math.min(pts.length ? pts[0].t : end, end - 600);
+  const xs = (t) => Math.max(0, Math.min(W, (t + 15 - start) / (end - start) * W));
+  const ys = (v) => h - 1 - Math.max(0, Math.min(1, (v - lo) / (hi - lo))) * (h - 2);
+  let line = '', fill = '', run = [];
+  const flush = () => {
+    if (!run.length) return;
+    line += run.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join('');
+    fill += `M${run[0][0]} ${h}` + run.map(([x, y]) => `L${x} ${y}`).join('') + `L${run[run.length - 1][0]} ${h}Z`;
+    run = [];
+  };
+  for (const p of pts) {
+    if (p[key] < 0) { flush(); continue; }
+    run.push([xs(p.t).toFixed(1), ys(p[key]).toFixed(1)]);
+  }
+  flush();
+  const hot = s.hot && pts.some((p) => p[key] >= s.hot) ? ' hot' : '';
+  return `<svg class="spark" viewBox="0 0 ${W} ${h}" preserveAspectRatio="none" aria-hidden="true"><path class="spark-f${hot}" d="${fill}"></path><path class="spark-l${hot}" d="${line}"></path></svg>`;
+}
+function histLast(pts, key) { for (let i = pts.length - 1; i >= 0; i--) if (pts[i][key] >= 0) return pts[i][key]; return -1; }
+const histFmt = (key, v) => v < 0 ? '—' : key === 'tps' ? v.toFixed(1) + HIST_SERIES[key].unit : Math.round(v) + HIST_SERIES[key].unit;
+// Grid card: a strip of small sparklines (CPU, GPU or RAM, VRAM, speed).
+function gaugeSparks(n) {
+  const pts = nodeHist[n.id] || [];
+  if (pts.length < 2 || !n.online) return '';
+  const keys = ['cpu', histHas(pts, 'gpu') ? 'gpu' : 'ram', histHas(pts, 'vram') ? 'vram' : null, histHas(pts, 'tps') ? 'tps' : null].filter(Boolean);
+  return `<div class="gc-sparks" title="Last hour, 30-second averages">${keys.map((k) => `<div class="gc-spark"><div class="gc-spark-k"><span>${HIST_SERIES[k].label}</span><b>${histFmt(k, histLast(pts, k))}</b></div>${spark(pts, k, 22)}</div>`).join('')}</div>`;
+}
+// Full node card: every series the node reports, with its range over the hour.
+function histBox(n) {
+  const pts = nodeHist[n.id] || [];
+  if (!n.online) return '';
+  if (pts.length < 2) return `<div class="hist-box"><div class="sub">Last hour: the charts start after a minute of heartbeats (kept in the controller's memory only).</div></div>`;
+  const span = Math.round((pts[pts.length - 1].t - pts[0].t) / 60);
+  const rows = Object.keys(HIST_SERIES).filter((k) => histHas(pts, k)).map((k) => {
+    const vs = pts.map((p) => p[k]).filter((v) => v >= 0);
+    return `<div class="hist-row"><span class="k">${HIST_SERIES[k].label}</span>${spark(pts, k, 30)}<span class="v">${histFmt(k, histLast(pts, k))}<span class="sub"> · ${histFmt(k, Math.min(...vs))}–${histFmt(k, Math.max(...vs))}</span></span></div>`;
+  }).join('');
+  return `<div class="hist-box"><div class="sub">Last ${span < 59 ? span + ' min' : 'hour'} · 30-second averages · latest, then the range</div>${rows}</div>`;
 }
 
 // Pause from the web UI (node_control.go applyPause). Older nodes only pause from their tray icon.

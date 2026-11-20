@@ -199,6 +199,7 @@ type Heartbeat struct {
 	RAMTotalBytes     uint64      `json:"ram_total_bytes"`
 	SwapUsedBytes     uint64      `json:"swap_used_bytes"`
 	GPUUtilPct        []int       `json:"gpu_util_pct"`
+	GPUTempC          []int       `json:"gpu_temp_c,omitempty"` // per GPU, °C; 0 = no sensor (Linux AMD and Intel via hwmon only)
 	VRAMUsedBytes     []uint64    `json:"vram_used_bytes"`
 	RunningJobs       []string    `json:"running_jobs"`
 	Workspaces        int         `json:"workspaces"`

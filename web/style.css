@@ -1243,3 +1243,20 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .pm-table .sub { color: var(--muted); font-size: 12px; }
 .pm-opts { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
 @media (max-width: 700px) { .pm-table td:nth-child(4) { display: none; } }
+/* Node sparklines, last hour (nodes.js, nodehist.go) */
+.spark { display: block; width: 100%; height: 22px; }
+.spark-l { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.spark-l.hot { stroke: var(--bad); }
+.spark-f { fill: var(--accent); opacity: .12; stroke: none; }
+.spark-f.hot { fill: var(--bad); }
+.gc-sparks { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px; margin: 6px 0 4px; }
+.gc-spark { min-width: 0; border-top: 1px solid var(--line); padding-top: 4px; }
+.gc-spark-k { display: flex; justify-content: space-between; gap: 4px; font-size: 11px; color: var(--muted); }
+.gc-spark-k b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+.hist-box { margin: 8px 0; padding: 8px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.hist-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-top: 6px; font-size: 12.5px; }
+.hist-row .spark { height: 30px; }
+.hist-row .k { color: var(--muted); }
+.hist-row .v { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.temp-hot { color: var(--bad); font-weight: 600; }
+@media (max-width: 560px) { .hist-row { grid-template-columns: 56px minmax(0, 1fr); } .hist-row .v { grid-column: 2; } }
