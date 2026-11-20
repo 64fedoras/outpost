@@ -344,6 +344,45 @@ function readPlanEditor() {
 // Minutes for the plan card's time estimate (estimate.go); always "about".
 function estMin(sec) { return sec < 90 ? '1 min' : Math.round(sec / 60) + ' min'; }
 
+// "Pick models for each node" on the live plan card (tasks_models.go). The
+// proposal comes from /model-plan, refreshed every 20 s; the switches live
+// here so a re-render keeps them.
+const pickModels = { task: '', at: 0, data: null, on: false, keep: false, cap: '' };
+function pickModelsBlock(t) {
+  if (pickModels.task !== t.id) Object.assign(pickModels, { task: t.id, at: 0, data: null, on: false, keep: false, cap: '' });
+  if (Date.now() - pickModels.at > 20000) {
+    pickModels.at = Date.now();
+    api(`/api/tasks/${t.id}/model-plan`).then((r) => { pickModels.data = r; if (taskDetail && taskDetail.id === t.id) renderTask(taskDetail); }).catch(() => {});
+  }
+  const d = pickModels.data;
+  const swaps = (d && d.swaps) || [], kept = (d && d.kept) || [];
+  const allowed = kept.filter((k) => k.skip !== 'not allowed to change model').length + swaps.length;
+  const head = `<div class="pm-head"><label class="pm-check"><input type="checkbox" data-pm="on" ${pickModels.on ? 'checked' : ''}> <b>Pick models for each node</b></label><span class="spacer"></span><span class="hint">Only nodes with "Let tasks change my model" on</span></div>`;
+  if (!pickModels.on) return `<div class="pm">${head}</div>`;
+  let body;
+  if (!d) body = '<p class="hint">Working out the best model for each node…</p>';
+  else if (!allowed) body = '<p class="hint">No node allows it yet. Turn on "Let tasks change my model" on a node\'s card on the Nodes page.</p>';
+  else {
+    const rows = swaps.map((s) => `<tr><td><b>${esc(s.node_name || s.node)}</b></td><td>${esc(s.label || s.model)}</td>
+      <td>${s.download ? `<span class="pill st-loading">download ${bytes(s.bytes)}</span>` : '<span class="pill st-ready">on node</span>'}</td>
+      <td class="sub">now: ${s.prev ? esc(s.prev) + (pickModels.keep ? '' : ' (put back afterwards)') : 'nothing loaded'}</td></tr>`).join('')
+      + kept.map((k) => `<tr><td><b>${esc(k.node_name || k.node)}</b></td><td colspan="3" class="sub">Keeps ${k.model ? esc(k.model) : 'no model'}: ${esc(k.skip)}</td></tr>`).join('');
+    body = `<table class="pm-table">${rows}</table>`;
+  }
+  return `<div class="pm">${head}${body}
+    <div class="pm-opts"><label class="pm-check"><input type="checkbox" data-pm="restore" ${pickModels.keep ? '' : 'checked'}> Put each node's previous model back when the task ends</label>
+    <label class="pm-check">Download cap <input type="number" data-pm="cap" min="1" step="1" value="${esc(String(pickModels.cap || (d && d.default_cap_gb) || 60))}" aria-label="Download cap in GB"> GB</label></div>
+    <p class="hint">Models change before work starts, never during a subtask. If a load fails, that node keeps its current model.</p></div>`;
+}
+
+// Model changes a task made, under its progress card.
+function modelSwapsNote(t) {
+  const sw = t.model_swaps || [];
+  if (!sw.length) return '';
+  const word = { loading: 'loading', loaded: 'loaded', failed: 'could not load', restored: 'put back', kept: 'changed by hand since, left alone' };
+  return `<p class="card-note">Models for this task: ${sw.map((s) => `${esc(s.node_name || s.node)} ${esc(s.model)} (${esc(word[s.state] || 'planned')}${s.state === 'restored' ? ': ' + esc(s.prev || 'no model') : ''})`).join(' · ')}</p>`;
+}
+
 function planCard(t, m, live) {
   if (planEdit && planEdit.id === m.id && canEditPlan(t, m)) return planEditor(t, m);
   const p = m.plan || {};
@@ -364,7 +403,7 @@ function planCard(t, m, live) {
     if (p.test_command && !t.exec_nodes) warn.push('No node has exec on, so the tests will be skipped.');
     if (!t.workers_online) warn.push('No node has a model ready; work waits until one does.');
     const est = (t.planner === 'claude' || t.planner === 'openrouter') && t.estimate_usd ? `Planning cost ${usd(t.cost_usd)}; the rest is estimated at about ${usd(Math.max(0, t.estimate_usd - t.cost_usd))}.` : '';
-    actions = `${warn.length || est ? `<p class="card-note">${esc([est, ...warn].filter(Boolean).join(' '))}</p>` : ''}
+    actions = `${pickModelsBlock(t)}${warn.length || est ? `<p class="card-note">${esc([est, ...warn].filter(Boolean).join(' '))}</p>` : ''}
       <div class="card-actions">${t.planner === 'claude' || t.planner === 'openrouter' ? `<label class="chip-input">cap $<input id="ta-cap" type="number" min="0.10" step="0.10" value="${t.cap_usd}" aria-label="Spending cap in US dollars"></label>` : ''}
       <button class="primary" data-act="task-approve">Approve and start</button><span class="hint">or reply below to change the plan</span></div>`;
   }
@@ -412,7 +451,8 @@ function progressCard(t) {
     const lives = liveFor((c) => c.sub === s.id).map(([id, c]) => livePane(c, id)).join('');
     const idle = ['done', 'failed', 'cancelled'].includes(t.status) && s.kind !== 'investigate' && (x.status === 'done' || x.status === 'failed');
     const redo = idle ? `<button class="small p-redo" data-act="task-redo" data-sub="${esc(s.id)}" title="Write this subtask again on a node you pick, then re-run the tests">Redo…</button>` : '';
-    return `<li class="p-${x.status}"><span class="p-ico" aria-hidden="true">${ST_ICON[x.status] || ''}</span><span class="p-title">${esc(s.title)}</span><span class="p-who">${who}</span>${redo}${lives}</li>`;
+    const cmp = x.best_of_n > 1 && x.status === 'done' ? `<button class="small p-cmp" data-act="task-bestof" data-sub="${esc(s.id)}" title="See the versions side by side with the judge's reason, and use a different one">Compare ${x.best_of_n}</button>` : '';
+    return `<li class="p-${x.status}"><span class="p-ico" aria-hidden="true">${ST_ICON[x.status] || ''}</span><span class="p-title">${esc(s.title)}</span><span class="p-who">${who}</span>${cmp ? `<span class="p-redo p-acts">${cmp}${redo}</span>` : redo}${lives}</li>`;
   }).join('');
   let phase = '';
   if (t.activity) phase = '';   // the "Tests and fixes" card below says it in more detail
@@ -423,7 +463,7 @@ function progressCard(t) {
   const head = t.status === 'running' || t.status === 'testing' || t.status === 'building' || t.status === 'fixing'
     ? `Working · ${done} of ${specs.length} subtasks done` : `${done} of ${specs.length} subtasks done`;
   return `<div class="card-msg progress"><div class="card-head">${head}</div><div class="strip" role="img" aria-label="${done} of ${specs.length} subtasks done">${strip}</div>
-    <ul class="p-list">${rows}</ul>${phase ? `<p class="card-note">${esc(phase)}</p>` : ''}</div>`;
+    <ul class="p-list">${rows}</ul>${modelSwapsNote(t)}${phase ? `<p class="card-note">${esc(phase)}</p>` : ''}</div>`;
 }
 
 // "Tests and fixes": what the test-and-fix phase is doing right now and what it did, newest last.
@@ -488,6 +528,67 @@ $('redo-go').onclick = async () => {
   try { await post(`/api/tasks/${redoSub.task}/subtasks/${encodeURIComponent(redoSub.sub)}/redo`, { node: $('redo-node').value, note: $('redo-note').value }); close('modal-redo'); toast('Redoing'); pollTask(); }
   catch (e) { toast(e.message); }
 };
+
+// Best-of-N comparison (bestofn_compare.go): every version side by side, the
+// judge's reason, and "Use this version" while the task is stopped.
+let bo = null; // { task, sub, data, file }
+async function openBestOf(t, sid) {
+  try {
+    const data = await api(`/api/tasks/${t.id}/subtasks/${encodeURIComponent(sid)}/bestof`);
+    bo = { task: t.id, sub: sid, data, file: data.files[0] };
+    renderBestOf();
+    open('modal-bestof');
+  } catch (e) { toast(e.message); }
+}
+function renderBestOf() {
+  const d = bo.data;
+  $('bo-title').textContent = d.title;
+  const byLabel = (l) => d.cands.find((c) => c.label === l);
+  const win = byLabel(d.winner);
+  const judged = d.judge ? `${d.judge} judged: ${d.reason}` : d.reason || 'picked without a judge';
+  $('bo-why').textContent = `${d.cands.length} nodes wrote this subtask. ${judged} (version ${d.winner}, from ${win ? win.node_name : '?'}).` +
+    (d.picked ? ` You then picked version ${d.picked}.` : '');
+  setHTML('bo-files', d.files.length > 1 ? d.files.map((f) => `<button role="tab" class="small${f === bo.file ? ' on' : ''}" aria-selected="${f === bo.file}" data-bo-file="${esc(f)}">${esc(f)}</button>`).join('') : `<span class="hint">${esc(d.files[0] || '')}</span>`);
+  // Lines that the version in use does not have are marked, so the differences stand out.
+  const ref = byLabel(d.current || d.picked || d.winner) || win;
+  const refLines = new Set(((ref && ref.files[bo.file]) || '').split('\n'));
+  const col = (c) => {
+    const text = c.files[bo.file] || '';
+    const lines = text.split('\n');
+    if (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const uniq = c === ref ? 0 : lines.filter((l) => !refLines.has(l)).length;
+    const body = lines.map((l) => c !== ref && !refLines.has(l) ? `<span class="bo-uniq">${esc(l) || ' '}</span>` : esc(l)).join('\n');
+    const tags = [
+      c.label === d.winner ? '<span class="pill">Judge’s pick</span>' : '',
+      c.label === d.current ? '<span class="pill good">In use</span>' : '',
+      c.dropped ? `<span class="pill bad" title="${esc(c.dropped)}">Failed syntax check</span>` : '',
+    ].join('');
+    const meta = [c.model, c.tok_per_s ? c.tok_per_s.toFixed(1) + ' tok/s' : '', lines.length + ' lines', c === ref ? '' : uniq + (uniq === 1 ? ' line differs' : ' lines differ')].filter(Boolean).map(esc).join(' · ');
+    const use = d.can_pick && c.label !== d.current ? `<button class="small" data-bo-use="${esc(c.label)}">Use this version</button>` : '';
+    return `<section class="bo-col${c.label === d.current ? ' cur' : ''}" aria-label="Version ${esc(c.label)}">
+      <div class="bo-head"><b>${esc(c.label)}</b><span class="nv-ell">${esc(c.node_name)}</span>${tags}<span class="nv-grow"></span>${use}</div>
+      <div class="bo-meta">${meta}</div>${c.dropped ? `<div class="bo-meta bad">${esc(c.dropped)}</div>` : ''}
+      <pre class="out bo-code">${body || '<span class="muted">(empty)</span>'}</pre></section>`;
+  };
+  setHTML('bo-cols', d.cands.map(col).join(''));
+  $('bo-cols').dataset.n = String(d.cands.length);
+  $('bo-note').textContent = d.can_pick
+    ? `Use this version writes its ${d.files.length === 1 ? 'file' : 'files'} into the task (Undo on the latest request puts the old ones back) and runs the tests again. Subtasks that build on this one were written against the version in use, and later fixes to ${d.files.length === 1 ? 'this file' : 'these files'} are replaced.`
+      + (d.current ? '' : ' The files have changed since (a fix or an edit), so no version matches them exactly.')
+    : 'You can use a different version once the task has finished or is stopped.';
+}
+$('bo-files').addEventListener('click', (e) => { const b = e.target.closest('[data-bo-file]'); if (b && bo) { bo.file = b.dataset.boFile; renderBestOf(); } });
+$('bo-cols').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-bo-use]');
+  if (!b || !bo) return;
+  b.disabled = true;
+  try {
+    const r = await post(`/api/tasks/${bo.task}/subtasks/${encodeURIComponent(bo.sub)}/bestof`, { label: b.dataset.boUse });
+    close('modal-bestof');
+    toast(r.tests ? `Using version ${b.dataset.boUse}; running the tests again` : `Using version ${b.dataset.boUse}`);
+    pollTask();
+  } catch (err) { b.disabled = false; toast(err.message); }
+});
 
 // The one-line summary under a Finished card (stats.go).
 function statsLine(s) {
@@ -691,7 +792,12 @@ async function taskAction(act, el) {
   try {
     switch (act) {
       case 'task-redo': openRedo(taskDetail, el.dataset.sub); return;
-      case 'task-approve': await post(`/api/tasks/${id}/approve`, { cap_usd: parseFloat(($('ta-cap') || {}).value) || 0 }); break;
+      case 'task-bestof': openBestOf(taskDetail, el.dataset.sub); return;
+      case 'task-approve': {
+        const pm = pickModels.task === id && pickModels.on;
+        await post(`/api/tasks/${id}/approve`, { cap_usd: parseFloat(($('ta-cap') || {}).value) || 0, auto_models: pm, keep_models: pm && pickModels.keep, model_cap_gb: pm ? parseFloat(pickModels.cap) || 0 : 0 });
+        break;
+      }
       case 'task-pick': await post(`/api/tasks/${id}/pick`, { page: el.dataset.page }); toast('Building from that variant'); break;
       case 'task-msg-edit': {
         const m = ((taskDetail && taskDetail.messages) || []).find((x) => x.id === el.dataset.msg);

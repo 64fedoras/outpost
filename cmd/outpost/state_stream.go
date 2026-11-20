@@ -19,37 +19,86 @@ import (
 
 var statePushEvery = time.Second
 
+// A payload holds the cluster state, the task list and the projects. Node
+// heartbeats change the state every few seconds, but the task list (the
+// biggest part, with many tasks) changes far less often, so each tab is sent
+// the task list and the projects only when they differ from what that tab
+// last received. The browser keeps its copy of a part that is left out.
+
 type stateHub struct {
 	mu   sync.Mutex
-	subs map[chan []byte]bool
-	last []byte
+	subs map[chan []byte]*stateSent
+	last *stateParts
 	on   bool
 }
 
-func (c *Controller) statePayload() []byte {
-	b, _ := json.Marshal(map[string]any{"state": c.stateView(), "tasks": c.taskSummaries(), "projects": c.projectViews()})
-	return b
+// stateParts are the encoded parts of one payload.
+type stateParts struct {
+	state, tasks, projects []byte
+	notifyLast             int // newest browser notification; the tab fetches them only when it moves
 }
 
-// subscribe returns a channel of payloads, starting with the latest one.
+// stateSent is what one tab last received.
+type stateSent struct {
+	tasks, projects []byte
+}
+
+func (c *Controller) stateParts() *stateParts {
+	p := &stateParts{}
+	p.state, _ = json.Marshal(c.stateView())
+	p.tasks, _ = json.Marshal(c.taskSummaries())
+	p.projects, _ = json.Marshal(c.projectViews())
+	c.nt.mu.Lock()
+	p.notifyLast = c.nt.seq
+	c.nt.mu.Unlock()
+	return p
+}
+
+func (p *stateParts) equal(o *stateParts) bool {
+	return o != nil && p.notifyLast == o.notifyLast && bytes.Equal(p.state, o.state) &&
+		bytes.Equal(p.tasks, o.tasks) && bytes.Equal(p.projects, o.projects)
+}
+
+// payload encodes p for a tab that already has sent (nil: a new tab).
+func (p *stateParts) payload(sent *stateSent) []byte {
+	var b bytes.Buffer
+	b.Grow(len(p.state) + len(p.tasks) + len(p.projects) + 64)
+	b.WriteString(`{"state":`)
+	b.Write(p.state)
+	if sent == nil || !bytes.Equal(sent.tasks, p.tasks) {
+		b.WriteString(`,"tasks":`)
+		b.Write(p.tasks)
+	}
+	if sent == nil || !bytes.Equal(sent.projects, p.projects) {
+		b.WriteString(`,"projects":`)
+		b.Write(p.projects)
+	}
+	fmt.Fprintf(&b, `,"notify_last":%d}`, p.notifyLast)
+	return b.Bytes()
+}
+
+// subscribe returns a channel of payloads, starting with a full one.
 func (h *stateHub) subscribe(c *Controller) (chan []byte, func()) {
 	ch := make(chan []byte, 2)
 	h.mu.Lock()
-	if h.subs == nil {
-		h.subs = map[chan []byte]bool{}
-	}
-	h.subs[ch] = true
 	start := !h.on
 	h.on = true
 	last := h.last
 	h.mu.Unlock()
 	if start || last == nil {
-		last = c.statePayload()
-		h.mu.Lock()
-		h.last = last
-		h.mu.Unlock()
+		last = c.stateParts()
 	}
-	ch <- last
+	h.mu.Lock()
+	if h.subs == nil {
+		h.subs = map[chan []byte]*stateSent{}
+	}
+	if h.last == nil {
+		h.last = last
+	}
+	// The tab starts from what it is sent here; later payloads are diffed against it.
+	h.subs[ch] = &stateSent{tasks: last.tasks, projects: last.projects}
+	ch <- last.payload(nil)
+	h.mu.Unlock()
 	if start {
 		go h.run(c, statePushEvery)
 	}
@@ -70,14 +119,15 @@ func (h *stateHub) run(c *Controller, every time.Duration) {
 			return
 		}
 		h.mu.Unlock()
-		b := c.statePayload()
+		p := c.stateParts()
 		h.mu.Lock()
-		if !bytes.Equal(b, h.last) {
-			h.last = b
-			for ch := range h.subs {
+		if !p.equal(h.last) {
+			h.last = p
+			for ch, sent := range h.subs {
 				select {
-				case ch <- b:
-				default: // a slow tab gets the next one
+				case ch <- p.payload(sent):
+					sent.tasks, sent.projects = p.tasks, p.projects
+				default: // a slow tab gets the next one, with whatever it missed
 				}
 			}
 		}

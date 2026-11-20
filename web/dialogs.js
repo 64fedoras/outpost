@@ -152,6 +152,7 @@ function palRender() {
   const all = palSource();
   palItems = (words.length ? all.filter((i) => { const h = (i.t + ' ' + i.k + ' ' + (i.sub || '')).toLowerCase(); return words.every((w) => h.includes(w)); })
     : all.filter((i) => i.k === 'page' && !i.t.startsWith('Settings:') || i.k === 'task').slice(0, 14)).slice(0, 40);
+  if (q.length > 1) palItems.push({ t: `Search task and chat text for “${$('pal-q').value.trim()}”`, k: 'search', run: () => sideSearch($('pal-q').value.trim()) });
   palSel = Math.min(palSel, Math.max(0, palItems.length - 1));
   setHTML('pal-list', palItems.length ? palItems.map((i, n) => `<div class="pal-item${n === palSel ? ' on' : ''}" role="option" id="pal-${n}" aria-selected="${n === palSel}" data-pal="${n}"><span class="pal-k">${esc(i.k)}</span><span class="nv-grow nv-ell">${esc(i.t)}</span>${i.sub ? `<span class="sub">${esc(i.sub)}</span>` : ''}</div>`).join('') : '<div class="pal-empty muted">Nothing matches.</div>');
   $('pal-q').setAttribute('aria-activedescendant', palItems.length ? 'pal-' + palSel : '');
@@ -223,6 +224,14 @@ document.querySelectorAll('[data-copy]').forEach((b) => { b.onclick = async () =
 }; });
 
 document.addEventListener('change', async (e) => {
+  const pm = e.target.closest('[data-pm]');
+  if (pm) {
+    if (pm.dataset.pm === 'on') pickModels.on = pm.checked;
+    else if (pm.dataset.pm === 'restore') pickModels.keep = !pm.checked;
+    else if (pm.dataset.pm === 'cap') pickModels.cap = pm.value;
+    if (taskDetail) renderTask(taskDetail);
+    return;
+  }
   const diff = e.target.closest('[data-diff]');
   if (diff) {
     try { await post(`/api/tasks/${pageArg}/difficulty`, { subtask: diff.dataset.diff, difficulty: diff.value }); } catch (err) { toast(err.message); }
@@ -277,6 +286,7 @@ document.addEventListener('click', async (e) => {
       case 'idle': setNodeIdle(id); break;
       case 'health-reset': resetHealth(id); break;
       case 'yield': toggleYield(id); break;
+      case 'task-models': toggleTaskModels(id); break;
       case 'restart': {
         const n = nodeById(id);
         const jobs = n.running_jobs ? ` ${n.running_jobs} running job(s) will be cancelled.` : '';

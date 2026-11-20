@@ -59,28 +59,30 @@ type PlanSubtask struct {
 }
 
 type SubtaskState struct {
-	ID         string     `json:"id"`
-	Status     string     `json:"status"` // pending | running | reviewing | done | failed
-	Node       string     `json:"node,omitempty"`
-	NodeName   string     `json:"node_name,omitempty"`
-	JobIDs     []string   `json:"job_ids,omitempty"`
-	Attempts   int        `json:"attempts"`
-	Error      string     `json:"error,omitempty"`
-	ByPlanner  bool       `json:"by_planner,omitempty"`
-	TokPerSec  float64    `json:"tok_per_s,omitempty"`
-	Reviewer   string     `json:"reviewer,omitempty"`     // node that reviewed it
-	ReviewFix  bool       `json:"review_fixed,omitempty"` // the reviewer changed the files
-	ReviewNote string     `json:"review_note,omitempty"`  // why the review was skipped or rejected
-	Report     string     `json:"report,omitempty"`       // investigate subtasks: what the agent found
-	AgentCalls int        `json:"agent_calls,omitempty"`  // tool calls so far in agent mode
-	Waiting    bool       `json:"waiting,omitempty"`      // the agent asked the user something
-	Model      string     `json:"model,omitempty"`        // library model that wrote it (scorecard.go)
-	Scored     bool       `json:"scored,omitempty"`       // already counted in the scorecard
-	BestOf     string     `json:"best_of,omitempty"`      // best-of-N: which node's copy won and why
-	Prefer     string     `json:"prefer,omitempty"`       // Redo: "strongest", "planner" or a node id (tasks_redo.go)
-	RedoNote   string     `json:"redo_note,omitempty"`    // Redo: the user's note, added to the instructions
-	Started    *time.Time `json:"started,omitempty"`
-	Ended      *time.Time `json:"ended,omitempty"`
+	ID          string     `json:"id"`
+	Status      string     `json:"status"` // pending | running | reviewing | done | failed
+	Node        string     `json:"node,omitempty"`
+	NodeName    string     `json:"node_name,omitempty"`
+	JobIDs      []string   `json:"job_ids,omitempty"`
+	Attempts    int        `json:"attempts"`
+	Error       string     `json:"error,omitempty"`
+	ByPlanner   bool       `json:"by_planner,omitempty"`
+	TokPerSec   float64    `json:"tok_per_s,omitempty"`
+	Reviewer    string     `json:"reviewer,omitempty"`      // node that reviewed it
+	ReviewFix   bool       `json:"review_fixed,omitempty"`  // the reviewer changed the files
+	ReviewNote  string     `json:"review_note,omitempty"`   // why the review was skipped or rejected
+	Report      string     `json:"report,omitempty"`        // investigate subtasks: what the agent found
+	AgentCalls  int        `json:"agent_calls,omitempty"`   // tool calls so far in agent mode
+	Waiting     bool       `json:"waiting,omitempty"`       // the agent asked the user something
+	Model       string     `json:"model,omitempty"`         // library model that wrote it (scorecard.go)
+	Scored      bool       `json:"scored,omitempty"`        // already counted in the scorecard
+	BestOf      string     `json:"best_of,omitempty"`       // best-of-N: which node's copy won and why
+	BestOfN     int        `json:"best_of_n,omitempty"`     // best-of-N: how many versions were kept to compare (bestofn_compare.go)
+	BestOfRound int        `json:"best_of_round,omitempty"` // the round folder that holds them
+	Prefer      string     `json:"prefer,omitempty"`        // Redo: "strongest", "planner" or a node id (tasks_redo.go)
+	RedoNote    string     `json:"redo_note,omitempty"`     // Redo: the user's note, added to the instructions
+	Started     *time.Time `json:"started,omitempty"`
+	Ended       *time.Time `json:"ended,omitempty"`
 }
 
 type TaskEvent struct {
@@ -151,6 +153,13 @@ type Task struct {
 	// plan is approved on its own (templates.go). Template is the saved task.
 	Unattended bool   `json:"unattended,omitempty"`
 	Template   string `json:"template,omitempty"`
+	// Per-node models (tasks_models.go): load a best-fit model on each opted-in
+	// node before work starts, and put the previous ones back afterwards unless
+	// KeepModels. ModelSwaps is what was done, saved so a resume does not redo it.
+	AutoModels bool        `json:"auto_models,omitempty"`
+	KeepModels bool        `json:"keep_models,omitempty"`
+	ModelCapGB float64     `json:"model_cap_gb,omitempty"` // download cap; 0 = defaultModelCapGB
+	ModelSwaps []ModelSwap `json:"model_swaps,omitempty"`
 	// Stalled: no sign of life for stallAfter (tasks_stalled.go); memory only.
 	Stalled   bool      `json:"-"`
 	stallNote time.Time // time of the stall warning event, so it is not counted as life

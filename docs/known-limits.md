@@ -10,7 +10,7 @@ See also [SECURITY.md](../SECURITY.md) for the security model and its limits (th
   **Calls at once** above 1. A node lending memory
   to a pool runs no model of its own.
 - Nodes need this Outpost version for agent mode: update nodes before using it with them.
-- Go is the only tool Outpost installs (Chromium is detected only, never installed); the Go install and PowerShell test runs are untested on real Windows.
+- Go is the only tool Outpost installs (Chromium and OpenSCAD are detected only, never installed); the Go install and PowerShell test runs are untested on real Windows.
 - Screenshots need a Chromium or Chrome that can run headless on the node. A snap-packaged Chromium may not
   be able to read Outpost's work folder, and a screenshot over 1 MiB (a very tall page) is not collected.
 - The low-level job history (Home → Recent jobs) is kept in memory and clears on restart; tasks

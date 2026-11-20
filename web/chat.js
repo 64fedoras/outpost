@@ -94,7 +94,11 @@ function chatButtons() {
   $('chat-totask').classList.toggle('hidden', !(chatCur && chatCur.messages.some((m) => m.role === 'assistant' && m.text)));
 }
 function chatBubble(m) {
-  if (m.role === 'user') return `<div class="bubble-row"><div class="bubble">${esc(m.text)}</div></div>`;
+  if (m.role === 'user') {
+    const src = (n) => `/api/chats/${encodeURIComponent(chatCur.id)}/image?name=${encodeURIComponent(n)}`;
+    const pics = (m.images || []).length ? `<div class="bubble-imgs">${m.images.map((n) => `<a href="${src(n)}" target="_blank" rel="noopener"><img src="${src(n)}" alt="attached image" loading="lazy"></a>`).join('')}</div>` : '';
+    return `<div class="bubble-row"><div class="bubble">${esc(m.text)}${pics}</div></div>`;
+  }
   const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, m.note && esc(m.note)].filter(Boolean).join(' · ');
   if (m.error) return `<div class="chat-answer error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}</div>`;
   return `<div class="chat-answer"><div class="chat-text md">${md(m.text)}</div>${meta ? `<div class="sub">${meta}</div>` : ''}</div>`;
@@ -119,18 +123,18 @@ function chatRenderLive() {
   if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) box.scrollTop = box.scrollHeight;
 }
 async function chatSend() {
-  const text = $('chat-text').value.trim();
-  if (!text) return;
+  const text = $('chat-text').value.trim(), images = chatImg.payload();
+  if (!text && !images.length) return;
   $('chat-send').disabled = true;
   try {
     if (!chatCur) {
-      const r = await post('/api/chats', { text, node: $('chat-node').value });
-      $('chat-text').value = ''; $('chat-text').style.height = '';
+      const r = await post('/api/chats', { text, node: $('chat-node').value, images });
+      $('chat-text').value = ''; $('chat-text').style.height = ''; chatImg.clear();
       location.hash = '#/chat/' + r.id;
       return;
     }
-    await post(`/api/chats/${chatCur.id}/messages`, { text, node: $('chat-node').value });
-    $('chat-text').value = ''; $('chat-text').style.height = '';
+    await post(`/api/chats/${chatCur.id}/messages`, { text, node: $('chat-node').value, images });
+    $('chat-text').value = ''; $('chat-text').style.height = ''; chatImg.clear();
     await chatLoad(chatCur.id);
   } catch (e) { toast(e.message); }
   chatButtons();
@@ -152,7 +156,7 @@ const chatNew = () => { if (location.hash === '#/chat') chatOpen(null); else loc
 $('chat-new').onclick = chatNew; $('chat-new2').onclick = chatNew;
 $('chat-panel-btn').onclick = () => chatPanelSet(!chatPanelOpen());
 $('chat-panel-x').onclick = () => chatPanelSet(false);
-$('chat-node').addEventListener('change', chatPickRender);
+$('chat-node').addEventListener('change', () => { chatPickRender(); if (typeof chatImg !== 'undefined') chatImg.refresh(); });
 $('chat-msgs').addEventListener('click', (e) => { const b = e.target.closest('[data-model]'); if (b) { $('chat-node').value = b.dataset.model; chatPickOpen = false; chatPickRender(); $('chat-text').focus(); return; }
   if (e.target.closest('#chat-pick-more')) { chatPickOpen = !chatPickOpen; chatPickRender(); } });
 $('chat-text').addEventListener('input', () => { const t = $('chat-text'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, window.innerHeight * 0.4) + 'px'; });

@@ -125,7 +125,7 @@ function refreshIcons() {
     l.replaceWith(c);
   });
 }
-const PAGES = ['new', 'image', 'task', 'chat', 'projects', 'project', 'nodes', 'models', 'updates', 'spending', 'settings'];
+const PAGES = ['new', 'image', 'cad', 'task', 'chat', 'projects', 'project', 'nodes', 'models', 'updates', 'spending', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
   ntDraft.flush(); tmDraft.flush();
@@ -135,7 +135,7 @@ function route() {
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
   document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === (page === 'project' ? 'projects' : page)));
   document.querySelector('.page-plain').classList.toggle('hidden', !['projects', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
-  document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image' }[page] || page[0].toUpperCase() + page.slice(1));
+  document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image', cad: 'New 3D model' }[page] || page[0].toUpperCase() + page.slice(1));
   refreshIcons();
   document.body.classList.toggle('on-task', page === 'task' || page === 'project');
   closeSide();
@@ -148,6 +148,7 @@ function route() {
   if (page === 'chat') chatOpen(pageArg);
   if (page === 'project') projectRoute();
   if (typeof imgRoute === 'function') imgRoute(page);
+  if (typeof cadRoute === 'function') cadRoute(page);
   renderSideTasks();
   if (state) refresh();
 }
@@ -182,7 +183,7 @@ $('recovered-banner').addEventListener('click', async (e) => {
 // ---------- polling ----------
 let failures = 0;
 async function refresh() {
-  try { state = await api('/api/state'); failures = 0; $('offline-banner').classList.add('hidden'); }
+  try { state = await api('/api/state'); failures = 0; $('offline-banner').classList.add('hidden'); notifyPushed = undefined; } // polling: ask for notifications each time
   catch (e) {
     if (e.message === 'login required') return;
     if (++failures >= 2) $('offline-banner').classList.remove('hidden');
@@ -198,11 +199,13 @@ async function refresh() {
   refreshGroups();
 }
 let modelsAt = 0, pushSeq = 0;
-// applyPushed takes one pushed payload: state, task list and projects together.
+// applyPushed takes one pushed payload: state, and the task list and projects when they changed.
 // The model list is not pushed; on the pages that show it, it is fetched at most every 5 s.
 async function applyPushed(d) {
   const seq = tasksSeq, mine = ++pushSeq;
-  state = d.state; if (seq === tasksSeq) tasks = d.tasks; projects = d.projects;
+  // The task list and projects are left out when they have not changed since the last payload.
+  state = d.state; if ('tasks' in d && seq === tasksSeq) tasks = d.tasks; if ('projects' in d) projects = d.projects;
+  if ('notify_last' in d) notifyPushed = d.notify_last;
   failures = 0; $('offline-banner').classList.add('hidden');
   if ((['nodes', 'models', 'new'].includes(page) || !models) && Date.now() - modelsAt > 5000) {
     modelsAt = Date.now();
@@ -278,7 +281,7 @@ function taskTone(t) {
   return 'idle';
 }
 
-function sideTaskHTML(t, projectName, tagGroup) {
+function sideTaskHTML(t, projectName, tagGroup, snip) {
   const cls = [page === 'task' && pageArg === t.id ? 'active' : '', ctxTaskId === t.id ? 'menu-open' : ''].join(' ');
   const title = renamingId === t.id
     ? `<input class="side-rename" id="side-rename" value="${esc(t.title)}" maxlength="120" aria-label="New name for this task">`
@@ -287,7 +290,7 @@ function sideTaskHTML(t, projectName, tagGroup) {
     <a href="#/tasks/${esc(t.id)}" class="side-task-link" draggable="false" aria-keyshortcuts="Shift+F10 F2 Delete">
       <span class="tdot ${taskTone(t)}" aria-hidden="true"></span>
       <span class="side-task-text">${title}
-      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${groupTag(tagGroup)}${projectName ? esc(projectName) + ' · ' : ''}${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span></span></a>
+      <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${groupTag(tagGroup)}${projectName ? esc(projectName) + ' · ' : ''}${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span>${snipHTML(snip)}</span></a>
     <button class="side-task-more" data-task-menu="${esc(t.id)}" aria-haspopup="menu" aria-expanded="${ctxTaskId === t.id}" aria-label="Actions for ${esc(t.title)}" title="Actions">⋯</button></div>`;
 }
 // renderSideTasks (the sidebar list, By status or By group) is in groups.js.

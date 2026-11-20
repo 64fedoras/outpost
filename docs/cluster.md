@@ -56,6 +56,16 @@ makes hard subtasks a little slower. Choose **Off**, **Hard subtasks** (default)
 under **Best of N on local nodes** in Settings. Tested against stub nodes only, not on a real cluster; the syntax check
 needs an exec-enabled node with the language installed and is skipped otherwise.
 
+**Comparing the versions.** When two or more versions finished, the subtask line on the task page gets a
+**Compare N** button. It shows the versions side by side, one column per node with its model and speed, and a tab
+per file. The judge's pick and the version now in the project are marked, a version the syntax check dropped
+says why, and lines that the version in use does not have are highlighted. Once the task has finished or been
+stopped, **Use this version** writes that version's files into the task and runs the tests (and fixes) again. Undo
+on the latest request puts the earlier files back. Subtasks that build on this one were written against the
+earlier version, and later fixes to these files are replaced, so check the test result. The versions are kept with
+the task on the controller (`tasks/<id>/rounds/<n>/bestof/`) and are deleted with it. Tasks that ran before this
+change have no saved versions. Tested with stub nodes and a faked comparison in the UI, not on a real cluster.
+
 ### Pooling memory (experimental, off by default, trusted LANs only)
 
 Pooling is **off by default**. Read the security model below before switching it on; it is meant for a
@@ -117,12 +127,30 @@ on the same network segment: the packet is a broadcast (to `255.255.255.255` and
 does not cross routers.
 
 
+## Last-hour charts and GPU temperature
+
+Each node card in the Grid view shows small charts under its gauges: CPU, GPU (or RAM when the node has no
+GPU), VRAM and speed. The node's details (click the card, or *Details*) show a *Last hour* box with one row per
+value: the chart, the latest value and the range. Points are 30-second averages of the heartbeats; speed is the
+measured benchmark speed of the loaded model, so it shows a gap while no model is loaded.
+
+The history is kept in the controller's memory only. Nothing is written to disk and nodes keep nothing, so a
+controller restart or update starts the charts empty again.
+
+**GPU temperature** is read on Linux from the GPU's hwmon sensor (AMD and Intel drivers). It shows next to the
+GPU on the card and as a chart, and turns red at 85 °C. NVIDIA cards on the proprietary driver, Windows and
+macOS report no temperature, and the row is left out. Untested on real GPUs so far.
+
 ## Saved load settings and yielding the GPU
 
 **Saved settings.** In the Load dialog, *Save these settings…* stores the model, context size, GPU layers, cache
 type, flash attention, draft model, calls at once, experts-in-RAM choice and extra arguments under a name for
 that node (up to 20). A *Saved settings for this node* list then appears at the top of the dialog; picking one
 fills the form, and *Delete* removes it. Pool helpers are not part of a saved setting.
+
+**Let tasks change my model** (per node, off by default; on the node card). A task approved with
+*Pick models for each node* may load this node's best-fit model before work starts and put the previous
+one back afterwards (see [using-tasks.md](using-tasks.md)). Off, tasks only use the model you loaded.
 
 **Yield GPU to other programs** (per node, off by default; on the node card). On a desktop that is also used
 for games, the model is unloaded when the node is not answering anything and the GPU stays more than 35% busy

@@ -278,8 +278,22 @@ func (s *statSampler) sample() Heartbeat {
 	for _, d := range s.gpuDevices {
 		hb.GPUUtilPct = append(hb.GPUUtilPct, int(readUint(filepath.Join(d, "gpu_busy_percent"))))
 		hb.VRAMUsedBytes = append(hb.VRAMUsedBytes, readUint(filepath.Join(d, "mem_info_vram_used")))
+		hb.GPUTempC = append(hb.GPUTempC, gpuTempC(d))
 	}
 	return hb
+}
+
+// gpuTempC reads a Linux GPU's temperature from its hwmon sensor (amdgpu and
+// i915/xe expose one; the NVIDIA driver does not), in °C, or 0 if there is none.
+// "edge" (temp1) is the sensor every amdgpu card has.
+func gpuTempC(dev string) int {
+	ins, _ := filepath.Glob(filepath.Join(dev, "hwmon", "hwmon*", "temp1_input"))
+	for _, p := range ins {
+		if v := readUint(p); v > 0 {
+			return int(v / 1000)
+		}
+	}
+	return 0
 }
 
 // runHWInfo prints what this machine reports to the controller, for checking
@@ -301,6 +315,10 @@ func runHWInfo() {
 	fmt.Printf("Now: CPU %.1f%%, RAM %.1f / %.1f GB, swap/page file %.1f GB\n", hb.CPUPct,
 		float64(hb.RAMUsedBytes)/(1<<30), float64(hb.RAMTotalBytes)/(1<<30), float64(hb.SwapUsedBytes)/(1<<30))
 	for i := range hb.GPUUtilPct {
-		fmt.Printf("GPU %d now: %d%% busy, %.2f GB VRAM in use\n", i, hb.GPUUtilPct[i], float64(hb.VRAMUsedBytes[i])/(1<<30))
+		fmt.Printf("GPU %d now: %d%% busy, %.2f GB VRAM in use", i, hb.GPUUtilPct[i], float64(hb.VRAMUsedBytes[i])/(1<<30))
+		if i < len(hb.GPUTempC) && hb.GPUTempC[i] > 0 {
+			fmt.Printf(", %d °C", hb.GPUTempC[i])
+		}
+		fmt.Println()
 	}
 }

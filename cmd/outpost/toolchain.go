@@ -21,7 +21,7 @@ import (
 
 // ToolInfo is one developer tool found on a node.
 type ToolInfo struct {
-	Name    string `json:"name"`              // canonical: go, python, node, gcc, git, zip, chromium
+	Name    string `json:"name"`              // canonical: go, python, node, gcc, git, zip, chromium, openscad
 	Cmd     string `json:"cmd"`               // command that starts it here (python3 on Linux, python on Windows)
 	Version string `json:"version,omitempty"` // empty when it could not be read
 	Path    string `json:"path,omitempty"`
@@ -66,6 +66,12 @@ var toolSpecs = []toolSpec{
 			`%LocalAppData%\Google\Chrome\Application\chrome.exe`, `%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe`},
 		macPaths:   []string{"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium"},
 		versionArg: []string{"--version"}, trust: true},
+	// OpenSCAD renders the New 3D model page's files (cad.go). openscad.com is the
+	// Windows console front end, so its output reaches the job log.
+	{name: "openscad", cmds: []string{"openscad"},
+		winPaths:   []string{`%ProgramFiles%\OpenSCAD\openscad.com`, `%ProgramFiles%\OpenSCAD\openscad.exe`, `%ProgramFiles(x86)%\OpenSCAD\openscad.com`},
+		macPaths:   []string{"/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"},
+		versionArg: []string{"--version"}, trust: true},
 }
 
 // toolAliases maps the first word of a command to the tool that provides it.
@@ -76,6 +82,7 @@ var toolAliases = map[string]string{
 	"gcc": "gcc", "g++": "gcc", "cc": "gcc",
 	"git": "git", "zip": "zip",
 	"chromium": "chromium", "chromium-browser": "chromium", "google-chrome": "chromium", "chrome": "chromium",
+	"openscad": "openscad",
 }
 
 var (

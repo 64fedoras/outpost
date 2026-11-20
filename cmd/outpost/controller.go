@@ -56,6 +56,8 @@ type NodeRec struct {
 	// TargetTPS is the generation speed (tok/s) the owner wants from this node; steers Recommended and Pick best. 0 = default (8).
 	TargetTPS   float64 `json:"target_tps,omitempty"`
 	StorageFull string  `json:"storage_full,omitempty"` // "" = remove old models at the limit, "refuse" = refuse the copy
+	// TaskModels lets a task load its best-fit model here before work starts (tasks_models.go).
+	TaskModels bool `json:"task_models,omitempty"`
 }
 
 type nodeConn struct {
@@ -120,6 +122,7 @@ type Controller struct {
 	nodes      map[string]*NodeRec
 	conns      map[string]*nodeConn
 	lastHB     map[string]*Heartbeat
+	hist       map[string]*nodeHist // last hour per node, memory only (nodehist.go)
 	lastSeen   map[string]time.Time
 	tokens     map[string]time.Time
 	usedTok    map[string]usedToken // token id -> who used it (so the Add node dialog can move on)
@@ -139,6 +142,7 @@ type Controller struct {
 	models     map[string]*ModelRec
 	runtimes   map[string]*RuntimeRec
 	rtCache    *runtimeCache
+	cad        *cadStore // 3D models (cad.go)
 	gens       *genStore // image generation: queue, stored results, settings (controller_images.go)
 	nodeOps    map[string]*nodeOpView
 	pipelines  map[string]*pipeline         // model setups in progress; cancel stops one
@@ -210,6 +214,7 @@ func runController(args []string) error {
 	c.loadModels()
 	c.loadRuntimes()
 	c.loadGens()
+	c.loadCad()
 	c.loadProjects()
 	c.loadChats()
 	c.loadGroups()
@@ -243,12 +248,7 @@ func runController(args []string) error {
 
 	mux := http.NewServeMux()
 	static, _ := fs.Sub(webFS, "web")
-	files := http.FileServer(http.FS(static))
-	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The UI ships inside the binary; make browsers revalidate so an update shows at once.
-		w.Header().Set("Cache-Control", "no-cache")
-		files.ServeHTTP(w, r)
-	}))
+	mux.Handle("GET /", staticHandler(static)) // static.go: ETag and gzip
 	mux.HandleFunc("GET /licenses", handleLicenses)
 	mux.HandleFunc("GET /healthz", c.handleHealth)
 	mux.HandleFunc("POST /api/login", c.handleLogin)
@@ -275,6 +275,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/storage", c.auth(c.handleStorage))
 	mux.HandleFunc("POST /api/storage", c.authSession(c.handleStorageSettings))
 	mux.HandleFunc("GET /api/nodes/{id}/logs", c.auth(c.handleNodeLogs))
+	mux.HandleFunc("GET /api/node-history", c.auth(c.handleNodeHistory))
 	mux.HandleFunc("GET /api/cluster/check", c.auth(c.handleGetClusterCheck))
 	mux.HandleFunc("POST /api/cluster/check", c.auth(c.handleStartClusterCheck))
 	mux.HandleFunc("POST /api/tokens", c.auth(c.handleNewToken))
@@ -338,7 +339,9 @@ func runController(args []string) error {
 	c.templateRoutes(mux)
 	c.openAIRoutes(mux)
 	c.imageRoutes(mux)
+	c.cadRoutes(mux)
 	mux.HandleFunc("GET /api/tasks", c.auth(c.handleListTasks))
+	mux.HandleFunc("GET /api/search", c.auth(c.handleSearch))
 	mux.HandleFunc("POST /api/tasks", c.auth(c.handleCreateTask))
 	mux.HandleFunc("GET /api/tasks/{id}", c.auth(c.handleGetTask))
 	mux.HandleFunc("DELETE /api/tasks/{id}", c.auth(c.handleDeleteTask))
@@ -346,6 +349,7 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/spending/cap", c.authSession(c.handleSpendingCap))
 	mux.HandleFunc("POST /api/tasks/{id}/meta", c.auth(c.handleTaskMeta))
 	mux.HandleFunc("POST /api/tasks/{id}/approve", c.auth(c.handleApproveTask))
+	mux.HandleFunc("GET /api/tasks/{id}/model-plan", c.auth(c.handleTaskModelPlan))
 	mux.HandleFunc("POST /api/tasks/{id}/difficulty", c.auth(c.handleSetDifficulty))
 	mux.HandleFunc("POST /api/tasks/{id}/replan", c.auth(c.handleReplanTask))
 	mux.HandleFunc("POST /api/tasks/{id}/messages", c.auth(c.handleTaskMessage))
@@ -358,6 +362,8 @@ func runController(args []string) error {
 	mux.HandleFunc("POST /api/tasks/{id}/resume", c.auth(c.handleResumeTask))
 	mux.HandleFunc("POST /api/tasks/{id}/rerun", c.auth(c.handleRerunPlan))
 	mux.HandleFunc("POST /api/tasks/{id}/subtasks/{sid}/redo", c.auth(c.handleRedoSubtask))
+	mux.HandleFunc("GET /api/tasks/{id}/subtasks/{sid}/bestof", c.auth(c.handleBestOfView))
+	mux.HandleFunc("POST /api/tasks/{id}/subtasks/{sid}/bestof", c.auth(c.handleBestOfPick))
 	mux.HandleFunc("POST /api/tasks/{id}/plan/edit", c.auth(c.handleEditPlan))
 	mux.HandleFunc("GET /api/tasks/{id}/events", c.auth(c.handleTaskEvents))
 	mux.HandleFunc("GET /api/tasks/{id}/file", c.auth(c.handleTaskFile))
@@ -395,6 +401,7 @@ func runController(args []string) error {
 	go c.catalogShapeLoop()
 	go c.hoursLoop()
 	go c.genLoop()
+	go c.cadLoop()
 	go c.templateLoop()
 	go c.modelVerifyLoop()
 	go c.stallLoop()
