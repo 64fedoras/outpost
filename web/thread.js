@@ -910,10 +910,12 @@ async function viewFile(path) {
   $('fb-dl').classList.remove('hidden');
   $('fb-dl').href = `/api/tasks/${pageArg}/file?path=${encodeURIComponent(path)}&download=1`;
   $('fb-edit').classList.add('hidden');
+  $('fb-preview').classList.add('hidden');
   try {
     const r = await fetch(`/api/tasks/${pageArg}/file?path=${encodeURIComponent(path)}`, { credentials: 'same-origin' });
     fbText = await r.text();
     setHTML('fb-body', numbered(fbText, path));
+    $('fb-preview').classList.toggle('hidden', !(r.ok && pvKindOf(path)));
     const idle = taskDetail && ['done', 'failed', 'cancelled'].includes(taskDetail.status);
     // Text only: a NUL byte means a binary file.
     $('fb-edit').classList.toggle('hidden', !(r.ok && idle && !fbText.includes('\u0000') && fbText.length < 1e6));
@@ -927,6 +929,7 @@ function fbEditing(on) {
   if (on) { $('fb-editor').value = fbText; $('fb-editor').focus(); }
 }
 $('fb-edit').onclick = () => fbEditing(true);
+$('fb-preview').onclick = () => { close('modal-files'); pvFile(fbPath, fbText); };
 $('fb-cancel').onclick = () => { fbEditing(false); $('fb-edit').classList.remove('hidden'); };
 $('fb-save').onclick = async () => {
   const content = $('fb-editor').value;

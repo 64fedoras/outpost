@@ -113,6 +113,7 @@ func (c *Controller) projectChatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/projects/{id}/chat/stop", c.auth(c.handleProjectChatStop))
 	mux.HandleFunc("DELETE /api/projects/{id}/chat", c.auth(c.handleProjectChatClear))
 	mux.HandleFunc("GET /api/projects/{id}/file", c.auth(c.handleProjectFile))
+	mux.HandleFunc("POST /api/projects/{id}/file", c.auth(c.handleProjectSaveFile))
 }
 
 // handleProjectFile returns one of the project's files as text, for the file

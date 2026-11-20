@@ -1869,6 +1869,43 @@ contrib/unicode/from_glibc:
 # <https://www.gnu.org/licenses/>.
 
 -------------------------------------------------------------------------------
+Mermaid 11.17.2 (MIT; bundled as preview/mermaid.min.js.gz, compiled into the binary)
+-------------------------------------------------------------------------------
+
+The live-preview frame draws Mermaid diagrams with the official minified build from
+https://github.com/mermaid-js/mermaid (npm package mermaid, dist/mermaid.min.js). That build
+bundles Mermaid's own runtime dependencies: @braintree/sanitize-url, @iconify/utils,
+@mermaid-js/parser, @upsetjs/venn.js, cytoscape, cytoscape-cose-bilkent, cytoscape-fcose, d3,
+d3-sankey, dagre-d3-es, dayjs, DOMPurify, es-toolkit, fastdom, KaTeX, khroma, marked, roughjs,
+stylis, ts-dedent and uuid, each under a permissive licence (MIT, ISC, BSD-3-Clause, Apache-2.0,
+or Apache-2.0 / MPL-2.0 at the user's choice for DOMPurify). Their licence texts come with their
+npm packages; DOMPurify's notice is kept in the bundle.
+
+[LICENSE]
+
+The MIT License (MIT)
+
+Copyright (c) 2014 - 2022 Knut Sveidqvist
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
 llama.cpp (MIT; downloaded and run by nodes, not part of the Outpost binary)
 -------------------------------------------------------------------------------
 

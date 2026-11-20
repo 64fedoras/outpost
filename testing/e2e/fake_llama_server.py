@@ -86,6 +86,8 @@ class H(BaseHTTPRequestHandler):
             text = f"I can see {imgs} image(s). The screenshot shows a terminal with an error message."  # chat screenshots (chatimages.py)
         elif "markdown sample" in user:
             text = MARKDOWN_SAMPLE  # the chat page's markdown test (chatmd.py)
+        elif "```html" in user or "```mermaid" in user:
+            text = user  # the live preview test (preview.py) sends the answer it wants back
         elif "Write these files:" not in user:
             text = "A hash map stores values under keys. " * 12  # the node benchmark
         else:

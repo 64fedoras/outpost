@@ -102,13 +102,14 @@ function renderPjFeed(p) {
   const cards = (ids) => (ids || []).filter(showTask).map((id) => pjTaskCard(byId[id], feedById[id])).join('');
   const items = [];
   const known = new Set((ov.files || []).map((f) => f.path));
+  pvReset();
   msgs.forEach((m) => (m.reads || []).forEach((r) => { const x = /^Read (\S+)/.exec(r); if (x) known.add(x[1]); }));
   msgs.forEach((m) => {
     let html;
     if (m.role === 'user') html = `<div class="pj-ask"><div class="bubble">${esc(m.text)}</div><span class="pj-when">${(m.tasks || []).length ? 'started as a task · ' : ''}${ago(m.time)}</span></div>${cards(m.tasks)}`;
     else {
       const meta = [m.who && esc(m.who), m.cost_usd ? usd(m.cost_usd) : '', ago(m.time)].filter(Boolean).join(' · ');
-      html = `<div class="pj-answer">${pjReads(m.reads)}${m.text ? `<div class="pj-answer-text md">${pjLinkRefs(md(m.text), known)}</div>` : ''}${m.error ? `<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}${/planner|API key/i.test(m.error) && m.error !== 'stopped' ? `<div class="card-actions"><button class="small" data-act="proj-planner-pick" data-id="${esc(p.id)}">Pick this project's planner</button> <a href="#/settings" data-act="proj-planner-settings">Open Settings → Tasks</a></div>` : ''}</div>` : ''}${cards(m.tasks)}<div class="pj-when">${meta}</div></div>`;
+      html = `<div class="pj-answer">${pjReads(m.reads)}${m.text ? `<div class="pj-answer-text md">${pjLinkRefs(md(m.text), known)}</div>` : ''}${m.text ? pvCards(pvCollect(m.text)) : ''}${m.error ? `<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}${/planner|API key/i.test(m.error) && m.error !== 'stopped' ? `<div class="card-actions"><button class="small" data-act="proj-planner-pick" data-id="${esc(p.id)}">Pick this project's planner</button> <a href="#/settings" data-act="proj-planner-settings">Open Settings → Tasks</a></div>` : ''}</div>` : ''}${cards(m.tasks)}<div class="pj-when">${meta}</div></div>`;
     }
     items.push({ time: new Date(m.time).getTime(), html });
   });

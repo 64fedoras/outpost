@@ -43,6 +43,18 @@ with them (the setting is `chat_instructions`, kept with the other settings and 
 **Search chats** at the top of the Chats panel filters by title as you type and finds chats whose
 messages contain every word (the same search as the sidebar's "Search tasks and chats").
 
+**Live preview.** When an answer (in Chat or the project conversation) contains a whole HTML page, an SVG
+image, a Mermaid diagram (a code block marked `mermaid`) or a long Markdown document (marked `md`), a
+card appears under it; **Open** shows it in a panel on the right with **Preview** and **Code**, a
+version picker (blocks with the same name in one conversation are versions: an HTML page is named after
+its `<title>`), **Download** and **Save to project…** (writes the file into a project you pick; refused
+while a task works in that project; an existing file with that name is replaced). Task files ending in
+`.html`, `.svg`, `.md` or `.mmd` get a **Preview** button in the file viewer. The preview runs in a
+sandboxed frame with its own policy: the page's scripts run, but it has no cookies, cannot reach
+Outpost's pages or API and cannot load anything from the network (no external scripts, images or
+fonts; inline ones work). Mermaid 11 is bundled in the binary (about 1 MB, compressed) and loaded only
+when a diagram is shown. **Untested:** Safari and real phones; tested in Chromium on the local rig.
+
 **Web search in chats** (Settings, Tasks, Planner: "Let chats search the web", off by default). Local
 models cannot search by themselves, so a **Search with** menu picks how they get the web:
 

@@ -19,3 +19,9 @@ var LicenseText string
 //
 //go:embed THIRD_PARTY_NOTICES.txt
 var ThirdPartyNotices string
+
+// PreviewFS is the sandboxed live-preview frame (preview/frame.html, boot.js) and the
+// bundled Mermaid library (preview/mermaid.min.js.gz, served gzip-encoded).
+//
+//go:embed preview
+var PreviewFS embed.FS
