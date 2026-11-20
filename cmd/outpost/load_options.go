@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"sort"
+	"strconv"
 )
 
 // LoadOption is one choice in the Load model dialog for one node.
@@ -40,9 +41,18 @@ type LoadOption struct {
 // listed but not recommended because they are not known to be coding models.
 // c.mu must be held.
 func (c *Controller) loadOptionsFor(id string, maxRecommended int) ([]LoadOption, bool) {
+	return c.loadOptionsTarget(id, maxRecommended, 0)
+}
+
+// loadOptionsTarget is loadOptionsFor with a target speed in tok/s; 0 uses the
+// node's saved target (default 8).
+func (c *Controller) loadOptionsTarget(id string, maxRecommended int, target float64) ([]LoadOption, bool) {
 	n := c.nodes[id]
 	if n == nil {
 		return nil, false
+	}
+	if target <= 0 {
+		target = n.TargetTPS
 	}
 	vram, ram, buildOK := loadableMemory(n.Hello)
 	onNode := map[string]bool{}
@@ -89,7 +99,7 @@ func (c *Controller) loadOptionsFor(id string, maxRecommended int) ([]LoadOption
 		add(LoadOption{Name: e.ID, Label: e.Label, Bytes: e.Bytes, Ctx: e.Ctx, Direct: true, Coding: e.Coding, Vision: e.MMProj != "", shape: c.catShapes[e.ID]})
 	}
 	// Rank the candidates that may be recommended (best_fit.go).
-	c.rankBestFit(id, n, opts, vram, ram, free, maxRecommended)
+	c.rankBestFit(id, n, opts, vram, ram, free, maxRecommended, target)
 	for i := range opts {
 		if opts[i].Group == "" {
 			if opts[i].InLibrary {
@@ -129,8 +139,21 @@ func loadGroupOrder(g string) int {
 // handleLoadOptions answers GET /api/nodes/{id}/load-options for the Load model dialog.
 func (c *Controller) handleLoadOptions(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	var target float64
+	if v := r.URL.Query().Get("target_tps"); v != "" {
+		t, err := strconv.ParseFloat(v, 64)
+		if err != nil || t < targetMin || t > targetMax {
+			writeJSON(w, 400, map[string]string{"error": "target_tps must be between 1 and 100"})
+			return
+		}
+		target = t
+	}
 	c.mu.Lock()
-	opts, buildOK := c.loadOptionsFor(id, 3)
+	opts, buildOK := c.loadOptionsTarget(id, 3, target)
+	var saved float64
+	if n := c.nodes[id]; n != nil {
+		saved = effectiveTarget(n.TargetTPS)
+	}
 	c.mu.Unlock()
 	if opts == nil && !buildOK {
 		c.mu.Lock()
@@ -144,7 +167,7 @@ func (c *Controller) handleLoadOptions(w http.ResponseWriter, r *http.Request) {
 	if opts == nil {
 		opts = []LoadOption{}
 	}
-	writeJSON(w, 200, map[string]any{"options": opts, "build_ok": buildOK})
+	writeJSON(w, 200, map[string]any{"options": opts, "build_ok": buildOK, "target_tps": saved})
 }
 
 func pickShape(a, b *ModelShape) *ModelShape {

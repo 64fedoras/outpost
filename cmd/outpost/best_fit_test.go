@@ -140,3 +140,44 @@ func TestBestFitAppleSilicon(t *testing.T) {
 		t.Errorf("Intel Mac treated as Apple Silicon: %+v", o)
 	}
 }
+
+// A higher target never picks a bigger model, a lower one never a smaller one,
+// and a target nothing reaches falls back to the fastest model.
+func TestBestFitTargetSpeed(t *testing.T) {
+	cpu := &Hello{OS: "linux", Arch: "amd64", MemBWGBs: 40, RAMBytes: 128 * tgb, ModelsFreeBytes: 500 * tgb}
+	pick := func(target float64) LoadOption {
+		return bestFor(t, cpu, func(c *Controller) { c.nodes["n"].TargetTPS = target })
+	}
+	def, low, high, huge := pick(0), pick(2), pick(11), pick(100)
+	if pick(8).Name != def.Name {
+		t.Errorf("target 8 differs from the default: %s vs %s", pick(8).Name, def.Name)
+	}
+	if low.Bytes < def.Bytes || high.Bytes >= def.Bytes {
+		t.Errorf("sizes by target: 2=%d default=%d 11=%d", low.Bytes, def.Bytes, high.Bytes)
+	}
+	if high.EstTPS < 11 {
+		t.Errorf("target 11 picked %s at %.1f tok/s", high.Name, high.EstTPS)
+	}
+	if huge.EstTPS < high.EstTPS {
+		t.Errorf("unreachable target did not fall back to the fastest: %.1f < %.1f", huge.EstTPS, high.EstTPS)
+	}
+	// The request override wins over the saved value.
+	c := loadOptsCtl(map[string]*Hello{"n": cpu})
+	c.lastHB, c.catShapes = map[string]*Heartbeat{}, fakeCatalogShapes()
+	c.nodes["n"].TargetTPS = 2
+	opts, _ := c.loadOptionsTarget("n", 3, 11)
+	if len(opts) == 0 || opts[0].EstTPS < 11 {
+		t.Errorf("override ignored: %+v", opts[0])
+	}
+}
+
+func TestSpeedTierTarget(t *testing.T) {
+	for _, c := range []struct {
+		tps, target float64
+		want        int
+	}{{9, 0, 0}, {5, 0, 1}, {3, 0, 2}, {20, 24, 1}, {11, 24, 2}, {12, 24, 1}, {1, 1, 0}} {
+		if got := speedTier(c.tps, c.target); got != c.want {
+			t.Errorf("speedTier(%v, %v) = %d, want %d", c.tps, c.target, got, c.want)
+		}
+	}
+}

@@ -95,11 +95,12 @@ func (c *Controller) storageRoom(id string, n *NodeRec) (room, extra int64, limi
 
 // rankBestFit marks the best coding models for a node in opts (Rank, Group,
 // Reason and the speed fields), best first. c.mu must be held.
-func (c *Controller) rankBestFit(id string, n *NodeRec, opts []LoadOption, vram, ram, diskFree int64, maxRecommended int) {
+func (c *Controller) rankBestFit(id string, n *NodeRec, opts []LoadOption, vram, ram, diskFree int64, maxRecommended int, target float64) {
 	if n.Hello == nil {
 		return
 	}
 	h := n.Hello
+	target = effectiveTarget(target)
 	uv, ur, otherV, otherR := c.usableNow(id, n, opts, vram, ram)
 	room, extra, limited := c.storageRoom(id, n)
 	apple := isAppleSilicon(h) && vram == 0
@@ -154,14 +155,14 @@ func (c *Controller) rankBestFit(id string, n *NodeRec, opts []LoadOption, vram,
 				}
 			}
 		}
-		o.SpeedLow = o.EstTPS > 0 && o.EstTPS < speedUsable
+		o.SpeedLow = o.EstTPS > 0 && o.EstTPS < target/2
 		cand = append(cand, i)
 	}
 	tier := func(o LoadOption) int {
 		if o.Fit == fitVRAM || o.EstTPS <= 0 {
 			return 0
 		}
-		return speedTier(o.EstTPS)
+		return speedTier(o.EstTPS, target)
 	}
 	sort.SliceStable(cand, func(a, b int) bool {
 		oa, ob := opts[cand[a]], opts[cand[b]]
@@ -187,7 +188,7 @@ func (c *Controller) rankBestFit(id string, n *NodeRec, opts []LoadOption, vram,
 		o.Rank, o.Group = r+1, "recommended"
 		o.Reason = bestFitReason(o, r == 0, vram, ram, uv, apple)
 		if o.EstTPS > 0 {
-			o.SpeedNote = speedNote(o)
+			o.SpeedNote = speedNote(o, target)
 		}
 		switch {
 		case o.Fit != fitRAM && otherV > 0:
@@ -240,7 +241,7 @@ func bestFitReason(o *LoadOption, top bool, vram, ram, usableVRAM int64, apple b
 }
 
 // speedNote is the speed hint shown with a recommendation that has an estimate.
-func speedNote(o *LoadOption) string {
+func speedNote(o *LoadOption, target float64) string {
 	tps := fmt.Sprintf("%.0f", o.EstTPS)
 	if o.EstTPS < 10 {
 		tps = fmt.Sprintf("%.1f", o.EstTPS)
@@ -261,8 +262,10 @@ func speedNote(o *LoadOption) string {
 		s += ". That is very slow: this node's memory is a poor fit for local models, and a GPU node would do better"
 	case o.EstTPS < 2:
 		s += ". That is very slow"
-	case o.EstTPS < speedUsable:
+	case o.EstTPS < target/2:
 		s += ". That is slow; it suits background tasks, not waiting on replies"
+	case o.EstTPS < target:
+		s += fmt.Sprintf(". That is under your target of %.0f tok/s", target)
 	}
 	return s
 }

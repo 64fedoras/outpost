@@ -305,6 +305,7 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 		Hours       *WorkHours `json:"hours"` // {} or from == to... see hours.go; "clear_hours" removes them
 		ClearHours  bool       `json:"clear_hours"`
 		StorageGB   *float64   `json:"storage_limit_gb"` // 0 = no limit
+		TargetTPS   *float64   `json:"target_tps"`       // 0 = default
 		StorageFull *string    `json:"storage_full"`     // "" (remove old models) or "refuse"
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -331,6 +332,10 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, 400, map[string]string{"error": "storage limit must be at least 1 GB, or empty for no limit"})
 		return
 	}
+	if req.TargetTPS != nil && *req.TargetTPS != 0 && (*req.TargetTPS < targetMin || *req.TargetTPS > targetMax) {
+		writeJSON(w, 400, map[string]string{"error": "target speed must be between 1 and 100 tok/s, or empty for the default"})
+		return
+	}
 	if req.StorageFull != nil && *req.StorageFull != "" && *req.StorageFull != "refuse" {
 		writeJSON(w, 400, map[string]string{"error": "storage_full must be empty or refuse"})
 		return
@@ -344,6 +349,9 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.StorageGB != nil {
 		n.StorageLimitGB = *req.StorageGB
+	}
+	if req.TargetTPS != nil {
+		n.TargetTPS = *req.TargetTPS
 	}
 	if req.StorageFull != nil {
 		n.StorageFull = *req.StorageFull
