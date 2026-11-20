@@ -58,6 +58,21 @@ about 3B and smaller, and servers without tool calling, answer without running a
 under the answer says so. Untested: real models writing and fixing code in a loop, Go and shell runs on
 real nodes, and Windows nodes (shell is not offered there; Python and Go should work but are untested).
 
+**Research.** Pick **Research (across nodes)** in the chat's model box (or its card on a new chat) for a
+question that needs looking up. The strongest free node splits it into 3 to 6 sub-questions; each one runs
+as a lane on whichever node is free (with one node they run one after another), searching the web with
+`web_search` and reading pages with `read_page`, and writes findings with their source URLs. Then a free
+node writes a Markdown report with a short answer and numbered sources, streamed like any answer. While
+it works the chat shows the lanes (waiting, working, done, with node and search counts); afterwards the
+**Research** card above the report lists each sub-question with its findings, the note under it counts
+lanes, nodes, searches and pages, and **Open report** opens it in the preview panel to download or save to
+a project. **Stop** cancels every lane. Searches go to DuckDuckGo from the controller, spaced at least
+1.5 seconds apart, and fall back to Brave Search when DuckDuckGo blocks and a Brave key is saved
+(Settings), whatever the chat web-search setting says. Models of about 3B and smaller, or without tool
+calling, get one search per lane instead. Each answer can take a while (up to 45 minutes before it gives
+up). Reports from local models are drafts: check the sources. Untested: live DuckDuckGo with several lanes
+(rate limits), real models, and more than one node running lanes at once.
+
 **Editing, regenerating and branching.** Under your message, **Edit** changes it and answers again from
 there; under an answer, **Regenerate** asks again, **Try on…** asks again on another node (or Auto), and
 **Branch** starts a new chat with the conversation up to that point (its images and instructions come

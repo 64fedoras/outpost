@@ -815,6 +815,17 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .chat-compose > .error-msg { margin: 0 0 6px; font-size: 12.5px; }
 .chat-compose > .img-strip:not(:empty) { margin: 2px 0 6px; }
 .drop-on { outline: 2px dashed var(--accent); outline-offset: -4px; }
+.rs-box { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 8px 12px; margin-bottom: 8px; font-size: 13px; }
+.rs-rec summary { cursor: pointer; }
+.rs-h { font-weight: 600; margin-bottom: 4px; }
+.rs-lanes { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rs-lane { display: flex; gap: 8px; align-items: flex-start; }
+.rs-ic { width: 16px; flex: none; text-align: center; color: var(--muted); }
+.rs-lane.rs-done .rs-ic { color: var(--good); } .rs-lane.rs-failed .rs-ic { color: var(--bad); } .rs-lane.rs-working .rs-ic { color: var(--accent); }
+.rs-t { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.rs-s { font-size: 12px; }
+.rs-lane summary { cursor: pointer; }
+.rs-find { margin: 4px 0 2px; font-size: 13px; }
 .run-pill { cursor: pointer; white-space: nowrap; }
 .run-pill.on { background: var(--tint); border-color: var(--accent); color: var(--accent); }
 .runs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
