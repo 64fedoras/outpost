@@ -23,7 +23,7 @@ tested against a stand-in `sd-server`.
 
 ## Using the New image page
 
-Open **New image** in the sidebar (or press Ctrl+K and type "image"). Type a prompt, choose a model, a size and
+Choose **Make an image** in the **＋** menu in Chat (a card offers **Make it** or **More settings…**, which opens this page with your text filled in), or press Ctrl+K and type "image". Type a prompt, choose a model, a size and
 how many pictures, then **Generate**. **Change options** adds steps, cfg, a seed and a negative prompt. Running
 generations show the node and the step; **Stop** cancels them. Finished ones appear under **Results** with
 Download, **Variations** (same settings, new seeds), **Use prompt**, **Keep** (never deleted automatically),

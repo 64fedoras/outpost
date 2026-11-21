@@ -16,7 +16,7 @@ knobs. It does not make organic shapes or textured meshes (no neural 3D model is
 
 ## Using the page
 
-Open **New 3D model** in the sidebar. Describe the part with its sizes in millimetres and press **Design**
+Open **Make a 3D model** from the **＋** menu in Chat (it asks you to confirm, and **More settings…** opens this page), or press Ctrl+K and type "3D". Describe the part with its sizes in millimetres and press **Design**
 (Ctrl+Enter). Options in the bar:
 - **Model**: the strongest free node, or a node's loaded model.
 - **Check the size**: after the first good render the model is told the measured size (bounding box and triangle

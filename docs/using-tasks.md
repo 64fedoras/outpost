@@ -28,7 +28,7 @@ Part of the [Outpost user guide](USER-GUIDE.md).
 
 The web UI is laid out like a chat app. The sidebar lists your tasks in three groups: **Needs you**
 (amber dot), **Running** (green) and **Earlier**; a task in a project shows the project name on its
-second line. Pinned tasks sit above the groups. **Projects** sits right under **New task** at the top of the sidebar, styled the same way.
+second line. Pinned tasks sit above the groups. The top of the sidebar is one boxed **New task**, then plain rows for **Chat**, **Projects** (with pinned projects under it) and **Scheduled**. Images and 3D models are skills in Chat's ＋ menu.
 
 **Groups.** The switch above the sidebar list picks **By status** (the three sections above) or **By group**.
 Chats are listed in the sidebar too (💬), under Running while one is answering and otherwise under Earlier.
