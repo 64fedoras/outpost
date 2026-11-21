@@ -1,7 +1,8 @@
 # Nodes page with many nodes: filter bar, summary strip, update banner, compact grid and list, offline strip,
 # recent jobs cap. The rig has one real node; the browser copies it to simulate N (the controller is not changed).
 # Run after `sh testing/e2e/run.sh up` (the stub model and node must be online). N=25 by default.
-import asyncio, os, json, re
+import asyncio, os, re, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 E = os.environ.get("OUTPOST_E2E_DIR", ".") + "/"
 S = E + "shots/nodesscale/"
 os.makedirs(S, exist_ok=True)
@@ -9,28 +10,7 @@ from playwright.async_api import async_playwright
 U = "https://127.0.0.1:18460"
 N = int(os.environ.get("N", "25"))
 pw = open(E + "pw.txt").read().strip()
-NAMES = ["gpu-desk", "win-gamer", "bigram", "mac-mini", "test-vm", "lab", "rack", "nuc", "pi", "studio"]
-
-def many(st, n):
-    if not st.get("nodes") or n <= 1: return st
-    base = st["nodes"][0]; out = []
-    for i in range(n):
-        x = json.loads(json.dumps(base)); x["id"] = base["id"] + (f"x{i}" if i else ""); x["name"] = f"{NAMES[i % 10]}-{i:02d}" if i else base["name"]
-        if i:
-            x["hello"]["hostname"] = x["name"]
-            if i % 7 == 3: x["online"] = False; x["last_seen"] = "2026-11-19T10:00:00Z"
-            if i % 4 == 1:
-                x["hello"]["gpus"] = [{"name": "AMD Radeon RX 9070 XT", "vram_bytes": 16e9, "backend": "vulkan"}]; x["heartbeat"]["vram_used_bytes"] = [8e9]; x["heartbeat"]["gpu_util_pct"] = [40]
-            if i % 5 == 2: x["hello"]["loaded_model"] = ""; x["heartbeat"]["loaded_model"] = ""
-            if i % 3 == 0: x["labels"] = ["rack"]
-            if i % 2 == 0 and x.get("online", True): x["update_to"] = "9.9.9"
-            x["heartbeat"]["cpu_pct"] = (i * 13) % 100
-        out.append(x)
-    st["nodes"] = out
-    if n > 1: st["labels"] = ["rack"]
-    j = st.get("jobs") or [{"id": "j0", "status": "succeeded", "command": "Word Counter · tests", "created": "2026-11-20T01:00:00Z"}]
-    if j: st["jobs"] = [dict(j[k % len(j)], id=f"{j[k % len(j)]['id']}-{k}", node_id=out[k % n]["id"], node_name=out[k % n]["name"]) for k in range(min(n * 3, 120))]
-    return st
+from manynodes import many
 
 async def main():
     async with async_playwright() as p:

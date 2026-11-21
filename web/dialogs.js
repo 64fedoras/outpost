@@ -332,6 +332,16 @@ document.addEventListener('click', async (e) => {
       case 'labels': editLabels(id); return;
       case 'hours': openHours(id); return;
       case 'label-filter': nodeLabel = el.dataset.label; renderNodes(); return;
+      case 'upd-group': { const k = el.dataset.key; if (updOpen.has(k)) updOpen.delete(k); else updOpen.add(k); renderUpdates(); return; }
+      case 'upd-more': updAll.add(el.dataset.key); renderUpdates(); return;
+      case 'upd-group-go': {
+        const ids = (el.dataset.ids || '').split(',').filter(Boolean);
+        if (!await askConfirm(`Update ${ids.length} node${ids.length === 1 ? '' : 's'} now? Each restarts on the new version; busy nodes wait for their jobs. "Update all" at the top updates one node first, checks it, then the rest.`, { ok: 'Update' })) return;
+        const res = await Promise.allSettled(ids.map((i) => post(`/api/nodes/${i}/update`)));
+        const bad = res.filter((r) => r.status === 'rejected').length;
+        toast(bad ? `Update sent to ${ids.length - bad}; ${bad} could not start` : `Update sent to ${ids.length}`); break;
+      }
+      case 'more': { const t = el.previousElementSibling; t.classList.toggle('open'); el.textContent = t.classList.contains('open') ? 'Less' : 'More'; return; }
       case 'jobs-more': jobsLimit += JOBS_STEP * 3; renderJobs(); return;
       case 'node-chip': nodeChip = el.dataset.chip; renderNodes(); return;
       case 'node-clear': nodeQuery = ''; nodeChip = 'all'; nodeLabel = ''; renderNodes(); return;

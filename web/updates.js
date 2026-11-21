@@ -4,16 +4,7 @@
 // ---------- updates ----------
 const UPD_BUSY = ['sent', 'downloading', 'installing', 'restarting'];
 let ctlUpdating = false;
-function renderUpdates() {
-  renderGitHub();
-  const rows = [];
-  const cu = state.controller_update_to;
-  rows.push(`<tr><td><span class="dot on"></span></td><td><b>Controller</b></td><td>${esc(state.platform)}</td><td>v${esc(state.version)}</td>
-    <td>${cu ? 'v' + esc(cu) : '<span class="muted">up to date</span>'}</td>
-    <td>${ctlUpdating ? `<div class="prog"><span>installing and restarting…</span>${bar(100, 'good')}</div>` : ''}</td>
-    <td class="r">${cu && !ctlUpdating ? `<button class="small primary" data-act="ctl-update">Update</button>` : ''}
-      ${state.controller_rollback_to && !ctlUpdating ? `<button class="small" data-act="ctl-rollback" title="Restart the controller on the previous version">Roll back to v${esc(state.controller_rollback_to)}</button>` : ''}</td></tr>`);
-  for (const n of state.nodes) {
+function nodeUpdRow(n) {
     const h = n.hello || {}, u = n.update;
     let prog = '';
     if (u && UPD_BUSY.includes(u.state) && (Date.now() - new Date(u.updated)) < 600000) {
@@ -26,13 +17,66 @@ function renderUpdates() {
     if (ro0 && !ro0.ended && ro0.state === 'checking' && ro0.canary === n.id && u && u.state === 'done') prog = `<span class="st-done">updated, checking…</span>`;
     const busy = u && UPD_BUSY.includes(u.state);
     const canUpdate = n.update_to && n.online && !busy;
-    rows.push(`<tr><td><span class="dot ${n.online ? 'on' : ''}" title="${n.online ? 'service online' : 'offline'}"></span></td><td><b>${esc(nodeName(n))}</b><div class="sub u2">${n.online ? 'online' : n.last_seen ? 'offline · seen ' + ago(n.last_seen) : 'never connected'}</div></td>
+    return `<tr><td><span class="dot ${n.online ? 'on' : ''}" title="${n.online ? 'service online' : 'offline'}"></span></td><td><b>${esc(nodeName(n))}</b><div class="sub u2">${n.online ? 'online' : n.last_seen ? 'offline · seen ' + ago(n.last_seen) : 'never connected'}</div></td>
       <td>${esc(h.os ? h.os + '-' + h.arch : '?')}</td><td>${h.agent_version ? 'v' + esc(h.agent_version) : '?'}</td>
       <td>${n.update_to ? 'v' + esc(n.update_to) : '<span class="muted">' + (!h.os ? 'waiting for first connection' : state.releases.some((r) => r.platform === (h.os + '-' + h.arch)) ? 'up to date' : 'no release uploaded') + '</span>'}</td>
       <td>${prog}</td>
       <td class="r">${canUpdate ? `<button class="small primary" data-act="node-update" data-id="${n.id}" ${n.running_jobs ? 'disabled title="Waits until running jobs finish"' : ''}>Update</button>` : ''}
-        ${h.rollback_to && n.online && !busy ? `<button class="small" data-act="node-rollback" data-id="${n.id}" title="Restart this node on the previous version">Roll back to v${esc(h.rollback_to)}</button>` : ''}</td></tr>`);
+        ${h.rollback_to && n.online && !busy ? `<button class="small" data-act="node-rollback" data-id="${n.id}" title="Restart this node on the previous version">Roll back to v${esc(h.rollback_to)}</button>` : ''}</td></tr>`;
+}
+
+// Grouped table for big clusters. A group is the nodes of one platform that are online; offline nodes form their own group.
+const updOpen = new Set(), updAll = new Set(); // expanded groups; groups showing every row (not just the first 8)
+let updSeeded = false;
+const UPD_ROWS = 8;
+function updGroups(nodes) {
+  const g = new Map();
+  for (const n of nodes) {
+    const h = n.hello || {};
+    const key = !n.online ? 'offline' : (h.os ? h.os + '-' + h.arch : 'unknown');
+    if (!g.has(key)) g.set(key, []);
+    g.get(key).push(n);
   }
+  // offline last, platforms by size
+  return [...g.entries()].sort((a, b) => (a[0] === 'offline') - (b[0] === 'offline') || b[1].length - a[1].length || a[0].localeCompare(b[0]));
+}
+function updGroupRows(nodes) {
+  const groups = updGroups(nodes);
+  if (!updSeeded && groups.length) { updOpen.add(groups[0][0]); updSeeded = true; }
+  const out = [];
+  for (const [key, list] of groups) {
+    const busy = list.some((n) => n.update && (UPD_BUSY.includes(n.update.state) || n.update.state === 'failed'));
+    const open = updOpen.has(key) || busy;
+    const vers = [...new Set(list.map((n) => (n.hello || {}).agent_version).filter(Boolean))];
+    const avail = [...new Set(list.map((n) => n.update_to).filter(Boolean))];
+    const can = list.filter((n) => n.update_to && n.online && !(n.update && UPD_BUSY.includes(n.update.state)));
+    const label = key === 'offline' ? `${list.length} offline` : `${list.length} node${list.length === 1 ? '' : 's'}`;
+    const nodeIds = can.map((n) => n.id).join(',');
+    out.push(`<tr class="upd-g click" data-act="upd-group" data-key="${esc(key)}" aria-expanded="${open}"><td><span class="chev">${open ? '▾' : '▸'}</span></td><td><b>${label}</b></td>
+      <td>${key === 'offline' ? '<span class="muted">mixed</span>' : esc(key)}</td><td>${vers.length ? vers.map((v) => 'v' + esc(v)).join(', ') : '?'}</td>
+      <td>${avail.length ? avail.map((v) => 'v' + esc(v)).join(', ') : key === 'offline' ? '<span class="muted">when back online</span>' : '<span class="muted">up to date</span>'}</td><td></td>
+      <td class="r">${can.length ? `<button class="small primary" data-act="upd-group-go" data-ids="${nodeIds}" ${can.some((n) => n.running_jobs) ? 'title="Nodes with running jobs wait until they finish"' : ''}>Update ${can.length === 1 ? 'this node' : 'these ' + can.length}</button>` : ''}</td></tr>`);
+    if (!open) continue;
+    const sorted = [...list].sort((a, b) => (!!b.update_to - !!a.update_to) || nodeName(a).localeCompare(nodeName(b), undefined, { numeric: true }));
+    const shown = updAll.has(key) ? sorted : sorted.slice(0, UPD_ROWS);
+    shown.forEach((n) => out.push(nodeUpdRow(n)));
+    if (shown.length < sorted.length) out.push(`<tr><td></td><td colspan="6"><a href="#" data-act="upd-more" data-key="${esc(key)}">Show ${sorted.length - shown.length} more</a></td></tr>`);
+  }
+  return out;
+}
+function renderUpdates() {
+  renderGitHub();
+  const rows = [];
+  const cu = state.controller_update_to;
+  rows.push(`<tr><td><span class="dot on"></span></td><td><b>Controller</b></td><td>${esc(state.platform)}</td><td>v${esc(state.version)}</td>
+    <td>${cu ? 'v' + esc(cu) : '<span class="muted">up to date</span>'}</td>
+    <td>${ctlUpdating ? `<div class="prog"><span>installing and restarting…</span>${bar(100, 'good')}</div>` : ''}</td>
+    <td class="r">${cu && !ctlUpdating ? `<button class="small primary" data-act="ctl-update">Update</button>` : ''}
+      ${state.controller_rollback_to && !ctlUpdating ? `<button class="small" data-act="ctl-rollback" title="Restart the controller on the previous version">Roll back to v${esc(state.controller_rollback_to)}</button>` : ''}</td></tr>`);
+  // Many nodes: groups by platform (collapsed except the first and any with work in progress), one line per group.
+  const grouped = state.nodes.length >= NODE_FILTER_MIN;
+  if (!grouped) for (const n of state.nodes) rows.push(nodeUpdRow(n));
+  else rows.push(...updGroupRows(state.nodes));
   setHTML('upd-table', `<table><thead><tr><th class="u26"></th><th>Machine</th><th>Platform</th><th>Running</th><th>Available</th><th>Progress</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`);
   const outdated = state.nodes.filter((n) => n.online && n.update_to && !(n.update && UPD_BUSY.includes(n.update.state))).length;
   const ro = state.rollout, roRunning = ro && !ro.ended, roRecent = ro && ro.ended && Date.now() - new Date(ro.ended) < 24 * 3600e3;

@@ -137,6 +137,7 @@ function route() {
   document.querySelector('.page-plain').classList.toggle('hidden', !['scheduled', 'projects', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image', cad: 'New 3D model' }[page] || page[0].toUpperCase() + page.slice(1));
   refreshIcons();
+  clampHints();
   document.body.classList.toggle('on-task', page === 'task' || page === 'project');
   closeSide();
   clearTimeout(taskTimer);
@@ -161,6 +162,15 @@ function closeSide() { $('side').classList.remove('open'); $('scrim').classList.
 $('side-open').onclick = openSide; $('task-menu').onclick = openSide; $('side-close').onclick = closeSide; $('scrim').onclick = closeSide;
 
 // Damaged state files found when the controller started (recovered.go).
+// Long help text: .clamp shows two lines and a "More" link appears when the text is cut.
+function clampHints() {
+  document.querySelectorAll('[data-page=models] > p.hint, .set-main p.hint').forEach((p) => p.classList.add('clamp'));
+  document.querySelectorAll('.clamp:not([data-cl])').forEach((el) => {
+    if (!el.offsetParent) return; // hidden page or section: measure when it shows
+    el.dataset.cl = '1';
+    if (el.scrollHeight > el.clientHeight + 2) el.insertAdjacentHTML('afterend', '<a href="#" class="more-link" data-act="more">More</a>');
+  });
+}
 function renderDiskWarning() {
   const w = state && state.disk_warning;
   $('disk-banner').classList.toggle('hidden', !w);

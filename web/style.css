@@ -1494,3 +1494,23 @@ pre.code .pj-hl { background: var(--tint); display: inline-block; min-width: 100
   .nv-row.dn { grid-template-columns: 14px minmax(0, 1fr) auto; } .nv-row.dn > :nth-child(3), .nv-row.dn > :nth-child(5), .nv-row.dn > :nth-child(6) { display: none; }
   .nv-row.dn.nv-head { display: none; }
 }
+
+/* Updates: grouped rows; Models: holders list, ⋯ menu; long help text */
+.upd-g { background: var(--tint); } .upd-g td { font-weight: 600; } .upd-g .chev { color: var(--muted); display: inline-block; width: 12px; }
+.upd-g .sub, .upd-g td .muted { font-weight: 400; }
+details.holders summary, details.menu > summary { cursor: pointer; list-style: none; }
+details.holders summary::-webkit-details-marker, details.menu > summary::-webkit-details-marker { display: none; }
+details.holders summary { display: inline-block; font-size: 12.5px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 10px; background: var(--panel); }
+details.holders summary::after { content: " ▾"; color: var(--muted); }
+details.holders { position: relative; }
+.holders-list, .menu-list { position: absolute; z-index: 5; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgba(0, 0, 0, .25); padding: 8px 12px; max-height: 260px; overflow-y: auto; font-size: 12.5px; white-space: nowrap; }
+details.menu { position: relative; }
+details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padding: 3px 9px; font-size: 14px; line-height: 1.2; background: var(--panel); }
+.menu-list { right: 0; display: flex; flex-direction: column; gap: 4px; padding: 6px; min-width: 190px; align-items: stretch; }
+.menu-list button { text-align: left; border-color: transparent; background: none; }
+.menu-list button:hover { background: var(--tint); border-color: transparent; }
+.table-wrap:has(details[open]) { overflow: visible; } .table-wrap:has(details[open]) table { overflow: visible; }
+.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.clamp.open { display: block; }
+.more-link { font-size: 12px; margin: 0 0 6px; display: inline-block; }
+.clamp1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }

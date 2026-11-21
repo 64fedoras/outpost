@@ -282,6 +282,9 @@ can check detection without joining.
    Library rows and Hugging Face file lists show a badge per node: **fits in VRAM**,
    **split VRAM + RAM (slower)**, **runs on CPU** (node without a GPU) or **does not fit**. It is an
    estimate: the weights plus a rough KV cache at the suggested context size, not read from the file.
+   With more than 6 nodes the badges become one per kind ("fits in VRAM on 5"; hover for the names), a model
+   held by more than 3 nodes shows "N nodes ▾" with the list, and a library row keeps **Load on…** and folds
+   the other buttons into **⋯**. Long help paragraphs show two lines with a **More** link.
    **Discover models** lists the built-in models as compact rows, the ones suggested for your nodes first,
    with a search box and filters (**Fits my nodes**, **Fits in VRAM**, **Vision**). Each row says how many
    online nodes it fits (hover for each node); the per-node detail is in the **Add and load on…** picker,
