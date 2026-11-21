@@ -215,12 +215,12 @@ Go module fyne.io/systray v1.12.2 (vendored in vendor/, compiled into the binary
    limitations under the License.
 
 -------------------------------------------------------------------------------
-Go module github.com/coder/websocket v1.8.13 (vendored in vendor/, compiled into the binary)
+Go module github.com/coder/websocket v1.8.15 (vendored in vendor/, compiled into the binary)
 -------------------------------------------------------------------------------
 
 [LICENSE.txt]
 
-Copyright (c) 2023 Anmol Sethi <hi@nhooyr.io>
+Copyright (c) 2025 Coder
 
 Permission to use, copy, modify, and distribute this software for any
 purpose with or without fee is hereby granted, provided that the above
@@ -301,7 +301,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 -------------------------------------------------------------------------------
-Go module golang.org/x/sys v0.27.0 (vendored in vendor/, compiled into the binary)
+Go module golang.org/x/sys v0.50.0 (vendored in vendor/, compiled into the binary)
 -------------------------------------------------------------------------------
 
 [LICENSE]

@@ -3,8 +3,8 @@
 fyne.io/systray
 fyne.io/systray/internal/generated/menu
 fyne.io/systray/internal/generated/notifier
-# github.com/coder/websocket v1.8.13
-## explicit; go 1.19
+# github.com/coder/websocket v1.8.15
+## explicit; go 1.23
 github.com/coder/websocket
 github.com/coder/websocket/internal/bpool
 github.com/coder/websocket/internal/errd
@@ -18,8 +18,8 @@ github.com/godbus/dbus/v5/prop
 # github.com/ledongthuc/pdf v0.0.0-20261020125853-5e46805f718e
 ## explicit; go 1.24.1
 github.com/ledongthuc/pdf
-# golang.org/x/sys v0.27.0
-## explicit; go 1.18
+# golang.org/x/sys v0.50.0
+## explicit; go 1.26.0
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
