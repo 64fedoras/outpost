@@ -68,9 +68,6 @@ function rowActs(acts) {
   const rest = acts.filter((a) => !keep.includes(a));
   return keep.join('') + `<details class="menu"><summary class="small" aria-label="More actions">⋯</summary><div class="menu-list">${rest.join('')}</div></details>`;
 }
-// A ⋯ menu closes when you click anywhere else or press Esc.
-document.addEventListener('click', (e) => { document.querySelectorAll('details.menu[open], details.holders[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; }); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('details.menu[open], details.holders[open]').forEach((d) => { d.open = false; }); });
 function renderModels() {
   if (!models) return;
   setHTML('models-disk', `${bytes(models.disk_free)} free on the controller`);

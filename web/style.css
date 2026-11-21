@@ -157,7 +157,6 @@ pre.out .err { color: var(--stderr); }
 .set-nav a.active { background: var(--tint); color: var(--accent); font-weight: 600; }
 .set-main { min-width: 0; max-width: 640px; }
 .set-sec { margin-bottom: 36px; scroll-margin-top: 18px; }
-.set-sec:last-child { min-height: 60vh; }
 .set-sec-title { font-size: 18px; margin: 0 0 4px; }
 
 #login { max-width: 360px; margin: 14vh auto; }
@@ -387,8 +386,10 @@ fieldset.q[disabled] .opt span { opacity: .6; cursor: default; }
   .task-bar, .thread, .dock { padding-left: 16px; padding-right: 16px; }
   .task-bar { padding-top: 6px; padding-bottom: 6px; gap: 4px 8px; }
   .task-bar-main { flex-basis: 100%; }
-  .task-bar-tools { width: 100%; flex-wrap: wrap; }
+  .task-bar-tools { width: 100%; flex-wrap: nowrap; }
   .task-bar-tools .spend { margin-right: auto; }
+  .task-bar-tools .tb-full { display: none; } .task-bar-tools details.tb-more { display: block; }
+  .spend-cap::before { content: "of "; }
   .opt-field { max-width: 100%; }
   .spend-bar { display: none; }
   .page-plain { padding: 14px 16px 40px; }
@@ -1514,3 +1515,5 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 .clamp.open { display: block; }
 .more-link { font-size: 12px; margin: 0 0 6px; display: inline-block; }
 .clamp1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+
+.task-bar-tools .tb-more { display: none; } /* phone only: Files, Activity and Delete fold into it (see the max-width block) */

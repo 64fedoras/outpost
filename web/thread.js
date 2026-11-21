@@ -160,12 +160,14 @@ function renderTask(t) {
   setHTML('tv-spend', t.planner === 'claude' || t.planner === 'openrouter' || t.cost_usd > 0 ? spendMeter(t) : '');
   const files = t.files || [];
   $('tv-files-btn').classList.toggle('hidden', !files.length);
+  $('tv-files-m').classList.toggle('hidden', !files.length);
   $('tv-download').classList.toggle('hidden', !files.length || !['done', 'cancelled', 'failed'].includes(t.status));
   $('tv-download').href = `/api/tasks/${t.id}/download`;
   $('tv-stop').classList.toggle('hidden', !canStop(t));
   // Stop next to Send while the task works (or waits to resume), so it is where the eye is.
   $('tm-stop').classList.toggle('hidden', !(WORKING.includes(t.status) || resuming(t)));
   $('tv-delete').classList.toggle('hidden', ACTIVE.includes(t.status));
+  $('tv-delete-m').classList.toggle('hidden', ACTIVE.includes(t.status));
   renderThreadItems(threadItems(t));
   tickElapsed();
   renderComposer(t);
@@ -176,7 +178,7 @@ const firstWords = (s) => { s = String(s || '').trim().split('\n')[0]; return s.
 
 function spendMeter(t) {
   const pct = t.cap_usd ? Math.min(100, 100 * t.cost_usd / t.cap_usd) : 0;
-  return `<span class="spend" title="Cloud model spend on this task: ${usd(t.cost_usd)} of a ${usd(t.cap_usd)} cap">${usd(t.cost_usd)}<span class="spend-bar"><i class="${pct >= 100 ? 'bad' : pct > 80 ? 'hot' : ''} w${Math.round(pct)}"></i></span>${usd(t.cap_usd)}</span>`;
+  return `<span class="spend" title="Cloud model spend on this task: ${usd(t.cost_usd)} of a ${usd(t.cap_usd)} cap">${usd(t.cost_usd)}<span class="spend-bar"><i class="${pct >= 100 ? 'bad' : pct > 80 ? 'hot' : ''} w${Math.round(pct)}"></i></span><span class="spend-cap">${usd(t.cap_usd)}</span></span>`;
 }
 
 // The conversation, plus live cards for the current round.

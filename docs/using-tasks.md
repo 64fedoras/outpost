@@ -58,12 +58,12 @@ runs), **Try again** (when it failed or was interrupted) and **Delete** (asks fi
 task's conversation and files from the controller, nodes keep none). From the keyboard, focus a task
 and press Shift+F10 or the menu key for the menu, F2 to rename, or Delete to delete.
 
-On a phone, the task page has one top bar with the menu button in it. Cluster pages (Nodes, Models, Updates, Settings) are at
-the bottom of the sidebar. Settings is one long page in nine sections: Tasks (planner, running tasks,
+On a phone, the task page has one top bar with the menu button in it, then one row with the cost ("$0.03 of $2"), the main action (Approve, Stop or Download .zip) and a **⋯** menu holding Files, Activity and Delete. Cluster pages (Nodes, Models, Updates, Settings) are at
+the bottom of the sidebar. Settings shows one of nine sections at a time (the list on its left switches between them, and the last one you used is remembered): Tasks (planner, running tasks,
 project instructions, command sandbox), API keys (Claude, OpenRouter, Hugging Face), Models (idle unload, memory
 pooling, model scorecard), Nodes (health colours, Wake-on-LAN, free disk space), Pictures, Display and
 alerts (appearance, notifications), Updates, Security (password, sign-in, HTTPS certificate) and Storage and backup (storage, backup,
-config file, diagnostics). The list on its left follows your scroll position and jumps to a section when clicked.
+config file, diagnostics).
 
 Each task is a conversation:
 

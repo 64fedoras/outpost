@@ -205,11 +205,15 @@
         </div>
         <div class="task-bar-tools">
           <span id="tv-spend"></span>
-          <button class="small" data-act="task-files" id="tv-files-btn">Files</button>
-          <button class="small" data-act="task-activity">Activity</button>
+          <button class="small tb-full" data-act="task-files" id="tv-files-btn">Files</button>
+          <button class="small tb-full" data-act="task-activity">Activity</button>
           <a id="tv-download" class="hidden"><button class="small primary">Download .zip</button></a>
           <button class="small danger hidden" data-act="task-cancel" id="tv-stop">Stop</button>
-          <button class="small danger hidden" data-act="task-delete" id="tv-delete">Delete</button>
+          <button class="small danger hidden tb-full" data-act="task-delete" id="tv-delete">Delete</button>
+          <details class="menu tb-more"><summary class="small" aria-label="More: files, activity, delete">⋯</summary><div class="menu-list">
+            <button data-act="task-files" id="tv-files-m">Files</button>
+            <button data-act="task-activity">Activity</button>
+            <button class="danger hidden" data-act="task-delete" id="tv-delete-m">Delete</button></div></details>
         </div>
       </div>
       <div class="thread" id="thread"></div>

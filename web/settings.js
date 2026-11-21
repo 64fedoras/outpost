@@ -2,29 +2,27 @@
 // Settings page. Plain script, no modules: shares globals with app.js and loads after it (see index.html).
 
 // ---------- settings ----------
-// Section list on the left follows the scroll position; a click scrolls to the section without touching the #/settings route.
+// Settings shows one section at a time; the list on the left switches between them (remembered in this browser).
+// Clicking a link never touches the #/settings route, so the palette and other pages can open a section by clicking its link.
 (function settingsNav() {
   const links = [...document.querySelectorAll('#set-nav a')];
   if (!links.length) return;
   // Section ids differ from data-sec for 'model': #set-model is the Claude model <select>, so never build ids from data-sec alone.
   const secs = links.map((a) => document.querySelector('section.set-sec' + a.getAttribute('href')));
-  let lock = 0;
-  const mark = (i) => links.forEach((a, j) => a.classList.toggle('active', i === j));
-  const spy = () => {
-    if (Date.now() < lock || page !== 'settings') return;
-    let cur = 0;
-    secs.forEach((s, i) => { if (s.getBoundingClientRect().top <= (matchMedia('(max-width: 860px)').matches ? 140 : 90)) cur = i; });
-    if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) cur = secs.length - 1;
-    mark(cur);
+  const show = (i) => {
+    links.forEach((a, j) => { a.classList.toggle('active', i === j); a.setAttribute('aria-current', i === j ? 'true' : 'false'); });
+    secs.forEach((x, j) => x.classList.toggle('hidden', i !== j));
+    try { localStorage.setItem('outpost.settingsSec', links[i].dataset.sec); } catch (e) { /* storage blocked */ }
+    if (typeof clampHints === 'function' && typeof page !== 'undefined' && page === 'settings') clampHints();
   };
-  addEventListener('scroll', spy, { passive: true });
-  addEventListener('resize', spy);
   links.forEach((a, i) => a.addEventListener('click', (e) => {
     e.preventDefault();
-    mark(i); lock = Date.now() + 800;
-    secs[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    show(i);
+    if (typeof page !== 'undefined' && page === 'settings') scrollTo({ top: 0 });
   }));
-  mark(0);
+  let start = 0;
+  try { const k = localStorage.getItem('outpost.settingsSec'); const i = links.findIndex((a) => a.dataset.sec === k); if (i >= 0) start = i; } catch (e) { /* storage blocked */ }
+  show(start);
 })();
 async function loadSettings() {
   try { settings = await api('/api/settings'); } catch (e) { return; }

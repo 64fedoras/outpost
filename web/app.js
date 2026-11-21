@@ -162,6 +162,11 @@ function closeSide() { $('side').classList.remove('open'); $('scrim').classList.
 $('side-open').onclick = openSide; $('task-menu').onclick = openSide; $('side-close').onclick = closeSide; $('scrim').onclick = closeSide;
 
 // Damaged state files found when the controller started (recovered.go).
+// ⋯ menus and "N nodes" lists (<details class="menu"> / <details class="holders">) close on a click anywhere else, on a menu item, or Esc.
+document.addEventListener('click', (e) => {
+  document.querySelectorAll('details.menu[open], details.holders[open]').forEach((d) => { if (!d.contains(e.target) || e.target.closest('.menu-list button, .menu-list a')) d.open = false; });
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('details.menu[open], details.holders[open]').forEach((d) => { d.open = false; }); });
 // Long help text: .clamp shows two lines and a "More" link appears when the text is cut.
 function clampHints() {
   document.querySelectorAll('[data-page=models] > p.hint, .set-main p.hint').forEach((p) => p.classList.add('clamp'));
