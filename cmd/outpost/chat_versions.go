@@ -210,7 +210,7 @@ func (c *Controller) handleChatBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	nc := &Chat{ID: newID("chat"), Title: chatTitle("Branch: " + ch.Title), Node: ch.Node, Instructions: ch.Instructions, GroupID: ch.GroupID, Created: now, Updated: now, dir: c.chatsDir()}
+	nc := &Chat{ID: newID("chat"), Title: chatTitle("Branch: " + ch.Title), Node: ch.Node, Instructions: ch.Instructions, RunCode: ch.RunCode, GroupID: ch.GroupID, Created: now, Updated: now, dir: c.chatsDir()}
 	for _, m := range ch.Messages[:i+1] {
 		m.Alts, m.Ver = nil, 0
 		nc.Messages = append(nc.Messages, m)
@@ -219,6 +219,11 @@ func (c *Controller) handleChatBranch(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, d := range m.Docs {
 			copyChatImage(filepath.Join(ch.docsDir(), d.File), filepath.Join(nc.docsDir(), d.File))
+		}
+		for _, r := range m.Runs {
+			for _, f := range r.Files {
+				copyChatImage(filepath.Join(ch.runsDir(), f.File), filepath.Join(nc.runsDir(), f.File))
+			}
 		}
 	}
 	ch.mu.Unlock()

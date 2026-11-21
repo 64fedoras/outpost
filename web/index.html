@@ -56,12 +56,12 @@
       <button class="icon-btn side-close" id="side-close" aria-label="Close menu">✕</button>
     </div>
     <a class="new-task" href="#/new"><span aria-hidden="true">＋</span> New task</a>
-    <a class="new-task side-projects" href="#/image" data-tab="image"><span aria-hidden="true">✦</span> New image</a>
-    <a class="new-task side-projects" href="#/cad" data-tab="cad"><span aria-hidden="true">◇</span> New 3D model</a>
-    <a class="new-task side-projects" href="#/projects" data-tab="projects"><span aria-hidden="true">▤</span> Projects</a>
-    <nav class="side-pins hidden" id="side-pins" aria-label="Pinned projects"></nav>
-    <a class="new-task side-projects" href="#/scheduled" data-tab="scheduled"><span aria-hidden="true">⏱</span> Scheduled <span class="badge hidden side-badge" id="badge-sched" title="Active schedules"></span></a>
-    <a class="new-task side-projects" href="#/chat" data-tab="chat"><span aria-hidden="true">💬</span> Chat</a>
+    <nav class="side-rows" aria-label="Pages">
+      <a class="side-row side-projects" href="#/chat" data-tab="chat"><span aria-hidden="true">💬</span> Chat</a>
+      <a class="side-row side-projects" href="#/projects" data-tab="projects"><span aria-hidden="true">▤</span> Projects</a>
+      <nav class="side-pins hidden" id="side-pins" aria-label="Pinned projects"></nav>
+      <a class="side-row side-projects" href="#/scheduled" data-tab="scheduled"><span aria-hidden="true">⏱</span> Scheduled <span class="badge hidden side-badge" id="badge-sched" title="Active schedules"></span></a>
+    </nav>
     <div class="side-groupbar" id="side-groupbar"></div>
     <div class="side-filter" id="side-filter">
       <div class="sf-row"><input id="sf-q" type="search" placeholder="Search tasks and chats" aria-label="Search the text of tasks and chats" autocomplete="off"><button class="sf-btn" id="sf-toggle" aria-expanded="false" aria-controls="sf-panel" title="Filter by status, project or age">Filter</button></div>
@@ -205,11 +205,15 @@
         </div>
         <div class="task-bar-tools">
           <span id="tv-spend"></span>
-          <button class="small" data-act="task-files" id="tv-files-btn">Files</button>
-          <button class="small" data-act="task-activity">Activity</button>
+          <button class="small tb-full" data-act="task-files" id="tv-files-btn">Files</button>
+          <button class="small tb-full" data-act="task-activity">Activity</button>
           <a id="tv-download" class="hidden"><button class="small primary">Download .zip</button></a>
           <button class="small danger hidden" data-act="task-cancel" id="tv-stop">Stop</button>
-          <button class="small danger hidden" data-act="task-delete" id="tv-delete">Delete</button>
+          <button class="small danger hidden tb-full" data-act="task-delete" id="tv-delete">Delete</button>
+          <details class="menu tb-more"><summary class="small" aria-label="More: files, activity, delete">⋯</summary><div class="menu-list">
+            <button data-act="task-files" id="tv-files-m">Files</button>
+            <button data-act="task-activity">Activity</button>
+            <button class="danger hidden" data-act="task-delete" id="tv-delete-m">Delete</button></div></details>
         </div>
       </div>
       <div class="thread" id="thread"></div>
@@ -284,12 +288,17 @@
           <div class="chat-dock">
             <div class="chat-col">
               <div class="chat-compose">
+                <div id="chat-skill"></div>
+                <div class="chat-suggest hidden" id="chat-suggest"></div>
                 <div class="error-msg hidden" id="chat-img-warn"></div>
                 <div class="img-strip" id="chat-imgs"></div>
                 <textarea id="chat-text" rows="2" enterkeyhint="enter" placeholder="Ask anything…" aria-label="Message"></textarea>
                 <div class="chat-bar">
-                  <button type="button" class="tb chat-attach" id="chat-attach" title="Attach images (PNG, JPEG, WebP, GIF) or documents (PDF, DOCX, XLSX, ODT, CSV). You can also paste or drop them." aria-label="Attach images or documents">📎</button><input type="file" id="chat-file" accept="image/png,image/jpeg,image/webp,image/gif,.pdf,.docx,.xlsx,.odt,.csv" multiple hidden>
+                  <span class="plus-wrap"><button type="button" class="tb chat-plus" id="chat-plus" aria-haspopup="menu" aria-expanded="false" title="Attach files, run code, or make an image or 3D model" aria-label="Add: attach files, run code, make an image or 3D model">＋</button><div class="plus-menu hidden" id="chat-plus-menu" role="menu"></div></span>
+                  <button type="button" class="hidden" id="chat-attach" tabindex="-1" aria-hidden="true">📎</button><input type="file" id="chat-file" accept="image/png,image/jpeg,image/webp,image/gif,.pdf,.docx,.xlsx,.odt,.csv" multiple hidden>
+                  <span class="chat-chips" id="chat-chips"></span>
                   <select id="chat-node" class="chat-pill" aria-label="Which node answers"></select>
+                  <button type="button" class="hidden" id="chat-run" aria-pressed="false" tabindex="-1" aria-hidden="true">▶ Run code</button>
                   <span class="grow"></span>
                   <button class="small hidden" id="chat-totask" title="Start a new task with this conversation as its request">Make this a task</button>
                   <button type="button" class="kbd kbd-btn hide-ph" id="chat-key">Enter</button>
@@ -316,9 +325,18 @@
         <div class="nv-toggle" role="group" aria-label="Node view"><button data-act="node-view" data-node-view="grid">Grid</button><button data-act="node-view" data-node-view="list">List</button><button data-act="node-view" data-node-view="detail">Detailed list</button></div>
         <button id="btn-check" title="Run a short model call, a command and a connection test on every online node">Check cluster</button>
         <button id="btn-add" class="primary">Add node</button></div>
+      <div id="node-summary"></div>
+      <div class="nf hidden" id="node-filter" role="search" aria-label="Filter nodes">
+        <input id="nf-q" type="search" placeholder="Filter by name, model or label" aria-label="Filter nodes by name, model or label" autocomplete="off">
+        <span class="nf-chips" id="nf-chips" role="group" aria-label="Show"></span>
+        <span class="spacer"></span>
+        <select id="nf-sort" aria-label="Sort nodes"><option value="status">Sort: status</option><option value="name">Sort: name</option><option value="speed">Sort: speed</option></select>
+      </div>
       <div id="nodes"></div>
       <aside id="node-drawer" class="nd hidden" role="region" aria-label="Node details"></aside>
-      <div class="section-head"><h2>Recent jobs</h2><span class="sub u2">every model call and command sent to a node</span></div>
+      <div class="section-head"><h2>Recent jobs</h2><span class="sub u2 hide-ph">every model call and command sent to a node</span><span class="spacer"></span>
+        <select id="jobs-node" class="jobs-sel hidden" aria-label="Show jobs on node"><option value="">All nodes</option></select>
+        <select id="jobs-status" class="jobs-sel" aria-label="Show jobs with status"><option value="">Any status</option><option value="running">Running</option><option value="failed">Failed</option><option value="succeeded">Succeeded</option></select></div>
       <div id="jobs"></div>
     </section>
 
@@ -1105,6 +1123,7 @@
 <script src="project.js"></script>
 <script src="chat.js"></script>
 <script src="thread.js"></script>
+<script src="nodefilter.js"></script>
 <script src="nodes.js"></script>
 <script src="models.js"></script>
 <script src="updates.js"></script>
@@ -1115,6 +1134,7 @@
 <script src="images.js"></script>
 <script src="viewer3d.js"></script>
 <script src="cad.js"></script>
+<script src="chatskills.js"></script>
 <script src="boot.js"></script>
 </body>
 </html>

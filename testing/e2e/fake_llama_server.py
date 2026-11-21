@@ -71,6 +71,14 @@ class H(BaseHTTPRequestHandler):
             # Memory suggestion (memory.go): one fact when the owner states one, else NONE.
             m = re.search(r"\bI (?:always )?(?:use|prefer) (.{3,60}?)\.(?:\s|$)", user)
             text = ("Prefers " + m.group(1).strip() + ".") if m else "NONE"
+        elif "You plan web research" in system:
+            # Research mode (research.py): three sub-questions, slowly enough to see the lanes.
+            time.sleep(1)
+            text = json.dumps(["What is the Raspberry Pi 5's idle power draw?", "What is the Raspberry Pi 5's power draw under full load?", "Which power supply does the Raspberry Pi 5 need?"])
+        elif "You write a research report" in system:
+            srcs = re.findall(r"^\[(\d+)\] (\S+)$", user, re.M)
+            text = ("## Short answer\n\nThe Raspberry Pi 5 draws little power at idle and more under load [1][3]. It needs a 5 V 5 A USB-C supply [5].\n\n"
+                    "## Details\n\n- Idle draw is covered by two sources [1][2].\n- Full load is covered by [3][4].\n\n## Sources\n\n" + "\n".join(f"[{n}] {u}" for n, u in srcs))
         elif "planner for Outpost" in system:
             # A node as the planner: the same word-counter plan the Claude stub gives.
             text = json.dumps({"title": "Word Counter", "summary": "A tiny Python CLI. wordcount/core.py defines count_words(text) -> dict (lowercase, split on whitespace).",
@@ -163,6 +171,31 @@ def agent_turn(self, body):
     # Investigator: search, ask the user which splitting rule, then report.
     done = sum(1 for m in body["messages"] if m["role"] == "tool")
     system = body["messages"][0]["content"] if body["messages"][0]["role"] == "system" else ""
+    if "You research one sub-question" in system:
+        # A research lane: one search, then findings citing the results.
+        q = next(m["content"] for m in body["messages"] if m["role"] == "user")
+        time.sleep(1.5)
+        if done == 0:
+            stream_tool_calls(self, [("web_search", {"query": q})], "")
+        else:
+            urls = re.findall(r"https://example\.org/\S+", body["messages"][-1]["content"])
+            stream_tool_calls(self, [], "".join(f"- A finding about: {q} ({u})\n" for u in urls[:2]))
+        return
+    if any(t.get("function", {}).get("name") == "run_code" for t in body.get("tools", [])):
+        # Run code in chat (runcode.py): a program with a bug, the fixed one, then the answer.
+        if done == 0:
+            stream_tool_calls(self, [("run_code", {"language": "python", "code": "print(totl)"})], "")
+        elif done == 1:
+            code = ("import os\nnums = [3, 1, 4, 1, 5, 9, 2, 6]\nprint('sum', sum(nums), 'max', max(nums))\n"
+                    "bars = ''.join(f'<rect x=\"{i*30+10}\" y=\"{100-n*10}\" width=\"20\" height=\"{n*10}\" fill=\"#2a66d0\"/>' for i, n in enumerate(nums))\n"
+                    "open('out/chart.svg', 'w').write(f'<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"260\" height=\"110\">{bars}</svg>')\n"
+                    "open('out/numbers.csv', 'w').write('n\\n' + '\\n'.join(map(str, nums)))\n")
+            stream_tool_calls(self, [("run_code", {"language": "python", "code": code})], "")
+        else:
+            out = body["messages"][-1]["content"]
+            line = next((l for l in out.splitlines() if l.startswith("sum ")), "no output")
+            stream_tool_calls(self, [], f"The first try failed, so I fixed it. The program printed `{line}`, and the chart is below.")
+        return
     if "lead for the software project" in system:
         # Project conversation: look at the files, then answer with file:line references.
         if done == 0: stream_tool_calls(self, [("list_files", {}), ("search", {"pattern": "count_words"})], "")

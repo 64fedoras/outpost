@@ -8,8 +8,9 @@ Part of the [Outpost user guide](USER-GUIDE.md).
 
 **Chat** (sidebar) is a plain conversation with a model on your nodes, for quick questions that do not
 need a task. A new chat opens with one card per way to answer: **Auto (local, strongest free node)**, or a
-node with a model loaded (shown free, busy or paused); click a card or use the model box under the message
-box. The message box stays docked at the bottom, and the **Chats** button opens a panel with your earlier
+model that is loaded (one card per model: *on 3 nodes · 2 free* means the chat goes to any free node that has
+it, and **Pick a specific node…** lists the nodes if you want one); click a card or use the model box under the
+message box. The message box stays docked at the bottom, and the **Chats** button opens a panel with your earlier
 chats (on a phone it is a full-screen list). Replies stream in and are shown as formatted text (headings, bold, lists, tables, links and code blocks with a Copy button; HTML in an answer is shown as text, never run; the same goes for planner messages in a task and in the project chat), thinking
 models show their reasoning folded away, and each answer notes the node, model and speed. **Enter**
 sends and Shift+Enter adds a line (Settings → Appearance, or the key badge next to Send, switches to **Ctrl+Enter** sends; the choice is kept in this browser; on a phone Enter always adds a new line and the **Send** button sends; the model list shows just the chosen model with a **Change** link, and the page follows the on-screen keyboard), **Stop** ends a reply, and **Make this a task** copies the conversation into a new task. Chats are
@@ -18,8 +19,17 @@ model's context. Chat only uses a free model slot: while a task keeps every node
 up to 5 minutes and then says so. It never interrupts task work and costs no Claude money, unless
 you turn on web search below.
 
+**The ＋ menu and skills.** The ＋ button left of the model box holds **Attach images or documents**, **Run code**
+(a chip next to ＋ shows it is on; click the chip to turn it off) and the **Skills**: **Make an image** and
+**Make a 3D model**. Pick a skill, describe what you want and press Send: instead of a chat message you get a
+card above the box with your text, the options (model, size and count for pictures) and **Make it**, or
+**More settings…**, which opens the full Images or 3D page with your text filled in. If you type something that
+reads like a picture request ("draw an image of…", "make a 3D model of…"), a line under the box offers the skill;
+**Not now** dismisses it. This is a plain wording check, not the model deciding. The Images (`#/image`) and 3D
+(`#/cad`) pages still exist and are in Ctrl+K search. Letting the chat load or switch models on nodes is not built.
+
 **Screenshots in chats.** Paste a screenshot into the message box (Ctrl+V), drop image files on it, or
-use the 📎 button: up to 5 PNG, JPEG, WebP or GIF images per message, 5 MB each (bigger photos are scaled
+use **Attach** in the ＋ menu: up to 5 PNG, JPEG, WebP or GIF images per message, 5 MB each (bigger photos are scaled
 down in the browser first). A message can be just an image ("Describe this image." is asked for you). Only a
 **Vision** model can read images: one with its projector file (`mmproj`), such as Qwen3.6 or Gemma 4 from
 the Models page. With **Auto** the chat goes to a free node that has one loaded; if no ready node has one
@@ -28,7 +38,7 @@ saved with the chat on the controller (`chats/<id>-images/`), shown again when y
 with the chat. A node gets them only inside the request, in memory, and keeps nothing. Later messages
 resend only the newest 3 images, so a long chat does not fill the model's context.
 
-**Documents in chats.** The 📎 button (or drop, or paste) also takes up to 5 documents per message, 25 MB
+**Documents in chats.** **Attach** in the ＋ menu (or drop, or paste) also takes up to 5 documents per message, 25 MB
 together: PDF, Word (`.docx`), Excel (`.xlsx`), OpenDocument text (`.odt`) and CSV. The controller reads
 each into plain text when you send (a pure-Go reader, nothing to install): PDF text with `[page N]`
 marks, Word and ODT paragraphs and tables, each Excel sheet as tab-separated rows under `[sheet name]`
@@ -41,6 +51,37 @@ scanned PDF has no text layer and is not read as images (the chip warns "a scan?
 node's context window, older documents are cut first and the newest message keeps the most, with a
 note to the model that the rest did not fit. Old `.doc` and `.xls` files are refused (save them as
 `.docx` or `.xlsx`). Encrypted or password-protected files are untested.
+
+**Run code.** **Run code** in the ＋ menu (per chat, off by default, remembered with the chat and
+copied by **Branch**) lets the answering model run programs: Python, Go or a shell script, whichever an
+online node that allows commands (exec on) can run. Python needs `python3` (or `python`) already on that
+node, as for task tests; Go is the toolchain Outpost installs; shell needs a Linux or macOS node. Each
+program runs as an exec job on the least busy such node, in the same sandbox as task tests (no network
+in strict mode), with a 60-second limit, in an empty folder holding the chat's documents as text under
+`files/`. The model sees the output (and its errors, so it can fix the program and run it again), up to
+6 programs per answer. Files the program writes to `out/` come back: images (PNG, JPEG, GIF, WebP, SVG)
+show under the answer and every file has a download link, up to 12 files; files over 1 MB are left
+out (the model is told which). Each run shows as a card above the answer (language, node, exit
+code, time; open it for the code and output). Files are kept with the chat (`chats/<id>-runs/`) and
+deleted with it; the node keeps nothing. Later messages see a one-line summary of each run. Models of
+about 3B and smaller, and servers without tool calling, answer without running anything and the note
+under the answer says so. Untested: real models writing and fixing code in a loop, Go and shell runs on
+real nodes, and Windows nodes (shell is not offered there; Python and Go should work but are untested).
+
+**Research.** Pick **Research (across nodes)** in the chat's model box (or its card on a new chat) for a
+question that needs looking up. The strongest free node splits it into 3 to 6 sub-questions; each one runs
+as a lane on whichever node is free (with one node they run one after another), searching the web with
+`web_search` and reading pages with `read_page`, and writes findings with their source URLs. Then a free
+node writes a Markdown report with a short answer and numbered sources, streamed like any answer. While
+it works the chat shows the lanes (waiting, working, done, with node and search counts); afterwards the
+**Research** card above the report lists each sub-question with its findings, the note under it counts
+lanes, nodes, searches and pages, and **Open report** opens it in the preview panel to download or save to
+a project. **Stop** cancels every lane. Searches go to DuckDuckGo from the controller, spaced at least
+1.5 seconds apart, and fall back to Brave Search when DuckDuckGo blocks and a Brave key is saved
+(Settings), whatever the chat web-search setting says. Models of about 3B and smaller, or without tool
+calling, get one search per lane instead. Each answer can take a while (up to 45 minutes before it gives
+up). Reports from local models are drafts: check the sources. Untested: live DuckDuckGo with several lanes
+(rate limits), real models, and more than one node running lanes at once.
 
 **Editing, regenerating and branching.** Under your message, **Edit** changes it and answers again from
 there; under an answer, **Regenerate** asks again, **Try on…** asks again on another node (or Auto), and

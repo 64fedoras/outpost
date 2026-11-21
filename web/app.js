@@ -137,6 +137,7 @@ function route() {
   document.querySelector('.page-plain').classList.toggle('hidden', !['scheduled', 'projects', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image', cad: 'New 3D model' }[page] || page[0].toUpperCase() + page.slice(1));
   refreshIcons();
+  clampHints();
   document.body.classList.toggle('on-task', page === 'task' || page === 'project');
   closeSide();
   clearTimeout(taskTimer);
@@ -161,6 +162,20 @@ function closeSide() { $('side').classList.remove('open'); $('scrim').classList.
 $('side-open').onclick = openSide; $('task-menu').onclick = openSide; $('side-close').onclick = closeSide; $('scrim').onclick = closeSide;
 
 // Damaged state files found when the controller started (recovered.go).
+// ⋯ menus and "N nodes" lists (<details class="menu"> / <details class="holders">) close on a click anywhere else, on a menu item, or Esc.
+document.addEventListener('click', (e) => {
+  document.querySelectorAll('details.menu[open], details.holders[open]').forEach((d) => { if (!d.contains(e.target) || e.target.closest('.menu-list button, .menu-list a')) d.open = false; });
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('details.menu[open], details.holders[open]').forEach((d) => { d.open = false; }); });
+// Long help text: .clamp shows two lines and a "More" link appears when the text is cut.
+function clampHints() {
+  document.querySelectorAll('[data-page=models] > p.hint, .set-main p.hint').forEach((p) => p.classList.add('clamp'));
+  document.querySelectorAll('.clamp:not([data-cl])').forEach((el) => {
+    if (!el.offsetParent) return; // hidden page or section: measure when it shows
+    el.dataset.cl = '1';
+    if (el.scrollHeight > el.clientHeight + 2) el.insertAdjacentHTML('afterend', '<a href="#" class="more-link" data-act="more">More</a>');
+  });
+}
 function renderDiskWarning() {
   const w = state && state.disk_warning;
   $('disk-banner').classList.toggle('hidden', !w);
@@ -519,10 +534,26 @@ function renderSideCluster() {
   setHTML('side-cluster', `<a href="#/nodes" class="cluster-link"><span class="tdot ${w ? 'work' : on ? 'needs' : 'idle'}"></span>${on} of ${n.length} node${n.length === 1 ? '' : 's'} online · ${w} model${w === 1 ? '' : 's'} ready</a>`);
 }
 
+// Recent jobs on the Nodes page: a few rows, filtered by node and status, "Show more" adds more.
+const JOBS_STEP = 8;
+let jobsLimit = JOBS_STEP, jobsNode = '', jobsStatus = '';
+const JOB_STATUS = { running: ['dispatched', 'running'], failed: ['failed', 'timed_out', 'lost'], succeeded: ['succeeded'] };
 function renderJobs() {
-  const jobs = state.jobs.slice(0, 15);
-  setHTML('jobs', !jobs.length ? `<div class="empty">No jobs yet.</div>` :
+  const sel = $('jobs-node'), nodes = state.nodes || [];
+  const key = nodes.map((n) => n.id + nodeName(n)).join('|');
+  if (sel._k !== key) {
+    sel._k = key;
+    sel.innerHTML = '<option value="">All nodes</option>' + nodes.map((n) => `<option value="${esc(n.id)}">${esc(nodeName(n))}</option>`).join('');
+    if (jobsNode && !nodes.some((n) => n.id === jobsNode)) jobsNode = '';
+    sel.value = jobsNode;
+  }
+  sel.classList.toggle('hidden', nodes.length < 2);
+  const all = state.jobs.filter((j) => (!jobsNode || j.node_id === jobsNode) && (!jobsStatus || JOB_STATUS[jobsStatus].includes(j.status)));
+  const jobs = all.slice(0, jobsLimit);
+  setHTML('jobs', !jobs.length ? `<div class="empty">${state.jobs.length ? 'No jobs match.' : 'No jobs yet.'}</div>` :
     `<div class="table-wrap"><table><thead><tr><th>Status</th><th>Node</th><th>What</th><th>Started</th></tr></thead><tbody>${
       jobs.map((j) => `<tr class="click" data-act="open-job" data-id="${j.id}"><td>${pill(j.status)}</td><td>${esc(j.node_name)}</td><td class="cmd">${esc(j.command)}</td><td>${ago(j.created)}</td></tr>`).join('')
-    }</tbody></table></div>`);
+    }</tbody></table></div>${all.length > jobs.length ? `<div class="jobs-more"><button class="small" data-act="jobs-more">Show ${Math.min(JOBS_STEP * 3, all.length - jobs.length)} more</button> <span class="sub">${all.length - jobs.length} not shown</span></div>` : ''}`);
 }
+$('jobs-node').addEventListener('change', () => { jobsNode = $('jobs-node').value; jobsLimit = JOBS_STEP; renderJobs(); });
+$('jobs-status').addEventListener('change', () => { jobsStatus = $('jobs-status').value; jobsLimit = JOBS_STEP; renderJobs(); });

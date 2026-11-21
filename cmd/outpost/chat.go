@@ -41,6 +41,10 @@ type ChatMsg struct {
 	// Suggest is a fact the answering model offered to remember (memory.go),
 	// shown under the answer until the owner remembers or dismisses it.
 	Suggest string `json:"suggest,omitempty"`
+	// Runs are the programs the model ran for this answer (chat_run.go).
+	Runs []CodeRun `json:"runs,omitempty"`
+	// Research is the record of a research-mode answer: its sub-questions and findings (research.go).
+	Research *ResearchRun `json:"research,omitempty"`
 }
 
 type Chat struct {
@@ -55,6 +59,10 @@ type Chat struct {
 	Instructions string `json:"instructions,omitempty"`
 	Busy         string `json:"busy,omitempty"`      // "" | waiting | answering (not saved meaningfully; reset at load)
 	MemTries     int    `json:"mem_tries,omitempty"` // answers that asked for a memory suggestion (memory.go)
+	RunCode      bool   `json:"run_code,omitempty"`  // the model may run code on an exec node (chat_run.go)
+	RunOn        string `json:"run_on,omitempty"`    // while Busy is "running": the node running it
+	// Research is the live state of a research answer while it works (research.go).
+	Research *ResearchRun `json:"research,omitempty"`
 
 	dir    string
 	cancel context.CancelFunc
@@ -100,7 +108,7 @@ func (c *Controller) loadChats() {
 		if json.Unmarshal(b, ch) != nil || ch.ID+".json" != e.Name() {
 			continue
 		}
-		ch.dir, ch.Busy = c.chatsDir(), ""
+		ch.dir, ch.Busy, ch.RunOn, ch.Research = c.chatsDir(), "", "", nil
 		c.chats[ch.ID] = ch
 	}
 }
@@ -120,6 +128,8 @@ func (c *Controller) chatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chats/{id}/stop", c.auth(c.handleChatStop))
 	mux.HandleFunc("GET /api/chats/{id}/image", c.auth(c.handleChatImage))
 	mux.HandleFunc("GET /api/chats/{id}/doc", c.auth(c.handleChatDoc))
+	mux.HandleFunc("POST /api/chats/{id}/runcode", c.auth(c.handleChatRunCode))
+	mux.HandleFunc("GET /api/chats/{id}/run-file", c.auth(c.handleChatRunFile))
 	mux.HandleFunc("GET /api/chats/{id}/events", c.authSession(c.handleChatEvents))
 	mux.HandleFunc("POST /api/chats/{id}/edit", c.auth(c.handleChatEdit))
 	mux.HandleFunc("POST /api/chats/{id}/regenerate", c.auth(c.handleChatRegenerate))
@@ -167,6 +177,7 @@ type chatReq struct {
 	Docs   []imageUpload `json:"docs"` // PDF, DOCX, XLSX, ODT, CSV (chat_docs.go)
 	// Instructions (new chats only): nil takes the default from Settings.
 	Instructions *string `json:"instructions"`
+	RunCode      bool    `json:"run_code"` // new chats only: start with Run code on
 }
 
 func (req *chatReq) check() error {
@@ -218,7 +229,7 @@ func (c *Controller) handleNewChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	ch := &Chat{ID: newID("chat"), Title: chatTitle(firstNonEmpty(req.Text, "Image")), Node: firstNonEmpty(req.Node, "auto"), Created: now, Updated: now, dir: c.chatsDir()}
+	ch := &Chat{ID: newID("chat"), Title: chatTitle(firstNonEmpty(req.Text, "Image")), Node: firstNonEmpty(req.Node, "auto"), RunCode: req.RunCode, Created: now, Updated: now, dir: c.chatsDir()}
 	if req.Instructions != nil {
 		ch.Instructions = clipChatInstructions(*req.Instructions)
 	} else {
@@ -307,6 +318,7 @@ func (c *Controller) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 	os.Remove(filepath.Join(c.chatsDir(), id+".json"))
 	os.RemoveAll(filepath.Join(c.chatsDir(), id+"-images"))
 	os.RemoveAll(filepath.Join(c.chatsDir(), id+"-docs"))
+	os.RemoveAll(filepath.Join(c.chatsDir(), id+"-runs"))
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -364,9 +376,13 @@ func (c *Controller) startChatReplyAll(ch *Chat, text string, imgs []llmImage, d
 // and unlocks ch.mu. alts and ver, when set, become the new answer's other
 // versions (a regenerate).
 func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
-	ctx, cancel := context.WithTimeout(context.Background(), chatWait+chatTimeout)
-	ch.Updated, ch.Busy, ch.cancel = time.Now(), "waiting", cancel
 	pref := ch.Node
+	timeout := chatWait + chatTimeout
+	if pref == chatResearch {
+		timeout = researchTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ch.Updated, ch.Busy, ch.cancel = time.Now(), "waiting", cancel
 	hist := chatHistoryDocs(ch.Messages, ch.imageURI, ch.docText)
 	hist[0].Content = c.chatSystemPrompt(ch.Instructions)
 	askMem := ch.MemTries < maxMemoryTries && c.memorySuggestOn()
@@ -381,18 +397,33 @@ func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
 	ch.saveLocked()
 	ch.mu.Unlock()
 	taskLive.changed("chat_" + ch.ID)
+	run := c.newCodeRunner(ch, func(node string) {
+		ch.mu.Lock()
+		ch.Busy, ch.RunOn = "answering", ""
+		if node != "" {
+			ch.Busy, ch.RunOn = "running", node
+		}
+		ch.mu.Unlock()
+		taskLive.changed("chat_" + ch.ID)
+	})
 	go func() {
 		defer cancel()
-		msg := c.answerChatMem(ctx, ch.ID, pref, hist, askMem, func() {
+		started := func() {
 			ch.mu.Lock()
 			ch.Busy = "answering"
 			ch.mu.Unlock()
 			taskLive.changed("chat_" + ch.ID)
-		})
+		}
+		var msg ChatMsg
+		if pref == chatResearch {
+			msg = c.answerResearch(ctx, ch, hist, started)
+		} else {
+			msg = c.answerChatRun(ctx, ch.ID, pref, hist, askMem, run, started)
+		}
 		ch.mu.Lock()
 		msg.ID, msg.At, msg.Alts, msg.Ver = newID("m"), time.Now(), alts, ver
 		ch.Messages = append(ch.Messages, msg)
-		ch.Updated, ch.Busy, ch.cancel = time.Now(), "", nil
+		ch.Updated, ch.Busy, ch.RunOn, ch.cancel = time.Now(), "", "", nil
 		ch.saveLocked()
 		ch.mu.Unlock()
 		taskLive.changed("chat_" + ch.ID)
@@ -439,6 +470,7 @@ func chatHistoryDocs(msgs []ChatMsg, load func(string) string, doc func(DocInfo)
 				text += "\n\n" + docBlock(d, doc(d))
 			}
 		}
+		text += runsSummary(m.Runs)
 		out = append(out, ChatMessage{Role: m.Role, Content: text, Images: imgOf[i]})
 	}
 	return out
@@ -474,6 +506,11 @@ func (c *Controller) answerChat(ctx context.Context, chatID, pref string, hist [
 // answerChatMem is answerChat that, with askMem, also asks the same node for a
 // fact to remember once the answer is in (memory.go).
 func (c *Controller) answerChatMem(ctx context.Context, chatID, pref string, hist []ChatMessage, askMem bool, started func()) ChatMsg {
+	return c.answerChatRun(ctx, chatID, pref, hist, askMem, nil, started)
+}
+
+// answerChatRun is answerChatMem that, with run set, lets the model run code (chat_run.go).
+func (c *Controller) answerChatRun(ctx context.Context, chatID, pref string, hist []ChatMessage, askMem bool, run *codeRunner, started func()) ChatMsg {
 	var want func(string) bool
 	for _, m := range hist {
 		if len(m.Images) > 0 {
@@ -492,37 +529,51 @@ func (c *Controller) answerChatMem(ctx context.Context, chatID, pref string, his
 	hist = append([]ChatMessage(nil), hist...)
 	clipForContext(hist, max((ctxTok-maxOut)*3-len(hist[0].Content)-2000, 2000)) // a long document must still leave room
 	infer := func(ctx context.Context, spec InferenceSpec) (*InferenceOutput, error) {
+		if run != nil && run.onRun != nil {
+			run.onRun("") // back to answering after a run
+		}
 		live := taskLive.begin("chat_"+chatID, "", "Chat", name, false)
 		defer live.End()
 		return c.runInferenceJobLive(ctx, node, spec, "Chat", chatTimeout, live)
 	}
 	var out *InferenceOutput
 	var note string
-	if c.chatToolsOn() {
-		c.mu.Lock()
-		loaded := ""
-		if hb := c.lastHB[node]; hb != nil {
-			loaded = hb.LoadedModel
-		}
-		c.mu.Unlock()
-		out, note, err = c.answerWithWeb(ctx, infer, loaded, hist, ctxTok, maxOut)
-	} else {
-		var brief string
-		brief, note = c.chatSearchBrief(ctx, chatID, hist)
+	c.mu.Lock()
+	loaded := ""
+	if hb := c.lastHB[node]; hb != nil {
+		loaded = hb.LoadedModel
+	}
+	c.mu.Unlock()
+	ran := false
+	if run != nil {
+		out, note, ran, err = c.answerWithRun(ctx, infer, loaded, hist, ctxTok, maxOut, run)
+	}
+	switch {
+	case ran:
+	case c.chatToolsOn():
+		var n2 string
+		out, n2, err = c.answerWithWeb(ctx, infer, loaded, hist, ctxTok, maxOut)
+		note = joinNotes(note, n2)
+	default:
+		brief, n2 := c.chatSearchBrief(ctx, chatID, hist)
+		note = joinNotes(note, n2)
 		hist = withSearchBrief(hist, brief)
 		out, err = infer(ctx, InferenceSpec{Messages: fitHistory(hist, (ctxTok-maxOut)*3), Params: InferenceParams{MaxTokens: maxOut}})
 	}
 	switch {
 	case errors.Is(ctx.Err(), context.Canceled):
-		return ChatMsg{Role: "assistant", Node: name, Error: "stopped"}
+		return ChatMsg{Role: "assistant", Node: name, Error: "stopped", Runs: run.done()}
 	case err != nil:
-		return ChatMsg{Role: "assistant", Node: name, Error: err.Error(), Note: note}
+		return ChatMsg{Role: "assistant", Node: name, Error: err.Error(), Note: note, Runs: run.done()}
 	}
 	text := out.Text
 	if out.FinishReason == "length" {
 		text += "\n\n…(cut off at the length limit)"
 	}
 	msg := ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note}
+	if run != nil {
+		msg.Runs = run.done()
+	}
 	if askMem {
 		var owner []string
 		for _, m := range hist {
@@ -537,6 +588,10 @@ func (c *Controller) answerChatMem(ctx context.Context, chatID, pref string, his
 	}
 	return msg
 }
+
+// chatModelPref is the start of a chat's node choice that means "this model, on
+// any free node that has it loaded" (the chat picker's grouped cards).
+const chatModelPref = "model:"
 
 // acquireModelNode reserves a free slot on a ready node: pref "auto" (or "")
 // takes the strongest free node, a node id waits for that node, and model
@@ -557,6 +612,18 @@ func (c *Controller) acquireModelNode(ctx context.Context, pref, model string, w
 // acquireNodeWhere is acquireModelNode with any test on the node (nil takes
 // every ready node); noneErr is what it says when no ready node passes it.
 func (c *Controller) acquireNodeWhere(ctx context.Context, pref string, want func(string) bool, noneErr error, wait time.Duration) (string, error) {
+	if model, ok := strings.CutPrefix(pref, chatModelPref); ok {
+		// "model:<name>": any free node that has this model loaded.
+		pref, noneErr = "auto", fmt.Errorf("no ready node has %s loaded", model)
+		inner := want
+		want = func(id string) bool {
+			c.mu.Lock()
+			hb := c.lastHB[id]
+			ok := hb != nil && hb.LoadedModel == model
+			c.mu.Unlock()
+			return ok && (inner == nil || inner(id))
+		}
+	}
 	deadline := time.Now().Add(wait)
 	for {
 		ready := c.workerNodes()
