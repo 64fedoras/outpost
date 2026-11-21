@@ -1517,3 +1517,13 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 .clamp1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 
 .task-bar-tools .tb-more { display: none; } /* phone only: Files, Activity and Delete fold into it (see the max-width block) */
+
+/* chat picker: one card per model, "Pick a specific node…" lists the nodes that have it */
+.mcard .ms-n { color: var(--muted); }
+.mgroup { display: flex; flex-direction: column; min-width: 0; }
+.chat-pick { align-items: start; }
+.mpick { margin: 2px 0 0; }
+.mpick .link-btn { background: none; border: 0; padding: 2px 4px; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
+.mpick-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 2px; }
+.mpick-n { border: 1px solid var(--line); background: var(--panel); color: inherit; border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.mpick-n.sel { border-color: var(--accent); background: var(--tint); }

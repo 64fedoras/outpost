@@ -589,6 +589,10 @@ func (c *Controller) answerChatRun(ctx context.Context, chatID, pref string, his
 	return msg
 }
 
+// chatModelPref is the start of a chat's node choice that means "this model, on
+// any free node that has it loaded" (the chat picker's grouped cards).
+const chatModelPref = "model:"
+
 // acquireModelNode reserves a free slot on a ready node: pref "auto" (or "")
 // takes the strongest free node, a node id waits for that node, and model
 // (when set) only accepts nodes with that model loaded. It gives up after wait.
@@ -608,6 +612,18 @@ func (c *Controller) acquireModelNode(ctx context.Context, pref, model string, w
 // acquireNodeWhere is acquireModelNode with any test on the node (nil takes
 // every ready node); noneErr is what it says when no ready node passes it.
 func (c *Controller) acquireNodeWhere(ctx context.Context, pref string, want func(string) bool, noneErr error, wait time.Duration) (string, error) {
+	if model, ok := strings.CutPrefix(pref, chatModelPref); ok {
+		// "model:<name>": any free node that has this model loaded.
+		pref, noneErr = "auto", fmt.Errorf("no ready node has %s loaded", model)
+		inner := want
+		want = func(id string) bool {
+			c.mu.Lock()
+			hb := c.lastHB[id]
+			ok := hb != nil && hb.LoadedModel == model
+			c.mu.Unlock()
+			return ok && (inner == nil || inner(id))
+		}
+	}
 	deadline := time.Now().Add(wait)
 	for {
 		ready := c.workerNodes()
