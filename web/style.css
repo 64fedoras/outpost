@@ -178,7 +178,11 @@ pre.out .err { color: var(--stderr); }
 .side-close { margin-left: auto; display: none; }
 .new-task { display: flex; align-items: center; gap: 8px; margin: 6px 12px 10px; padding: 9px 12px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); color: var(--ink); text-decoration: none; font-weight: 550; }
 .new-task:hover { border-color: var(--muted); }
-.new-task + .new-task { margin-top: -4px; }
+.side-rows { margin: 0 12px 8px; display: grid; gap: 1px; }
+.side-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; font-weight: 500; }
+.side-row:hover { background: var(--tint); }
+.side-row.active { background: var(--tint); font-weight: 600; }
+.side-rows .side-pins { margin: 0 0 0 14px; }
 .new-task.active { border-color: var(--muted); }
 .side-tasks { flex: 1; overflow-y: auto; padding: 2px 8px 8px; }
 .side-task { display: flex; align-items: flex-start; border-radius: 8px; }
@@ -904,7 +908,6 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
   .chat-bar .run-pill { flex: 0 0 auto; }
   .chat-bar .grow { display: none; }
   .chat-dock { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
-  .chat-dock:focus-within .chat-note { display: none; }
   .chat-bar .hide-ph, .chat-top .hide-ph { display: none; }
 }
 
@@ -1527,3 +1530,22 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 .mpick-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 2px; }
 .mpick-n { border: 1px solid var(--line); background: var(--panel); color: inherit; border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12px; cursor: pointer; }
 .mpick-n.sel { border-color: var(--accent); background: var(--tint); }
+
+/* chat skills: ＋ menu, chips, suggestion, confirm card */
+.plus-wrap { position: relative; display: inline-flex; }
+.chat-plus { font-size: 18px; line-height: 1; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); cursor: pointer; }
+.chat-plus:hover { border-color: var(--muted); }
+.plus-menu { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 30; min-width: 250px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+.plus-menu button { display: flex; width: 100%; gap: 8px; align-items: center; text-align: left; border: 0; background: none; color: var(--ink); padding: 7px 10px; border-radius: 7px; font: inherit; cursor: pointer; }
+.plus-menu button:hover, .plus-menu button:focus-visible { background: var(--tint); }
+.plus-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+.plus-menu .menu-h { font-size: 11px; color: var(--muted); padding: 4px 10px 2px; text-transform: uppercase; letter-spacing: .04em; }
+.chat-chips { display: contents; }
+.chat-chips .chat-pill { flex: 0 0 auto; }
+.chat-pill.on { border-color: var(--accent); background: var(--tint); cursor: pointer; }
+.chat-suggest { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 4px 2px 6px; font-size: 13px; color: var(--muted); }
+.skill-card { border: 1px solid var(--accent); background: var(--tint); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; display: grid; gap: 8px; }
+.skill-card textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.sk-opts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.skill-card .card-actions { display: flex; gap: 8px; }
+@media (max-width: 760px) { .plus-menu { min-width: 220px; } }

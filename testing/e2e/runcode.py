@@ -24,7 +24,7 @@ async def main():
         await pg.fill("#pw", pw); await pg.click("button[type=submit]")
         await pg.wait_for_selector("#side-tasks"); await pg.wait_for_timeout(1000)
         await pg.goto(U + "/#/chat"); await pg.wait_for_selector(".mcard")
-        await pg.click("#chat-run")
+        await pg.click("#chat-plus"); await pg.click("[data-sk-menu=run]")
         assert await pg.get_attribute("#chat-run", "aria-pressed") == "true"
         await pg.fill("#chat-text", "Sum these numbers and chart them: 3 1 4 1 5 9 2 6")
         await pg.click("#chat-send")
@@ -48,7 +48,7 @@ async def main():
         await pg.screenshot(path=S + "chat-phone-dark.png")
         # Turning it off sticks after a reload.
         await pg.set_viewport_size({"width": 1280, "height": 900})
-        await pg.click("#chat-run"); await pg.wait_for_timeout(500)
+        await pg.click("#chat-plus"); await pg.click("[data-sk-menu=run]"); await pg.wait_for_timeout(500)
         await pg.reload(); await pg.wait_for_selector(".run-card")
         assert await pg.get_attribute("#chat-run", "aria-pressed") == "false"
         await b.close()

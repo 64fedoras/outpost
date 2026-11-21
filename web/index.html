@@ -56,12 +56,12 @@
       <button class="icon-btn side-close" id="side-close" aria-label="Close menu">✕</button>
     </div>
     <a class="new-task" href="#/new"><span aria-hidden="true">＋</span> New task</a>
-    <a class="new-task side-projects" href="#/image" data-tab="image"><span aria-hidden="true">✦</span> New image</a>
-    <a class="new-task side-projects" href="#/cad" data-tab="cad"><span aria-hidden="true">◇</span> New 3D model</a>
-    <a class="new-task side-projects" href="#/projects" data-tab="projects"><span aria-hidden="true">▤</span> Projects</a>
-    <nav class="side-pins hidden" id="side-pins" aria-label="Pinned projects"></nav>
-    <a class="new-task side-projects" href="#/scheduled" data-tab="scheduled"><span aria-hidden="true">⏱</span> Scheduled <span class="badge hidden side-badge" id="badge-sched" title="Active schedules"></span></a>
-    <a class="new-task side-projects" href="#/chat" data-tab="chat"><span aria-hidden="true">💬</span> Chat</a>
+    <nav class="side-rows" aria-label="Pages">
+      <a class="side-row side-projects" href="#/chat" data-tab="chat"><span aria-hidden="true">💬</span> Chat</a>
+      <a class="side-row side-projects" href="#/projects" data-tab="projects"><span aria-hidden="true">▤</span> Projects</a>
+      <nav class="side-pins hidden" id="side-pins" aria-label="Pinned projects"></nav>
+      <a class="side-row side-projects" href="#/scheduled" data-tab="scheduled"><span aria-hidden="true">⏱</span> Scheduled <span class="badge hidden side-badge" id="badge-sched" title="Active schedules"></span></a>
+    </nav>
     <div class="side-groupbar" id="side-groupbar"></div>
     <div class="side-filter" id="side-filter">
       <div class="sf-row"><input id="sf-q" type="search" placeholder="Search tasks and chats" aria-label="Search the text of tasks and chats" autocomplete="off"><button class="sf-btn" id="sf-toggle" aria-expanded="false" aria-controls="sf-panel" title="Filter by status, project or age">Filter</button></div>
@@ -288,13 +288,17 @@
           <div class="chat-dock">
             <div class="chat-col">
               <div class="chat-compose">
+                <div id="chat-skill"></div>
+                <div class="chat-suggest hidden" id="chat-suggest"></div>
                 <div class="error-msg hidden" id="chat-img-warn"></div>
                 <div class="img-strip" id="chat-imgs"></div>
                 <textarea id="chat-text" rows="2" enterkeyhint="enter" placeholder="Ask anything…" aria-label="Message"></textarea>
                 <div class="chat-bar">
-                  <button type="button" class="tb chat-attach" id="chat-attach" title="Attach images (PNG, JPEG, WebP, GIF) or documents (PDF, DOCX, XLSX, ODT, CSV). You can also paste or drop them." aria-label="Attach images or documents">📎</button><input type="file" id="chat-file" accept="image/png,image/jpeg,image/webp,image/gif,.pdf,.docx,.xlsx,.odt,.csv" multiple hidden>
+                  <span class="plus-wrap"><button type="button" class="tb chat-plus" id="chat-plus" aria-haspopup="menu" aria-expanded="false" title="Attach files, run code, or make an image or 3D model" aria-label="Add: attach files, run code, make an image or 3D model">＋</button><div class="plus-menu hidden" id="chat-plus-menu" role="menu"></div></span>
+                  <button type="button" class="hidden" id="chat-attach" tabindex="-1" aria-hidden="true">📎</button><input type="file" id="chat-file" accept="image/png,image/jpeg,image/webp,image/gif,.pdf,.docx,.xlsx,.odt,.csv" multiple hidden>
+                  <span class="chat-chips" id="chat-chips"></span>
                   <select id="chat-node" class="chat-pill" aria-label="Which node answers"></select>
-                  <button type="button" class="chat-pill run-pill" id="chat-run" aria-pressed="false" title="Let the model run Python, Go or shell code on a node that allows commands (sandboxed, 60 seconds, no network). Results and files show under the answer.">▶ Run code</button>
+                  <button type="button" class="hidden" id="chat-run" aria-pressed="false" tabindex="-1" aria-hidden="true">▶ Run code</button>
                   <span class="grow"></span>
                   <button class="small hidden" id="chat-totask" title="Start a new task with this conversation as its request">Make this a task</button>
                   <button type="button" class="kbd kbd-btn hide-ph" id="chat-key">Enter</button>
@@ -1130,6 +1134,7 @@
 <script src="images.js"></script>
 <script src="viewer3d.js"></script>
 <script src="cad.js"></script>
+<script src="chatskills.js"></script>
 <script src="boot.js"></script>
 </body>
 </html>

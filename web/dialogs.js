@@ -129,7 +129,7 @@ function palSource() {
   const go = (h) => () => { location.hash = h; };
   const sec = (href) => () => { location.hash = '#/settings'; setTimeout(() => { const a = document.querySelector(`#set-nav a[href="${href}"]`); if (a) a.click(); }, 150); };
   const items = [
-    { t: 'New task', k: 'page', run: go('#/new') }, { t: 'New image', k: 'page', run: go('#/image') }, { t: 'Chat', k: 'page', run: go('#/chat') },
+    { t: 'New task', k: 'page', run: go('#/new') }, { t: 'New image', k: 'page', run: go('#/image') }, { t: 'New 3D model', k: 'page', run: go('#/cad') }, { t: 'Chat', k: 'page', run: go('#/chat') },
     { t: 'New chat', k: 'action', run: () => $('chat-new').click() },
     { t: 'Projects', k: 'page', run: go('#/projects') }, { t: 'Nodes', k: 'page', run: go('#/nodes') },
     { t: 'Models', k: 'page', run: go('#/models') }, { t: 'Updates', k: 'page', run: go('#/updates') }, { t: 'Spending', k: 'page', run: go('#/spending') },
