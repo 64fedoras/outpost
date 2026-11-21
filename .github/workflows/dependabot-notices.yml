@@ -1,0 +1,48 @@
+name: Dependabot notices
+
+# A Dependabot Go bump changes vendor/ but not THIRD_PARTY_NOTICES.txt, and the unit test
+# TestNoticesCoverVendoredModules then fails the PR. This workflow runs scripts/gen_notices.sh on
+# Dependabot's own go_modules branches and pushes the regenerated file to that branch.
+#
+# It uses pull_request_target because Dependabot pull requests get a read-only token under
+# pull_request. It only runs for the dependabot[bot] actor on a branch in this repo, and the only
+# thing it executes from the branch is the notices script, which just reads vendor/ licence files.
+# A push made with the default token does not start CI by itself, so the last step starts CI by hand
+# (workflow_dispatch is the one event allowed to follow a token push).
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    paths: [go.mod, go.sum, vendor/**]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  notices:
+    if: >-
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'dependabot/go_modules/')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Regenerate THIRD_PARTY_NOTICES.txt
+        run: sh scripts/gen_notices.sh
+      - name: Commit, push and start CI if the file changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if git diff --quiet -- THIRD_PARTY_NOTICES.txt; then
+            echo "Notices already match vendor/."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Regenerate third-party notices" -- THIRD_PARTY_NOTICES.txt
+          git push origin "HEAD:refs/heads/$BRANCH"
+          gh workflow run ci.yml --ref "$BRANCH"
