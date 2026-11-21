@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const chatHistoryImages = 3 // images sent back to the model from earlier turns
@@ -56,8 +57,16 @@ func (ch *Chat) imageURI(name string) string {
 // anyVisionNode reports whether a ready node (the chosen one, or any for
 // "auto") has a vision model loaded.
 func (c *Controller) anyVisionNode(pref string) bool {
+	model, byModel := strings.CutPrefix(pref, chatModelPref)
 	for _, id := range c.workerNodes() {
-		if pref != "" && pref != "auto" && id != pref {
+		if byModel {
+			c.mu.Lock()
+			hb := c.lastHB[id]
+			c.mu.Unlock()
+			if hb == nil || hb.LoadedModel != model {
+				continue
+			}
+		} else if pref != "" && pref != "auto" && id != pref {
 			continue
 		}
 		if c.nodeVision(id) {

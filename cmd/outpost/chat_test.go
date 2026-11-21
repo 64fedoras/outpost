@@ -331,3 +331,22 @@ func TestChatReplyRefusedWhileBusy(t *testing.T) {
 		t.Fatalf("busy chat changed: %+v", ch.Messages)
 	}
 }
+
+// "model:<name>" (the chat picker's grouped card) takes any free node that has that model loaded.
+func TestChatByModel(t *testing.T) {
+	old := chatWait
+	chatWait = 50 * time.Millisecond
+	defer func() { chatWait = old }()
+	c := chatController(t)
+	var specs []InferenceSpec
+	var mu sync.Mutex
+	fakeInferNode(t, c, "n", &specs, &mu)
+	hist := chatHistory([]ChatMsg{{Role: "user", Text: "hi"}})
+	if msg := c.answerChat(context.Background(), "x", "model:m", hist, func() {}); msg.Error != "" {
+		t.Fatalf("model m is loaded on n: %q", msg.Error)
+	}
+	msg := c.answerChat(context.Background(), "x", "model:other", hist, func() {})
+	if !strings.Contains(msg.Error, "no ready node has other loaded") {
+		t.Fatalf("error %q", msg.Error)
+	}
+}

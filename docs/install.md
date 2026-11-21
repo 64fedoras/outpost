@@ -282,6 +282,9 @@ can check detection without joining.
    Library rows and Hugging Face file lists show a badge per node: **fits in VRAM**,
    **split VRAM + RAM (slower)**, **runs on CPU** (node without a GPU) or **does not fit**. It is an
    estimate: the weights plus a rough KV cache at the suggested context size, not read from the file.
+   With more than 6 nodes the badges become one per kind ("fits in VRAM on 5"; hover for the names), a model
+   held by more than 3 nodes shows "N nodes ▾" with the list, and a library row keeps **Load on…** and folds
+   the other buttons into **⋯**. Long help paragraphs show two lines with a **More** link.
    **Discover models** lists the built-in models as compact rows, the ones suggested for your nodes first,
    with a search box and filters (**Fits my nodes**, **Fits in VRAM**, **Vision**). Each row says how many
    online nodes it fits (hover for each node); the per-node detail is in the **Add and load on…** picker,
@@ -290,7 +293,7 @@ can check detection without joining.
    whatever those nodes had loaded). **Load on…** opens a node picker (fit per node, and which model it
    would replace). A built-in model that is not in the library yet has **Add and load on…**, which adds it
    (nodes download it) and loads it in one step. A **Recommended** tag shows which node a model is the pick for.
-2. **Nodes** (sidebar): a summary row on top (online, models loaded, jobs, total speed, free VRAM,
+2. **Nodes** (sidebar): a one-line summary on top (online, models loaded, jobs, total speed, free VRAM,
    nodes that need attention), then three views, picked top right and remembered in this browser:
    **Grid** shows a card per node with CPU, RAM and VRAM gauges, speed, problems with a fix button
    (failed load, model error, paused, no Vulkan, low disk under 10 GB, update available) and the model with
@@ -304,6 +307,13 @@ can check detection without joining.
    right with the same full card and the node's recent jobs, while the grid stays in view: click another
    card to switch, use the arrows in the panel header to step through the nodes, and close it with the
    cross or Esc. On a wide screen the grid narrows beside the panel; on a phone the panel fills the screen.
+   **Many nodes.** From 8 nodes on, the page switches to a compact layout: a **filter bar** (search by name,
+   host, OS, GPU, loaded model or label; quick filters All, Online, Offline, Needs attention, Has GPU, No model
+   and Can update, each with a count; one chip per label; **Sort** by status, name or speed, remembered in this
+   browser), smaller Grid cards four across (**⋯** opens the details panel, where Unload and the rest are),
+   one-line List rows, and offline nodes folded into one strip of chips (with **Wake** where it works). When
+   three or more nodes can update, one banner says so (with **Show them**) instead of the same note on every
+   card. **Recent jobs** shows the latest 8 with a node filter, a status filter and **Show more**.
    **Pick best** (on every Grid card, List row and the full card, next to **Load model…**) opens a short
    list of the three best coding models for that node, best first, each with how it fits, the expected
    speed on CPU machines, the reason and how much would be downloaded. Choose one and press **Load this

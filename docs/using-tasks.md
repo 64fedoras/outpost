@@ -28,7 +28,7 @@ Part of the [Outpost user guide](USER-GUIDE.md).
 
 The web UI is laid out like a chat app. The sidebar lists your tasks in three groups: **Needs you**
 (amber dot), **Running** (green) and **Earlier**; a task in a project shows the project name on its
-second line. Pinned tasks sit above the groups. **Projects** sits right under **New task** at the top of the sidebar, styled the same way.
+second line. Pinned tasks sit above the groups. The top of the sidebar is one boxed **New task**, then plain rows for **Chat**, **Projects** (with pinned projects under it) and **Scheduled**. Images and 3D models are skills in Chat's ＋ menu.
 
 **Groups.** The switch above the sidebar list picks **By status** (the three sections above) or **By group**.
 Chats are listed in the sidebar too (💬), under Running while one is answering and otherwise under Earlier.
@@ -58,12 +58,12 @@ runs), **Try again** (when it failed or was interrupted) and **Delete** (asks fi
 task's conversation and files from the controller, nodes keep none). From the keyboard, focus a task
 and press Shift+F10 or the menu key for the menu, F2 to rename, or Delete to delete.
 
-On a phone, the task page has one top bar with the menu button in it. Cluster pages (Nodes, Models, Updates, Settings) are at
-the bottom of the sidebar. Settings is one long page in nine sections: Tasks (planner, running tasks,
+On a phone, the task page has one top bar with the menu button in it, then one row with the cost ("$0.03 of $2"), the main action (Approve, Stop or Download .zip) and a **⋯** menu holding Files, Activity and Delete. Cluster pages (Nodes, Models, Updates, Settings) are at
+the bottom of the sidebar. Settings shows one of nine sections at a time (the list on its left switches between them, and the last one you used is remembered): Tasks (planner, running tasks,
 project instructions, command sandbox), API keys (Claude, OpenRouter, Hugging Face), Models (idle unload, memory
 pooling, model scorecard), Nodes (health colours, Wake-on-LAN, free disk space), Pictures, Display and
 alerts (appearance, notifications), Updates, Security (password, sign-in, HTTPS certificate) and Storage and backup (storage, backup,
-config file, diagnostics). The list on its left follows your scroll position and jumps to a section when clicked.
+config file, diagnostics).
 
 Each task is a conversation:
 

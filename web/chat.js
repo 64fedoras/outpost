@@ -64,20 +64,46 @@ function chatChoices() {
     return { id: n.id, t: h.loaded_model, s: nodeName(n), tone: busy || paused ? 'needs' : 'on', note: paused ? 'paused' : busy ? 'busy' : h.inference_ready === false ? 'loading' : 'local' };
   }));
 }
+// Models grouped: one entry per loaded model with the nodes that have it. A model on several nodes answers
+// from any free one ("model:<name>"); on a single node the choice is that node.
+function chatModelGroups() {
+  const by = new Map();
+  chatChoices().slice(2).forEach((c) => { if (!by.has(c.t)) by.set(c.t, []); by.get(c.t).push(c); });
+  return [...by].map(([name, nodes]) => {
+    const free = nodes.filter((c) => c.tone === 'on' && c.note !== 'loading').length;
+    return { name, nodes, free, id: nodes.length > 1 ? 'model:' + name : nodes[0].id };
+  });
+}
+let chatSpecific = null; // model name whose per-node list is open in the picker
 function fillChatNodes() {
   const cur = $('chat-node').value || (chatCur && chatCur.node) || 'auto';
-  setHTML('chat-node', chatChoices().map((c) => `<option value="${esc(c.id)}">${esc(c.id === 'auto' || c.id === 'research' ? c.t : `${c.t} on ${c.s}`)}</option>`).join(''));
+  const groups = chatModelGroups().filter((g) => g.nodes.length > 1);
+  setHTML('chat-node', chatChoices().map((c) => `<option value="${esc(c.id)}">${esc(c.id === 'auto' || c.id === 'research' ? c.t : `${c.t} on ${c.s}`)}</option>`)
+    .concat(groups.map((g) => `<option value="${esc(g.id)}">${esc(g.name)} (any of ${g.nodes.length} nodes)</option>`)).join(''));
   $('chat-node').value = [...$('chat-node').options].some((o) => o.value === cur) ? cur : 'auto';
   if (!chatCur && page === 'chat') chatPickRender();
 }
 // Empty state: one card per way to answer; picking one sets the model box under the composer.
 function chatPickRender() {
   if (chatCur) return;
-  const sel = $('chat-node').value || 'auto', ch = chatChoices(), ready = ch.length - 2;
-  const card = (c) => `<button type="button" class="mcard ${c.id === sel ? 'sel' : ''}" data-model="${esc(c.id)}" aria-pressed="${c.id === sel}"><span class="tdot ${c.tone === 'on' ? 'work' : 'needs'}"></span><span class="mt">${esc(c.t)}</span><span class="mr">${c.id === sel ? '✓ selected' : esc(c.note)}</span><span class="ms">${esc(c.s)}</span></button>`;
-  const shown = chatPhone() && !chatPickOpen ? ch.filter((c) => c.id === sel) : ch;
+  const sel = $('chat-node').value || 'auto', ch = chatChoices(), groups = chatModelGroups(), ready = groups.length;
+  const card = (c, extra) => `<button type="button" class="mcard ${c.id === sel ? 'sel' : ''}" data-model="${esc(c.id)}" aria-pressed="${c.id === sel}"><span class="tdot ${c.tone === 'on' ? 'work' : 'needs'}"></span><span class="mt">${esc(c.t)}</span><span class="mr">${c.id === sel ? '✓ selected' : esc(c.note)}</span><span class="ms">${esc(c.s)}${extra || ''}</span></button>`;
+  const gcard = (g) => {
+    if (g.nodes.length === 1) return card(g.nodes[0]);
+    const on = g.id === sel || g.nodes.some((n) => n.id === sel);
+    const sub = `<br><span class="ms-n">on ${g.nodes.length} nodes · ${g.free} free</span>`;
+    const c = { id: g.id, t: g.name, s: 'Any free node with it', tone: g.free ? 'on' : 'needs', note: g.free ? 'local' : 'busy' };
+    return '<div class="mgroup">' + card(c, sub).replace('class="mcard ', `class="mcard ${on ? 'sel ' : ''}`)
+      + `<div class="mpick"><button type="button" class="link-btn" data-specific="${esc(g.name)}" aria-expanded="${chatSpecific === g.name}">Pick a specific node…</button>`
+      + (chatSpecific === g.name ? `<div class="mpick-list">${g.nodes.map((n) => `<button type="button" class="mpick-n ${n.id === sel ? 'sel' : ''}" data-model="${esc(n.id)}">${esc(n.s)}${n.note !== 'local' ? ' · ' + esc(n.note) : ''}</button>`).join('')}</div>` : '') + '</div></div>';
+  };
+  const lead = ch.slice(0, 2).map((c) => card(c));
+  const all = lead.concat(groups.map(gcard));
+  const selIdx = ch.findIndex((c) => c.id === sel);
+  const phoneOne = () => (selIdx >= 0 && selIdx < 2 ? [lead[selIdx]] : [gcard(groups.find((g) => g.id === sel || g.nodes.some((n) => n.id === sel)) || groups[0])].filter((x) => x && x !== 'undefined'));
+  const shown = chatPhone() && !chatPickOpen && ready ? phoneOne() : all;
   const more = chatPhone() ? `<button type="button" class="chat-pick-more" id="chat-pick-more" aria-expanded="${chatPickOpen}">${chatPickOpen ? 'Hide' : ready ? 'Change' : ''}</button>` : '';
-  setHTML('chat-msgs', `<div class="chat-pick-h"><span>Answer with</span><span class="grow"></span><span>${ready} ${ready === 1 ? 'model' : 'models'} ready</span>${ready ? more : ''}</div><div class="chat-pick">${shown.map(card).join('')}</div>`
+  setHTML('chat-msgs', `<div class="chat-pick-h"><span>Answer with</span><span class="grow"></span><span>${ready} ${ready === 1 ? 'model' : 'models'} ready</span>${ready ? more : ''}</div><div class="chat-pick">${shown.join('')}</div>`
     + (ready ? '' : '<p class="chat-none">No node has a model loaded yet, so a chat has nowhere to run. Load one on the Models page, then ask.</p>'));
 }
 async function chatLoad(id) {
@@ -260,7 +286,8 @@ $('chat-new').onclick = chatNew; $('chat-new2').onclick = chatNew;
 $('chat-panel-btn').onclick = () => chatPanelSet(!chatPanelOpen());
 $('chat-panel-x').onclick = () => chatPanelSet(false);
 $('chat-node').addEventListener('change', () => { chatPickRender(); if (typeof chatImg !== 'undefined') chatImg.refresh(); });
-$('chat-msgs').addEventListener('click', (e) => { const b = e.target.closest('[data-model]'); if (b) { $('chat-node').value = b.dataset.model; chatPickOpen = false; chatPickRender(); $('chat-text').focus(); return; }
+$('chat-msgs').addEventListener('click', (e) => { const sp = e.target.closest('[data-specific]'); if (sp) { chatSpecific = chatSpecific === sp.dataset.specific ? null : sp.dataset.specific; chatPickRender(); return; }
+  const b = e.target.closest('[data-model]'); if (b) { $('chat-node').value = b.dataset.model; chatPickOpen = false; chatPickRender(); $('chat-text').focus(); return; }
   if (e.target.closest('#chat-pick-more')) { chatPickOpen = !chatPickOpen; chatPickRender(); return; }
   chatAct(e.target); });
 $('chat-msgs').addEventListener('change', (e) => {

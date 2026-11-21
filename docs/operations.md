@@ -88,6 +88,9 @@ Or by hand:
 1. **Updates tab:** drop the new binaries anywhere on the page (or click the box to choose them), one per platform you use (`outpost-linux-amd64`, …).
 2. Click **Update** on the controller row (updates the web UI too; you stay signed in), then
    **Update N nodes, one first**. Each row shows the machine's status, its version and a live progress bar.
+   From 8 nodes the table groups them by platform (offline nodes in their own group): click a group row to
+   open or close it, and its **Update these N** button updates that group's nodes now (no check first; use
+   **Update N nodes, one first** for the careful path). A group with an update in progress or failed stays open.
 
 Nodes verify the download's SHA-256, run it once to confirm the version, and restart into it.
 Updates need no root and survive reboots. Nodes with running jobs wait until they are idle.

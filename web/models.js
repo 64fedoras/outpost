@@ -4,7 +4,8 @@
 // ---------- models ----------
 function recFor(name) {
   const nodes = Object.entries((models && models.recommended) || {}).filter(([, r]) => r.name === name).map(([id]) => nodeById(id)).filter(Boolean);
-  return nodes.length ? ` <span class="pill st-ready" title="Best coding model that fits: ${esc(nodes.map(nodeName).join(', '))}">Recommended · ${esc(nodes.map(nodeName).join(', '))}</span>` : '';
+  const names = nodes.map(nodeName), short = names.length > 3 ? names.slice(0, 3).join(', ') + ` +${names.length - 3}` : names.join(', ');
+  return nodes.length ? ` <span class="pill st-ready" title="Best coding model that fits: ${esc(names.join(', '))}">Recommended · ${esc(short)}</span>` : '';
 }
 async function waitModelReady(name) {
   for (let i = 0; i < 90; i++) {
@@ -54,7 +55,18 @@ const FIT_TEXT = { vram: 'fits in VRAM', split: 'split VRAM + RAM (slower)', ram
 const FIT_CLS = { vram: 'st-done', split: 'st-loading', ram: 'st-loading', no: 'st-failed' };
 function fitBadges(fits) {
   if (!fits || !fits.length) return '';
+  if (fits.length > 6) { // many nodes: one badge per kind of fit, the node names in the hover text
+    const kinds = ['vram', 'split', 'ram', 'no'].map((k) => [k, fits.filter((f) => f.fit === k)]).filter(([, l]) => l.length);
+    return `<div class="fit-badges u23">${kinds.map(([k, l]) => `<span class="pill ${FIT_CLS[k]}" title="${esc(l.map((f) => f.name).join(', '))}">${FIT_TEXT[k]} on ${l.length}</span>`).join('')}</div>`;
+  }
   return `<div class="fit-badges u23">${fits.map((f) => `<span class="pill ${FIT_CLS[f.fit]}" title="${esc(f.name)}: ${FIT_TEXT[f.fit]}; needs about ${bytes(f.need_bytes)}${f.online ? '' : ' (node offline)'}">${esc(f.name)} · ${FIT_TEXT[f.fit]}</span>`).join('')}</div>`;
+}
+// Library row buttons: Load stays visible; the rest fold into a ⋯ menu once there are more than three.
+function rowActs(acts) {
+  if (acts.length <= 3) return acts.join('');
+  const keep = acts.filter((a) => /primary|data-act="pick-model"|model-retry/.test(a) && !/danger/.test(a)).slice(0, 2);
+  const rest = acts.filter((a) => !keep.includes(a));
+  return keep.join('') + `<details class="menu"><summary class="small" aria-label="More actions">⋯</summary><div class="menu-list">${rest.join('')}</div></details>`;
 }
 function renderModels() {
   if (!models) return;
@@ -78,7 +90,7 @@ function renderModels() {
       if (m.status === 'ready') acts.unshift(`<button class="small" data-act="pick-model" data-name="${nm}">Load on…</button>`);
       acts.push(`<button class="small danger" data-act="model-delete" data-name="${nm}">${m.status === 'downloading' ? 'Cancel' : 'Remove'}</button>`);
       return `<tr><td><b>${esc(m.label || m.name)}</b>${m.vision ? ' <span class="pill st-ready" title="Reads images: loaded with its vision projector">Vision</span>' : ''}${recFor(m.name)}<div class="sub u22">${esc(m.repo)}</div>${m.status === 'ready' ? fitBadges((models.fits || {})[m.name]) : ''}</td><td>${m.bytes_total ? bytes(m.bytes_total) : '—'}</td><td><select class="small" data-tier="${nm}" aria-label="Model strength" title="Used to route hard subtasks to the strongest model">${[['', 'auto (' + (m.tier_guess || 'medium') + ')'], ['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']].map(([v, l]) => `<option value="${v}" ${(m.tier || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td><td>${storageLabel(m)}</td><td>${status}</td>
-        <td>${h.length ? h.map(esc).join(', ') : '<span class="muted">none</span>'}</td><td class="r"><div class="btns u24">${acts.join('')}</div></td></tr>`;
+        <td>${!h.length ? '<span class="muted">none</span>' : h.length <= 3 ? h.map(esc).join(', ') : `<details class="holders"><summary>${h.length} nodes</summary><div class="holders-list">${h.map(esc).join('<br>')}</div></details>`}</td><td class="r"><div class="btns u24">${rowActs(acts)}</div></td></tr>`;
     }).join('')}</tbody></table></div>`);
   const have = {}; list.forEach((m) => { have[m.name] = m; });
   // Discover: one compact row per catalog model; suggested ones first. Per-node fit
@@ -111,7 +123,7 @@ function renderModels() {
           <button data-act="catalog-add" data-id="${esc(c.id)}" data-storage="direct"><b>Add · nodes download</b><span class="sub">Each node fetches it from Hugging Face when you load it. Uses no controller space.</span></button>
           <button data-act="catalog-add" data-id="${esc(c.id)}" data-storage="controller"><b>Store on controller</b><span class="sub">Download once (${bytes(c.bytes)}), then copy to nodes over your network.</span></button></div></details></div>`;
     return `<div class="cat-row"><div class="nv-min"><b>${esc(c.label)}</b>${c.mmproj ? ' <span class="pill st-ready" title="Reads images">Vision</span>' : ''}${recFor(c.id)}${m ? ' <span class="pill st-pending">In library</span>' : ''}
-      <div class="sub nv-wrap">${esc(c.for)} · ${esc(c.notes)}</div></div>
+      <div class="sub nv-wrap clamp1" title="${esc(c.for)} · ${esc(c.notes)}">${esc(c.for)} · ${esc(c.notes)}</div></div>
       <span class="sub" title="needs about ${c.min_ram_gb} GB RAM+VRAM">${bytes(c.bytes)}</span><span class="sub" title="${esc(fitTitle)}">${fitTxt}</span><div class="cat-act">${act}</div></div>`;
   };
   setHTML('catalog', shown.length ? `<div class="cat-rows">${shown.map(catRow).join('')}</div>` : `<div class="empty">${onlineN || catFilter === 'all' || catFilter === 'vision' ? 'No models match.' : 'No nodes are online, so nothing can be sized.'}</div>`);

@@ -129,7 +129,7 @@ function palSource() {
   const go = (h) => () => { location.hash = h; };
   const sec = (href) => () => { location.hash = '#/settings'; setTimeout(() => { const a = document.querySelector(`#set-nav a[href="${href}"]`); if (a) a.click(); }, 150); };
   const items = [
-    { t: 'New task', k: 'page', run: go('#/new') }, { t: 'New image', k: 'page', run: go('#/image') }, { t: 'Chat', k: 'page', run: go('#/chat') },
+    { t: 'New task', k: 'page', run: go('#/new') }, { t: 'New image', k: 'page', run: go('#/image') }, { t: 'New 3D model', k: 'page', run: go('#/cad') }, { t: 'Chat', k: 'page', run: go('#/chat') },
     { t: 'New chat', k: 'action', run: () => $('chat-new').click() },
     { t: 'Projects', k: 'page', run: go('#/projects') }, { t: 'Nodes', k: 'page', run: go('#/nodes') },
     { t: 'Models', k: 'page', run: go('#/models') }, { t: 'Updates', k: 'page', run: go('#/updates') }, { t: 'Spending', k: 'page', run: go('#/spending') },
@@ -332,6 +332,19 @@ document.addEventListener('click', async (e) => {
       case 'labels': editLabels(id); return;
       case 'hours': openHours(id); return;
       case 'label-filter': nodeLabel = el.dataset.label; renderNodes(); return;
+      case 'upd-group': { const k = el.dataset.key; if (updOpen.has(k)) updOpen.delete(k); else updOpen.add(k); renderUpdates(); return; }
+      case 'upd-more': updAll.add(el.dataset.key); renderUpdates(); return;
+      case 'upd-group-go': {
+        const ids = (el.dataset.ids || '').split(',').filter(Boolean);
+        if (!await askConfirm(`Update ${ids.length} node${ids.length === 1 ? '' : 's'} now? Each restarts on the new version; busy nodes wait for their jobs. "Update all" at the top updates one node first, checks it, then the rest.`, { ok: 'Update' })) return;
+        const res = await Promise.allSettled(ids.map((i) => post(`/api/nodes/${i}/update`)));
+        const bad = res.filter((r) => r.status === 'rejected').length;
+        toast(bad ? `Update sent to ${ids.length - bad}; ${bad} could not start` : `Update sent to ${ids.length}`); break;
+      }
+      case 'more': { const t = el.previousElementSibling; t.classList.toggle('open'); el.textContent = t.classList.contains('open') ? 'Less' : 'More'; return; }
+      case 'jobs-more': jobsLimit += JOBS_STEP * 3; renderJobs(); return;
+      case 'node-chip': nodeChip = el.dataset.chip; renderNodes(); return;
+      case 'node-clear': nodeQuery = ''; nodeChip = 'all'; nodeLabel = ''; renderNodes(); return;
       case 'starter': $('nt-prompt').value = STARTERS[+el.dataset.i][1]; $('nt-prompt').focus(); return;
       case 'project-delete': case 'project-save': case 'project-use': case 'project-suggest': await projectAction(act, el); break;
       default: if (act.startsWith('proj-')) { await projPageAction(act, el); return; }
