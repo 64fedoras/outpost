@@ -108,7 +108,7 @@ gigabit or faster is best. Use it for models that would not fit otherwise, not f
 ## Labels, working hours and Wake-on-LAN
 
 **Labels.** On a node's card (Nodes → List, click the node) click *edit* next to Labels and type tags such as
-`gpu, fast, office`. The Nodes page then shows a filter row with one button per label. A task can ask for
+`gpu, fast, office`. The Nodes page then shows one filter button per label (in the filter bar once the cluster has 8 nodes or more). A task can ask for
 a label (Change options → *nodes*), and a project can set one for all its tasks: writing, peer review and
 best-of-N judging then use only nodes with that label. The planner node and the nodes that run tests are
 not filtered.

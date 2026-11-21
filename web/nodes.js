@@ -24,6 +24,12 @@ function benchLine(n, loaded, ready) {
 // (short list on the left, the selected node's full card on the right).
 const NODE_VIEWS = ['grid', 'list', 'detail'];
 let nodeView = 'grid', nodeSel = null, nodeLabel = '';
+let nodeQuery = '', nodeChip = 'all', nodeSort = 'status';
+try { const v = localStorage.getItem('outpost.nodeSort'); if (['status', 'name', 'speed'].includes(v)) nodeSort = v; } catch (e) { /* storage blocked */ }
+// Clusters of NODE_FILTER_MIN nodes or more get the filter bar and the compact cards and rows.
+const nodesDense = (nodes) => nodes.length >= NODE_FILTER_MIN;
+// One update banner replaces the same note on every card when several nodes can update.
+const updateBannerOn = (nodes) => nodes.filter((n) => n.online && n.update_to).length >= 3;
 let nodeDrawer = null; // node whose details panel is open beside the Grid view
 const nodeOpen = new Set(); // nodes expanded under their List row
 // The Detailed list is optional (Settings → Display and alerts); kept in this browser only.
@@ -79,15 +85,31 @@ function nodeFacts(n) {
 const nvTps = (f, big) => f.tps == null ? '<span class="muted">—</span>' : big ? `<span class="nv-tps">${f.tps.toFixed(1)}</span><span class="nv-tpsu">tok/s</span>` : `<span class="nv-spd">${f.tps.toFixed(1)} tok/s</span>`;
 const nvChips = (f) => f.issues.map((i) => `<span class="nv-chip nv-${i.lvl}" title="${esc(i.text)}">${esc(i.short)}</span>`).join(' ');
 
-function nodeRow(n) {
+function nodeRow(n, dense, hideUpd) {
   const f = nodeFacts(n), h = f.h;
-  const fixIssue = f.issues.find((i) => i.act);
-  const first = f.issues.find((i) => i.lvl !== 'off');
-  const sub = first ? `${nvChips(f)} ${esc(first.text)}` : opActive(n) ? opView(n).replace(/<[^>]+>/g, ' ').trim() : n.online
+  const issues = hideUpd ? f.issues.filter((i) => i.act !== 'node-update') : f.issues;
+  const fixIssue = issues.find((i) => i.act);
+  const first = issues.find((i) => i.lvl !== 'off');
+  const open = nodeOpen.has(n.id);
+  if (dense) {
+    const [st] = nodeStatus(n, f);
+    const model = n.lending_to ? `<span class="muted">Lending to ${esc(n.lending_to)}</span>` : !n.online ? `<span class="muted">${n.last_seen ? 'Offline · seen ' + ago(n.last_seen) : 'Never connected'}</span>`
+      : f.loaded ? `<b>${esc(f.loaded)}</b> <span class="muted">· ${esc(st.toLowerCase())}</span>` : '<span class="muted">No model loaded</span>';
+    const chip = first && first.lvl !== 'info' ? ` ${nvChips({ issues: [first] })}` : '';
+    const act = n.online ? (fixIssue && fixIssue.lvl !== 'info' ? `<button class="small primary" data-act="${fixIssue.act}" data-id="${n.id}">${esc(fixIssue.fix)}</button>` : `<button class="small" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}">${open ? 'Hide' : 'Details'}</button>`)
+      : n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}">Wake</button>` : `<button class="small" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}">${open ? 'Hide' : 'Details'}</button>`;
+    return `<div class="nv-row dn nv-s-${f.worst}${open ? ' open' : ''}" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}">
+      <span class="dot ${f.dot}"></span><b class="nv-ell" title="${esc(nodeName(n))}">${esc(nodeName(n))}</b>
+      <span class="nv-ell muted dn-sys">${esc(h.os || '?')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}</span>
+      <span class="nv-ell">${model}${chip}</span>
+      ${n.online ? `<span class="dn-bars"><span>CPU${bar(f.cpu)}</span><span>RAM${bar(f.ram)}</span><span>${f.vram != null ? 'VRAM' + bar(f.vram) : ''}</span></span>` : '<span class="dn-bars"></span>'}
+      <span class="r dn-tps">${f.tps != null ? Math.round(f.tps) + ' tok/s' : '<span class="muted">—</span>'}</span>
+      <span class="nv-acts">${act}</span></div>${open ? `<div class="nv-exp">${nodeCard(n)}</div>` : ''}`;
+  }
+  const sub = first ? `${nvChips({ issues })} ${esc(first.text)}` : opActive(n) ? opView(n).replace(/<[^>]+>/g, ' ').trim() : n.online
     ? `${n.running_jobs}/${n.max_jobs} jobs${n.pool_names && n.pool_names.length ? ' · pooled with ' + n.pool_names.map(esc).join(', ') : ''} · exec ${n.exec_enabled ? (n.sandbox ? 'on, sandbox ' + n.sandbox : 'on') : 'off'}` : '';
   const action = fixIssue ? `<button class="small primary" data-act="${fixIssue.act}" data-id="${n.id}">${esc(fixIssue.fix)}</button>`
     : n.online && !n.lending_to ? `${bestBtn(n)}<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>` : '';
-  const open = nodeOpen.has(n.id);
   return `<div class="nv-row nv-s-${f.worst}${open ? ' open' : ''}" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}">
     <div class="nv-c1"><span class="dot ${f.dot}"></span><div class="nv-min"><b>${esc(nodeName(n))}</b><div class="sub nv-sub">${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}${n.addr ? ' · ' + esc(n.addr.split(':')[0]) : ''}</div>${labelChips(n)}</div></div>
     <div class="nv-min"><div class="nv-ell">${f.model}</div><div class="sub nv-sub nv-wrap">${sub}</div></div>
@@ -97,13 +119,14 @@ function nodeRow(n) {
   </div>${open ? `<div class="nv-exp">${nodeCard(n)}</div>` : ''}`;
 }
 
-function nodeListView(nodes) {
+function nodeListView(nodes, dense, hideUpd) {
   const groups = [
     ['Needs attention', nodes.filter((n) => { const w = nodeFacts(n).worst; return w === 'bad' || w === 'warn'; })],
     ['Healthy', nodes.filter((n) => { const w = nodeFacts(n).worst; return n.online && w !== 'bad' && w !== 'warn'; })],
     ['Offline', nodes.filter((n) => !n.online)],
   ];
-  return groups.filter((g) => g[1].length).map(([t, ns]) => `<div class="nv-grp">${t} · ${ns.length}</div><div class="nv-box">${ns.map(nodeRow).join('')}</div>`).join('');
+  const head = '<div class="nv-row dn nv-head" aria-hidden="true"><span></span><span>Node</span><span>System</span><span>Model</span><span>Load</span><span class="r">Speed</span><span></span></div>';
+  return groups.filter((g) => g[1].length).map(([t, ns]) => `<div class="nv-grp">${t} · ${ns.length}</div><div class="nv-box${dense ? ' dense' : ''}">${dense ? head : ''}${ns.map((n) => nodeRow(n, dense, hideUpd)).join('')}</div>`).join('');
 }
 
 function nodeDetailView(nodes) {
@@ -149,27 +172,31 @@ function nodeStatus(n, f) {
   if (!f.ready) return ['Starting', 'busy'];
   return f.hb.inference_busy ? ['Working', 'on'] : ['Ready', 'on'];
 }
-function gaugeCard(n) {
+function gaugeCard(n, o = {}) {
+  const dense = !!o.dense;
   const f = nodeFacts(n), h = f.h, hb = f.hb, cpu = h.cpu || {};
   const [st, cls] = nodeStatus(n, f);
   const gpus = h.gpus || [];
   const g = gpus[0];
   const ramTot = hb && hb.ram_total_bytes;
-  const notes = f.issues.filter((i) => i.lvl !== 'off').map((i) => `<div class="note ${i.lvl === 'info' ? '' : i.lvl} nv-note"><span class="nv-grow">${esc(i.text)}</span>${i.act ? `<button class="small" data-act="${i.act}" data-id="${n.id}">${esc(i.fix)}</button>` : ''}</div>`).join('');
-  const btns = n.online && !n.lending_to ? `${bestBtn(n)}<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>${f.loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}` : n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}" title="Send a Wake-on-LAN packet">Wake</button>` : '';
+  const notes = f.issues.filter((i) => i.lvl !== 'off' && !(o.hideUpd && i.act === 'node-update')).map((i) => `<div class="note ${i.lvl === 'info' ? '' : i.lvl} nv-note"><span class="nv-grow">${esc(i.text)}</span>${i.act ? `<button class="small" data-act="${i.act}" data-id="${n.id}">${esc(i.fix)}</button>` : ''}</div>`).join('');
+  const btns = n.online && !n.lending_to ? (dense ? (f.loaded ? `<button class="small" data-act="load" data-id="${n.id}">Change…</button>` : bestBtn(n)) : `${bestBtn(n)}<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>${f.loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}`) : n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}" title="Send a Wake-on-LAN packet">Wake</button>` : '';
   const on = nodeDrawer === n.id;
-  return `<div class="card gc nv-s-${f.worst}${on ? ' on' : ''}" data-act="node-detail" data-id="${n.id}">
+  const gname = g ? String(g.name || '').replace(/^(AMD|NVIDIA|Intel)\s+(Radeon|GeForce)?\s*/i, '') : '';
+  const hw = dense ? `${cpu.cores || '?'}C/${cpu.threads || '?'}T${ramTot ? ' · ' + bytes(ramTot) : ''}${gname ? ' · ' + esc(gname) : ''} · ${esc(h.os || '?')}`
+    : `${esc(cpu.model || 'CPU')} · ${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}`;
+  return `<div class="card gc${dense ? ' dense' : ''} nv-s-${f.worst}${on ? ' on' : ''}" data-act="node-detail" data-id="${n.id}">
     <div class="node-top"><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span><span class="nv-pill nv-p-${cls}"><i></i>${st}</span>
-      <button class="small" data-act="node-detail" data-id="${n.id}" aria-expanded="${on}" aria-controls="node-drawer" title="All details and controls for this node">Details</button></div>
-    <div class="sub nv-ell">${esc(cpu.model || 'CPU')} · ${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}</div>
-    ${labelChips(n)}
+      <button class="small" data-act="node-detail" data-id="${n.id}" aria-expanded="${on}" aria-controls="node-drawer" title="All details and controls for this node (Unload, benchmark, logs and more)">${dense ? '⋯' : 'Details'}</button></div>
+    <div class="sub nv-ell">${hw}</div>
+    ${dense ? '' : labelChips(n)}
     <div class="gc-rings">
       ${ring(f.cpu, 'CPU', `${cpu.cores || '?'}C/${cpu.threads || '?'}T`)}
       ${ring(f.ram, 'RAM', ramTot ? bytes(ramTot) : '—')}
       ${g ? ring(f.vram || 0, g.vendor === 'apple' ? 'GPU' : 'VRAM', bytes(g.vram_bytes) + (hb && hb.gpu_temp_c && hb.gpu_temp_c[0] > 0 ? ` · ${hb.gpu_temp_c[0]} °C` : '')) : ringNone('no GPU')}
       <div class="ring gc-speed"><div>${nvTps(f, true)}</div><div class="sub">${n.online ? `${n.running_jobs}/${n.max_jobs} jobs` : n.last_seen ? 'seen ' + ago(n.last_seen) : 'never connected'}</div></div>
     </div>
-    ${gaugeSparks(n)}
+    ${dense ? '' : gaugeSparks(n)}
     ${notes}${opActive(n) ? opView(n) : ''}
     <div class="gc-model"><span class="nv-grow nv-ell">${f.model}</span>${btns}</div>
   </div>`;
@@ -186,19 +213,22 @@ function clusterSummary(nodes) {
   on.forEach((n) => (((n.hello || {}).gpus) || []).forEach((g, i) => { if (g.vendor === 'apple') return; nG++; vTot += g.vram_bytes || 0; vUsed += (n.heartbeat && n.heartbeat.vram_used_bytes && n.heartbeat.vram_used_bytes[i]) || 0; }));
   const att = nodes.map((n) => [n, nodeFacts(n)]).filter(([, f]) => f.worst === 'bad' || f.worst === 'warn');
   const off = nodes.filter((n) => !n.online);
-  const tile = (k, v, s, cls = '') => `<div class="card kpi ${cls}"><div class="sub">${k}</div><div class="kpi-v">${v}</div><div class="sub nv-ell" title="${esc(s)}">${esc(s)}</div></div>`;
-  return `<div class="kpis">
-    ${tile('Online', `${on.length} / ${nodes.length}`, off.length ? off.map(nodeName).join(', ') + ' offline' : 'all online')}
-    ${tile('Models loaded', loaded, [pooled && pooled + ' pooled', setting && setting + ' setting up'].filter(Boolean).join(' · ') || ' ')}
-    ${tile('Jobs', `${jobs} / ${slots}`, 'running / slots')}
-    ${tile('Cluster speed', speed ? `${Math.round(speed)} tok/s` : '—', 'sum of loaded models')}
-    ${tile('Free VRAM', nG ? bytes(vTot - vUsed) : '—', nG ? `of ${bytes(vTot)} on ${nG} GPU${nG > 1 ? 's' : ''}` : 'no GPUs')}
-    ${tile('Needs attention', att.length, att.length ? att.map(([n, f]) => `${nodeName(n)}: ${f.issues.find((i) => i.lvl === 'bad' || i.lvl === 'warn').short.toLowerCase()}`).join(' · ') : 'nothing', att.length ? 'kpi-w' : '')}
+  const cell = (v, k, tip, cls = '') => `<div class="${cls}" title="${esc(tip || '')}"><b>${v}</b><span>${esc(k)}</span></div>`;
+  return `<div class="strip">
+    ${cell(`${on.length} / ${nodes.length}`, off.length ? `online · ${off.length} offline` : 'online', off.map(nodeName).join(', ') + (off.length ? ' offline' : ''))}
+    ${cell(loaded, 'models loaded', [pooled && pooled + ' pooled', setting && setting + ' setting up'].filter(Boolean).join(' · '))}
+    ${cell(`${jobs} / ${slots}`, 'jobs running')}
+    ${cell(speed ? `${Math.round(speed).toLocaleString()} tok/s` : '—', 'cluster speed', 'sum of loaded models')}
+    ${cell(nG ? bytes(vTot - vUsed) : '—', nG ? `free VRAM on ${nG} GPU${nG > 1 ? 's' : ''}` : 'no GPUs', nG ? `of ${bytes(vTot)}` : '')}
+    ${cell(att.length, 'need attention', att.map(([n, f]) => `${nodeName(n)}: ${f.issues.find((i) => i.lvl === 'bad' || i.lvl === 'warn').short.toLowerCase()}`).join(' · '), att.length ? 'w' : '')}
   </div>`;
 }
-function nodeGridView(nodes) {
-  const rank = { bad: 0, warn: 1, info: 2, '': 2, off: 4 };
-  const sorted = [...nodes].sort((a, b) => rank[nodeFacts(a).worst] - rank[nodeFacts(b).worst]);
+function offlineStrip(nodes) {
+  if (!nodes.length) return '';
+  return `<div class="off-strip"><span class="off-h">Offline · ${nodes.length}</span>${nodes.map((n) => `<span class="off-chip" data-act="node-detail" data-id="${n.id}" title="Open details"><b>${esc(nodeName(n))}</b><span class="muted">${n.last_seen ? ago(n.last_seen) : 'never connected'}</span>${n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}" title="Send a Wake-on-LAN packet">Wake</button>` : ''}</span>`).join('')}</div>`;
+}
+function nodeGridView(nodes, o = {}) {
+  const dense = !!o.dense;
   const byName = (nm) => nodes.find((x) => nodeName(x) === nm);
   const inPool = new Set(), pools = [];
   nodes.forEach((n) => {
@@ -207,18 +237,36 @@ function nodeGridView(nodes) {
     [n, ...helpers].forEach((x) => inPool.add(x.id));
     pools.push([n, helpers]);
   });
+  const card = (n) => gaugeCard(n, o);
   const pool = ([n, helpers]) => {
     const f = nodeFacts(n);
     return `<div class="pool"><div class="pool-h"><span class="pool-ic">⇄</span><b>Memory pool</b>
       <span class="sub nv-grow">${f.loaded ? esc(f.loaded) + ' · ' : ''}runs on <b class="nv-ink">${esc(nodeName(n))}</b>, ${helpers.map((x) => `<b class="nv-ink">${esc(nodeName(x))}</b>`).join(', ')} lend${helpers.length === 1 ? 's' : ''} memory</span>
       ${nvTps(f)}${f.loaded ? `<button class="small" data-act="unload" data-id="${n.id}" title="Unload the model; the helpers get their memory back">Unload pool</button>` : ''}</div>
-      <div class="pool-cards">${[n, ...helpers].map(gaugeCard).join('')}</div></div>`;
+      <div class="pool-cards">${[n, ...helpers].map(card).join('')}</div></div>`;
   };
-  const att = sorted.filter((n) => !inPool.has(n.id) && ['bad', 'warn'].includes(nodeFacts(n).worst));
-  const rest = sorted.filter((n) => !inPool.has(n.id) && !att.includes(n));
-  return `<div class="gc-grid">${att.map(gaugeCard).join('')}${pools.map(pool).join('')}${rest.map(gaugeCard).join('')}</div>`;
+  // The caller sorts; with "Sort: status" nodes that need attention come first (the sort puts them there), then pools.
+  const free = nodes.filter((n) => !inPool.has(n.id));
+  const off = dense ? free.filter((n) => !n.online) : [];
+  const shown = dense ? free.filter((n) => n.online) : free;
+  const att = o.attentionFirst ? shown.filter((n) => ['bad', 'warn'].includes(nodeFacts(n).worst)) : [];
+  const rest = shown.filter((n) => !att.includes(n));
+  return `<div class="gc-grid${dense ? ' dense' : ''}">${att.map(card).join('')}${pools.map(pool).join('')}${rest.map(card).join('')}</div>${offlineStrip(off)}`;
 }
 
+// The filter bar sits above #nodes (outside what renderNodes redraws), so typing in it keeps focus.
+function renderNodeFilter(nodes, rows, labels, dense) {
+  const bar = $('node-filter');
+  bar.classList.toggle('hidden', !dense);
+  if (!dense) return;
+  const counts = nodeChipCounts(rows);
+  const chip = (id, label) => `<button class="chip${nodeChip === id ? ' on' : ''}" data-act="node-chip" data-chip="${id}" aria-pressed="${nodeChip === id}">${label}<i>${counts[id]}</i></button>`;
+  const lab = labels.length ? '<span class="nf-sep"></span>' + labels.map((l) => `<button class="chip${l === nodeLabel ? ' on' : ''}" data-act="label-filter" data-label="${l === nodeLabel ? '' : esc(l)}" aria-pressed="${l === nodeLabel}">${esc(l)}<i>${nodes.filter((n) => (n.labels || []).includes(l)).length}</i></button>`).join('') : '';
+  // Quick filters with nothing to show (no GPU nodes, nothing to update) stay out of the way, except the active one.
+  setHTML('nf-chips', NODE_CHIPS.filter(([id]) => id === 'all' || id === nodeChip || counts[id] > 0 && (id !== 'update' || counts[id] < nodes.length || nodeChip === id)).map(([id, label]) => chip(id, label)).join('') + lab);
+  if ($('nf-q').value !== nodeQuery) $('nf-q').value = nodeQuery;
+  if ($('nf-sort').value !== nodeSort) $('nf-sort').value = nodeSort;
+}
 function renderNodes() {
   const a = document.activeElement;
   if (a && a.matches && a.matches('[data-storage-limit]') && document.body.contains(a)) return; // typing a limit: redraw after
@@ -227,14 +275,27 @@ function renderNodes() {
   setHTML('node-count', nodes.length ? `${online} of ${nodes.length} online` : '');
   if (nodeView === 'detail' && !showDetailed) nodeView = 'list';
   document.querySelectorAll('[data-node-view]').forEach((b) => { b.classList.toggle('on', b.dataset.nodeView === nodeView); if (b.dataset.nodeView === 'detail') b.hidden = !showDetailed; });
-  if (!nodes.length) { setHTML('nodes', `<div class="empty u16">No nodes yet. Click <b>Add node</b> to get the install command.</div>`); return; }
+  if (!nodes.length) { setHTML('node-summary', ''); $('node-filter').classList.add('hidden'); setHTML('nodes', `<div class="empty u16">No nodes yet. Click <b>Add node</b> to get the install command.</div>`); return; }
   const labels = state.labels || [];
   if (nodeLabel && !labels.includes(nodeLabel)) nodeLabel = '';
-  const shown = nodeLabel ? nodes.filter((n) => (n.labels || []).includes(nodeLabel)) : nodes;
-  const chips = labels.length ? `<div class="label-filter" role="group" aria-label="Show nodes with label">${['', ...labels].map((l) => `<button class="small${l === nodeLabel ? ' on' : ''}" data-act="label-filter" data-label="${esc(l)}" aria-pressed="${l === nodeLabel}">${l ? esc(l) + ' · ' + nodes.filter((n) => (n.labels || []).includes(l)).length : 'All nodes'}</button>`).join('')}</div>` : '';
+  const dense = nodesDense(nodes);
+  if (!dense) { nodeQuery = ''; nodeChip = 'all'; }
+  const rows = nodes.map((n) => ({ n, f: nodeFacts(n) }));
+  const shownRows = nodeSorted(rows.filter(({ n, f }) => nodeMatches(n, f, nodeQuery, nodeChip, nodeLabel)), nodeSort);
+  const shown = shownRows.map((r) => r.n);
+  const filtering = !!(nodeQuery || nodeChip !== 'all' || nodeLabel);
+  // Below the filter bar's size, labels keep their old chip row.
+  const chips = !dense && labels.length ? `<div class="label-filter" role="group" aria-label="Show nodes with label">${['', ...labels].map((l) => `<button class="small${l === nodeLabel ? ' on' : ''}" data-act="label-filter" data-label="${esc(l)}" aria-pressed="${l === nodeLabel}">${l ? esc(l) + ' · ' + nodes.filter((n) => (n.labels || []).includes(l)).length : 'All nodes'}</button>`).join('')}</div>` : '';
+  const upd = nodes.filter((n) => n.online && n.update_to), banner = updateBannerOn(nodes);
+  const bannerHTML = banner ? `<div class="upd-banner"><span aria-hidden="true">⬆</span><span class="nv-grow"><b>${upd.length} nodes</b> run an older version; <b>v${esc(upd[0].update_to)}</b> is available.</span>
+    ${nodeChip === 'update' ? '' : '<button class="small" data-act="node-chip" data-chip="update">Show them</button>'}<a class="small-link" href="#/updates">Updates page</a></div>` : '';
   if (nodeView !== 'grid' || !nodeById(nodeDrawer)) nodeDrawer = null;
   loadNodeHistory();
-  setHTML('nodes', clusterSummary(nodes) + chips + (nodeView === 'list' ? nodeListView(shown) : nodeView === 'detail' ? nodeDetailView(shown) : nodeGridView(shown)));
+  renderNodeFilter(nodes, rows, labels, dense);
+  setHTML('node-summary', clusterSummary(nodes));
+  const body = !shown.length ? `<div class="empty u16">No nodes match. <button class="small" data-act="node-clear">Clear filters</button></div>`
+    : nodeView === 'list' ? nodeListView(shown, dense, banner) : nodeView === 'detail' ? nodeDetailView(shown) : nodeGridView(shown, { dense, hideUpd: banner, attentionFirst: nodeSort === 'status' });
+  setHTML('nodes', chips + bannerHTML + (filtering && shown.length ? `<div class="sub nf-count">Showing ${shown.length} of ${nodes.length} nodes · <a href="#" data-act="node-clear">Clear filters</a></div>` : '') + body);
   renderNodeDrawer(shown);
 }
 
@@ -972,3 +1033,12 @@ async function bestLoad(id, target) {
   $('best-go').onclick = async () => { const o = bestOpts[+document.querySelector('input[name=best-pick]:checked').value]; close('modal-best'); await loadOnNode(bestNode, o.name, !o.in_library); };
   $('best-all').onclick = () => { close('modal-best'); openLoad(bestNode); };
 }
+
+// Filter bar controls (static markup in index.html).
+$('nf-q').addEventListener('input', () => { nodeQuery = $('nf-q').value; renderNodes(); });
+$('nf-q').addEventListener('keydown', (e) => { if (e.key === 'Escape' && nodeQuery) { nodeQuery = ''; $('nf-q').value = ''; renderNodes(); } });
+$('nf-sort').addEventListener('change', () => {
+  nodeSort = $('nf-sort').value;
+  try { localStorage.setItem('outpost.nodeSort', nodeSort); } catch (e) { /* storage blocked */ }
+  renderNodes();
+});

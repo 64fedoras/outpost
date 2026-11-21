@@ -317,9 +317,18 @@
         <div class="nv-toggle" role="group" aria-label="Node view"><button data-act="node-view" data-node-view="grid">Grid</button><button data-act="node-view" data-node-view="list">List</button><button data-act="node-view" data-node-view="detail">Detailed list</button></div>
         <button id="btn-check" title="Run a short model call, a command and a connection test on every online node">Check cluster</button>
         <button id="btn-add" class="primary">Add node</button></div>
+      <div id="node-summary"></div>
+      <div class="nf hidden" id="node-filter" role="search" aria-label="Filter nodes">
+        <input id="nf-q" type="search" placeholder="Filter by name, model or label" aria-label="Filter nodes by name, model or label" autocomplete="off">
+        <span class="nf-chips" id="nf-chips" role="group" aria-label="Show"></span>
+        <span class="spacer"></span>
+        <select id="nf-sort" aria-label="Sort nodes"><option value="status">Sort: status</option><option value="name">Sort: name</option><option value="speed">Sort: speed</option></select>
+      </div>
       <div id="nodes"></div>
       <aside id="node-drawer" class="nd hidden" role="region" aria-label="Node details"></aside>
-      <div class="section-head"><h2>Recent jobs</h2><span class="sub u2">every model call and command sent to a node</span></div>
+      <div class="section-head"><h2>Recent jobs</h2><span class="sub u2 hide-ph">every model call and command sent to a node</span><span class="spacer"></span>
+        <select id="jobs-node" class="jobs-sel hidden" aria-label="Show jobs on node"><option value="">All nodes</option></select>
+        <select id="jobs-status" class="jobs-sel" aria-label="Show jobs with status"><option value="">Any status</option><option value="running">Running</option><option value="failed">Failed</option><option value="succeeded">Succeeded</option></select></div>
       <div id="jobs"></div>
     </section>
 
@@ -1106,6 +1115,7 @@
 <script src="project.js"></script>
 <script src="chat.js"></script>
 <script src="thread.js"></script>
+<script src="nodefilter.js"></script>
 <script src="nodes.js"></script>
 <script src="models.js"></script>
 <script src="updates.js"></script>

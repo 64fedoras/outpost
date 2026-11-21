@@ -332,6 +332,9 @@ document.addEventListener('click', async (e) => {
       case 'labels': editLabels(id); return;
       case 'hours': openHours(id); return;
       case 'label-filter': nodeLabel = el.dataset.label; renderNodes(); return;
+      case 'jobs-more': jobsLimit += JOBS_STEP * 3; renderJobs(); return;
+      case 'node-chip': nodeChip = el.dataset.chip; renderNodes(); return;
+      case 'node-clear': nodeQuery = ''; nodeChip = 'all'; nodeLabel = ''; renderNodes(); return;
       case 'starter': $('nt-prompt').value = STARTERS[+el.dataset.i][1]; $('nt-prompt').focus(); return;
       case 'project-delete': case 'project-save': case 'project-use': case 'project-suggest': await projectAction(act, el); break;
       default: if (act.startsWith('proj-')) { await projPageAction(act, el); return; }

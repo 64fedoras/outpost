@@ -720,10 +720,10 @@ details.live summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .nd-body { padding: 14px 16px 24px; }
 .nd-body > .card { margin: 0; } .nd-body > .card > .node-top { display: none; }
 /* Wide screens: the grid reflows beside the panel instead of under it. */
-@media (min-width: 1320px) { body.nd-open section[data-page="nodes"] { margin-right: 540px; } body.nd-open .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .nv-row { grid-template-columns: 180px minmax(0, 1fr) 150px 210px; } .nv-row > .r { display: none; } }
+@media (min-width: 1320px) { body.nd-open section[data-page="nodes"] { margin-right: 540px; } }
+@media (max-width: 1100px) { .nv-row { grid-template-columns: 180px minmax(0, 1fr) 150px 210px; } .nv-row > .r { display: none; } }
 @media (max-width: 860px) {
-  .pool { grid-column: auto; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pool { grid-column: auto; }
   .nv-row { grid-template-columns: minmax(0, 1fr) auto; } .nv-row > :nth-child(3) { display: none; }
   .nv-split { grid-template-columns: 1fr; } .nv-list { position: static; }
   .gc-grid, .pool-cards { grid-template-columns: minmax(0, 1fr); }
@@ -1440,3 +1440,57 @@ pre.code .pj-hl { background: var(--tint); display: inline-block; min-width: 100
 .mem-sug { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; max-width: 620px; margin-top: 6px; }
 .mem-sug-t { font-size: 13.5px; overflow-wrap: anywhere; }
 @media (max-width: 600px) { .mem-row { flex-direction: column; } }
+
+/* Nodes page at scale: summary strip, filter bar, update banner, compact cards and rows, offline strip */
+.strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 10px; }
+.strip > div { padding: 8px 14px; border-right: 1px solid var(--line); min-width: 0; }
+.strip > div:last-child { border-right: 0; }
+.strip b { display: block; font-size: 17px; font-weight: 650; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strip span { display: block; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strip .w b { color: var(--warn); }
+.nf { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+.nf input[type=search] { width: 220px; padding: 5px 10px; font-size: 13px; }
+.nf select { width: auto; padding: 4px 8px; font-size: 12.5px; }
+.nf-chips { display: contents; }
+.nf-sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+.nf .chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.nf .chip i { font-style: normal; color: var(--muted); margin-left: 4px; }
+.nf .chip.on { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--accent-ink); }
+.nf .chip.on i { color: inherit; opacity: .8; }
+.nf-count { margin: 0 0 8px; }
+.upd-banner { display: flex; align-items: center; gap: 10px; font-size: 12.5px; padding: 7px 12px; border-radius: 8px; background: var(--tint); margin: 0 0 10px; flex-wrap: wrap; }
+.small-link { font-size: 12.5px; }
+.gc-grid.dense { grid-template-columns: repeat(auto-fill, minmax(256px, 1fr)); gap: 10px; }
+.gc.dense { padding: 10px 12px; }
+.gc.dense .sub { margin: 2px 0 4px; font-size: 11.5px; }
+.gc.dense .gc-rings { grid-template-columns: repeat(3, minmax(0, 1fr)) 78px; margin: 2px 0 0; align-items: center; }
+.gc.dense .ring { min-width: 0; } .gc.dense .ring svg { width: 44px; height: 44px; } .gc.dense .ring .sub { margin: 0; font-size: 11px; } .gc.dense .ring-s { display: none; }
+.gc.dense .nv-tps { font-size: 17px; } .gc.dense .gc-speed .sub { margin: 0; }
+.gc.dense .gc-model { margin-top: 6px; padding-top: 7px; }
+.gc.dense .node-top button.small { border-color: transparent; background: none; color: var(--muted); font-size: 15px; line-height: 1; padding: 2px 6px; }
+.pool-cards .gc.dense { min-width: 0; }
+.off-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; margin-top: 10px; font-size: 12.5px; }
+.off-h { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .7px; font-weight: 600; margin-right: 6px; }
+.off-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 4px 2px 10px; cursor: pointer; }
+.off-chip:hover { border-color: var(--muted); }
+.off-chip .muted { font-size: 11.5px; }
+.off-chip button { border-radius: 999px; padding: 0 9px; font-size: 11.5px; }
+.nv-row.dn { grid-template-columns: 18px minmax(120px, 1.1fr) 130px minmax(150px, 1.4fr) 200px 76px 80px; gap: 12px; padding: 0 12px; min-height: 36px; font-size: 12.5px; }
+.nv-row.dn.nv-head { min-height: 30px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; cursor: default; background: none; }
+.nv-row.dn.nv-head:hover { background: none; }
+.dn-bars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 10px; color: var(--muted); }
+.dn-bars .bar { height: 4px; margin-top: 2px; }
+.dn-tps { font-variant-numeric: tabular-nums; }
+.jobs-sel { width: auto; padding: 3px 8px; font-size: 12.5px; }
+.jobs-more { text-align: center; margin-top: 8px; }
+@media (max-width: 860px) {
+  .strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .strip > div { padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  .strip > div:nth-child(3n) { border-right: 0; } .strip > div:nth-last-child(-n+3) { border-bottom: 0; }
+  .strip b { font-size: 15px; } .strip span { font-size: 10.5px; }
+  .nf { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+  .nf input[type=search] { width: 150px; flex: none; } .nf .chip, .nf select, .nf .spacer { flex: none; }
+  .gc-grid.dense { grid-template-columns: minmax(0, 1fr); }
+  .nv-row.dn { grid-template-columns: 14px minmax(0, 1fr) auto; } .nv-row.dn > :nth-child(3), .nv-row.dn > :nth-child(5), .nv-row.dn > :nth-child(6) { display: none; }
+  .nv-row.dn.nv-head { display: none; }
+}
