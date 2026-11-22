@@ -14,10 +14,10 @@ var licenseText = outpost.LicenseText
 
 var thirdPartyNotices = outpost.ThirdPartyNotices
 
-const sourceURL = "https://github.com/64fedoras/outpost"
+const sourceURL = "https://github.com/markpruden/outpost"
 
 func licensesText() string {
-	return fmt.Sprintf("Outpost %s\nCopyright (C) 2026 Mark (64fedoras)\nLicensed under the GNU Affero General Public License v3.0 (SPDX: AGPL-3.0-only).\nSource code: %s/tree/v%s\n\n%s\n\n%s",
+	return fmt.Sprintf("Outpost %s\nCopyright (C) 2026 Mark (markpruden)\nLicensed under the GNU Affero General Public License v3.0 (SPDX: AGPL-3.0-only).\nSource code: %s/tree/v%s\n\n%s\n\n%s",
 		Version, sourceURL, Version, licenseText, thirdPartyNotices)
 }
 

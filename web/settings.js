@@ -38,7 +38,7 @@ async function loadSettings() {
   $('set-bestofn').value = settings.best_of_n || 'hard';
   $('set-instr').value = settings.instructions || '';
   $('set-ghrepo').value = settings.github_repo || '';
-  $('set-ghrepo').placeholder = settings.github_repo_default || 'https://github.com/64fedoras/outpost';
+  $('set-ghrepo').placeholder = settings.github_repo_default || 'https://github.com/markpruden/outpost';
   $('set-ghkind').value = settings.update_host_kind || '';
   ghHttpNote();
   $('set-ghtoken').value = ''; $('set-ghtest-out').textContent = '';

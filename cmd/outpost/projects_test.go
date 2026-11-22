@@ -132,7 +132,7 @@ func TestGitRejectsUnsafe(t *testing.T) {
 	if err := writeRepoFile(t.TempDir(), ".git/hooks/pre-commit", "x"); err == nil {
 		t.Error("write into .git allowed")
 	}
-	if r, ok := githubRepoOf("git@github.com:64fedoras/outpost.git"); !ok || r != "64fedoras/outpost" {
+	if r, ok := githubRepoOf("git@github.com:markpruden/outpost.git"); !ok || r != "markpruden/outpost" {
 		t.Errorf("githubRepoOf = %q %v", r, ok)
 	}
 	if _, ok := githubRepoOf("https://gitlab.com/o/r"); ok {

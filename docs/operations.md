@@ -48,7 +48,7 @@ GitHub API or on the cluster.
 **Which repository, and private repositories.** *Settings → Updates from a git host* has a **Repository
 to trust for updates** field. It takes a repository on **GitHub** (github.com or GitHub Enterprise),
 **GitLab** (gitlab.com or self-hosted) or **Gitea / Forgejo** (Codeberg or self-hosted): paste its web
-address (`https://github.com/64fedoras/outpost`, `https://gitlab.example.local/team/tools/outpost`,
+address (`https://github.com/markpruden/outpost`, `https://gitlab.example.local/team/tools/outpost`,
 `https://gitea.example.local:3000/me/outpost`; pages after it such as `/releases` or `/-/releases` are
 ignored), its clone address (`git@host:owner/repo.git`), or plain `owner/repo` for github.com. Empty means
 the default. **Server type** is worked out from the name for github.com, gitlab.com and codeberg.org; for

@@ -257,7 +257,7 @@ func CallOpenRouter(ctx context.Context, key, model string, req Request) (*Respo
 		hr, _ := http.NewRequestWithContext(ctx, "POST", openRouterBaseURL()+"/v1/chat/completions", bytes.NewReader(b))
 		hr.Header.Set("Authorization", "Bearer "+key)
 		hr.Header.Set("Content-Type", "application/json")
-		hr.Header.Set("HTTP-Referer", "https://github.com/64fedoras/outpost")
+		hr.Header.Set("HTTP-Referer", "https://github.com/markpruden/outpost")
 		hr.Header.Set("X-Title", "Outpost")
 		resp, err := client.Do(hr)
 		if err != nil {

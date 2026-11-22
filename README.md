@@ -70,7 +70,7 @@ model and demo data, so the output text is canned, not real model output.
 
 ## Install
 
-Download the binary for each machine's platform from the [releases page](https://github.com/64fedoras/outpost/releases):
+Download the binary for each machine's platform from the [releases page](https://github.com/markpruden/outpost/releases):
 `outpost-linux-amd64`, `outpost-linux-arm64`, `outpost-darwin-amd64`, `outpost-darwin-arm64`
 or `outpost-windows-amd64.exe`. Release binaries are unsigned; see [docs/BUILDING.md](docs/BUILDING.md) to verify checksums or build from source.
 
@@ -79,7 +79,7 @@ or `outpost-windows-amd64.exe`. Release binaries are unsigned; see [docs/BUILDIN
 One paste that downloads the latest release for this machine (amd64 or arm64), checks it against the published `SHA256SUMS` and installs the controller:
 
 ```bash
-A=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); B=https://github.com/64fedoras/outpost/releases/latest/download; cd ~ && curl -fsSLO $B/outpost-linux-$A && curl -fsSL $B/SHA256SUMS | grep " outpost-linux-$A\$" | sha256sum -c - && sudo chmod +x ~/outpost-linux-$A && sudo ~/outpost-linux-$A install controller --advertise https://192.0.2.10:8443
+A=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); B=https://github.com/markpruden/outpost/releases/latest/download; cd ~ && curl -fsSLO $B/outpost-linux-$A && curl -fsSL $B/SHA256SUMS | grep " outpost-linux-$A\$" | sha256sum -c - && sudo chmod +x ~/outpost-linux-$A && sudo ~/outpost-linux-$A install controller --advertise https://192.0.2.10:8443
 ```
 
 Or, with the binary already on the machine (downloaded by hand or copied over):
@@ -135,7 +135,7 @@ The full list of known limits is in the [user guide](docs/known-limits.md).
 ## License
 
 Outpost is free software under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`);
-see [LICENSE](LICENSE). Copyright (C) 2026 Mark (64fedoras). The web UI links to the source of the
+see [LICENSE](LICENSE). Copyright (C) 2026 Mark (markpruden). The web UI links to the source of the
 running version and to `/licenses`. Third-party licences, including the `libgomp` library bundled
 in Linux x86-64 builds, are in [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) and in the
 [user guide](docs/USER-GUIDE.md#third-party-code-inside-the-binary). This is not legal advice.

@@ -131,7 +131,7 @@ func TestSetRollbackHold(t *testing.T) {
 func TestParseUpdateSource(t *testing.T) {
 	ok := []struct{ in, kind, want, wantKind string }{
 		{"", "", "https://github.com/" + ghDefaultRepo, kindGitHub},
-		{"https://github.com/64fedoras/outpost", "", "https://github.com/64fedoras/outpost", kindGitHub},
+		{"https://github.com/markpruden/outpost", "", "https://github.com/markpruden/outpost", kindGitHub},
 		{"https://github.com/me/my.repo.git", "", "https://github.com/me/my.repo", kindGitHub},
 		{"https://www.github.com/me/r/releases/tag/v1", "", "https://github.com/me/r", kindGitHub},
 		{"github.com/me/r/", "", "https://github.com/me/r", kindGitHub},
@@ -168,6 +168,9 @@ func TestParseUpdateSource(t *testing.T) {
 	// What older versions read stays the same for github.com.
 	if s, _ := parseUpdateSource("https://github.com/me/r", ""); s.stored() != "me/r" {
 		t.Errorf("stored %q", s.stored())
+	}
+	if s, _ := parseUpdateSource("https://github.com/64fedoras/outpost", ""); s.stored() != "" {
+		t.Errorf("old repository name not saved as default: %q", s.stored())
 	}
 	if s, _ := parseUpdateSource("", ""); s.stored() != "" {
 		t.Errorf("default stored as %q", s.stored())

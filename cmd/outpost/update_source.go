@@ -68,8 +68,8 @@ func (s updSource) URL() string { return s.Scheme + "://" + s.Host + "/" + s.Pat
 // before other hosts were supported read), the full address otherwise.
 func (s updSource) stored() string {
 	if s.Host == "github.com" && s.Scheme == "https" {
-		if s.Path == ghDefaultRepo {
-			return ""
+		if s.Path == ghDefaultRepo || strings.EqualFold(s.Path, ghLegacyRepo) {
+			return "" // the old name still works through GitHub's redirect, but is saved as the default
 		}
 		return s.Path
 	}

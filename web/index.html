@@ -26,7 +26,7 @@
     <div class="error-msg hidden" id="login-err"></div>
     <div class="modal-foot"><button class="primary" type="submit">Sign in</button></div>
   </form>
-  <p class="legal">Free software under the <a href="/licenses">AGPL-3.0</a> · <a href="https://github.com/64fedoras/outpost" target="_blank" rel="noopener">Source code</a></p>
+  <p class="legal">Free software under the <a href="/licenses">AGPL-3.0</a> · <a href="https://github.com/markpruden/outpost" target="_blank" rel="noopener">Source code</a></p>
 </div>
 
 <div id="setup" class="card hidden">
@@ -40,7 +40,7 @@
     <div class="error-msg hidden" id="setup-err"></div>
     <div class="modal-foot"><button class="primary" type="submit">Set password and sign in</button></div>
   </form>
-  <p class="legal">Free software under the <a href="/licenses">AGPL-3.0</a> · <a href="https://github.com/64fedoras/outpost" target="_blank" rel="noopener">Source code</a></p>
+  <p class="legal">Free software under the <a href="/licenses">AGPL-3.0</a> · <a href="https://github.com/markpruden/outpost" target="_blank" rel="noopener">Source code</a></p>
 </div>
 
 <div id="app" class="hidden">
@@ -83,7 +83,7 @@
         <a href="#/settings" data-tab="settings">Settings</a>
       </nav>
       <div class="side-meta"><span id="hdr-meta"></span><button class="link-btn" id="pal-open" aria-keyshortcuts="Control+K" title="Go to a task, node or page (Ctrl+K)">Search ⌃K</button><button class="link-btn" id="btn-logout">Sign out</button></div>
-      <div class="legal">AGPL-3.0 · <a id="src-link" href="https://github.com/64fedoras/outpost" target="_blank" rel="noopener">Source code</a> · <a href="/licenses" target="_blank" rel="noopener">Licenses</a></div>
+      <div class="legal">AGPL-3.0 · <a id="src-link" href="https://github.com/markpruden/outpost" target="_blank" rel="noopener">Source code</a> · <a href="/licenses" target="_blank" rel="noopener">Licenses</a></div>
     </div>
   </aside>
   <div class="scrim hidden" id="scrim"></div>
@@ -610,7 +610,7 @@
         <div class="card">
           <p class="hint">Outpost can look at a repository's releases on GitHub, GitLab, Gitea or Forgejo every 6 hours and download newer binaries for the controller and the platforms of your nodes. Each file is checked against the release's <code>SHA256SUMS</code> and must be an Outpost binary of that version before it is kept; it then appears in the Updates tab like an uploaded one. <code>SHA256SUMS</code> catches damaged downloads, not a tampered repository, since the releases are unsigned. Only the version check and downloads go to that server; nothing about your cluster is sent. Rollback works as before.</p>
           <label for="set-ghrepo">Repository to trust for updates <span class="hint">(its web or clone address on any GitHub, GitLab, Gitea or Forgejo server, or owner/repo for github.com; empty uses the default)</span></label>
-          <input id="set-ghrepo" placeholder="https://github.com/64fedoras/outpost" autocomplete="off" spellcheck="false">
+          <input id="set-ghrepo" placeholder="https://github.com/markpruden/outpost" autocomplete="off" spellcheck="false">
           <label for="set-ghkind">Server type <span class="hint">(github.com, gitlab.com and codeberg.org are known by name; for your own server Outpost asks it, or pick it here)</span></label>
           <select id="set-ghkind"><option value="">Detect automatically</option><option value="github">GitHub or GitHub Enterprise</option><option value="gitlab">GitLab</option><option value="gitea">Gitea or Forgejo</option></select>
           <div id="set-ghrepo-http" class="note warn hidden"><b>This is a plain http:// address.</b> The token and the binaries travel unencrypted, and anyone on the network path could swap a binary and its <code>SHA256SUMS</code> together. Use it only for a server on a network you control; https:// is safer.</div>

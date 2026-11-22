@@ -22,7 +22,8 @@ import (
 )
 
 const (
-	ghDefaultRepo   = "64fedoras/outpost"
+	ghDefaultRepo   = "markpruden/outpost"
+	ghLegacyRepo    = "64fedoras/outpost" // the owner's former GitHub name; GitHub redirects it
 	ghCheckInterval = 6 * time.Hour
 	ghFirstCheck    = 2 * time.Minute
 	maxSumsBytes    = 1 << 20
