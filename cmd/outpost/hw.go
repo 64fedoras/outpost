@@ -151,7 +151,14 @@ func linuxGPUDevices() []string {
 		vram uint64
 	}
 	var all []dv
+	smi := nvidiaSMI()
+	nv := 0
 	cards, _ := filepath.Glob("/sys/class/drm/card[0-9]*")
+	for _, card := range cards {
+		if !strings.Contains(filepath.Base(card), "-") && readUint(filepath.Join(card, "device", "vendor")) == 0x10de {
+			nv++
+		}
+	}
 	for _, card := range cards {
 		if strings.Contains(filepath.Base(card), "-") {
 			continue // connector entries like card0-DP-1
@@ -163,6 +170,9 @@ func linuxGPUDevices() []string {
 			continue
 		}
 		vram := readUint(filepath.Join(dev, "mem_info_vram_total"))
+		if vram == 0 && readUint(filepath.Join(dev, "vendor")) == 0x10de {
+			vram = nvidiaVRAMTotal(devSlot(dev), smi, nv == 1)
+		}
 		if readUint(filepath.Join(dev, "vendor")) != 0x10de && vram < 1<<30 {
 			continue // integrated or virtual display adapter
 		}
@@ -184,7 +194,9 @@ func linuxGPUDevices() []string {
 // busy % there, which is all v0 needs; names come from lspci when present.
 func linuxGPUs() []GPUInfo {
 	out := []GPUInfo{}
-	for _, dev := range linuxGPUDevices() {
+	devs := linuxGPUDevices()
+	smi := nvidiaSMI()
+	for _, dev := range devs {
 		g := GPUInfo{}
 		switch readUint(filepath.Join(dev, "vendor")) {
 		case 0x1002:
@@ -193,15 +205,27 @@ func linuxGPUs() []GPUInfo {
 				g.Backend = "vulkan"
 			}
 		case 0x10de:
-			g.Vendor, g.Backend = "nvidia", "cuda"
+			g.Vendor, g.Backend = "nvidia", "vulkan" // Outpost's Linux GPU build is Vulkan
 		case 0x8086:
 			g.Vendor, g.Backend = "intel", "vulkan"
 		}
 		g.VRAMBytes = readUint(filepath.Join(dev, "mem_info_vram_total"))
+		if g.Vendor == "nvidia" && g.VRAMBytes == 0 {
+			g.VRAMBytes = nvidiaVRAMTotal(devSlot(dev), smi, len(devs) == 1)
+		}
 		g.Name = gpuName(dev)
 		out = append(out, g)
 	}
 	return out
+}
+
+// devSlot is the PCI slot (like 0000:01:00.0) of a sysfs device dir.
+func devSlot(dev string) string {
+	link, err := os.Readlink(dev)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(filepath.Base(link))
 }
 
 func gpuName(dev string) string {
@@ -275,7 +299,18 @@ func (s *statSampler) sample() Heartbeat {
 	if mi["SwapTotal"] > mi["SwapFree"] {
 		hb.SwapUsedBytes = mi["SwapTotal"] - mi["SwapFree"]
 	}
+	var smi map[string]nvidiaStat
 	for _, d := range s.gpuDevices {
+		if readUint(filepath.Join(d, "vendor")) == 0x10de {
+			if smi == nil {
+				smi = nvidiaSMI()
+			}
+			r := smi[devSlot(d)]
+			hb.GPUUtilPct = append(hb.GPUUtilPct, r.UtilPct)
+			hb.VRAMUsedBytes = append(hb.VRAMUsedBytes, r.UsedB)
+			hb.GPUTempC = append(hb.GPUTempC, r.TempC)
+			continue
+		}
 		hb.GPUUtilPct = append(hb.GPUUtilPct, int(readUint(filepath.Join(d, "gpu_busy_percent"))))
 		hb.VRAMUsedBytes = append(hb.VRAMUsedBytes, readUint(filepath.Join(d, "mem_info_vram_used")))
 		hb.GPUTempC = append(hb.GPUTempC, gpuTempC(d))
