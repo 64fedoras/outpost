@@ -58,6 +58,8 @@ type NodeRec struct {
 	StorageFull string  `json:"storage_full,omitempty"` // "" = remove old models at the limit, "refuse" = refuse the copy
 	// TaskModels lets a task load its best-fit model here before work starts (tasks_models.go).
 	TaskModels bool `json:"task_models,omitempty"`
+	// ChatSwitch lets chat load, download and (when space is short) remove models here for its Auto choice (chat_switch.go).
+	ChatSwitch bool `json:"chat_switch,omitempty"`
 }
 
 type nodeConn struct {
@@ -158,6 +160,7 @@ type Controller struct {
 	clockSkew  map[string]time.Duration // node clock minus controller clock, from heartbeats
 	projects   map[string]*Project      // see projects.go
 	chats      map[string]*Chat         // chat.go, guarded by chatMu
+	chatSw     chatSwitchState          // model switching for chat (chat_switch.go)
 	chatMu     sync.Mutex
 	mcpMuxOnce sync.Once // in-process mux for MCP tools (mcp_server.go)
 	mcpMuxV    *http.ServeMux

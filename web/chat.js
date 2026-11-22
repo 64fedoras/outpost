@@ -219,7 +219,7 @@ function chatBubble(m, i, last) {
     const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-edit="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Change this message and answer again">✎ Edit</button><button data-copy-msg="${i}" title="Copy the text">⧉ Copy</button></div>`;
     return `<div class="bubble-row"><div class="bubble-col"><div class="bubble">${esc(m.text)}${pics}${docs}</div>${acts}</div></div>`;
   }
-  const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, m.note && esc(m.note)].filter(Boolean).join(' · ');
+  const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, m.note && esc(m.note), chatNeedTag(m)].filter(Boolean).join(' · ');
   const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-regen="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Answer again; this answer stays as an earlier version">↻ Regenerate</button>${chatTryOn(m, busy)}${m.text ? `<button data-copy-msg="${i}" title="Copy the answer">⧉ Copy</button>` : ''}${m.research && m.text ? `<button data-rs-open="${esc(m.id)}" title="Open the report in the side panel to download it or save it to a project">¶ Open report</button>` : ''}<button data-branch="${esc(m.id)}" title="Start a new chat with the conversation up to here">⑂ Branch</button></div>`;
   if (m.error) return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}${acts}</div>`;
   return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}<div class="chat-text md">${md(m.text)}</div>${pvCards(pvCollect(m.text))}${meta ? `<div class="sub">${meta}</div>` : ''}${acts}${memSuggestCard(m, { chat: chatCur.id })}</div>`;
@@ -234,12 +234,41 @@ function chatRender() {
   chatButtons();
   if (stick) box.scrollTop = box.scrollHeight;
 }
+// The card shown while Auto gets a model: a question with a countdown, then a progress line.
+let chatPromptKey = '', chatPromptAt = 0, chatPromptTimer = 0;
+function chatPromptCard(p) {
+  const key = chatCur.id + '|' + p.state + '|' + p.model + '|' + p.deadline_ms;
+  if (key !== chatPromptKey) { chatPromptKey = key; chatPromptAt = Date.now(); }
+  const size = bytes(p.bytes), where = `<b>${esc(p.node_name)}</b>`;
+  if (p.state !== 'ask') return `<div class="chat-prompt"><div class="status">${esc(p.text || 'Loading…')}</div>${p.loaded ? '<div class="tag">The loaded model answers if this fails.</div>' : ''}</div>`;
+  const rm = (p.removals || []).length;
+  const title = rm ? `Make room for ${esc(p.label)} (${size}) on ${where}?` : `Download ${esc(p.label)} (${size}) to ${where}?`;
+  const list = rm ? `<div class="list">${p.removals.map((r) => `<div><span>${esc(r.label || r.name)} <span class="pill">${esc(r.kind)}</span></span><span class="gone">remove ${bytes(r.bytes)}${r.restorable ? ' · can be copied back' : ''}</span></div>`).join('')}</div>` : '';
+  const what = p.auto_go ? `Starting in <span id="chat-prompt-left">${p.seconds}</span> s unless you cancel` : `Waiting <span id="chat-prompt-left">${p.seconds}</span> s for your OK, then answering with the loaded model`;
+  return `<div class="chat-prompt"><b>${title}</b><div class="tag">Needed for a ${esc(p.need)} message${rm ? '. Removed models are not kept.' : ''}</div>${list}<div class="status">${what}</div><div class="btns"><button class="btn p" data-prompt="go">${rm ? 'Do it now' : 'Download now'}</button>${p.loaded ? `<button class="btn" data-prompt="loaded">Use loaded model instead</button>` : ''}<button class="btn" data-prompt="cancel">Cancel</button></div></div>`;
+}
+function chatPromptTick() {
+  clearInterval(chatPromptTimer);
+  if (!chatCur || !chatCur.prompt || chatCur.prompt.state !== 'ask') return;
+  const p = chatCur.prompt;
+  chatPromptTimer = setInterval(() => {
+    const el = document.getElementById('chat-prompt-left');
+    if (!el) { clearInterval(chatPromptTimer); return; }
+    el.textContent = Math.max(0, p.seconds - Math.floor((Date.now() - chatPromptAt) / 1000));
+  }, 500);
+}
+function chatNeedTag(m) {
+  if (!m.need) return '';
+  const o = (v, t) => `<option value="${v}" ${m.need === v ? 'selected' : ''}>${t}</option>`;
+  return `<span class="need-tag" title="Auto chose the model for this kind of message. Change it to answer again for another kind.">chosen for <select data-need="${esc(m.id)}" aria-label="Chosen for">${o('coding', 'coding')}${o('vision', 'vision')}${o('general', 'general')}</select></span>`;
+}
 function chatRenderLive() {
   const el = $('chat-live');
   if (!el || !chatCur) return;
   const calls = Object.values(chatLive);
   const rs = chatCur.research ? researchLive(chatCur.research) : '';
   if (rs && (chatCur.research.stage !== 'writing' || !calls.length)) { setHTML('chat-live', rs); return; }
+  if (chatCur.prompt) { setHTML('chat-live', chatPromptCard(chatCur.prompt)); chatPromptTick(); return; }
   if (chatCur.busy === 'running') { setHTML('chat-live', `<p class="muted run-live">▶ Running code on ${esc(chatCur.run_on || 'a node')}…</p>`); return; }
   if (!calls.length) { el.innerHTML = chatCur.busy === 'waiting' ? '<p class="muted">Waiting for a free node…</p>' : ''; return; }
   const c = calls[0];
@@ -293,6 +322,8 @@ $('chat-msgs').addEventListener('click', (e) => { const sp = e.target.closest('[
 $('chat-msgs').addEventListener('change', (e) => {
   const sel = e.target.closest('[data-tryon]');
   if (sel && sel.value) chatDo('regenerate', { msg_id: sel.dataset.tryon, node: sel.value });
+  const nd = e.target.closest('[data-need]');
+  if (nd && nd.value) chatDo('regenerate', { msg_id: nd.dataset.need, need: nd.value });
 });
 // Edit, regenerate, versions, copy, branch and the instructions strip.
 async function chatAct(t) {
@@ -307,6 +338,7 @@ async function chatAct(t) {
     chatEditing = null;
     await chatDo('edit', { msg_id: el.dataset.editSend, text, node: $('chat-node').value });
   }
+  else if ((el = b('prompt'))) await chatDo('prompt', { action: el.dataset.prompt });
   else if ((el = b('regen'))) await chatDo('regenerate', { msg_id: el.dataset.regen });
   else if ((el = b('ver')) && !el.disabled) await chatDo('version', { msg_id: el.dataset.msg, ver: Number(el.dataset.ver) });
   else if ((el = b('copy-msg'))) { const m = chatCur.messages[Number(el.dataset.copyMsg)]; if (m) { await copyText(m.text || ''); toast('Copied'); } }

@@ -432,6 +432,7 @@ function nodeCard(n) {
       ${recRow(n, loaded)}
       ${h.freed_note && Date.now() / 1000 - h.freed_at < 86400 ? `<div class="sub wrap u15" title="Removed automatically to make room for a model; it can be copied or downloaded again.">${esc(h.freed_note)} · ${ago(new Date(h.freed_at * 1000).toISOString())}</div>` : ''}
       ${n.online ? `<div class="sub u15">Unloads when idle: ${esc(n.idle_unload_effective || '1h')}${n.idle_unload ? '' : ' (default)'} · <a href="#" data-act="idle" data-id="${n.id}">change</a></div>` : ''}
+      ${n.online ? `<div class="sub u15" title="When you use Auto in chat and no loaded model suits the message (coding, or a picture), chat may load a model here: one already on this disk first, then a download (it asks you first). It never removes a model without asking.">Let chat switch models here: ${n.chat_switch ? 'on' : 'off'} · <a href="#" data-act="chat-switch" data-id="${n.id}">${n.chat_switch ? 'turn off' : 'turn on'}</a></div>` : ''}
       ${n.online ? `<div class="sub u15" title="A task with Pick models for each node on may load its best-fit model here before work starts, and puts the previous one back afterwards.">Let tasks change my model: ${n.task_models ? 'on' : 'off'} · <a href="#" data-act="task-models" data-id="${n.id}">${n.task_models ? 'turn off' : 'turn on'}</a></div>` : ''}
       ${n.online ? `<div class="sub u15" title="Unloads the model while a game or other program keeps the GPU busy, and loads it again after five quiet minutes.">Yield GPU to other programs: ${n.yield_gpu ? 'on' : 'off'} · <a href="#" data-act="yield" data-id="${n.id}">${n.yield_gpu ? 'turn off' : 'turn on'}</a></div>` : ''}
       ${benchLine(n, loaded, ready)}
@@ -657,6 +658,11 @@ async function setNodeIdle(id) {
 async function toggleYield(id) {
   const n = nodeById(id);
   try { await post(`/api/nodes/${id}/settings`, { yield_gpu: !n.yield_gpu }); toast(n.yield_gpu ? 'Off' : 'On: the model unloads while another program keeps the GPU busy'); } catch (e) { toast(e.message); }
+  refresh();
+}
+async function toggleChatSwitch(id) {
+  const n = nodeById(id); if (!n) return;
+  try { await post(`/api/nodes/${id}/settings`, { chat_switch: !n.chat_switch }); toast(n.chat_switch ? 'Off: chat only uses models already loaded here' : 'On: chat may load a model here for Auto (it asks before downloading or removing anything)'); } catch (e) { toast(e.message); }
   refresh();
 }
 async function toggleTaskModels(id) {
