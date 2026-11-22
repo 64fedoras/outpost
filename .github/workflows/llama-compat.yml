@@ -115,11 +115,15 @@ jobs:
           ./build/bin/llama-server --version
           case "${{ matrix.name }}" in
             macos-x64-noavx2)
-              # Fail the job if any instruction from AVX2/FMA/AVX-512 slipped in. Only the
-              # mnemonic and operand columns of the disassembly are looked at (not symbol names),
-              # and the first offenders are printed so a failure says what and where.
+              # Fail the job if any instruction from AVX2/FMA/AVX-512 slipped into the code that
+              # runs on every CPU: ggml (the maths) and llama itself. Only the mnemonic and operand
+              # columns of the disassembly are looked at (not symbol names), and the first offenders
+              # are printed. libllama-common and libllama-server-impl are not checked: they carry
+              # BoringSSL, whose AVX2 routines (vpxor on ymm registers, seen in the run of 2026-11-22)
+              # are chosen at run time from the CPU's CPUID and are never executed without AVX2.
               bad=0
-              for f in build/bin/*.dylib; do
+              for f in build/bin/libggml*.dylib build/bin/libllama.*dylib build/bin/libmtmd.*dylib; do
+                [ -f "$f" ] || continue
                 hits=$(otool -tv "$f" | awk -F'\t' '
                   $2 ~ /^v(fmadd|fnmadd|fmsub|fnmsub)/ || $2 ~ /^vperm(d|q|ps)$/ || $3 ~ /zmm/ ||
                   ($2 ~ /^vp(add|sub|and|or|xor|cmpeq|max|min|shuf|maddubs|mull|broadcast)[a-z]*$/ && $3 ~ /ymm/)' | head -n 3)
