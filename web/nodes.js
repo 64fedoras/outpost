@@ -1020,7 +1020,7 @@ async function bestLoad(id, target) {
   const how = apple ? 'The biggest model that should reach your target speed on its GPU comes first.' : g ? 'The biggest model that reaches your target speed comes first, even when part of it sits in system RAM.' : 'On a CPU-only node the biggest model that reaches your target speed comes first.';
   $('best-hint').textContent = `Ranked for this node: ${mem}${sf ? (sf.lim ? `, ${bytes(Math.max(0, sf.lim - sf.u.total))} left under its storage limit` : `, ${bytes(sf.u.disk_free)} free disk`) : ''}. ${how} Memory other programs hold right now is left alone.`;
   if (!bestOpts.length) {
-    setHTML('best-list', `<div class="note warn">${r.build_ok ? 'No coding model in the library or catalog fits this node\'s memory and disk, or is expected to reach about 5 tok/s on it. Lower the target speed, or choose a model yourself with Load model.' : 'This node has no llama.cpp build yet, so nothing can be loaded.'}</div>`);
+    setHTML('best-list', `<div class="note warn">${r.build_ok ? 'No coding model in the library or catalog fits this node\'s memory and disk, or is expected to reach about 3.5 tok/s on it. Lower the target speed, or choose a model yourself with Load model.' : 'This node has no llama.cpp build yet, so nothing can be loaded.'}</div>`);
     return;
   }
   const FITP = { vram: ['st-done', 'all in VRAM'], split: ['st-loading', 'VRAM + RAM'], ram: ['st-loading', 'CPU'] };

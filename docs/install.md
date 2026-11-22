@@ -332,9 +332,9 @@ can check detection without joining.
    - An Apple Silicon Mac runs the model on its GPU from unified memory. Its estimate is the CPU one
      times 1.5, which is a guess until that Mac has a benchmark.
    - **Speed floor.** A model expected to run slower than about 5 tok/s on that node (CPU, Apple Silicon
-     or split) is never recommended, even when it is the fastest that fits. A node that has nothing
-     above the floor shows no pick; its models stay in the Load dialog with a slow warning. Setting the
-     target speed below 5 lowers the floor to that target.
+     or split) is not recommended while a faster one fits. If nothing reaches 5, the fastest model at
+     3.5 tok/s or more is still recommended, with a note that it is under your target. Under 3.5 there is
+     no pick; the models stay in the Load dialog with a slow warning. A target below 5 lowers both limits.
    - **Target speed.** A slider beside *Context size* in the Load dialog (and one at the top of the Pick
      best dialog) sets the tok/s you want from this node, 2 to 32 or any number from 1 to 100. The
      default is 8. The pick is the biggest coding model estimated at or above the target; if none
