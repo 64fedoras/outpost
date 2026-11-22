@@ -8,7 +8,7 @@ Outpost is a self-hosted system for fanning programming tasks out across your ow
 describe a task in a web page. A planner (Claude, OpenRouter, or a local model on one of your
 machines) splits it into small subtasks. You approve the plan, your machines write the pieces in
 parallel with local models (llama.cpp), and Outpost reviews the result, runs the tests, fixes
-failures and hands you a zip. It also does general chat, with an OpenAI-compatible API.
+failures and hands you a zip. It also does general chat (with documents, screenshots, code running and research across nodes), makes 3D models, and offers OpenAI-compatible, Anthropic, Ollama and MCP endpoints.
 
 It is a single self-contained binary with two modes, and no other software to install:
 
@@ -41,7 +41,7 @@ It is a single self-contained binary with two modes, and no other software to in
 
 ![Settings, Tasks section: default planner and the order of the Auto (local + API) planner](docs/images/settings-dark.png)
 
-*Settings: nine sections, including the planner choice and spending caps.*
+*Settings: sections including the planner choice and spending caps.*
 
 These screenshots were taken from the [local test rig](testing/README.md) with a stub Claude API, a fake
 model and demo data, so the output text is canned, not real model output.
@@ -60,10 +60,12 @@ model and demo data, so the output text is canned, not real model output.
 - **Agent mode** for investigating and fixing existing code.
 - **Projects.** Each project keeps its files, git settings and instructions, and has a page where you talk to the project (it can start tasks for you) next to a Threads panel of its tasks. Right-click a project to edit, pin, duplicate (files, settings and instructions, with a warning for git projects) or delete it, and pick a planner per project.
 - **Flexible planners.** Claude, OpenRouter, a local model on a node, or *Auto (local)* and *Auto (local + API)*, which try your own nodes first and optionally fall back to the cloud in an order you set.
-- **Smart routing.** The biggest, fastest loaded model gets the hardest work; benchmarks, best-of-N on spare nodes, and optional memory pooling across machines (experimental, off by default).
-- **Model management.** Browse and download models from Hugging Face, with per-node fit estimates, context-size sizing and automatic disk clean-up.
-- **Chat and an OpenAI-compatible `/v1` API** so editors and agents (aider, Open WebUI and others) can use your cluster.
-- **Hands-off operation.** Saved and scheduled tasks, working hours, Wake-on-LAN, notifications, a spending cap per task and per month for cloud planners (with a Spending page), and tasks that resume after a controller restart.
+- **Smart routing.** The biggest, fastest loaded model gets the hardest work; benchmarks, best-of-N on spare nodes (compare the versions side by side), and optional memory pooling across machines (experimental, off by default).
+- **Model management.** Browse and download models from Hugging Face, with per-node fit estimates, **Pick best** and a target speed slider, a per-node storage limit, per-node task models and automatic disk clean-up.
+- **Chat.** Edit and resend, regenerate or try an answer on another node, switch between versions, branch a chat, per-chat instructions and search. Attach screenshots for a Vision model or PDF, Word, Excel, ODT and CSV documents; let the model run code on an exec node; turn on web search; use **Research (across nodes)** for a cited report; HTML, SVG, Markdown and Mermaid replies get a live preview. Optional memory carries facts across chats and project conversations, and the project conversation can read the project's files.
+- **Use the cluster from other tools.** An OpenAI-compatible `/v1` API, plus Anthropic Messages and Ollama APIs (with a CORS allow-list for browser tools), and Outpost as an MCP server for Claude Code and Claude Desktop. **Connect a tool** in the UI shows the settings to paste.
+- **3D models.** A chat model writes an OpenSCAD file, an exec node with OpenSCAD installed renders it, and you view it in the browser and download the STL.
+- **Hands-off operation.** Saved and scheduled tasks (with a Scheduled page and catch-up after a restart), working hours, Wake-on-LAN, notifications, a spending cap per task and per month for cloud planners (with a Spending page), and tasks that resume after a controller restart.
 - **Safe to run.** Lockout and API tokens, encrypted backups, Linux command sandbox, a clean per-task build and package cache on nodes (nothing built from your code is kept), and in-UI updates with rollback. See [SECURITY.md](SECURITY.md).
 
 ## Install
@@ -114,7 +116,7 @@ Outpost is developed and tested on Linux. **Treat everything else as untested un
 
 - **Windows** (service install, tray icon, self-update, Defender exclusion, PowerShell test runs, GPU use from a service) has been built and unit-tested but never run on a real Windows machine.
 - **macOS** (system service, menu bar item) has never run on a real Mac.
-- The newest features (project pages and the project conversation, project menu and Duplicate, the per-task package cache) have only been exercised in the local test rig and in unit tests.
+- The newest features (the chat additions, the MCP, Anthropic and Ollama endpoints, 3D models, research mode, the revised UI layout) have only been exercised in the local test rig and in unit tests.
 - The current release has been tested against stub Claude and OpenRouter servers and a fake llama-server, **not on the real cluster** with real GPUs and transfer speeds. The live OpenRouter API was never called.
 
 The full list of known limits is in the [user guide](docs/known-limits.md).
