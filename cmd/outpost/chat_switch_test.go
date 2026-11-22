@@ -333,11 +333,22 @@ func TestChatSwitchAllowPrompt(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if p := c.chats["c1"].Prompt; p == nil || p.State != "allow" || p.NodeName == "" {
+	ch := c.chats["c1"]
+	ch.mu.Lock()
+	p := ch.Prompt
+	ch.mu.Unlock()
+	if p == nil || p.State != "allow" || p.NodeName == "" {
 		t.Fatalf("prompt: %+v", p)
 	}
-	c.chatSw.prompts["c1"] <- "allow_node"
-	if got := <-done; got != "allow_node" || !c.nodes["n"].ChatSwitch {
-		t.Fatalf("answer %s, switch %v", got, c.nodes["n"].ChatSwitch)
+	c.chatSw.mu.Lock()
+	reply := c.chatSw.prompts["c1"]
+	c.chatSw.mu.Unlock()
+	reply <- "allow_node"
+	got := <-done
+	c.mu.Lock()
+	on := c.nodes["n"].ChatSwitch
+	c.mu.Unlock()
+	if got != "allow_node" || !on {
+		t.Fatalf("answer %s, switch %v", got, on)
 	}
 }
