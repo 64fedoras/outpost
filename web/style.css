@@ -75,6 +75,10 @@ a.tile:hover { border-color: var(--muted); }
 .node-foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; margin: 0; }
 .toggle input { width: auto; }
+.tok-scope { display: flex; flex-direction: column; gap: 6px; }
+.tok-scope > .muted { font-size: 12px; }
+.tok-scope .toggle { align-items: flex-start; }
+.tok-scope .toggle input { margin-top: 2px; flex: none; }
 .empty { text-align: center; color: var(--muted); padding: 34px 20px; border: 1px dashed var(--line); border-radius: var(--radius); }
 .note { font-size: 12.5px; padding: 8px 12px; border-radius: 8px; background: var(--tint); margin: 8px 0; }
 .note.warn { background: color-mix(in srgb, var(--warn) 14%, var(--panel)); }

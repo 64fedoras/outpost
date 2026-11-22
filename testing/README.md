@@ -58,6 +58,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `groups.py` | Sidebar groups: the single grouped list (status icons, status order), new group, dragging a task and a chat onto a group, Move to group, rename, colour, move, delete, and the phone sheet. Runs first: it expects a controller with no groups yet. |
 | `schedules.py` | Schedule dialog (every few hours, chosen days and refusing none, monthly on the 31st, the preview line) and the Scheduled page: sidebar count, Run now history, open row, Pause/Resume, Pause all banner, ⋯ menu (Edit request, Duplicate, Remove schedule, Escape), phone layout. |
 | `settingssearch.py` | Settings search: "api token" finds Security › API tokens first, no-match line, folded help opens on a match, Esc restores the open section, "/" focuses the box, Connect a tool tab opens for "ollama", the API keys pointer link, phone width. |
+| `tokenscope.py` | Settings, Security: API token access is one choice (Chat only by default), each choice stores the right scope, Full access is stored as an empty scope like older tokens and is labelled "full access" in the list; light, dark and phone shots. Removes its tokens after. |
 | `shots.py` | Screenshots of every tab (needs a task id edited into the script). |
 | `soak.py` | No browser. Runs `SOAK_TASKS` tasks (default 8) through the API and, at random (`SOAK_SEED`), kills and restarts the node, the controller or both mid-task; every task must end `done`. Presses Resume for Claude tasks after a controller restart. Runs nightly in `.github/workflows/soak.yml`. |
 

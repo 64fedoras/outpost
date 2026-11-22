@@ -283,7 +283,7 @@ func (c *Controller) handleNewAPIToken(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	name := strings.TrimSpace(req.Name)
 	if req.Scope != "" && req.Scope != "chat" && req.Scope != "images" && req.Scope != "mcp" {
-		writeJSON(w, 400, map[string]string{"error": "scope must be empty (full access), chat or images"})
+		writeJSON(w, 400, map[string]string{"error": "scope must be empty (full access), chat, images or mcp"})
 		return
 	}
 	if name == "" || len(name) > 60 {
