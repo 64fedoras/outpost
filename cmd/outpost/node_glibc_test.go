@@ -53,8 +53,35 @@ func TestOpFailureSticksThroughRetries(t *testing.T) {
 	}
 }
 
-func TestOldBuildsCannotHelpArm64(t *testing.T) {
-	if !oldBuildsCannotHelp("linux-arm64-cpu") || oldBuildsCannotHelp("linux-x64-cpu") {
-		t.Fatal("only Ubuntu arm64 builds are glibc 2.39 only")
+func TestCompatVariants(t *testing.T) {
+	cases := []struct {
+		h    Hello
+		want string
+	}{
+		{Hello{OS: "linux", Arch: "arm64", Glibc: "2.35"}, "linux-arm64-cpu-compat"},
+		{Hello{OS: "linux", Arch: "arm64", Glibc: "2.35", VulkanAvailable: true, GPUs: []GPUInfo{{Vendor: "nvidia"}}}, "linux-arm64-cpu-compat"},
+		{Hello{OS: "linux", Arch: "arm64", Glibc: "2.39"}, "linux-arm64-cpu"},
+		{Hello{OS: "linux", Arch: "arm64"}, "linux-arm64-cpu"}, // older node: glibc unknown, the install error decides
+		{Hello{OS: "linux", Arch: "amd64", Glibc: "2.31"}, "linux-x64-cpu"},
+		{Hello{OS: "darwin", Arch: "amd64", NoAVX2: true}, "macos-x64-compat"},
+		{Hello{OS: "darwin", Arch: "amd64"}, "macos-x64"},
+		{Hello{OS: "darwin", Arch: "arm64", NoAVX2: true}, "macos-arm64"},
+	}
+	for _, c := range cases {
+		if got, _ := nodeVariant(&c.h); got != c.want {
+			t.Errorf("%+v: got %s want %s", c.h, got, c.want)
+		}
+	}
+	if compatOf("linux-arm64-cpu") != "linux-arm64-cpu-compat" || compatOf("macos-x64") != "macos-x64-compat" ||
+		compatOf("linux-arm64-vulkan") != "linux-arm64-cpu-compat" || compatOf("linux-x64-cpu") != "" || compatOf("macos-x64-compat") != "" {
+		t.Fatal("compatOf")
+	}
+}
+
+func TestFlagsLackAVX2(t *testing.T) {
+	has := "processor : 0\nflags\t\t: fpu avx avx2 fma\n"
+	no := "processor : 0\nflags\t\t: fpu avx f16c\n"
+	if flagsLackAVX2(has, "flags") || !flagsLackAVX2(no, "flags") || flagsLackAVX2("nothing here", "flags") {
+		t.Fatal("flagsLackAVX2")
 	}
 }

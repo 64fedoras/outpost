@@ -557,11 +557,11 @@ func (n *Node) hello() Hello {
 		CPU: hw.CPU, RAMBytes: hw.RAMBytes, GPUs: hw.GPUs, Backends: hw.Backends,
 		Models: n.listModels(), FreedNote: freedNote, FreedAt: freedAt, LimitNote: limitNote, LimitAt: limitAt, WorkFreeBytes: diskFree(n.workRoot), ModelsFreeBytes: diskFree(filepath.Join(n.dataDir, "models")),
 		MaxConcurrentJobs: autoMaxJobs(hw), ExecEnabled: execOn, RunningJobs: n.runningIDs(),
-		VulkanAvailable: vulkanAvailable(),
-		RollbackTo:      previousVersion(n.agentDir()),
-		Paused:          n.isPaused(),
-		Features:        nodeFeatures,
-		Tools:           n.toolInventory(false), Shell: nodeShell(),
+		VulkanAvailable: vulkanAvailable(), Glibc: localGlibc(), NoAVX2: cpuLacksAVX2(),
+		RollbackTo: previousVersion(n.agentDir()),
+		Paused:     n.isPaused(),
+		Features:   nodeFeatures,
+		Tools:      n.toolInventory(false), Shell: nodeShell(),
 		Sandbox: n.sandboxMode(), SandboxLayers: sandboxLayers(n.sandboxMode()),
 	}
 	if rt := n.currentRuntime(); rt != nil {

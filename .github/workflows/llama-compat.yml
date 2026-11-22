@@ -1,0 +1,156 @@
+name: llama.cpp compatible builds
+
+# Upstream llama.cpp releases do not run everywhere Outpost nodes do:
+#   * the Ubuntu arm64 builds need glibc 2.38 (made on Ubuntu 24.04), so they fail on a
+#     Jetson on JetPack 6 / Ubuntu 22.04;
+#   * the macOS x64 build is compiled for AVX2, so it crashes on Intel Macs without it
+#     (Mac Pro 2013 and older).
+# This workflow builds the same upstream release tag for those machines and publishes it as a
+# prerelease tagged llama-compat-<tag>. The controller adds those files to the matching
+# upstream release (controller_runtime.go, mergeCompatAssets) and uses them only for nodes
+# that report they need them. A prerelease with this tag is ignored by the Outpost update channels.
+#
+# Weekly, and by hand (optionally for one tag). A tag that already has a published release is skipped.
+
+on:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: llama.cpp release tag to build (default is the latest, e.g. b12633)
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: llama-compat
+  cancel-in-progress: false
+
+env:
+  CMAKE_ARGS: "-DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_TOOLS=ON -DLLAMA_BUILD_SERVER=ON -DGGML_RPC=ON -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF"
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.t.outputs.tag }}
+      build: ${{ steps.t.outputs.build }}
+    steps:
+      - id: t
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WANT: ${{ inputs.tag }}
+        run: |
+          tag="$WANT"
+          [ -n "$tag" ] || tag=$(gh api repos/ggml-org/llama.cpp/releases/latest --jq .tag_name)
+          echo "$tag" | grep -Eq '^b[0-9]+$' || { echo "unexpected llama.cpp tag: $tag"; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          state=$(gh release view "llama-compat-$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          if [ "$state" = "false" ]; then
+            echo "llama-compat-$tag is already published"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A draft left by a failed run is started over.
+          [ "$state" = "true" ] && gh release delete "llama-compat-$tag" --repo "$GITHUB_REPOSITORY" --yes
+          gh release create "llama-compat-$tag" --repo "$GITHUB_REPOSITORY" --draft --prerelease --target "$GITHUB_SHA" \
+            --title "llama.cpp $tag, compatible builds" \
+            --notes "Builds of llama.cpp $tag for machines the upstream release does not run on: Ubuntu 22.04 arm64 (glibc 2.35, e.g. Jetson on JetPack 6) and Intel Macs without AVX2. Outpost picks these automatically; there is nothing to download by hand."
+          echo "build=true" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu22-arm64
+            os: ubuntu-22.04-arm
+          - name: macos-x64-noavx2
+            os: macos-15-intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Get llama.cpp
+        env:
+          TAG: ${{ needs.check.outputs.tag }}
+        run: git clone --depth 1 --branch "$TAG" https://github.com/ggml-org/llama.cpp.git llama.cpp
+
+      - name: Build (Ubuntu 22.04 arm64)
+        if: matrix.name == 'ubuntu22-arm64'
+        working-directory: llama.cpp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libssl-dev
+          # GCC 11 cannot build the Armv9.2 (SME) CPU variants; every older variant stays, and
+          # the right one is chosen at run time from the CPU's features.
+          sed -i '/ggml_add_cpu_backend_variant(armv9\.2_/d' ggml/src/CMakeLists.txt
+          # libstdc++ and libgcc are linked in so nothing newer than glibc 2.35 is needed.
+          COMMON="-DCMAKE_INSTALL_RPATH=\$ORIGIN -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON -DGGML_NATIVE=OFF -DLLAMA_OPENSSL=ON -DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++ -DCMAKE_SHARED_LINKER_FLAGS=-static-libstdc++ $CMAKE_ARGS"
+          if ! { cmake -B build -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON $COMMON && cmake --build build --config Release -j "$(nproc)"; }; then
+            echo "::warning::all-variants build failed; building one generic Armv8 CPU backend instead"
+            rm -rf build
+            cmake -B build $COMMON
+            cmake --build build --config Release -j "$(nproc)"
+          fi
+
+      - name: Build (macOS x64 without AVX2)
+        if: matrix.name == 'macos-x64-noavx2'
+        working-directory: llama.cpp
+        run: |
+          # Plain AVX (Sandy/Ivy Bridge) and F16C only; no FMA, AVX2 or AVX-512.
+          cmake -B build \
+            -DGGML_METAL=OFF -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DCMAKE_INSTALL_RPATH='@loader_path' -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
+            -DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_F16C=ON -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_BMI2=OFF \
+            -DGGML_AVX512=OFF -DGGML_AVX_VNNI=OFF -DLLAMA_BUILD_BORINGSSL=ON \
+            $CMAKE_ARGS
+          cmake --build build --config Release -j "$(sysctl -n hw.logicalcpu)"
+
+      - name: Check the build runs and has no newer instructions than promised
+        working-directory: llama.cpp
+        run: |
+          ./build/bin/llama-server --version
+          case "${{ matrix.name }}" in
+            macos-x64-noavx2)
+              # Fail the job if any instruction from AVX2/FMA/AVX-512 slipped in.
+              for f in build/bin/*.dylib; do
+                if otool -tv "$f" | grep -Eq '\bvfmadd|\bvfnmadd|\bvpbroadcast[bwdq]\b.*ymm|\bvperm(d|q|ps)\b|\bvp(add|sub|and|or|xor|cmpeq|max|min|shuf|maddubs|mull)[a-z]*\s.*ymm|zmm'; then
+                  echo "$f contains AVX2, FMA or AVX-512 instructions"; exit 1
+                fi
+              done ;;
+            ubuntu22-arm64)
+              for f in build/bin/llama-server build/bin/*.so*; do
+                v=$(objdump -T "$f" 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)
+                echo "$f needs ${v:-no glibc symbols}"
+                [ -z "$v" ] || [ "$(printf '%s\n%s\n' "${v#GLIBC_}" 2.35 | sort -V | tail -n 1)" = 2.35 ] || { echo "needs glibc newer than 2.35"; exit 1; }
+              done ;;
+          esac
+
+      - name: Pack and upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          out="llama-$TAG-bin-${{ matrix.name }}.tar.gz"
+          cp llama.cpp/LICENSE llama.cpp/build/bin/
+          if [ "$(uname)" = Darwin ]; then
+            tar -czf "$out" -s ",^\.,llama-$TAG," -C llama.cpp/build/bin .
+          else
+            tar -czf "$out" --transform "s,^\.,llama-$TAG," -C llama.cpp/build/bin .
+          fi
+          ls -l "$out"
+          gh release upload "llama-compat-$TAG" "$out" --repo "$GITHUB_REPOSITORY" --clobber
+
+  publish:
+    needs: [check, build]
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish the release (all builds succeeded)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: gh release edit "llama-compat-$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
