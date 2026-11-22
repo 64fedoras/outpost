@@ -294,7 +294,7 @@ routine code writing runs on your nodes. Every Claude call is metered live on th
 
 - **Soft cap per task** (default $2, set when you approve the plan): before a call that would pass
   the cap, the task **pauses**. Raise the cap, or finish with a local planner. Nothing is thrown away.
-- **Monthly cap for all tasks** (off by default): set it on the **Spending** page (sidebar, under
+- **Monthly cap for all tasks**: when you save your first Claude or OpenRouter key, Outpost asks once for a monthly limit (prefilled $25; **No limit** keeps it off). Otherwise it is off by default. Set or change it on the **Spending** page (sidebar, under
   Updates). When this month's Claude and OpenRouter spend, across every task, would pass it, a task
   pauses before its next cloud call with *Paused at the monthly cap*. Raise the cap, finish that task
   with a local planner, or leave it: it continues on its own when the next calendar month starts

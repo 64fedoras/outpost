@@ -142,6 +142,12 @@ func TestMonthlyCapPausesCloudCalls(t *testing.T) {
 	if view.CapUSD != 50 {
 		t.Fatalf("view cap %v", view.CapUSD)
 	}
+	c.mu.Lock()
+	asked := c.settings.MonthlyCapAsked
+	c.mu.Unlock()
+	if !asked {
+		t.Fatal("saving the cap must mark the first-key prompt as answered")
+	}
 	select {
 	case err := <-done:
 		if err != nil {

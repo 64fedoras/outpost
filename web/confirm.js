@@ -35,13 +35,14 @@ function askFinish(ok) {
   const back = done.back; if (back && document.contains(back) && back.focus) back.focus({ preventScroll: true });
   done.resolve(done.text ? (ok ? val : null) : ok);
 }
-function askShow({ title, body, yes, danger, text, value }) {
+function askShow({ title, body, yes, no, danger, text, value }) {
   const el = askBuild();
   if (askDone) askFinish(false);
   const back = document.activeElement;
   el.querySelector('#ask-title').textContent = title;
   const b = el.querySelector('#ask-body'); b.textContent = body || ''; b.classList.toggle('hidden', !body);
   const input = el.querySelector('#ask-input'); input.classList.toggle('hidden', !text); input.value = text ? (value || '') : '';
+  el.querySelector('#ask-no').textContent = no || 'Cancel';
   const y = el.querySelector('#ask-yes'); y.textContent = yes; y.classList.toggle('danger', !!danger); y.classList.toggle('primary', !danger);
   el.classList.remove('hidden');
   const p = new Promise((resolve) => { askDone = { resolve, back, text }; });
@@ -58,5 +59,5 @@ function askConfirm(message, opts = {}) {
   return askShow({ title, body, yes: opts.ok || yes, danger: opts.danger ?? danger });
 }
 function askText(message, value = '', opts = {}) {
-  return askShow({ title: message, body: opts.body || '', yes: opts.ok || 'Save', text: true, value });
+  return askShow({ title: message, body: opts.body || '', yes: opts.ok || 'Save', no: opts.no, text: true, value });
 }

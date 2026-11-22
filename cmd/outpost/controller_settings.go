@@ -22,11 +22,12 @@ type Settings struct {
 	HFTokenEnc        string         `json:"hf_token_enc,omitempty"`
 	ClaudeModel       string         `json:"claude_model"`
 	DefaultCapUSD     float64        `json:"default_cap_usd"`
-	MonthlyCapUSD     float64        `json:"monthly_cap_usd,omitempty"`  // all cloud planner calls in a calendar month; 0 = off (spend.go)
-	WakeForWork       bool           `json:"wake_for_work,omitempty"`    // Wake-on-LAN offline nodes when a task waits for a worker (wol.go)
-	DefaultPlanner    string         `json:"default_planner"`            // "claude", "openrouter" or "node:<id>"
-	SchedulesPaused   bool           `json:"schedules_paused,omitempty"` // Pause all on the Scheduled page (templates.go)
-	AutoOrder         []string       `json:"auto_order,omitempty"`       // providers "Auto (local + API)" tries, in order: local, claude, openrouter; empty = all three in that order
+	MonthlyCapAsked   bool           `json:"monthly_cap_asked,omitempty"` // the first-key prompt for a monthly cap was answered (set by the Spending cap call)
+	MonthlyCapUSD     float64        `json:"monthly_cap_usd,omitempty"`   // all cloud planner calls in a calendar month; 0 = off (spend.go)
+	WakeForWork       bool           `json:"wake_for_work,omitempty"`     // Wake-on-LAN offline nodes when a task waits for a worker (wol.go)
+	DefaultPlanner    string         `json:"default_planner"`             // "claude", "openrouter" or "node:<id>"
+	SchedulesPaused   bool           `json:"schedules_paused,omitempty"`  // Pause all on the Scheduled page (templates.go)
+	AutoOrder         []string       `json:"auto_order,omitempty"`        // providers "Auto (local + API)" tries, in order: local, claude, openrouter; empty = all three in that order
 	OpenRouterKeyEnc  string         `json:"openrouter_key_enc,omitempty"`
 	OpenRouterModel   string         `json:"openrouter_model,omitempty"`
 	BraveKeyEnc       string         `json:"brave_key_enc,omitempty"`     // Brave Search API key: failover for the built-in web search
@@ -187,7 +188,7 @@ func (c *Controller) settingsView() map[string]any {
 		"has_openrouter_key": ork != "", "openrouter_key_hint": keyHint(ork), "openrouter_model": c.settings.OpenRouterModel,
 		"has_brave_key": brk != "", "brave_key_hint": keyHint(brk),
 		"openrouter_label": openRouterLabel(c.settings.OpenRouterModel),
-		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner, "auto_order": normAutoOrder(c.settings.AutoOrder), "monthly_cap_usd": c.settings.MonthlyCapUSD,
+		"default_cap_usd":  c.settings.DefaultCapUSD, "default_planner": c.settings.DefaultPlanner, "auto_order": normAutoOrder(c.settings.AutoOrder), "monthly_cap_usd": c.settings.MonthlyCapUSD, "monthly_cap_asked": c.settings.MonthlyCapAsked,
 		"claude_models": models, "login_failures": fails, "locked_ips": locked,
 		"wake_for_work": c.settings.WakeForWork,
 		"auto_resume":   !c.settings.AutoResumeOff, "best_of_n": normBestOf(c.settings.BestOfN),

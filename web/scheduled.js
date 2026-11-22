@@ -14,6 +14,15 @@ function ctlTime(iso, withDate) {
     : { weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC' };
   return d.toLocaleString([], o);
 }
+// The same moment on the browser's clock, only when that differs from the controller's (otherwise ''), so a
+// schedule set for 02:00 does not make people guess which 02:00 it is.
+const browserOffset = () => -new Date().getTimezoneOffset();
+const clocksDiffer = () => browserOffset() !== ((state && state.controller_utc_offset) || 0);
+function yourTime(iso, withDate) {
+  if (!clocksDiffer()) return '';
+  const o = withDate ? { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' } : { weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+  return new Date(iso).toLocaleString([], o);
+}
 const farFromNow = (iso) => Math.abs(new Date(iso) - Date.now()) > 6 * 86400e3;
 function utcLabel(min) {
   if (!min) return 'UTC';
@@ -70,7 +79,7 @@ function scRow(t) {
   else if (running) { const r = (t.runs || []).find((x) => RUN_WORKING.includes(x.status)); when = `<b>running now</b>${r ? 'started ' + esc(ctlTime(r.at).split(' ').pop()) : ''}`; }
   else if (t.paused) when = '<b>–</b>paused';
   else if (state.schedules_paused) when = '<b>–</b>all paused';
-  else if (t.next_run) when = `<b>${esc(ctlTime(t.next_run, farFromNow(t.next_run)))}</b>next run`;
+  else if (t.next_run) { const far = farFromNow(t.next_run), you = yourTime(t.next_run, far); when = `<b>${esc(ctlTime(t.next_run, far))}</b>next run${you ? ` <span class="muted" title="The same moment on this browser's clock">· your time ${esc(you)}</span>` : ''}`; }
   const cls = ['sc-row', scOpen.has(t.id) ? 'open' : '', !t.schedule || t.paused ? 'paused' : '', t.schedule && !t.paused && tplWarn(t) ? 'warnrow' : ''].filter(Boolean).join(' ');
   const pills = (t.paused ? pill('cancelled', 'Paused') + ' ' : '') + (t.schedule ? `<span class="pill st-ready">${esc(schedText(t))}</span>` : '');
   const second = t.schedule ? (t.paused ? `<button class="small primary" data-act="sc-resume" data-id="${esc(t.id)}">Resume</button>` : `<button class="small" data-act="sc-pause" data-id="${esc(t.id)}">Pause</button>`)
@@ -104,7 +113,7 @@ function renderScheduled() {
   const list = state.templates || [];
   const all = !!state.schedules_paused;
   const sw = $('sc-pause-all'); sw.classList.toggle('on', all); sw.setAttribute('aria-checked', String(all));
-  $('sc-tz').textContent = `Saved tasks that start on their own, planned on your nodes so they never spend money. Times are the controller's clock (${utcLabel(state.controller_utc_offset || 0)}).`;
+  $('sc-tz').textContent = `Saved tasks that start on their own, planned on your nodes so they never spend money. Times are the controller's clock (${utcLabel(state.controller_utc_offset || 0)})${clocksDiffer() ? `; this browser is on ${utcLabel(browserOffset())}, so next runs also show your time` : ''}.`;
   setHTML('sc-banner', all ? `<div class="sc-banner" role="status"><span aria-hidden="true">⏸</span><span><b>All schedules are paused.</b> Nothing starts on its own until you turn this off; Run now still works.</span><span class="spacer"></span><button class="small" data-act="sc-pause-all" data-on="0">Resume all</button></div>` : '');
   const sched = list.filter((t) => t.schedule), plain = list.filter((t) => !t.schedule);
   let h = '';

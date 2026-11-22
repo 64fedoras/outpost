@@ -420,6 +420,7 @@ func (c *Controller) handleSpendingCap(w http.ResponseWriter, r *http.Request) {
 	}
 	c.mu.Lock()
 	c.settings.MonthlyCapUSD = *req.CapUSD
+	c.settings.MonthlyCapAsked = true
 	err := c.saveSettingsLocked()
 	c.mu.Unlock()
 	if err != nil {
