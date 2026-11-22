@@ -1446,7 +1446,7 @@ pre.code .pj-hl { background: var(--tint); display: inline-block; min-width: 100
 @media (max-width: 600px) { .mem-row { flex-direction: column; } }
 
 /* Nodes page at scale: summary strip, filter bar, update banner, compact cards and rows, offline strip */
-.strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 10px; }
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 10px; }
 .strip > div { padding: 8px 14px; border-right: 1px solid var(--line); min-width: 0; }
 .strip > div:last-child { border-right: 0; }
 .strip b { display: block; font-size: 17px; font-weight: 650; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1513,6 +1513,10 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 .menu-list { right: 0; display: flex; flex-direction: column; gap: 4px; padding: 6px; min-width: 190px; align-items: stretch; }
 .menu-list button { text-align: left; border-color: transparent; background: none; }
 .menu-list button:hover { background: var(--tint); border-color: transparent; }
+.menu-list a { padding: 5px 10px; border-radius: 6px; color: var(--text, inherit); text-decoration: none; }
+.menu-list a:hover { background: var(--tint); }
+.card-actions details.menu { position: relative; }
+.card-actions details.menu .menu-list { top: auto; bottom: calc(100% + 4px); left: 0; right: auto; } /* opens upward: the result card is the last thing above the composer */
 .table-wrap:has(details[open]) { overflow: visible; } .table-wrap:has(details[open]) table { overflow: visible; }
 .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .clamp.open { display: block; }

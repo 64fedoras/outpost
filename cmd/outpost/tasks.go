@@ -98,6 +98,7 @@ type Task struct {
 	Pinned       bool            `json:"pinned,omitempty"`      // kept above the other groups in the sidebar
 	GroupID      string          `json:"group_id,omitempty"`    // sidebar group (groups.go)
 	ResolvedAt   *time.Time      `json:"resolved_at,omitempty"` // marked resolved on the project page; see resolvedLocked
+	KeepOpen     bool            `json:"keep_open,omitempty"`   // reopened by hand: the 24 h auto-resolve of successful tasks leaves it alone
 	Status       string          `json:"status"`
 	PausedFrom   string          `json:"paused_from,omitempty"`
 	CapKind      string          `json:"cap_kind,omitempty"` // while paused_cap: "" = this task's cap, "monthly" = the monthly cap (spend.go)

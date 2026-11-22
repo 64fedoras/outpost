@@ -125,3 +125,26 @@ func TestProjectOverview(t *testing.T) {
 		t.Fatalf("missing project: %d", w.Code)
 	}
 }
+
+// A successful task quiet for a day counts as resolved without a click; failed ones and
+// ones reopened by hand do not.
+func TestTaskAutoResolve(t *testing.T) {
+	old := time.Now().Add(-25 * time.Hour)
+	recent := time.Now().Add(-2 * time.Hour)
+	task := &Task{Status: "done"}
+	if !task.resolvedLocked(old, false) {
+		t.Fatal("done and quiet for 25 h should be resolved")
+	}
+	if task.resolvedLocked(recent, false) {
+		t.Fatal("done 2 h ago should stay under Idle")
+	}
+	if task.resolvedLocked(old, true) {
+		t.Fatal("a task that needs you is never resolved")
+	}
+	if (&Task{Status: "failed"}).resolvedLocked(old, false) {
+		t.Fatal("failed tasks wait to be looked at")
+	}
+	if (&Task{Status: "done", KeepOpen: true}).resolvedLocked(old, false) {
+		t.Fatal("a task reopened by hand stays open")
+	}
+}

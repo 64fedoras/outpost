@@ -26,14 +26,14 @@ accepted for this step; to allow others add `--setup-allow-from 203.0.113.0/24,1
 ### Nodes
 
 **One paste (easiest).** Upload the binary for each platform you use in the **Updates** tab once. On the
-**Nodes** tab click **Add node**: the top two boxes are ready-to-paste commands with the controller
-address and a join code already filled in. On Linux or macOS run
+**Nodes** tab click **Add node**: the dialog shows a ready-to-paste command with the controller
+address and a join code already filled in, for the OS of the browser you are using (the **Linux / macOS** and **Windows** tabs switch). On Linux or macOS run
 
 ```bash
 curl -fsSk --pinnedpubkey 'sha256//<controller key>' 'https://192.0.2.10:8443/install.sh?t=<code>' | sh
 ```
 
-and on Windows paste the PowerShell command into an **Administrator** terminal. The script works out
+and on Windows (the other tab) paste the PowerShell command into an **Administrator** terminal. The script works out
 the platform, downloads the matching binary from the controller, checks its SHA-256 against the
 uploaded release and runs `install node --join` (using `sudo` on Linux when needed). The connection
 is pinned to the controller's own certificate, so no `-k` trust-on-first-use is involved. The

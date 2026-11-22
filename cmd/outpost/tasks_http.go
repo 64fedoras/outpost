@@ -74,11 +74,19 @@ func (t *Task) summaryLocked() taskSummary {
 	return s
 }
 
+// autoResolveAfter is how long a successful task stays under Idle before it counts as resolved.
+const autoResolveAfter = 24 * time.Hour
+
 // resolvedLocked reports whether the resolved mark still holds: a follow-up,
 // a retry or anything that needs the person clears it without a write.
 func (t *Task) resolvedLocked(updated time.Time, needsYou bool) bool {
-	if t.ResolvedAt == nil || needsYou {
+	if needsYou {
 		return false
+	}
+	// A task that finished successfully and has been quiet for a day is tidied away on its own,
+	// unless the person reopened it by hand. Failed and cancelled tasks wait to be looked at.
+	if t.ResolvedAt == nil {
+		return !t.KeepOpen && t.Status == "done" && !updated.IsZero() && time.Since(updated) > autoResolveAfter
 	}
 	switch t.Status {
 	case "done", "failed", "cancelled":
@@ -674,8 +682,10 @@ func (c *Controller) handleTaskMeta(w http.ResponseWriter, r *http.Request) {
 		if *req.Resolved {
 			now := time.Now()
 			t.ResolvedAt = &now
+			t.KeepOpen = false
 		} else {
 			t.ResolvedAt = nil
+			t.KeepOpen = true
 		}
 	}
 	t.saveLocked()

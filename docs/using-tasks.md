@@ -82,7 +82,8 @@ Each task is a conversation:
    (or a guess by difficulty for new files), plus about 20 seconds per call and one minute for a test run.
    Fix rounds after failing tests are not included. A node that has not been benchmarked yet counts
    as slow (8 tokens a second) and the estimate says *rough*.
-   **Pick models for each node** (a checkbox on the plan card, off by default) loads a different model
+   The plan card shows one decision, **Approve and start**, with the spending cap beside it (a planner on Claude or OpenRouter only). **Adjust models, difficulty, cap…** opens the rest: each subtask's difficulty, the cap, and
+   **Pick models for each node** (a checkbox, off by default) loads a different model
    on each node before work starts: each node's best fit (the same pick as *Pick best* on the Nodes
    page), only on nodes with *Let tasks change my model* on. The card lists what each node would load,
    whether it needs a download, and what it has now. A node keeps its model when it is busy, pooled,
@@ -170,7 +171,7 @@ normal model load. Unloading it yourself with **Unload** is different: the node 
 gets no work until you load one. A pooled model is never unloaded for idleness.
 
 **Handing off to a coding assistant.** When local models get most of the way but not all of it,
-**Hand off to a coding assistant** on the result card downloads a zip with the files plus
+**Hand off to a coding assistant** (under **More** on the result card, next to **Download .zip**) downloads a zip with the files plus
 `HANDOFF.md` (the requests, the plan, what each request changed, the test command, the last failing
 test output and next steps) and `outpost-changes.patch`. The zip also has a short pointer to
 `HANDOFF.md` in each assistant's own instructions file, so whichever you open it in picks it up:
@@ -360,7 +361,7 @@ Tasks without a project work as before, and existing tasks stay as they were. De
 project's tasks before deleting the project.
 
 **The Projects page** shows one card per project with its counts (waiting on you, working, idle,
-resolved); **＋ New project** opens the form in a dialog. Click a card to open the **project page**
+resolved); **＋ New project** opens a dialog that asks for a name; **Start from a git repository instead…** adds the URL, branch, token or key, test command and push options. Click a card to open the **project page**
 (`#/projects/<id>`):
 
 **Project menu.** Right-click a project (its card, its pinned row in the sidebar, or its name at the
@@ -392,7 +393,7 @@ something in them is waiting on you; the pin is stored on the controller, so it 
   change files or run commands; tasks do that. Models that cannot call tools (llama-server without tool
   support, or the call fails on the first try) answer as before, with the files your message names
   put in front of them. With a paid planner every tool round is a separate call, so an answer that
-  reads files costs a few times more. **Start as task** skips the conversation and starts your message
+  reads files costs a few times more. **Ask** (Enter; Shift+Enter adds a line) talks it over with the planner. **Start as task** skips the conversation and starts your message
   as a task at once; **More options…** opens the full new-task form with the project chosen. Tasks
   started elsewhere (the New task page, a schedule) show up in time order with their request.
   With Claude or OpenRouter each answer is one or more small paid calls, on the Spending page as
@@ -405,11 +406,11 @@ something in them is waiting on you; the pin is stored on the controller, so it 
   **View all** lists them all) and its tasks in four groups: **Waiting on you** (questions, a plan to
   approve, a cap or a resume), **Working** (including tasks queued behind the one that works),
   **Idle** (finished, failed or stopped) and **Resolved** (folded; click to open). On a narrow window
-  the panel slides over the page; on a phone it fills the screen. The wide-screen choice is remembered.
+  the panel slides over the page; on a phone it fills the screen. The wide-screen choice is remembered; until you choose, the panel opens once the project has a task, and empty groups show only their heading.
 - **Resolving** a task (✓ on its row, **✓ Resolve** on its card, **Mark resolved** in the sidebar's
   task menu, or **Resolve all** on Idle) only tidies it away: nothing is deleted, the card leaves the
   middle (a link shows the hidden ones) and the task moves to Resolved. A follow-up, a retry or
-  anything that needs you brings it back to the other groups by itself; **Reopen** does it by hand.
+  anything that needs you brings it back to the other groups by itself; **Reopen** does it by hand. A task that finished successfully and has been quiet for 24 hours is resolved on its own (failed and stopped ones wait for you; a task you reopened stays open).
 - **Files** shows the project's file list; **⚙** holds the
   project's defaults, its git settings and **Delete project**; **.zip** downloads the files; **⋯** opens the project menu (Edit for the instructions, Pin to sidebar and the rest).
 

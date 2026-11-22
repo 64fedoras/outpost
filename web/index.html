@@ -256,12 +256,12 @@
           <div class="thread pj-feed" id="pj-feed" aria-live="polite"></div>
           <div class="dock">
             <div class="composer">
-              <textarea id="pj-text" rows="1" placeholder="Ask about this project or describe work to do… (Ctrl+Enter sends)" aria-label="Message to the project"></textarea>
+              <textarea id="pj-text" rows="1" placeholder="Ask about this project or describe work to do…" aria-label="Message to the project"></textarea>
               <div class="composer-bar">
-                <a href="#/new" id="pj-more" class="composer-hint" title="The full new-task form, with this project chosen">More options…</a>
+                <a href="#/new" id="pj-more" class="composer-hint" title="The full new-task form, with this project chosen">More options…</a><span class="composer-hint pj-keys">Enter asks · Shift+Enter adds a line</span>
                 <span class="spacer"></span>
                 <button class="small" id="pj-task" title="Skip the conversation: start this message as a task now, with the project's settings">Start as task</button>
-                <button class="send" id="pj-go">Send</button>
+                <button class="send" id="pj-go">Ask</button>
               </div>
             </div>
           </div>
@@ -740,10 +740,15 @@
     <h3>Add a node</h3>
     <p class="hint">Linux: installs a service that starts at boot and runs as the user who ran <code>sudo</code>. Windows: runs in the background with a tray icon and starts at sign-in. Each code works once and expires in 1 hour. Once a node joins with it, a new code appears here, so you can add the next node straight away.</p>
     <div id="add-note" class="note hidden u7"></div>
-    <label>Linux or macOS: paste on the new machine (it downloads Outpost from this controller and installs it)</label>
-    <div class="codebox"><span id="cmd-curl"></span><button data-copy="cmd-curl">Copy</button></div>
-    <label>Windows: paste in an <b>Administrator</b> PowerShell or Command Prompt</label>
-    <div class="codebox"><span id="cmd-curlwin"></span><button data-copy="cmd-curlwin">Copy</button></div>
+    <div class="nv-toggle" role="group" aria-label="Operating system of the new machine"><button type="button" data-addos="unix">Linux / macOS</button><button type="button" data-addos="win">Windows</button></div>
+    <div id="add-unix">
+      <label>Paste on the new machine (it downloads Outpost from this controller and installs it)</label>
+      <div class="codebox"><span id="cmd-curl"></span><button data-copy="cmd-curl">Copy</button></div>
+    </div>
+    <div id="add-win" class="hidden">
+      <label>Paste in an <b>Administrator</b> PowerShell or Command Prompt</label>
+      <div class="codebox"><span id="cmd-curlwin"></span><button data-copy="cmd-curlwin">Copy</button></div>
+    </div>
     <p id="add-noplat" class="note hidden u7"></p>
     <details class="u6"><summary class="hint">Other ways: copy the binary yourself, or run over SSH</summary>
     <label for="ssh-target">Run over SSH from this computer (optional, e.g. admin@192.0.2.11)</label>
@@ -865,6 +870,8 @@
     <h3>New project</h3>
     <div class="settings-form" id="np-form">
         <label for="np-name">Name</label><input id="np-name" placeholder="my-api">
+        <button type="button" class="link-btn" id="np-git-show" aria-expanded="false" aria-controls="np-git">Start from a git repository instead… <span class="hint">(adds URL, branch, token, tests, push)</span></button>
+        <div id="np-git" class="hidden">
         <label for="np-url">Git URL <span class="hint">(optional; https://… or ssh://… or git@host:path)</span></label><input id="np-url" placeholder="https://github.com/me/repo.git" autocomplete="off">
         <label for="np-branch">Branch to commit to <span class="hint">(created if missing; default outpost)</span></label><input id="np-branch" placeholder="outpost">
         <label for="np-token">HTTPS token <span class="hint">(optional; stored encrypted)</span></label><input id="np-token" type="password" autocomplete="off">
@@ -872,6 +879,7 @@
         <label for="np-test">Test command <span class="hint">(optional)</span></label><input id="np-test" placeholder="go test ./...">
         <label class="toggle"><input type="checkbox" id="np-push"> push each finished round to the branch</label>
         <label class="toggle"><input type="checkbox" id="np-pr"> also open a GitHub pull request (needs an HTTPS token)</label>
+        </div>
         <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="np-go">Create project</button></div>
         <div class="error-msg hidden" id="np-err"></div>
     </div>
