@@ -42,6 +42,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `usability2.py` | First-run checklist on New task (Add a node / Pick a model buttons, card gone once a node has a model); shots in `run/shots/usability2/`. |
 | `usability3.py` | Update everything: one primary button, per-machine buttons behind "Choose individually…", one Check button, folded uploads, badge matches the page; shots in `run/shots/usability3/`. |
 | `usability4.py` | Monthly limit asked once on the first cloud key (Set limit / No limit); Scheduled shows the browser clock when it differs; shots in `run/shots/usability4/`. |
+| `usability5.py` | Settings autosave: planner defaults, running tasks and free-disk cards have no Save button and save after a change (including reordering Auto); shots in `run/shots/usability5/`. |
 | `projectnew.py` | Projects page: "New task in this project" in a card's menu opens the new-task page with that project picked. |
 | `chatpage.py` | Chat page layout: model cards on a new chat, the docked composer, the chats panel and the phone sheet. |
 | `chatversions.py` | Chat edit and resend, regenerate, version arrows, branch, per-chat instructions and the Chats search box (desktop light and dark, phone). |
