@@ -67,13 +67,22 @@ function renderNew() {
   setHTML('new-cluster', state.nodes.length
     ? `${on} of ${state.nodes.length} nodes online, ${w} with a model ready${ex ? `, ${ex} can run tests` : '. No node can run tests yet (tick exec on the Nodes page)'}.`
     : 'No nodes yet. Add one on the Nodes page, then come back here.');
-  const steps = [];
-  if (!state.nodes.length) steps.push(`Add a node on the <a href="#/nodes">Nodes</a> page.`);
-  if (models && !models.models.some((m) => m.status === 'ready')) steps.push(`Add a model on the <a href="#/models">Models</a> page.`);
-  if (state.nodes.length && !w) steps.push(`Load a model on a node (<a href="#/nodes">Nodes</a> → Load model).`);
-  if (!state.has_claude_key && !state.has_openrouter_key) steps.push(`Optional: add a Claude or OpenRouter API key in <a href="#/settings">Settings</a> to plan with a cloud model.`);
-  if (!state.nodes.some((n) => n.exec_enabled)) steps.push(`Optional: tick <b>exec</b> on a node so tasks can run their tests.`);
-  setHTML('home-setup', steps.length ? `<div class="setup"><b>Before your first task</b><ol>${steps.map((s) => `<li>${s}</li>`).join('')}</ol></div>` : '');
+  renderSetup();
+}
+// First-run checklist: live from state, each step has its own button, and the card goes away once a node
+// has a model ready. The key step is optional: a node plans for free.
+function renderSetup() {
+  const online = state.nodes.filter((n) => n.online);
+  const hasNode = online.length > 0, hasModel = workerCount() > 0;
+  if (hasNode && hasModel) { setHTML('home-setup', ''); return; }
+  const target = online.find((n) => !(n.heartbeat && n.heartbeat.loaded_model)) || online[0];
+  const row = (done, text, action) => `<li class="${done ? 'done' : ''}"><span class="tick" aria-hidden="true">${done ? '✓' : '○'}</span><span class="st">${text}</span>${action || ''}</li>`;
+  const steps = [
+    row(hasNode, hasNode ? `${online.length} node${online.length === 1 ? '' : 's'} online` : state.nodes.length ? 'A node to run models on (yours are offline)' : 'A node to run models on', hasNode ? '' : `<button class="small primary" data-act="setup-add">Add a node</button>`),
+    row(hasModel, hasModel ? 'A model is ready' : 'A model loaded on a node', hasModel ? '' : hasNode ? `<button class="small primary" data-act="best" data-id="${esc(target.id)}">Pick a model for ${esc(nodeName(target))}</button>` : `<span class="hint">after a node is online</span>`),
+    row(state.has_claude_key || state.has_openrouter_key, state.has_claude_key || state.has_openrouter_key ? 'Cloud key saved' : 'Optional: a Claude or OpenRouter key. Not needed, a node plans for free.', state.has_claude_key || state.has_openrouter_key ? '' : `<a class="small" href="#/settings">Settings</a>`),
+  ];
+  setHTML('home-setup', `<div class="setup"><b>Get ready for your first task</b><ul class="steps">${steps.join('')}</ul></div>`);
 }
 // One line that says what "Plan it" will use; the controls sit behind "Change options".
 function renderOptLine() {

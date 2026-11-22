@@ -268,6 +268,8 @@ can check detection without joining.
 
 ## First run
 
+Until a node has a model ready, the New task page shows a short checklist: **Add a node** (opens the join command), **Pick a model for <node>** (the same best-fit picker as on the Nodes page) and an optional cloud key (not needed, a node plans for free). Done steps are ticked and the card disappears once a node has a model ready.
+
    16 GB GPU, *Qwen3-Coder 30B-A3B*, or *Qwen2.5-Coder 14B* for a tighter fit. Newer options to compare on your own
    16 GB GPU, *Qwen3-Coder 30B-A3B* (or *Qwen2.5-Coder 14B* if it is tight), *Qwen2.5-Coder 14B*. Newer options to compare on your own
    tasks (not yet tested on the cluster, and they need a current llama.cpp build): *Qwen3.6 35B-A3B* for the
