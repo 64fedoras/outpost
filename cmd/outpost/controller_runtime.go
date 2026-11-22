@@ -28,7 +28,30 @@ var runtimeAssets = map[string]string{
 	"win-arm64-cpu":      "-bin-win-cpu-arm64.zip",
 	"macos-arm64":        "-bin-macos-arm64.tar.gz",
 	"macos-x64":          "-bin-macos-x64.tar.gz",
+	// Compatible builds made by Outpost's own CI (.github/workflows/llama-compat.yml) for
+	// machines the upstream releases cannot run on: Ubuntu arm64 older than 24.04 (glibc below
+	// 2.38, e.g. a Jetson on JetPack 6) and Intel Macs without AVX2 (Mac Pro 2013 and older).
+	// (Only a CPU build for arm64: an older Ubuntu has no usable Vulkan toolchain in CI.)
+	"linux-arm64-cpu-compat": "-bin-ubuntu22-arm64.tar.gz",
+	"macos-x64-compat":       "-bin-macos-x64-noavx2.tar.gz",
 }
+
+// upstreamGlibcArm64 is the glibc the upstream Ubuntu arm64 releases need (built on Ubuntu 24.04).
+const upstreamGlibcArm64 = "2.38"
+
+// compatOf returns the compatible-build variant for variant, or "" when there is none.
+func compatOf(variant string) string {
+	switch variant {
+	case "linux-arm64-cpu", "linux-arm64-vulkan":
+		return "linux-arm64-cpu-compat"
+	case "macos-x64":
+		return "macos-x64-compat"
+	}
+	return ""
+}
+
+// glibcBelow reports whether the node's glibc is known and older than want.
+func glibcBelow(have, want string) bool { return have != "" && compareVersions(have, want) < 0 }
 
 // nodeVariant picks the llama.cpp build for a node. GPU nodes get Vulkan,
 // which covers AMD, Intel and NVIDIA cards without vendor toolkits.
@@ -45,19 +68,26 @@ func nodeVariant(h *Hello) (variant, note string) {
 	}
 	switch h.OS {
 	case "linux":
+		v, note := "linux-"+arch+"-cpu", ""
 		if hasGPU && h.VulkanAvailable {
-			return "linux-" + arch + "-vulkan", ""
+			v = "linux-" + arch + "-vulkan"
+		} else if hasGPU {
+			note = "GPU found but no Vulkan driver; install the vulkan loader and mesa drivers (sudo apt install libvulkan1 mesa-vulkan-drivers) to use it"
 		}
-		if hasGPU {
-			return "linux-" + arch + "-cpu", "GPU found but no Vulkan driver; install the vulkan loader and mesa drivers (sudo apt install libvulkan1 mesa-vulkan-drivers) to use it"
+		if arch == "arm64" && glibcBelow(h.Glibc, upstreamGlibcArm64) {
+			v = "linux-arm64-cpu-compat"
+			note = "this system's glibc " + h.Glibc + " is too old for the upstream llama.cpp builds, so Outpost uses its own CPU-only build; GPU use needs Ubuntu 24.04 or newer"
 		}
-		return "linux-" + arch + "-cpu", ""
+		return v, note
 	case "windows":
 		if hasGPU && arch == "x64" {
 			return "win-x64-vulkan", ""
 		}
 		return "win-" + arch + "-cpu", ""
 	case "darwin":
+		if arch == "x64" && h.NoAVX2 {
+			return "macos-x64-compat", ""
+		}
 		return "macos-" + arch, ""
 	}
 	return "", "unsupported OS"
@@ -140,8 +170,52 @@ func (c *Controller) latestReleases(ctx context.Context, force bool) ([]ghReleas
 	if err := json.NewDecoder(resp.Body).Decode(&rels); err != nil {
 		return nil, err
 	}
+	c.mergeCompatAssets(ctx, base, rels)
 	rc.releases, rc.checked = rels, time.Now()
 	return rels, nil
+}
+
+// compatRepo is where Outpost's CI publishes the compatible llama.cpp builds.
+func compatRepo() string {
+	if r := os.Getenv("OUTPOST_COMPAT_REPO"); r != "" {
+		return r
+	}
+	return ghDefaultRepo
+}
+
+// mergeCompatAssets adds the compatible builds to the matching upstream releases, so every
+// later lookup (newest, older, common build) treats them as one more asset of that release.
+// Releases there are tagged llama-compat-<upstream tag>. A failure here only means nodes
+// that need a compatible build cannot get one yet; upstream builds are unaffected.
+func (c *Controller) mergeCompatAssets(ctx context.Context, base string, rels []ghRelease) {
+	req, _ := http.NewRequestWithContext(ctx, "GET", base+"/repos/"+compatRepo()+"/releases?per_page=50", nil)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "outpost/"+Version)
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		log.Printf("compatible llama.cpp builds: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		log.Printf("compatible llama.cpp builds: GitHub: %s", resp.Status)
+		return
+	}
+	var compat []ghRelease
+	if json.NewDecoder(resp.Body).Decode(&compat) != nil {
+		return
+	}
+	byTag := map[string]ghRelease{}
+	for _, r := range compat {
+		if t, ok := strings.CutPrefix(r.TagName, "llama-compat-"); ok {
+			byTag[t] = r
+		}
+	}
+	for i := range rels {
+		if cr, ok := byTag[rels[i].TagName]; ok {
+			rels[i].Assets = append(rels[i].Assets, cr.Assets...)
+		}
+	}
 }
 
 // newestAsset finds the newest release with a binary for variant.
@@ -206,11 +280,6 @@ func (c *Controller) setRuntimeBlocked(node, variant, build, msg string) {
 	c.rtCache.blocked[node+"|"+variant+"|"+build] = blockedBuild{msg, time.Now()}
 	c.rtCache.mu.Unlock()
 }
-
-// oldBuildsCannotHelp reports whether stepping back to an older llama.cpp
-// release is pointless for variant. The Ubuntu arm64 binaries have only ever
-// been built on Ubuntu 24.04 (glibc 2.39), so every release needs a new glibc.
-func oldBuildsCannotHelp(variant string) bool { return strings.HasPrefix(variant, "linux-arm64") }
 
 // assetFor finds variant's binary in a specific release.
 func assetFor(rels []ghRelease, variant, build string) (name, url string, size int64) {

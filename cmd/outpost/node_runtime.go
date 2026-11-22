@@ -48,9 +48,9 @@ func (n *Node) installRuntime(ri RuntimeInstall) {
 		return
 	}
 	n.opStatus(op, ri.Variant, "installing", ri.Bytes, ri.Bytes, "")
-	// The running llama-server lives in the old build's folder; stop it before
-	// replacing that folder (the controller loads the model again afterwards).
-	n.llama.stop()
+	// The running llama-server keeps running from the old build's folder until the new
+	// build has passed its self-check below, so a build that cannot run here leaves the
+	// node exactly as it was.
 	prev := ""
 	if cur := n.currentRuntime(); cur != nil {
 		prev = filepath.Join(n.llamaDir(), cur.Build+"-"+cur.Variant)
@@ -84,6 +84,9 @@ func (n *Node) installRuntime(ri RuntimeInstall) {
 		fail("%s", msg)
 		return
 	}
+	// The new build works: only now stop the old server (the controller loads the model
+	// again afterwards) and switch over.
+	n.llama.stop()
 	rec := runtimeRecord{RuntimeInfo: RuntimeInfo{Build: ri.Build, Variant: ri.Variant}, ServerPath: server}
 	b, _ := json.MarshalIndent(rec, "", "  ")
 	if err := writeFileAtomic(filepath.Join(n.llamaDir(), "current.json"), b, 0o644); err != nil {

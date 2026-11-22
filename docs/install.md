@@ -88,12 +88,20 @@ The one exception is GPU drivers: GPU nodes use llama.cpp's Vulkan build, which 
 Vulkan driver (`sudo apt install libvulkan1 mesa-vulkan-drivers`). The node card tells you if it is
 missing.
 
-**Older Linux (glibc):** llama.cpp's newest Linux builds can need a newer glibc than the machine has
-(for example Ubuntu 22.04 and JetPack 6 on Jetson have glibc 2.35). When a node reports
-`glibc too old: this build needs glibc 2.38 or newer, this machine has glibc 2.35 (tried llama.cpp bNNNN, ...)`, the controller
-automatically tries the next older llama.cpp release, up to 8 times, and remembers the one that
-worked for that node. If none of the recent releases runs, the error says so; the machine then needs
-a newer OS. **Untested** on a real Jetson or other arm64 boards: covered by unit tests only.
+**Older Linux (glibc), Jetson and arm64:** llama.cpp's Linux arm64 releases are built on Ubuntu 24.04 and need
+glibc 2.38; Ubuntu 22.04 and JetPack 6 on Jetson have glibc 2.35. Nodes report their glibc, and for such a node the controller
+uses Outpost's own **compatible build** (CPU only) instead: built from the same llama.cpp release on Ubuntu 22.04 by the
+"llama.cpp compatible builds" workflow in Outpost's GitHub repository (weekly, or run by hand). Nothing to configure and no OS upgrade.
+A node on an older Outpost that does not report its glibc switches to it after the first `glibc too old` failure. GPU use on such
+a node still needs Ubuntu 24.04 or newer. Linux x64 nodes with an old glibc step back to older upstream releases as before.
+If the workflow has not published a build yet, the node card says so and the node keeps the llama.cpp it already had.
+
+**Intel Macs without AVX2 (Mac Pro 2013 and older):** the upstream macOS x64 llama.cpp crashes with "illegal instruction" on them.
+Nodes report whether the CPU has AVX2; without it the controller installs Outpost's compatible build (AVX only), made by the same workflow.
+
+**An update never leaves a node worse off:** a new llama.cpp build is started once as a check before the running one is stopped. If it cannot
+be installed or does not run, the node keeps the llama.cpp it had and the load continues with it; the node card says what failed and what was kept
+(pool members are the exception, since they must share one build). **Untested** on a real Jetson, a Mac Pro and any real run of the new workflow: covered by unit tests only.
 
 **Freeing disk space automatically:** when a node is about to receive a model (copied from the controller or downloaded from Hugging Face) and its disk is too small, it deletes stored models to make room instead of failing. It removes models the controller also holds a copy of first, then, only if that is not enough, models it downloaded straight from Hugging Face (they download again when needed); within each group the least recently used goes first (last load or arrival), and it stops as soon as the new model fits with some headroom (the larger of 1 GB and 5%). It never touches the loaded model, the one it reloads after a restart, or one being copied or downloaded, and models the controller does not know are left alone. If deleting everything eligible would still not make room, nothing is deleted and the error says so (`not enough disk space: need 16.9 GB, have 15.4 GB; ... nothing was deleted`). Each cleanup is written to the node log and shown on the node card for a day ("Freed 12.0 GB by removing X"). Turn it off under Settings -> Free disk space. The "need" figure subtracts what a partly downloaded model already has on disk. **Untested** on real nodes, Windows and macOS: covered by unit tests with a simulated disk.
 

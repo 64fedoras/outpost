@@ -495,6 +495,9 @@ func (l *llamaMgr) watch(cmd *exec.Cmd, exited chan struct{}, gen int, rt *runti
 	}
 	l.cmd, l.exited, l.ready = nil, nil, false
 	l.lastErr = fmt.Sprintf("llama-server exited (%v): %s", err, tail)
+	if strings.Contains(fmt.Sprint(err), "illegal instruction") {
+		l.lastErr += ". This CPU lacks an instruction set (usually AVX2) that this llama.cpp build needs. Outpost's compatible build handles this: restart the node on the latest Outpost, and the controller installs it on the next load"
+	}
 	l.mu.Unlock()
 	log.Printf("%s", l.lastErr)
 	if restarts >= 3 {
