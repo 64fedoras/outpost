@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 )
 
@@ -21,7 +22,8 @@ import (
 // left alone) and against the node's storage limit, not only its free disk.
 
 const (
-	minRecommendTPS  = 5.0 // a model expected to run slower than this is never recommended (a lower target lowers the floor)
+	minRecommendTPS  = 5.0 // a model expected to run slower than this is not recommended while anything faster fits (a lower target lowers the floor)
+	slowFallbackTPS  = 3.5 // when nothing reaches the floor, the fastest models above this are still recommended, flagged slow
 	splitGPUSpeedup  = 8.0 // the part of a split model in VRAM is taken to be this much faster than the CPU part
 	appleGPUFactor   = 1.5 // Apple Silicon GPU over the CPU bandwidth estimate; a guess, not measured
 	otherMemHeadroom = 4   // percent of a memory kept free on top of what other programs hold
@@ -157,10 +159,15 @@ func (c *Controller) rankBestFit(id string, n *NodeRec, opts []LoadOption, vram,
 			}
 		}
 		o.SpeedLow = o.EstTPS > 0 && o.EstTPS < target/2
-		if o.EstTPS > 0 && o.EstTPS < min(minRecommendTPS, target) {
+		if o.EstTPS > 0 && o.EstTPS < min(slowFallbackTPS, target) {
 			continue // too slow to suggest; still listed in the Load dialog, with its warning
 		}
 		cand = append(cand, i)
+	}
+	// Models under the floor are suggested only when nothing reaches it (the slow fallback).
+	floor := min(minRecommendTPS, target)
+	if reaches := slices.ContainsFunc(cand, func(i int) bool { return opts[i].EstTPS <= 0 || opts[i].EstTPS >= floor }); reaches {
+		cand = slices.DeleteFunc(cand, func(i int) bool { return opts[i].EstTPS > 0 && opts[i].EstTPS < floor })
 	}
 	tier := func(o LoadOption) int {
 		if o.Fit == fitVRAM || o.EstTPS <= 0 {
