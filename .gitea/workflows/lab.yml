@@ -16,10 +16,19 @@ on:
   workflow_dispatch:
     inputs:
       stages:
-        description: "Stages: smoke, inspect (read-only); add update to restart one node three times"
+        description: "Stages: smoke, inspect (read-only); update restarts one node three times; pool tests memory pooling on two nodes"
         default: "smoke,inspect"
       update_node:
         description: "For the update stage: name of the spare node to update, roll back and update again"
+        default: ""
+      pool_main:
+        description: "For the pool stage: main node name"
+        default: ""
+      pool_helper:
+        description: "For the pool stage: helper node name (lends its memory)"
+        default: ""
+      pool_model:
+        description: "For the pool stage: library model to load pooled"
         default: ""
   schedule:
     - cron: "30 8 * * *"
@@ -27,7 +36,7 @@ on:
 jobs:
   smoke:
     runs-on: lab-runner
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Smoke checks against the real cluster
@@ -38,4 +47,7 @@ jobs:
           # Scheduled runs have no inputs, so they fall back to the read-only default.
           OUTPOST_LAB_STAGES: ${{ github.event.inputs.stages || 'smoke,inspect' }}
           OUTPOST_LAB_UPDATE_NODE: ${{ github.event.inputs.update_node }}
+          OUTPOST_LAB_POOL_MAIN: ${{ github.event.inputs.pool_main }}
+          OUTPOST_LAB_POOL_HELPER: ${{ github.event.inputs.pool_helper }}
+          OUTPOST_LAB_POOL_MODEL: ${{ github.event.inputs.pool_model }}
         run: python3 testing/lab_smoke.py

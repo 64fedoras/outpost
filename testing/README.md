@@ -110,8 +110,16 @@ release for its platform (Updates tab, or fetched from the update repository). I
 rolls it back to its previous copy, then updates it again, and after each switch checks the node is back on the right
 version within `OUTPOST_LAB_UPDATE_TIMEOUT` seconds (600), lists the same model files, kept its node settings and reloaded
 a loaded model within 5 minutes. A rollback holds auto-install at the version left; the stage puts the hold back as it was
-(`POST /api/github-updates/hold`), even after a failure. It never updates the controller. The pooling stage is not built yet.
-The inspect and update stages are not yet run on the real cluster (update tested against a stub controller only); tray, phone, Windows install and real GPU loads are still by hand.
+(`POST /api/github-updates/hold`), even after a failure. It never updates the controller.
+**Stage `pool`** (`testing/lab_pool.py`) **changes two nodes**: set `OUTPOST_LAB_POOL_MAIN`, `OUTPOST_LAB_POOL_HELPER` and
+`OUTPOST_LAB_POOL_MODEL` (a ready library model, ideally too big for main alone; the workflow has matching inputs).
+Refused on a scheduled run; trusted LAN only (llama.cpp RPC has no authentication or encryption). It checks that a pooled
+load is refused while pooling is off, switches pooling on, loads the model on main with the helper lending
+(`OUTPOST_LAB_POOL_TIMEOUT`, default 1800 s), checks the helper's RPC port closes a connection from the runner at once
+(the main-node-only allow-list), gets one chat answer, then switches pooling off and checks the pool dissolves and the
+port closes. The pooling setting is put back and each node's own model is loaded again afterwards, even after a failure.
+Not covered: a helper or main restart mid-pool, more than one helper, Windows or macOS helpers.
+The inspect and update stages passed on the real cluster on 2026-11-22; the pool stage has run only against a stub controller; tray, phone, Windows install and real GPU loads are still by hand.
 
 ## Not covered by any script (test by hand)
 - Screenshots on the real nodes: Chromium on each platform (snap Chromium on Ubuntu, Chrome on Windows
