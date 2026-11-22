@@ -592,7 +592,8 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 		l.mu.Unlock()
 	}()
 
-	body := map[string]any{"messages": chatPayload(spec.Messages), "stream": true, "stream_options": map[string]bool{"include_usage": true}}
+	body := map[string]any{"messages": chatPayload(spec.Messages), "stream": true, "stream_options": map[string]bool{"include_usage": true},
+		"cache_prompt": true} // reuse the processed start of the prompt when it matches the last call on a slot
 	if prog != nil {
 		body["return_progress"] = true
 	}
@@ -701,16 +702,24 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
 			Usage *struct {
-				PromptTokens     int `json:"prompt_tokens"`
-				CompletionTokens int `json:"completion_tokens"`
+				PromptTokens        int `json:"prompt_tokens"`
+				CompletionTokens    int `json:"completion_tokens"`
+				PromptTokensDetails *struct {
+					Cached int `json:"cached_tokens"`
+				} `json:"prompt_tokens_details"`
 			} `json:"usage"`
 			Progress *promptProgress `json:"prompt_progress"`
 		}
 		if json.Unmarshal([]byte(data), &chunk) != nil {
 			continue
 		}
-		if chunk.Progress != nil && prog != nil {
-			prog(*chunk.Progress)
+		if chunk.Progress != nil {
+			if chunk.Progress.Total > 0 {
+				out.CachedTokens = chunk.Progress.Cache
+			}
+			if prog != nil {
+				prog(*chunk.Progress)
+			}
 		}
 		for _, c := range chunk.Choices {
 			if c.Delta.Reasoning != nil && *c.Delta.Reasoning != "" {
@@ -740,6 +749,9 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 		}
 		if chunk.Usage != nil {
 			out.PromptTokens, out.OutputTokens = chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens
+			if d := chunk.Usage.PromptTokensDetails; d != nil && d.Cached > 0 {
+				out.CachedTokens = d.Cached
+			}
 		}
 	}
 	if dog.hung() {

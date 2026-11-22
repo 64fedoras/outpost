@@ -493,6 +493,7 @@ type InferenceOutput struct {
 	Text         string         `json:"text"`
 	FinishReason string         `json:"finish_reason"`
 	PromptTokens int            `json:"prompt_tokens"`
+	CachedTokens int            `json:"cached_tokens,omitempty"` // prompt tokens llama-server reused instead of reading again
 	OutputTokens int            `json:"output_tokens"`
 	TokensPerSec float64        `json:"tokens_per_s"`
 	Model        string         `json:"model"`

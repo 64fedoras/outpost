@@ -28,6 +28,21 @@ reads like a picture request ("draw an image of…", "make a 3D model of…"), a
 **Not now** dismisses it. This is a plain wording check, not the model deciding. The Images (`#/image`) and 3D
 (`#/cad`) pages still exist and are in Ctrl+K search. Letting the chat load or switch models on nodes is not built.
 
+**Faster follow-ups (prompt cache).** A node keeps the processed start of the last prompt and skips it when the next
+message starts with the same text. To make that happen more often, a follow-up in an Auto chat goes back to the node
+(with the same model loaded) that answered last. If that node is busy and the chat is long (about 1,000 prompt
+tokens or more) it waits a few seconds, otherwise any free node answers. Long chats are also trimmed in steps of
+four turns instead of one message per turn, so the start of the prompt stays the same for several messages. Under
+each answer, *N of M prompt tokens reused* shows how much the node did not have to read again (nothing shows
+when the node's llama.cpp build does not report it). The cache is only a speed-up and is kept in the node's memory
+only: nothing is saved to disk, and a model switch, idle unload or restart simply starts it again.
+
+**If a node drops out while answering,** the chat carries on: once the node has been offline for about 8 seconds,
+the controller drops the partial text, picks another node and answers again from the chat history it holds
+(up to two other nodes), with a note under the answer. This is slower because the new node reads the whole prompt.
+A document attached to a chat is cut shorter on later messages than on the first one, so the cache is
+mostly missed after the message that carried the document.
+
 **Auto picks a model for each message.** Auto works out what a message needs: **vision** when a picture is
 attached, **coding** when it looks like code work (code blocks, file names such as `main.go`, words like
 bug, compile, refactor), otherwise **general**. This is a few simple rules, with no extra model call, and
