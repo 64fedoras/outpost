@@ -1,4 +1,4 @@
-# Sidebar groups: By status / By group switch, New group, drag a task and a chat onto a group,
+# Sidebar groups: one grouped list with status icons and status order, New group, drag a task and a chat onto a group,
 # right-click Move to group (fold-out), rename, colour, move, delete, the phone sheet.
 # Screenshots go to $OUTPOST_E2E_DIR/groups/.
 import asyncio, os, sys
@@ -41,12 +41,18 @@ async def main():
         await pg.reload(); await pg.wait_for_selector("#nt-prompt")
         await pg.wait_for_selector(f".side-chat[data-chat='{c1}']")  # chats are in the sidebar now
 
-        # By status is the default view: no group sections, a chat row among the tasks
-        assert await pg.locator(".gsec").count() == 0
-        assert await pg.locator(f".side-task[data-task='{t1}']").count() == 1
+        # One view only: no By status / By group switch, and everything starts in "No group"
+        assert await pg.locator("[data-side-mode]").count() == 0
+        assert await pg.locator(".gsec[data-gsec=''] .side-chat").count() == 1
+        assert await pg.locator(f".side-task[data-task='{t1}'] svg.sico").count() == 1  # a status icon, not a dot
+        assert await pg.locator(f".side-task[data-task='{t1}'] .tdot").count() == 0
+        # inside a group the stopped tasks (rank 6) come before the idle chat (rank 7); an answering chat sorts first
+        await until(pg, "() => !(sideChats || []).some((c) => c.busy)")
+        await pg.evaluate("() => renderSideTasks(true)")
+        rows = await pg.eval_on_selector_all(".gsec[data-gsec=''] .side-task", "els => els.map(e => e.dataset.chat ? 'chat' : 'task')")
+        assert rows[-1] == 'chat' and rows.count('task') >= 2, rows
 
         # New group from the bar
-        await pg.click("[data-side-mode=group]")
         await pg.click("[data-group-add]")
         await pg.fill("#group-new", "Dice app"); await pg.press("#group-new", "Enter")
         await pg.wait_for_selector(".gsec[data-gsec^='grp_']")
@@ -119,7 +125,7 @@ async def main():
         m = await b.new_context(ignore_https_errors=True, viewport={"width": 390, "height": 844}, color_scheme=SCHEME, is_mobile=True, has_touch=True, device_scale_factor=2)
         mp = await m.new_page(); mp.on("pageerror", lambda e: errors.append(str(e))); mp.on("dialog", lambda d: asyncio.ensure_future(d.accept()))
         await login(mp)
-        await mp.click("#side-open"); await mp.click("[data-side-mode=group]"); await mp.wait_for_selector(".gsec")
+        await mp.click("#side-open"); await mp.wait_for_selector(".gsec")
         await mp.click(f".side-task[data-task='{t2}'] .side-task-more")
         await mp.locator("#task-ctx [data-ctx=group]").tap()
         await mp.locator("#group-sub").wait_for(state="visible")

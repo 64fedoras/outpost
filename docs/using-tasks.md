@@ -26,23 +26,29 @@ Part of the [Outpost user guide](USER-GUIDE.md).
 
 ## Working with tasks
 
-The web UI is laid out like a chat app. The sidebar lists your tasks in three groups: **Needs you**
-(amber dot), **Running** (green) and **Earlier**; a task in a project shows the project name on its
-second line. Pinned tasks sit above the groups. The top of the sidebar is one boxed **New task**, then plain rows for **Chat**, **Projects** (with pinned projects under it) and **Scheduled**. Images and 3D models are skills in Chat's ＋ menu.
+The web UI is laid out like a chat app. The sidebar lists your tasks and chats in groups; a task in a project shows the
+project name on its second line. Pinned tasks sit above the groups. The top of the sidebar is one boxed **New task**, then plain rows for **Chat**, **Projects** (with pinned projects under it) and **Scheduled**. Images and 3D models are skills in Chat's ＋ menu.
 
-**Groups.** The switch above the sidebar list picks **By status** (the three sections above) or **By group**.
-Chats are listed in the sidebar too (💬), under Running while one is answering and otherwise under Earlier.
-In **By group** the list is Pinned, **Needs you** (still on top, each item tagged with its group), then one
-collapsible section per group, then **No group**. A group is a named, coloured folder that holds tasks and chats
+**Status icons.** Each row starts with an icon whose shape says the state (colour only backs it up): an amber ring
+with the right half filled is waiting on you (questions, plan ready); a green spinning arc is working; a dashed ring is
+waiting for its project; an amber ring with pause bars is paused at the cap or interrupted; a red ring with a cross is
+failed; a red ring with "!" is done but its tests fail; a gray ring with a square is stopped; a solid gray disc with a
+check is done. A chat shows a speech bubble, with pulsing dots while it is answering. The same icons appear on the
+project page and at the top of a task.
+
+**Groups.** The sidebar is always grouped: Pinned, then one collapsible section per group, then **No group**. Inside
+each group the rows are ordered by status, newest first within the same status: waiting on you, working (and chats that
+are answering), waiting for project, paused, failed, done with failing tests, stopped, then done and idle chats together.
+A group is a named, coloured folder that holds tasks and chats
 together; an item is in one group at most. **＋ New group** creates one. Drag a task or chat row onto a group to move it
 there (drop on *No group* to take it out), or use **Move to group ▸** in the row's menu: the groups fold out beside the
 menu (a bottom sheet on a phone), with **New group…** and **Remove from group**. Right-click a group header (or its **⋯**,
 or F2 / Delete on it) to **Rename**, pick a **colour**, **Move up / down** or **Delete group** (its tasks and chats are kept,
 they just leave the group). A group with something waiting on you shows an amber count. Groups are stored on the controller
-(`groups.json`, up to 100), so every browser and phone sees the same ones; the chosen view and which groups are collapsed are
+(`groups.json`, up to 100), so every browser and phone sees the same ones; which groups are collapsed is
 remembered per browser. Dragging needs a pointer; on a phone use the menu.
 
-**Search and filters.** The box under the switch searches tasks and chats. Titles match as you type; a
+**Search and filters.** The box above the list searches tasks and chats. Titles match as you type; a
 moment later the controller also looks through every task's prompt, plan and conversation and every chat's
 messages, and those rows show a short snippet of where the words were found. Every word must appear somewhere
 (in any order, any case). **Filter** opens three lists: status (*Needs you*, *Running*, *Done*, *Failed*,
