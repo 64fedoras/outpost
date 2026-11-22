@@ -65,7 +65,7 @@ e2e() {
 	step "start the rig"
 	sh testing/e2e/run.sh up
 	# groups.py goes first: it expects no groups yet and drags rows in a short sidebar.
-	scripts="groups.py steer.py edit.py rerun.py taskmenu.py projmenu.py mobile.py dropzone.py projectnew.py chatpage.py chatmd.py schedules.py tokenscope.py"
+	scripts="groups.py steer.py edit.py rerun.py taskmenu.py projmenu.py mobile.py dropzone.py projectnew.py chatpage.py chatmd.py schedules.py settingssearch.py tokenscope.py"
 	if [ "${E2E_FULL:-}" = 1 ]; then scripts="$scripts flow.py soak.py"; fi
 	for s in $scripts; do
 		step "e2e: $s"
