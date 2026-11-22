@@ -17,6 +17,9 @@ func TestAsyncFilesNewestWins(t *testing.T) {
 	var wg sync.WaitGroup
 	var order sync.Mutex
 	n := 0
+	// The file must already exist, or a run in which every save coalesces into one write leaves no .bak.
+	a.queue(path, []byte(`{"n":0}`), 0o600, true)
+	a.flush()
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
