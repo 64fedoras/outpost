@@ -276,6 +276,12 @@ button.send:hover { opacity: .88; }
 .setup b { color: var(--ink); font-weight: 550; }
 .setup ol { margin: 6px 0 0 18px; padding: 0; }
 .setup li { margin: 3px 0; }
+.setup ul.steps { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-width: 520px; }
+.setup ul.steps li { display: flex; align-items: center; gap: 10px; margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.setup ul.steps li.done { opacity: .65; }
+.setup ul.steps .tick { width: 16px; text-align: center; color: var(--muted); }
+.setup ul.steps li.done .tick { color: var(--good); }
+.setup ul.steps .st { flex: 1; }
 
 /* ---------- task thread ---------- */
 .page-task { display: flex; flex-direction: column; height: 100vh; min-height: 0; }
