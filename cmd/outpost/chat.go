@@ -30,6 +30,8 @@ type ChatMsg struct {
 	Node   string    `json:"node,omitempty"`   // who answered
 	Model  string    `json:"model,omitempty"`  // the model that answered
 	TPS    float64   `json:"tok_s,omitempty"`
+	Prompt int       `json:"prompt_tokens,omitempty"` // tokens in the prompt of the last model call
+	Cached int       `json:"cached_tokens,omitempty"` // of those, how many the node reused from its cache
 	Error  string    `json:"error,omitempty"`
 	Note   string    `json:"note,omitempty"` // e.g. that the web was searched, or why it was not
 	At     time.Time `json:"at"`
@@ -68,7 +70,8 @@ type Chat struct {
 	// Prompt is the question or progress line while Auto gets a model (chat_switch.go); not saved.
 	Prompt *ChatPrompt `json:"prompt,omitempty"`
 
-	needOverride string // the next answer is for this need (the "chosen for" menu)
+	aff          chatAff // the node and model that answered last (chat_cache.go); memory only
+	needOverride string  // the next answer is for this need (the "chosen for" menu)
 	dir          string
 	cancel       context.CancelFunc
 	mu           sync.Mutex
@@ -486,6 +489,10 @@ func chatHistoryDocs(msgs []ChatMsg, load func(string) string, doc func(DocInfo)
 	return out
 }
 
+// historyChunk is the grid fitHistory cuts on: messages are dropped from the
+// front in steps of this many (four turns).
+const historyChunk = 8
+
 // fitHistory keeps the system message and as many of the latest messages as
 // fit about budget characters (the newest one always).
 func fitHistory(msgs []ChatMessage, budget int) []ChatMessage {
@@ -500,6 +507,12 @@ func fitHistory(msgs []ChatMessage, budget int) []ChatMessage {
 			break
 		}
 		start = i
+	}
+	if start > 1 {
+		// Cut on a coarse grid, not at the exact message that fits: the same
+		// start stays valid for several turns, so the node can keep reusing
+		// its processed prompt instead of reading it all again each turn.
+		start = min(1+(start-1+historyChunk-1)/historyChunk*historyChunk, len(msgs)-1)
 	}
 	// Start with a user turn, as chat templates expect.
 	for start < len(msgs)-1 && msgs[start].Role != "user" {
@@ -533,15 +546,43 @@ func (c *Controller) answerChatRun(ctx context.Context, chatID, pref string, his
 
 // answerChatNode answers on a ready node (answerChatRun after any model switch).
 func (c *Controller) answerChatNode(ctx context.Context, chatID, pref string, hist []ChatMessage, askMem bool, run *codeRunner, started func()) ChatMsg {
+	skip := map[string]bool{}
+	var notes []string
+	for attempt := 0; ; attempt++ {
+		msg, lost := c.answerChatOnce(ctx, chatID, pref, hist, askMem, run, started, skip)
+		if lost == "" || attempt >= chatNodeRetries || ctx.Err() != nil {
+			msg.Note = joinNotes(strings.Join(notes, " "), msg.Note)
+			return msg
+		}
+		// The node dropped out (or could not answer). The chat is not lost: the
+		// controller holds the whole conversation, so another node rebuilds the
+		// prompt from it (only slower, without the first node's cache).
+		name := c.nodeLabel(lost)
+		skip[lost] = true
+		c.coolDown(lost, time.Minute)
+		notes = append(notes, fmt.Sprintf("%s dropped out, so this was answered again on another node.", name))
+		if pref != "" && pref != "auto" && !strings.HasPrefix(pref, chatModelPref) {
+			pref = "auto" // a pinned node that is gone cannot answer; any node can
+		}
+	}
+}
+
+// answerChatOnce is one try on one node. lost is that node's id when it could
+// not answer for its own reasons (offline, model gone) and another node may.
+func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hist []ChatMessage, askMem bool, run *codeRunner, started func(), skip map[string]bool) (res ChatMsg, lost string) {
 	var want func(string) bool
 	for _, m := range hist {
 		if len(m.Images) > 0 {
 			want = c.nodeVision // an image in the call needs a node that can read it
 		}
 	}
-	node, err := c.acquireNodeWhere(ctx, pref, want, errNoVisionChat, chatWait)
+	if len(skip) > 0 {
+		inner := want
+		want = func(id string) bool { return !skip[id] && (inner == nil || inner(id)) }
+	}
+	node, err := c.acquireChatNode(ctx, chatID, pref, want, errNoVisionChat, chatWait)
 	if err != nil {
-		return ChatMsg{Role: "assistant", Error: err.Error()}
+		return ChatMsg{Role: "assistant", Error: err.Error()}, ""
 	}
 	defer c.releaseNode(node)
 	started()
@@ -556,7 +597,7 @@ func (c *Controller) answerChatNode(ctx context.Context, chatID, pref string, hi
 		}
 		live := taskLive.begin("chat_"+chatID, "", "Chat", name, false)
 		defer live.End()
-		return c.runInferenceJobLive(ctx, node, spec, "Chat", chatTimeout, live)
+		return c.runChatJob(ctx, node, name, spec, live)
 	}
 	var out *InferenceOutput
 	var note string
@@ -585,15 +626,19 @@ func (c *Controller) answerChatNode(ctx context.Context, chatID, pref string, hi
 	}
 	switch {
 	case errors.Is(ctx.Err(), context.Canceled):
-		return ChatMsg{Role: "assistant", Node: name, Error: "stopped", Runs: run.done()}
+		return ChatMsg{Role: "assistant", Node: name, Error: "stopped", Runs: run.done()}, ""
 	case err != nil:
-		return ChatMsg{Role: "assistant", Node: name, Error: err.Error(), Note: note, Runs: run.done()}
+		if isNodeProblem(err) {
+			lost = node
+		}
+		return ChatMsg{Role: "assistant", Node: name, Error: err.Error(), Note: note, Runs: run.done()}, lost
 	}
 	text := out.Text
 	if out.FinishReason == "length" {
 		text += "\n\n…(cut off at the length limit)"
 	}
-	msg := ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note}
+	msg := ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note, Prompt: out.PromptTokens, Cached: out.CachedTokens}
+	c.noteChatNode(chatID, node, out.Model, out.PromptTokens)
 	if run != nil {
 		msg.Runs = run.done()
 	}
@@ -609,7 +654,7 @@ func (c *Controller) answerChatNode(ctx context.Context, chatID, pref string, hi
 		}
 		msg.Suggest = suggestMemory(ctx, plain, owner, c.mem().forScope(""))
 	}
-	return msg
+	return msg, ""
 }
 
 // chatModelPref is the start of a chat's node choice that means "this model, on
