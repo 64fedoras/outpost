@@ -14,7 +14,7 @@ async def main():
         # off the Updates page: no overlay
         await pg.evaluate("""() => { const dt = new DataTransfer(); dt.items.add(new File(['x'], 'a')); document.body.dispatchEvent(new DragEvent('dragenter', {bubbles:true, cancelable:true, dataTransfer: dt})); }""")
         assert await pg.locator("#drop-overlay").is_hidden(), "overlay shown off Updates page"
-        await pg.goto(U + "/#/updates"); await pg.wait_for_selector("#drop")
+        await pg.goto(U + "/#/updates"); await pg.wait_for_selector("#drop", state="attached")
         # text drag ignored
         await pg.evaluate("""() => { const dt = new DataTransfer(); dt.setData('text/plain', 'hi'); document.querySelector('h2').dispatchEvent(new DragEvent('dragenter', {bubbles:true, cancelable:true, dataTransfer: dt})); }""")
         assert await pg.locator("#drop-overlay").is_hidden(), "overlay shown for text drag"

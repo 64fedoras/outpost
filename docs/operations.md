@@ -9,17 +9,28 @@ Part of the [Outpost user guide](USER-GUIDE.md).
 Every merge to `main` is built by GitHub Actions as the next patch version (0.8.1, 0.8.2, ...; after patch 19 the minor rolls, so 0.8.19 is followed by 0.9.0) and published as a release `v<version>` with the five binaries, a zip and `SHA256SUMS`, so each build shows up as a newer version in the Updates tab. Major versions (1.0) are set by hand in `cmd/outpost/proto.go`, and versions compare numerically (0.8.10 is newer than 0.8.9) in `cmd/outpost/proto.go`.
 
 **From GitHub, GitLab or Gitea (on by default).** The controller checks the update repository's latest release (this project's GitHub repository unless you set another, see below) every 6 hours
-(and when you click **Check now** on the Updates tab) and downloads the binaries for its own platform
+(and when you click **Check for updates** on the Updates tab) and downloads the binaries for its own platform
 and for the platforms of the nodes it knows. Each file must match the release's `SHA256SUMS` and be an
-Outpost binary of that version, or it is discarded; accepted ones show up under *Uploaded releases*
-exactly like a manual upload, so the Update buttons and rollback work unchanged. `SHA256SUMS` catches
+Outpost binary of that version, or it is discarded; accepted ones are kept exactly like a manual upload (listed under *Upload your own builds*), so **Update everything** and rollback work unchanged. `SHA256SUMS` catches
 corrupt downloads but is not signed, so it does not protect against a tampered repository. Under
 **Settings → Updates from a git host** you can switch the checks off, or switch on **Install them
 automatically**: idle nodes update first (busy ones are retried at the next check), then the
-controller (it waits up to 10 minutes for the nodes' downloads to finish first), and only when no task is planning, running or testing. **Check and install** on the Updates
+controller (it waits up to 10 minutes for the nodes' downloads to finish first), and only when no task is planning, running or testing. **Update everything** on the Updates
 tab does the same once, on request. After a rollback, automatic install skips the version you left
 (and older ones) until a newer release appears. Nothing but the version check and the downloads goes to
 that server. This path has only been tested against stub servers, not the live GitHub, GitLab or Gitea APIs.
+
+**Update everything.** The Updates tab has one primary button. It updates one node first and checks it (a model
+reload and a test command where the node has them); if that node fails it is rolled back and nothing else is touched,
+the controller included. Once it passes, the other nodes update, then the controller restarts last, after the
+nodes' downloads have finished and once no task is planning, running or testing (it waits up to an hour for running
+tasks, then stops and says so). The page shows each step and a failure sends the usual "Update stopped" notification.
+Offline nodes are skipped and update when they are back. **Choose individually…** brings back an Update button per
+machine and per platform group, and **Roll back** stays on every row. The sidebar badge and the button count the same
+things: online nodes that can update now, plus the controller. Your own binaries go under **Upload your own builds**
+(folded away; dropping files anywhere on the page opens it). The chain is not saved across a controller restart, which
+is fine because the restart is its last step. Only tested against stub nodes; a Windows node as the first node, the
+real restart path and Windows are untested.
 
 **Following a branch.** Under *Published releases* the Updates tab has an **Update channel** dropdown. *Stable*
 is the normal behaviour above. The other entries are branches that have a build on GitHub; the list is read

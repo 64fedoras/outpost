@@ -40,6 +40,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `mobile.py` | The same pages at phone width. |
 | `usability1.py` | Usability batch 1: Adjust… on the plan card, Ask/Enter on the project composer, name-only New project dialog, Add node OS tabs; shots in `run/shots/usability1/`. |
 | `usability2.py` | First-run checklist on New task (Add a node / Pick a model buttons, card gone once a node has a model); shots in `run/shots/usability2/`. |
+| `usability3.py` | Update everything: one primary button, per-machine buttons behind "Choose individually…", one Check button, folded uploads, badge matches the page; shots in `run/shots/usability3/`. |
 | `projectnew.py` | Projects page: "New task in this project" in a card's menu opens the new-task page with that project picked. |
 | `chatpage.py` | Chat page layout: model cards on a new chat, the docked composer, the chats panel and the phone sheet. |
 | `chatversions.py` | Chat edit and resend, regenerate, version arrows, branch, per-chat instructions and the Chats search box (desktop light and dark, phone). |
