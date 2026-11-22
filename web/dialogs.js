@@ -241,6 +241,18 @@ document.addEventListener('change', async (e) => {
     if (taskDetail) renderTask(taskDetail);
     return;
   }
+  const asm = e.target.closest('[data-asm]');
+  if (asm) {
+    const msg = ((taskDetail && taskDetail.messages) || []).find((x) => x.id === asm.dataset.msg);
+    const a = msg && ((msg.plan || {}).assumptions || []).find((x) => x.topic === asm.dataset.asm);
+    if (!a) return;
+    if (asmEdit.msg !== msg.id) asmEdit = { msg: msg.id, ch: {} };
+    let v = asm.value;
+    if (v === '__other') { const typed = await askText(`Other: ${a.topic}`, '', { ok: 'Use this' }); v = typed && typed.trim() ? typed.trim() : a.choice; }
+    if (v === a.choice) delete asmEdit.ch[a.topic]; else asmEdit.ch[a.topic] = v;
+    renderTask(taskDetail);
+    return;
+  }
   const diff = e.target.closest('[data-diff]');
   if (diff) {
     try { await post(`/api/tasks/${pageArg}/difficulty`, { subtask: diff.dataset.diff, difficulty: diff.value }); } catch (err) { toast(err.message); }

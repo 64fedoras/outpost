@@ -38,14 +38,23 @@ type Plan struct {
 	BuildCommand string        `json:"build_command,omitempty"` // runs after the tests pass
 	Artifacts    []string      `json:"artifacts,omitempty"`     // glob patterns (relative to the project root) of files the build produces
 	Subtasks     []PlanSubtask `json:"subtasks"`
-	Delete       []string      `json:"delete,omitempty"` // files to remove this round (fileops.go)
-	Rename       []PlanRename  `json:"rename,omitempty"` // files to move this round
-	Note         string        `json:"note,omitempty"`   // a sentence or two to the user, shown with the plan
+	Delete       []string      `json:"delete,omitempty"`      // files to remove this round (fileops.go)
+	Rename       []PlanRename  `json:"rename,omitempty"`      // files to move this round
+	Note         string        `json:"note,omitempty"`        // a sentence or two to the user, shown with the plan
+	Assumptions  []Assumption  `json:"assumptions,omitempty"` // design choices the planner made instead of asking; the plan card lets the user change them
 	// Visual checks (visual.go): what to screenshot after the work.
 	PreviewPage    string `json:"preview_page,omitempty"`    // HTML file to render
 	PreviewCommand string `json:"preview_command,omitempty"` // starts the app (Linux and macOS nodes)
 	PreviewURL     string `json:"preview_url,omitempty"`     // where it listens, on the node
 	Mockup         bool   `json:"mockup,omitempty"`          // variants to pick from, no real code yet
+}
+
+// Assumption is one design choice the planner made on its own: the topic ("Storage"), what it picked, and the
+// alternatives it considered, so the plan card can offer them in a dropdown.
+type Assumption struct {
+	Topic   string   `json:"topic"`
+	Choice  string   `json:"choice"`
+	Options []string `json:"options,omitempty"`
 }
 
 type PlanSubtask struct {

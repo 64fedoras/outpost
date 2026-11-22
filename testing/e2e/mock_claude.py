@@ -74,6 +74,19 @@ class H(BaseHTTPRequestHandler):
                     "note": "Only the CLI and its README change.",
                     "subtasks": [{"id": "f1", "title": "Add --top N to the CLI", "files": ["wordcount/cli.py", "README.md"], "depends_on": [],
                                   "instructions": "Add a --top N option that prints only the N most frequent words."}]})
+            elif "assume me" in user:
+                # "assume me" in the request: plan at once and list the choices made; a message that starts
+                # "Change these assumptions and plan again: Storage: SQLite (was: none)." changes them.
+                plan = dict(PLAN)
+                asm = {"Language": ["Python", ["Python", "Go", "JavaScript"]], "Storage": ["none (reads files)", ["none (reads files)", "SQLite", "JSON file"]],
+                       "Interface": ["command line", ["command line", "web page", "library only"]], "Word matching": ["case-insensitive", ["case-insensitive", "case-sensitive"]]}
+                for m in re.finditer(r"Change these assumptions and plan again: ([^\n]*?)\. Keep the other", user):
+                    for topic, choice in re.findall(r"([A-Za-z ]+): (.+?) \(was: ", m.group(1)):
+                        if topic.strip() in asm:
+                            asm[topic.strip()][0] = choice
+                plan["assumptions"] = [{"topic": k, "choice": v[0], "options": v[1]} for k, v in asm.items()]
+                plan["note"] = "A small Python package with unittest."
+                text = json.dumps(plan)
             elif "dig first" in user:
                 plan = dict(PLAN_INV); plan["note"] = "One subtask investigates before the others start."
                 text = json.dumps(plan)

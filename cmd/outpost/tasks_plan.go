@@ -31,12 +31,14 @@ Each worker sees only: the project summary, the list of all subtasks, its own in
 
 Follow-up requests on an existing project include its current files. Plan only the files to add or change; a subtask that changes an existing file lists it, and its worker gets the file's current content and outputs the complete new version. Keep the summary describing the whole project, and keep test_command running the whole test suite, and keep build_command and artifacts unless the build changes.
 
-Questions: if the request leaves open a choice that would change the design (language, interface, storage, platform, scope) and a wrong guess would waste the work, you may ask before planning, once per request. Prefer sensible defaults; most requests need no questions. To ask, answer with only:
+Open choices: if the request leaves open a choice that changes the design (language, interface, storage, platform, scope), do not ask. Pick the sensible default yourself, plan with it, and list it in "assumptions": [{"topic": "Storage", "choice": "SQLite", "options": ["SQLite", "JSON file", "none"]}]. Copy "choice" into "options", give 2 to 4 short options, and list at most 6 assumptions. List only choices that change the design, and leave the list empty when the request settles everything. When the user's messages answer or change an assumption, follow them and keep the other assumptions as they were.
+
+Ask instead, once per request, only when there is no sensible default and a guess would make the plan useless: the request depends on something you cannot see (an existing system, API, account, file or data it does not include). To ask, answer with only:
 {"questions": [{"id": "q1", "question": "short question", "options": ["option A", "option B"], "multi": false, "recommended": ["option A"]}], "note": "one sentence on why you are asking"}
-Use at most 4 questions with 2 to 4 short options each; the user can also type their own answer. Always give "recommended": the option (or options, for a multi question) you would pick yourself, copied exactly from "options". The user may accept all your recommendations in one click.
+Use at most 2 questions with 2 to 4 short options each; the user can also type their own answer. Always give "recommended": the option (or options, for a multi question) you would pick yourself, copied exactly from "options".
 
 Otherwise answer with only a JSON object, no other text:
-{"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "preview_page": "", "preview_command": "", "preview_url": "", "build_command": "", "artifacts": [], "delete": [], "rename": [], "note": "one or two sentences to the user: the approach and any assumption you made", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "difficulty": "normal", "instructions": "precise instructions"}]}`
+{"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "preview_page": "", "preview_command": "", "preview_url": "", "build_command": "", "artifacts": [], "delete": [], "rename": [], "assumptions": [], "note": "one or two sentences to the user: the approach", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "difficulty": "normal", "instructions": "precise instructions"}]}`
 
 // plannerIndexHelp is added to the planner's instructions when the project is
 // too large to paste in, so it sees an index instead.
@@ -157,6 +159,7 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 			lastErr = &parseError{fmt.Errorf("not valid JSON (%v)", err)}
 			continue
 		}
+		p.Assumptions = cleanAssumptions(p.Assumptions)
 		mergeSharedFiles(p)
 		if err := validatePlan(p); err != nil {
 			lastErr = err
@@ -235,6 +238,37 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 	t.mu.Unlock()
 	c.notifyTask(t, "plan", fmt.Sprintf("Plan ready with %d subtasks. Review it and approve to start.", len(plan.Subtasks)))
 	t.logf("info", "Plan ready: %d subtasks. Review it and approve to start.", len(plan.Subtasks))
+}
+
+// cleanAssumptions trims the planner's assumptions to what the plan card can show: at most 6, blanks dropped,
+// the chosen value always among the options and first, at most 5 options each, no duplicates.
+func cleanAssumptions(in []Assumption) []Assumption {
+	var out []Assumption
+	for _, a := range in {
+		if len(out) == 6 {
+			break
+		}
+		a.Topic, a.Choice = strings.TrimSpace(a.Topic), strings.TrimSpace(a.Choice)
+		if a.Topic == "" || a.Choice == "" {
+			continue
+		}
+		opts := []string{a.Choice}
+		for _, o := range a.Options {
+			o = strings.TrimSpace(o)
+			dup := false
+			for _, x := range opts {
+				if strings.EqualFold(x, o) {
+					dup = true
+				}
+			}
+			if o != "" && !dup && len(opts) < 5 {
+				opts = append(opts, o)
+			}
+		}
+		a.Options = opts
+		out = append(out, a)
+	}
+	return out
 }
 
 // cleanQuestions trims the planner's questions to what the UI can show.
