@@ -181,3 +181,22 @@ func TestSpeedTierTarget(t *testing.T) {
 		}
 	}
 }
+
+// A CPU-only node whose models all run under 5 tok/s gets no recommendation, unless
+// the owner lowered the node's target below that.
+func TestBestFitMinimumSpeed(t *testing.T) {
+	slow := &Hello{OS: "linux", Arch: "amd64", MemBWGBs: 6, RAMBytes: 128 * tgb, ModelsFreeBytes: 500 * tgb}
+	c := loadOptsCtl(map[string]*Hello{"n": slow})
+	c.lastHB, c.catShapes = map[string]*Heartbeat{}, fakeCatalogShapes()
+	opts, _ := c.loadOptionsFor("n", 3)
+	for _, o := range opts {
+		if o.Rank > 0 {
+			t.Fatalf("recommended %s at %.1f tok/s", o.Name, o.EstTPS)
+		}
+	}
+	c.nodes["n"].TargetTPS = 1
+	opts, _ = c.loadOptionsFor("n", 3)
+	if len(opts) == 0 || opts[0].Rank != 1 {
+		t.Errorf("target 1 should recommend something: %+v", opts)
+	}
+}

@@ -21,6 +21,7 @@ import (
 // left alone) and against the node's storage limit, not only its free disk.
 
 const (
+	minRecommendTPS  = 5.0 // a model expected to run slower than this is never recommended (a lower target lowers the floor)
 	splitGPUSpeedup  = 8.0 // the part of a split model in VRAM is taken to be this much faster than the CPU part
 	appleGPUFactor   = 1.5 // Apple Silicon GPU over the CPU bandwidth estimate; a guess, not measured
 	otherMemHeadroom = 4   // percent of a memory kept free on top of what other programs hold
@@ -156,6 +157,9 @@ func (c *Controller) rankBestFit(id string, n *NodeRec, opts []LoadOption, vram,
 			}
 		}
 		o.SpeedLow = o.EstTPS > 0 && o.EstTPS < target/2
+		if o.EstTPS > 0 && o.EstTPS < min(minRecommendTPS, target) {
+			continue // too slow to suggest; still listed in the Load dialog, with its warning
+		}
 		cand = append(cand, i)
 	}
 	tier := func(o LoadOption) int {
