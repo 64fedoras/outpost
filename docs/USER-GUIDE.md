@@ -22,7 +22,7 @@ The full reference for running Outpost, split by topic. New here? Start with the
 ## License
 
 Outpost is free software under the GNU Affero General Public License v3.0 only (SPDX:
-`AGPL-3.0-only`); the full text is in `LICENSE`. Copyright (C) 2026 Mark (64fedoras). Because the web UI
+`AGPL-3.0-only`); the full text is in `LICENSE`. Copyright (C) 2026 Mark (markpruden). Because the web UI
 is a network service, section 13 applies: the sidebar and the sign-in page link to the source code
 (the tag of the running version) and to `/licenses`, which shows the licence and the third-party notices.
 `outpost licenses` prints the same text. Licences of everything Outpost vendors, bundles or downloads are in

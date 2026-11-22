@@ -22,7 +22,7 @@ Gitea 1.2x.** Menu names may differ a little on your version; the ideas do not. 
 
 ## 1. Mirror the repository into Gitea
 The lab workflow lives in this repository (`.gitea/workflows/lab.yml`). Gitea needs a copy of it:
-1. In Gitea: **+ → New Migration → GitHub** (or **Git**), clone address `https://github.com/64fedoras/outpost.git`
+1. In Gitea: **+ → New Migration → GitHub** (or **Git**), clone address `https://github.com/markpruden/outpost.git`
    (or your own fork's address), tick **This repository will be a mirror**, and create it.
 2. Open the mirror's **Settings → Repository → Mirror Settings** and set the **sync interval**, for example `10m`
    (Gitea has a lowest allowed value; use the lowest it accepts). Syncing is one small fetch and never starts a run.
