@@ -43,6 +43,14 @@ function imgRender() {
   }).join('');
   setHTML(sel, opts);
   if (cur && imgModels.some((m) => m.id === cur && m.kind === imgKind)) sel.value = cur;
+  else {
+    // First visit: start on a model that can run now, else one already downloaded, else one that fits an online node,
+    // so the default choice does not end in "no online node can run ..." when a smaller model would work.
+    const ofKind = imgModels.filter((m) => m.kind === imgKind);
+    const pick = ofKind.find((m) => m.nodes.some((n) => n.online && n.can_run)) || ofKind.find((m) => m.nodes.some((n) => n.has_model))
+      || ofKind.find((m) => m.nodes.some((n) => n.online && n.fit && n.fit !== 'no'));
+    if (pick) sel.value = pick.id;
+  }
   const m = imgSel();
 
   const nodes = (m ? m.nodes : []).filter((n) => n.online);
