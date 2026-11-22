@@ -30,6 +30,8 @@ type ChatMsg struct {
 	Node   string    `json:"node,omitempty"`   // who answered
 	Model  string    `json:"model,omitempty"`  // the model that answered
 	TPS    float64   `json:"tok_s,omitempty"`
+	Prompt int       `json:"prompt_tokens,omitempty"` // tokens in the prompt of the last model call
+	Cached int       `json:"cached_tokens,omitempty"` // of those, how many the node reused from its cache
 	Error  string    `json:"error,omitempty"`
 	Note   string    `json:"note,omitempty"` // e.g. that the web was searched, or why it was not
 	At     time.Time `json:"at"`
@@ -41,6 +43,8 @@ type ChatMsg struct {
 	// Suggest is a fact the answering model offered to remember (memory.go),
 	// shown under the answer until the owner remembers or dismisses it.
 	Suggest string `json:"suggest,omitempty"`
+	// Need is what the message needed when Auto chose the model: coding, vision or general (chat_switch.go).
+	Need string `json:"need,omitempty"`
 	// Runs are the programs the model ran for this answer (chat_run.go).
 	Runs []CodeRun `json:"runs,omitempty"`
 	// Research is the record of a research-mode answer: its sub-questions and findings (research.go).
@@ -63,10 +67,14 @@ type Chat struct {
 	RunOn        string `json:"run_on,omitempty"`    // while Busy is "running": the node running it
 	// Research is the live state of a research answer while it works (research.go).
 	Research *ResearchRun `json:"research,omitempty"`
+	// Prompt is the question or progress line while Auto gets a model (chat_switch.go); not saved.
+	Prompt *ChatPrompt `json:"prompt,omitempty"`
 
-	dir    string
-	cancel context.CancelFunc
-	mu     sync.Mutex
+	aff          chatAff // the node and model that answered last (chat_cache.go); memory only
+	needOverride string  // the next answer is for this need (the "chosen for" menu)
+	dir          string
+	cancel       context.CancelFunc
+	mu           sync.Mutex
 }
 
 // Timings, shortened by tests.
@@ -108,7 +116,7 @@ func (c *Controller) loadChats() {
 		if json.Unmarshal(b, ch) != nil || ch.ID+".json" != e.Name() {
 			continue
 		}
-		ch.dir, ch.Busy, ch.RunOn, ch.Research = c.chatsDir(), "", "", nil
+		ch.dir, ch.Busy, ch.RunOn, ch.Research, ch.Prompt = c.chatsDir(), "", "", nil, nil
 		c.chats[ch.ID] = ch
 	}
 }
@@ -132,6 +140,7 @@ func (c *Controller) chatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/chats/{id}/run-file", c.auth(c.handleChatRunFile))
 	mux.HandleFunc("GET /api/chats/{id}/events", c.authSession(c.handleChatEvents))
 	mux.HandleFunc("POST /api/chats/{id}/edit", c.auth(c.handleChatEdit))
+	mux.HandleFunc("POST /api/chats/{id}/prompt", c.auth(c.handleChatPrompt))
 	mux.HandleFunc("POST /api/chats/{id}/regenerate", c.auth(c.handleChatRegenerate))
 	mux.HandleFunc("POST /api/chats/{id}/version", c.auth(c.handleChatVersion))
 	mux.HandleFunc("POST /api/chats/{id}/branch", c.auth(c.handleChatBranch))
@@ -178,6 +187,7 @@ type chatReq struct {
 	// Instructions (new chats only): nil takes the default from Settings.
 	Instructions *string `json:"instructions"`
 	RunCode      bool    `json:"run_code"` // new chats only: start with Run code on
+	Need         string  `json:"need"`     // coding | vision | general: answer for this need (Auto only)
 }
 
 func (req *chatReq) check() error {
@@ -207,7 +217,7 @@ func (req *chatReq) checked(c *Controller) ([]llmImage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !c.anyVisionNode(firstNonEmpty(req.Node, "auto")) {
+	if !c.anyVisionNode(firstNonEmpty(req.Node, "auto")) && !(firstNonEmpty(req.Node, "auto") == "auto" && c.anySwitchNode()) {
 		return nil, errNoVisionChat
 	}
 	return imgs, nil
@@ -277,6 +287,9 @@ func (c *Controller) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	ch.mu.Lock()
 	if req.Node != "" && ch.Busy == "" {
 		ch.Node = req.Node
+	}
+	if validNeed(req.Need) && ch.Busy == "" {
+		ch.needOverride = req.Need
 	}
 	ch.mu.Unlock()
 	if !c.startChatReplyAll(ch, req.Text, imgs, docs) {
@@ -476,6 +489,10 @@ func chatHistoryDocs(msgs []ChatMsg, load func(string) string, doc func(DocInfo)
 	return out
 }
 
+// historyChunk is the grid fitHistory cuts on: messages are dropped from the
+// front in steps of this many (four turns).
+const historyChunk = 8
+
 // fitHistory keeps the system message and as many of the latest messages as
 // fit about budget characters (the newest one always).
 func fitHistory(msgs []ChatMessage, budget int) []ChatMessage {
@@ -490,6 +507,12 @@ func fitHistory(msgs []ChatMessage, budget int) []ChatMessage {
 			break
 		}
 		start = i
+	}
+	if start > 1 {
+		// Cut on a coarse grid, not at the exact message that fits: the same
+		// start stays valid for several turns, so the node can keep reusing
+		// its processed prompt instead of reading it all again each turn.
+		start = min(1+(start-1+historyChunk-1)/historyChunk*historyChunk, len(msgs)-1)
 	}
 	// Start with a user turn, as chat templates expect.
 	for start < len(msgs)-1 && msgs[start].Role != "user" {
@@ -511,15 +534,55 @@ func (c *Controller) answerChatMem(ctx context.Context, chatID, pref string, his
 
 // answerChatRun is answerChatMem that, with run set, lets the model run code (chat_run.go).
 func (c *Controller) answerChatRun(ctx context.Context, chatID, pref string, hist []ChatMessage, askMem bool, run *codeRunner, started func()) ChatMsg {
+	need, note, abort := c.chatSwitch(ctx, chatID, pref, hist)
+	if abort != nil {
+		abort.Need = need
+		return *abort
+	}
+	msg := c.answerChatNode(ctx, chatID, pref, hist, askMem, run, started)
+	msg.Need, msg.Note = need, joinNotes(note, msg.Note)
+	return msg
+}
+
+// answerChatNode answers on a ready node (answerChatRun after any model switch).
+func (c *Controller) answerChatNode(ctx context.Context, chatID, pref string, hist []ChatMessage, askMem bool, run *codeRunner, started func()) ChatMsg {
+	skip := map[string]bool{}
+	var notes []string
+	for attempt := 0; ; attempt++ {
+		msg, lost := c.answerChatOnce(ctx, chatID, pref, hist, askMem, run, started, skip)
+		if lost == "" || attempt >= chatNodeRetries || ctx.Err() != nil {
+			msg.Note = joinNotes(strings.Join(notes, " "), msg.Note)
+			return msg
+		}
+		// The node dropped out (or could not answer). The chat is not lost: the
+		// controller holds the whole conversation, so another node rebuilds the
+		// prompt from it (only slower, without the first node's cache).
+		name := c.nodeLabel(lost)
+		skip[lost] = true
+		c.coolDown(lost, time.Minute)
+		notes = append(notes, fmt.Sprintf("%s dropped out, so this was answered again on another node.", name))
+		if pref != "" && pref != "auto" && !strings.HasPrefix(pref, chatModelPref) {
+			pref = "auto" // a pinned node that is gone cannot answer; any node can
+		}
+	}
+}
+
+// answerChatOnce is one try on one node. lost is that node's id when it could
+// not answer for its own reasons (offline, model gone) and another node may.
+func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hist []ChatMessage, askMem bool, run *codeRunner, started func(), skip map[string]bool) (res ChatMsg, lost string) {
 	var want func(string) bool
 	for _, m := range hist {
 		if len(m.Images) > 0 {
 			want = c.nodeVision // an image in the call needs a node that can read it
 		}
 	}
-	node, err := c.acquireNodeWhere(ctx, pref, want, errNoVisionChat, chatWait)
+	if len(skip) > 0 {
+		inner := want
+		want = func(id string) bool { return !skip[id] && (inner == nil || inner(id)) }
+	}
+	node, err := c.acquireChatNode(ctx, chatID, pref, want, errNoVisionChat, chatWait)
 	if err != nil {
-		return ChatMsg{Role: "assistant", Error: err.Error()}
+		return ChatMsg{Role: "assistant", Error: err.Error()}, ""
 	}
 	defer c.releaseNode(node)
 	started()
@@ -534,7 +597,7 @@ func (c *Controller) answerChatRun(ctx context.Context, chatID, pref string, his
 		}
 		live := taskLive.begin("chat_"+chatID, "", "Chat", name, false)
 		defer live.End()
-		return c.runInferenceJobLive(ctx, node, spec, "Chat", chatTimeout, live)
+		return c.runChatJob(ctx, node, name, spec, live)
 	}
 	var out *InferenceOutput
 	var note string
@@ -544,6 +607,7 @@ func (c *Controller) answerChatRun(ctx context.Context, chatID, pref string, his
 		loaded = hb.LoadedModel
 	}
 	c.mu.Unlock()
+	c.chatSw.touch(node, loaded)
 	ran := false
 	if run != nil {
 		out, note, ran, err = c.answerWithRun(ctx, infer, loaded, hist, ctxTok, maxOut, run)
@@ -562,15 +626,19 @@ func (c *Controller) answerChatRun(ctx context.Context, chatID, pref string, his
 	}
 	switch {
 	case errors.Is(ctx.Err(), context.Canceled):
-		return ChatMsg{Role: "assistant", Node: name, Error: "stopped", Runs: run.done()}
+		return ChatMsg{Role: "assistant", Node: name, Error: "stopped", Runs: run.done()}, ""
 	case err != nil:
-		return ChatMsg{Role: "assistant", Node: name, Error: err.Error(), Note: note, Runs: run.done()}
+		if isNodeProblem(err) {
+			lost = node
+		}
+		return ChatMsg{Role: "assistant", Node: name, Error: err.Error(), Note: note, Runs: run.done()}, lost
 	}
 	text := out.Text
 	if out.FinishReason == "length" {
 		text += "\n\n…(cut off at the length limit)"
 	}
-	msg := ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note}
+	msg := ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note, Prompt: out.PromptTokens, Cached: out.CachedTokens}
+	c.noteChatNode(chatID, node, out.Model, out.PromptTokens)
 	if run != nil {
 		msg.Runs = run.done()
 	}
@@ -586,7 +654,7 @@ func (c *Controller) answerChatRun(ctx context.Context, chatID, pref string, his
 		}
 		msg.Suggest = suggestMemory(ctx, plain, owner, c.mem().forScope(""))
 	}
-	return msg
+	return msg, ""
 }
 
 // chatModelPref is the start of a chat's node choice that means "this model, on

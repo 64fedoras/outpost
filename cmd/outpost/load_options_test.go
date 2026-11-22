@@ -116,14 +116,14 @@ func TestCPURecommendationFollowsSpeed(t *testing.T) {
 	if o := byName("fast", "qwen3.6-27b-q4km"); !o.SpeedLow || o.EstTPS > 2 {
 		t.Errorf("dense 27B should be slow: %+v", o)
 	}
-	// Little bandwidth: nothing reaches a usable speed, the fastest model wins and says so.
+	// Very little bandwidth (about 1.7 tok/s at best): nothing is recommended; the models
+	// stay listed with their slow warning.
 	opts, _ = c.loadOptionsFor("slow", 3)
-	if recName(opts) != "qwen2.5-coder-3b-q4km" {
-		t.Errorf("slow: %s", recName(opts))
+	if recName(opts) != "" {
+		t.Errorf("slow: recommended %s", recName(opts))
 	}
-	o := opts[0]
-	if !o.SpeedLow || o.EstTPS <= 0 || o.SpeedSrc != "bandwidth" || !strings.Contains(o.SpeedNote, "tok/s") || !strings.Contains(o.SpeedNote, "slow") {
-		t.Errorf("slow pick lacks an honest speed note: %+v", o)
+	if o := byName("slow", "qwen2.5-coder-3b-q4km"); !o.SpeedLow || o.EstTPS <= 0 || o.EstTPS >= slowFallbackTPS {
+		t.Errorf("slow 3B should be listed, slow and not recommended: %+v", o)
 	}
 	// Middle: usable (>= 4 tok/s) MoE beats the small dense model.
 	opts, _ = c.loadOptionsFor("mid", 3)

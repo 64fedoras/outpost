@@ -287,6 +287,7 @@ document.addEventListener('click', async (e) => {
       case 'health-reset': resetHealth(id); break;
       case 'yield': toggleYield(id); break;
       case 'task-models': toggleTaskModels(id); break;
+      case 'chat-switch': toggleChatSwitch(id); break;
       case 'restart': {
         const n = nodeById(id);
         const jobs = n.running_jobs ? ` ${n.running_jobs} running job(s) will be cancelled.` : '';

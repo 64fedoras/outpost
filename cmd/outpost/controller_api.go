@@ -309,6 +309,7 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 		StorageGB   *float64   `json:"storage_limit_gb"` // 0 = no limit
 		TargetTPS   *float64   `json:"target_tps"`       // 0 = default
 		StorageFull *string    `json:"storage_full"`     // "" (remove old models) or "refuse"
+		ChatSwitch  *bool      `json:"chat_switch"`      // chat may load and download models here (chat_switch.go)
 		TaskModels  *bool      `json:"task_models"`      // tasks may switch this node's model (tasks_models.go)
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -379,6 +380,9 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.YieldGPU != nil {
 		n.YieldGPU = *req.YieldGPU
+	}
+	if req.ChatSwitch != nil {
+		n.ChatSwitch = *req.ChatSwitch
 	}
 	if req.TaskModels != nil {
 		n.TaskModels = *req.TaskModels

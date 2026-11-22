@@ -181,3 +181,31 @@ func TestSpeedTierTarget(t *testing.T) {
 		}
 	}
 }
+
+// A node whose models all run under 5 tok/s still gets the fastest one above 3.5,
+// with a note that it is under the target; below that it gets no recommendation, unless the owner lowered the
+// node's target.
+func TestBestFitMinimumSpeed(t *testing.T) {
+	run := func(bw, target float64) (opts []LoadOption) {
+		h := &Hello{OS: "linux", Arch: "amd64", MemBWGBs: bw, RAMBytes: 128 * tgb, ModelsFreeBytes: 500 * tgb}
+		c := loadOptsCtl(map[string]*Hello{"n": h})
+		c.lastHB, c.catShapes = map[string]*Heartbeat{}, fakeCatalogShapes()
+		c.nodes["n"].TargetTPS = target
+		opts, _ = c.loadOptionsFor("n", 3)
+		return opts
+	}
+	// About 4.3 tok/s at best: still recommended, with a note that it is under the target.
+	if o := run(15, 0)[0]; o.Rank != 1 || o.EstTPS >= minRecommendTPS || o.EstTPS < slowFallbackTPS || !strings.Contains(o.SpeedNote, "under your target") {
+		t.Errorf("slow fallback: %+v", o)
+	}
+	// About 1.7 tok/s at best: no pick.
+	for _, o := range run(6, 0) {
+		if o.Rank > 0 {
+			t.Fatalf("recommended %s at %.1f tok/s", o.Name, o.EstTPS)
+		}
+	}
+	// A target of 1 accepts it.
+	if o := run(6, 1)[0]; o.Rank != 1 {
+		t.Errorf("target 1 should recommend something: %+v", o)
+	}
+}

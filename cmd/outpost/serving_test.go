@@ -177,3 +177,39 @@ func TestLlamaChatProgressAndSchemaFallback(t *testing.T) {
 		t.Fatal("progress asked for without a callback")
 	}
 }
+
+// The request asks for prompt caching, and the answer reports how much of the
+// prompt the server reused (from the progress report, or from the usage block).
+func TestLlamaChatCachedTokens(t *testing.T) {
+	var body map[string]any
+	usage := `"usage":{"prompt_tokens":800,"completion_tokens":2}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		send := func(s string) { fmt.Fprintf(w, "data: %s\n\n", s); w.(http.Flusher).Flush() }
+		if body["return_progress"] == true {
+			send(`{"choices":[],"prompt_progress":{"total":800,"cache":600,"processed":600,"time_ms":10}}`)
+		}
+		send(`{"choices":[{"delta":{"content":"ok"}}]}`)
+		send(`{"choices":[{"delta":{},"finish_reason":"stop"}],` + usage + `}`)
+		send(`[DONE]`)
+	}))
+	defer srv.Close()
+	var port int
+	fmt.Sscanf(srv.URL, "http://127.0.0.1:%d", &port)
+	l := newLlamaMgr(nil)
+	l.cmd, l.ready, l.port, l.model = &exec.Cmd{}, true, port, "m"
+	spec := InferenceSpec{Messages: []ChatMessage{{Role: "user", Content: "hi"}}}
+	out, e := l.chatP(context.Background(), spec, func(bool, string) {}, func(promptProgress) {})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if body["cache_prompt"] != true || out.CachedTokens != 600 || out.PromptTokens != 800 {
+		t.Fatalf("cache_prompt %v, out %+v", body["cache_prompt"], out)
+	}
+	usage = `"usage":{"prompt_tokens":800,"completion_tokens":2,"prompt_tokens_details":{"cached_tokens":700}}`
+	out, e = l.chat(context.Background(), spec, func(string) {})
+	if e != nil || out.CachedTokens != 700 {
+		t.Fatalf("usage block: %v %+v", e, out)
+	}
+}

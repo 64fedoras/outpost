@@ -152,6 +152,11 @@ fills the form, and *Delete* removes it. Pool helpers are not part of a saved se
 *Pick models for each node* may load this node's best-fit model before work starts and put the previous
 one back afterwards (see [using-tasks.md](using-tasks.md)). Off, tasks only use the model you loaded.
 
+**Let chat switch models here** (per node, off by default; on the node card). With **Auto** in chat, a node with
+this on may load a model for the message when none that is loaded suits it (see
+[chat-and-api.md](chat-and-api.md)). Off, chat only uses models already loaded. It never removes a model or starts a
+download without asking you first.
+
 **Yield GPU to other programs** (per node, off by default; on the node card). On a desktop that is also used
 for games, the model is unloaded when the node is not answering anything and the GPU stays more than 35% busy
 for 30 seconds, and loaded again after five minutes below 10%. While unloaded the card says *GPU in use* and the
