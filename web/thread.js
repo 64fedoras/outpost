@@ -155,7 +155,7 @@ $('thread').addEventListener('input', (e) => {
 
 function renderTask(t) {
   setHTML('tv-title', esc(t.title || firstWords(t.prompt)));
-  setHTML('tv-status', `<span class="tdot ${taskTone({ ...t, needs_you: (['awaiting_answers', 'awaiting_approval', 'paused_cap', 'interrupted'].includes(t.status) && !resuming(t)) || (t.messages || []).some((m) => m.pending) })}"></span>${esc(statusWord(t))}`);
+  setHTML('tv-status', `${statusIcon(taskIconKey({ ...t, needs_you: (['awaiting_answers', 'awaiting_approval', 'paused_cap', 'interrupted'].includes(t.status) && !resuming(t)) || (t.messages || []).some((m) => m.pending) }))}${esc(statusWord(t))}`);
   $('tv-status').className = 'status-chip';
   setHTML('tv-spend', t.planner === 'claude' || t.planner === 'openrouter' || t.cost_usd > 0 ? spendMeter(t) : '');
   const files = t.files || [];
