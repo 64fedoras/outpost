@@ -49,7 +49,7 @@ var planSchema = json.RawMessage(`{
     {"type": "object", "required": ["questions"], "properties": {
       "questions": {"type": "array", "items": {"type": "object", "required": ["id", "question", "options"], "properties": {
         "id": {"type": "string"}, "question": {"type": "string"},
-        "options": {"type": "array", "items": {"type": "string"}}, "multi": {"type": "boolean"}}}},
+        "options": {"type": "array", "items": {"type": "string"}}, "multi": {"type": "boolean"}, "recommended": {"type": "array", "items": {"type": "string"}}}}},
       "note": {"type": "string"}}},
     {"type": "object", "required": ["need_files"], "properties": {"need_files": {"type": "array", "items": {"type": "string"}}}}
   ]

@@ -46,6 +46,8 @@ type Question struct {
 	Question string   `json:"question"`
 	Options  []string `json:"options"`
 	Multi    bool     `json:"multi,omitempty"`
+	// Recommended is the option(s) the planner would pick itself; the UI pre-selects them so one click continues.
+	Recommended []string `json:"recommended,omitempty"`
 }
 
 // addMsgLocked appends a message to the conversation; t.mu must be held.

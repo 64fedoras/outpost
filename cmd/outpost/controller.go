@@ -69,6 +69,9 @@ type nodeConn struct {
 }
 
 func (nc *nodeConn) send(typ string, body any) error {
+	if nc.conn == nil {
+		return errors.New("node connection is not open")
+	}
 	b, err := newEnvelope(typ, body)
 	if err != nil {
 		return err

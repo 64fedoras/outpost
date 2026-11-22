@@ -297,3 +297,47 @@ func TestChatSwitchFallsBackWhenNobodyAnswers(t *testing.T) {
 		t.Errorf("override ignored: %s", need)
 	}
 }
+
+// A node that has not opted in is offered "Allow": answering allow_node turns chat switching on for that node
+// only; nobody answering keeps the loaded model and changes nothing.
+func TestChatSwitchAllowPrompt(t *testing.T) {
+	c := switchCtl(bigCPU(), "")
+	c.dataDir = t.TempDir() // setChatSwitch saves the node list
+	c.nodes["n"].ChatSwitch = false
+	c.chats = map[string]*Chat{"c1": {ID: "c1"}}
+	old := chatAskOther
+	chatAskOther = 40 * time.Millisecond
+	defer func() { chatAskOther = old }()
+	hist := []ChatMessage{{Role: "system"}, {Role: "user", Content: "what is in this picture?", Images: []string{"data:image/png;base64,AA=="}}}
+	need, note, abort := c.chatSwitch(context.Background(), "c1", "auto", hist)
+	if need != needVision || abort != nil || !strings.Contains(note, "may not load one yet") {
+		t.Fatalf("need %s abort %v note %q", need, abort, note)
+	}
+	if c.nodes["n"].ChatSwitch {
+		t.Fatal("switching turned on without an answer")
+	}
+	// Answering allow_node applies to the node in the offer.
+	offer, _ := c.planChatLoadWith(needVision, true)
+	if offer == nil {
+		t.Fatal("no offer")
+	}
+	chatAskOther = 5 * time.Second
+	done := make(chan string)
+	go func() { done <- c.askAllow(context.Background(), "c1", needVision, offer) }()
+	for i := 0; i < 100; i++ {
+		c.chatSw.mu.Lock()
+		n := len(c.chatSw.prompts)
+		c.chatSw.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if p := c.chats["c1"].Prompt; p == nil || p.State != "allow" || p.NodeName == "" {
+		t.Fatalf("prompt: %+v", p)
+	}
+	c.chatSw.prompts["c1"] <- "allow_node"
+	if got := <-done; got != "allow_node" || !c.nodes["n"].ChatSwitch {
+		t.Fatalf("answer %s, switch %v", got, c.nodes["n"].ChatSwitch)
+	}
+}

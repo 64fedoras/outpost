@@ -64,9 +64,9 @@ class H(BaseHTTPRequestHandler):
                 time.sleep(20)
             if "ask me first" in user and "already asked your questions" not in user and "User: Language" not in user and "answered" not in user.lower() and "→" not in user:
                 text = json.dumps({"questions": [
-                    {"id": "q1", "question": "Which language should it use?", "options": ["Python", "Go"]},
-                    {"id": "q2", "question": "How should words be counted?", "options": ["Case-insensitive", "Case-sensitive"]},
-                    {"id": "q3", "question": "Extra outputs?", "options": ["JSON output", "Top-N limit", "None"], "multi": True}],
+                    {"id": "q1", "question": "Which language should it use?", "options": ["Python", "Go"], "recommended": ["Python"]},
+                    {"id": "q2", "question": "How should words be counted?", "options": ["Case-insensitive", "Case-sensitive"], "recommended": ["Case-insensitive"]},
+                    {"id": "q3", "question": "Extra outputs?", "options": ["JSON output", "Top-N limit", "None"], "multi": True, "recommended": ["None"]}],
                     "note": "Two choices change how the code is structured."})
             elif "follow-up request on an existing project" in user:
                 text = json.dumps({"title": "Word Counter", "summary": PLAN["summary"] + " cli.py also supports --top N.",
