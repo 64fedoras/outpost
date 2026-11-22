@@ -84,6 +84,7 @@ $('set-autoorder').addEventListener('click', (e) => {
   [keys[i], keys[j]] = [keys[j], keys[i]];
   // Unticked providers keep their place in the list but are not sent.
   renderAutoOrderKeys(keys, on);
+  $('set-autoorder').dispatchEvent(new Event('change', { bubbles: true })); // autosave (see autosaveCard)
 });
 function renderAutoOrderKeys(keys, on) {
   $('set-autoorder').innerHTML = keys.map((k, i) => `<div class="ao-row" data-ao-row="${k}"><label class="check"><input type="checkbox" data-ao="${k}" ${on.has(k) ? 'checked' : ''}> ${AUTO_NAMES[k]}</label>
@@ -198,9 +199,11 @@ $('bk-download').onclick = async () => {
 $('bk-sched-save').onclick = async () => {
   try { settings = await post('/api/backup/schedule', { enabled: $('bk-on').checked, dir: $('bk-dir').value, passphrase: $('bk-sched-pass').value }); $('bk-sched-pass').value = ''; toast('Schedule saved'); loadSecurity(); } catch (e) { toast(e.message); }
 };
+let quietSave = false; // an autosave must not redraw the form under the user's hands
 async function saveSettings(body, msg) {
+  const quiet = quietSave; quietSave = false;
   const hadKey = !!(settings && (settings.has_anthropic_key || settings.has_openrouter_key));
-  try { settings = await post('/api/settings', body); Guard.settingsSaved(); toast(msg); loadSettings(); refresh(); } catch (e) { toast(e.message); return; }
+  try { settings = await post('/api/settings', body); Guard.settingsSaved(); toast(msg); if (!quiet) loadSettings(); refresh(); } catch (e) { toast(e.message); return; }
   if (!hadKey && (body.anthropic_key || body.openrouter_key)) askMonthlyCap();
 }
 // Asked once, when the first cloud key is saved: money should have a limit before the first task, not after the bill.
@@ -269,6 +272,14 @@ $('set-idle-save').onclick = () => saveSettings({ idle_unload: $('set-idle').val
 $('set-pooling-save').onclick = () => saveSettings({ pooling_enabled: $('set-pooling').checked }, $('set-pooling').checked ? 'Pooling enabled' : 'Pooling off; pools dissolved');
 $('set-claude-save').onclick = () => saveSettings({ claude_model: $('set-model').value, default_cap_usd: parseFloat($('set-cap').value) || 0 }, 'Claude model and cap saved');
 $('set-save').onclick = () => saveSettings({ default_planner: $('set-planner').value, auto_order: autoOrderValue(), web_search: $('set-websearch').checked, chat_web_search: $('set-chatweb').checked, chat_search_with: $('set-chatsearchwith').value, web_allow_private: $('set-webprivate').checked }, 'Defaults saved');
+// Cards made only of switches and dropdowns save themselves: no Save button to forget. Text boxes, keys and
+// numbers keep their Save button, because half-typed text must not be sent.
+function autosaveCard(btnId) {
+  const btn = $(btnId), card = btn.closest('.card');
+  btn.closest('.modal-foot').classList.add('hidden');
+  let t = null;
+  card.addEventListener('change', () => { clearTimeout(t); t = setTimeout(() => { quietSave = true; btn.click(); quietSave = false; }, 300); });
+}
 $('set-run-save').onclick = () => saveSettings({ agent_mode: $('set-agent').checked, auto_resume: $('set-autoresume').checked, best_of_n: $('set-bestofn').value }, 'Task settings saved');
 $('pw-form').onsubmit = async (e) => {
   e.preventDefault();
@@ -340,3 +351,5 @@ $('ct-body').addEventListener('change', (e) => {
 });
 $('ct-body').addEventListener('click', async (e) => { const b = e.target.closest('[data-copy-text]'); if (b) { await copyText(b.dataset.copyText); toast('Copied'); } });
 $('ct-cors-save').onclick = () => saveSettings({ api_cors_origins: $('ct-cors').value.split(/\s+/).filter(Boolean) }, 'Origins saved');
+
+['set-save', 'set-run-save', 'set-autofree-save'].forEach(autosaveCard);
