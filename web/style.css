@@ -1566,9 +1566,19 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 .chat-pill.on { border-color: var(--accent); background: var(--tint); cursor: pointer; }
 .chat-suggest { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 4px 2px 6px; font-size: 13px; color: var(--muted); }
 .skill-card { border: 1px solid var(--accent); background: var(--tint); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; display: grid; gap: 8px; }
+.skill-card { grid-template-columns: minmax(0, 1fr); overflow-wrap: anywhere; }
+.skill-card .sub { white-space: normal; overflow: visible; text-overflow: clip; }
 .skill-card textarea { width: 100%; box-sizing: border-box; resize: vertical; }
 .sk-opts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.skill-card .card-actions { display: flex; gap: 8px; }
+.skill-card .card-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.skill-card .sk-opts label.check { flex-basis: 100%; font-size: 13px; color: var(--ink); margin: 0; }
+.skill-card .sub .link-btn { color: var(--accent); font-size: inherit; text-decoration: underline; text-decoration-style: dotted; }
+.sk-note { border: 1px solid var(--line); border-left: 3px solid var(--warn); background: var(--panel); border-radius: 6px; padding: 6px 10px; font-size: 13px; display: grid; gap: 6px; }
+.cad-refs { margin: 8px 0 4px; font-size: 13px; }
+.cad-refs-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 2px; }
+.cad-refs-tag { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; color: var(--warn); }
+.cad-ref { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-top: 1px solid var(--line); }
+.cad-ref span:last-child { text-align: right; color: var(--muted); }
 @media (max-width: 760px) { .plus-menu { min-width: 220px; } }
 .upd-banner select.rec-sel { width: auto; padding: 3px 8px; font-size: 12.5px; }
 

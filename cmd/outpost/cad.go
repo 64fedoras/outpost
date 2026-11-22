@@ -88,6 +88,9 @@ type CadRec struct {
 	Error     string            `json:"error,omitempty"`
 	Log       []string          `json:"log,omitempty"` // one line per step, for the page
 	Asks      []CadTurn         `json:"asks,omitempty"`
+	ReadLinks bool              `json:"read_links,omitempty"` // read pages linked in the request first
+	Lookup    bool              `json:"lookup,omitempty"`     // search the web for measurements first
+	Refs      []CadRef          `json:"refs,omitempty"`       // measurements found (cad_lookup.go)
 	Keep      bool              `json:"keep,omitempty"`
 	Version   int               `json:"version"` // bumps when model.stl changes, so the page reloads it
 	Created   time.Time         `json:"created"`
@@ -103,6 +106,8 @@ type cadStore struct {
 	// Tests stand in for the model and the renderer.
 	llmStub    func(ctx context.Context, rec *CadRec, msgs []ChatMessage) (string, error)
 	renderStub func(ctx context.Context, code string, defs map[string]string) (stl []byte, errText string, err error)
+	searchStub func(ctx context.Context, q string) (text string, urls []string, err error)
+	fetchStub  func(ctx context.Context, u string) (string, error)
 }
 
 func (c *Controller) cadDir() string { return filepath.Join(c.dataDir, "cad") }
@@ -545,7 +550,25 @@ func (c *Controller) runCad(ctx context.Context, rec *CadRec, job cadJob) error 
 		msgs = append(msgs, ChatMessage{Role: "user", Content: "Original request: " + prompt + "\n\n" + cadAskPrompt(code, job.ask)})
 		c.cadLog(rec, "Asked for a change: %s", shortText(job.ask, 200))
 	} else {
-		msgs = append(msgs, ChatMessage{Role: "user", Content: prompt})
+		c.cad.mu.Lock()
+		readLinks, lookup := rec.ReadLinks, rec.Lookup
+		c.cad.mu.Unlock()
+		extra := ""
+		if readLinks || lookup {
+			stage("looking up measurements")
+			refs := c.cadLookup(ctx, rec, prompt, readLinks, lookup)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			c.cadUpdate(rec, func() { rec.Refs = refs })
+			if len(refs) == 0 {
+				c.cadLog(rec, "Found no measurements on the web; the sizes are guesses, so check the parameters.")
+			} else {
+				c.cadLog(rec, "Found %d measurements on the web.", len(refs))
+			}
+			extra = cadRefsText(refs, true)
+		}
+		msgs = append(msgs, ChatMessage{Role: "user", Content: prompt + extra})
 	}
 	checked := !check
 	good := false // an STL from this run is stored
@@ -827,6 +850,9 @@ type cadNewReq struct {
 	Node   string `json:"node"`
 	Rounds int    `json:"rounds"`
 	Check  *bool  `json:"check"`
+	// Read the linked pages and search the web for measurements before writing (cad_lookup.go).
+	ReadLinks bool `json:"read_links"`
+	Lookup    bool `json:"lookup"`
 }
 
 func (c *Controller) handleNewCad(w http.ResponseWriter, r *http.Request) {
@@ -858,7 +884,7 @@ func (c *Controller) handleNewCad(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	rec := &CadRec{ID: newID("cad"), Title: chatTitle(req.Prompt), Prompt: req.Prompt, Node: req.Node, MaxRounds: min(req.Rounds, cadMaxRounds),
-		Check: req.Check == nil || *req.Check, Status: "queued", Asks: []CadTurn{{Text: req.Prompt, At: now}}, Created: now}
+		Check: req.Check == nil || *req.Check, ReadLinks: req.ReadLinks, Lookup: req.Lookup, Status: "queued", Asks: []CadTurn{{Text: req.Prompt, At: now}}, Created: now}
 	c.cad.mu.Lock()
 	c.cad.recs[rec.ID] = rec
 	c.saveCadLocked(rec)

@@ -92,6 +92,11 @@ class H(BaseHTTPRequestHandler):
                 text = "<<<FILE wordcount/core.py>>>\ndef count_words(text):\n    counts = {}\n    for w in text.lower().split():\n        counts[w] = counts.get(w, 0) + 1\n    return counts\n<<<END>>>\n"
             else:
                 text = "<<<OK>>>"
+        elif user.startswith("This is a request for a 3D-printable part") and "web search queries" in user:
+            text = "GL-AR750 dimensions mm"  # measurement look-up before a 3D model (chat3d.py)
+        elif user.startswith("This is a request for a 3D-printable part"):
+            text = json.dumps([{"name": "GL-AR750 body", "value": "100 × 68 × 24 mm", "source": "example.org"},
+                               {"name": "10-inch rack panel width", "value": "254 mm, 1U = 44.5 mm", "source": "example.org"}])
         elif "You write OpenSCAD files" in system:
             text = scad_reply(user)  # the New 3D model page (cad.py)
         elif imgs:
