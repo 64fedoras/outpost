@@ -1549,6 +1549,7 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 .sk-opts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .skill-card .card-actions { display: flex; gap: 8px; }
 @media (max-width: 760px) { .plus-menu { min-width: 220px; } }
+.upd-banner select.rec-sel { width: auto; padding: 3px 8px; font-size: 12.5px; }
 
 /* Chat model switching (chat_switch.go): prompt card and "chosen for" tag */
 .chat-prompt { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: var(--panel); }

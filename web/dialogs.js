@@ -316,7 +316,10 @@ document.addEventListener('click', async (e) => {
       case 'model-unstore': if (await askConfirm(`Delete ${el.dataset.name}'s files from the controller? It stays in the library; nodes that need it download it from Hugging Face. Copies already on nodes stay.`)) { await post(`/api/models/${encodeURIComponent(el.dataset.name)}/unstore`); toast('Freed controller space'); } break;
       case 'model-retry': await post(`/api/models/${encodeURIComponent(el.dataset.name)}/retry`); toast('Resuming download'); break;
       case 'model-delete': if (await askConfirm(`Remove ${el.dataset.name} from the library (and its files from the controller, if stored there)? Copies already on nodes stay; delete those on the node card.`)) await api(`/api/models/${encodeURIComponent(el.dataset.name)}`, { method: 'DELETE' }); break;
-      case 'install-tool': await post(`/api/nodes/${id}/toolchain`, { tool: el.dataset.tool }); toast('Downloading Go to the controller, then the node'); break;
+      case 'install-tool': { const t = el.dataset.tool; await post(`/api/nodes/${id}/toolchain`, { tool: t, libs: el.dataset.libs === '1' }); toast(el.dataset.libs === '1' ? 'Installing system libraries' : `Downloading ${toolName(t)} to the controller, then the node`); break; }
+      case 'rec-install': { const t = el.dataset.tool, sel = document.querySelector(`[data-rec-node="${t}"]`); if (!sel || !sel.value) break; await post(`/api/nodes/${sel.value}/toolchain`, { tool: t }); toast(`Downloading ${toolName(t)} to the controller, then the node; progress shows on the node card`); break; }
+      case 'rec-dismiss': try { localStorage.setItem('outpost-rec-' + el.dataset.tool, '1'); } catch (e) { /* private window: hidden until reload */ } recHidden[el.dataset.tool] = true; renderNodes(); return;
+      case 'remove-tool': if (await askConfirm(`Remove ${toolName(el.dataset.tool)} from ${nodeName(nodeById(id))}? Only the copy Outpost installed is deleted; you can install it again.`)) { await api(`/api/nodes/${id}/toolchain/${el.dataset.tool}`, { method: 'DELETE' }); toast('Removing'); } break;
       case 'node-update': await post(`/api/nodes/${id}/update`); toast('Update sent'); break;
       case 'ctl-update': await updateController(); return;
       case 'ctl-rollback': await rollbackController(); return;

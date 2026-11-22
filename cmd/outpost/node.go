@@ -401,6 +401,11 @@ func (n *Node) sessionInner(welcomed *bool) error {
 			if json.Unmarshal(env.Body, &ti) == nil {
 				go n.installToolchain(ti)
 			}
+		case "toolchain.remove":
+			var ti ToolInstall
+			if json.Unmarshal(env.Body, &ti) == nil {
+				go n.removeTool(ti.Tool)
+			}
 		case "model.push":
 			var mp ModelPush
 			if json.Unmarshal(env.Body, &mp) == nil {

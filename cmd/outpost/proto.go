@@ -453,6 +453,7 @@ type OpStatus struct {
 	Error      string   `json:"error,omitempty"`
 	Detail     string   `json:"detail,omitempty"`    // e.g. the RPC endpoint once ready
 	BadPeers   []string `json:"bad_peers,omitempty"` // nodes that served data failing its hash check
+	Hint       string   `json:"hint,omitempty"`      // "libs": a toolchain was unpacked but needs system libraries (node_toolinstall.go)
 }
 
 // InferenceSpec is the spec of a job with kind "inference".

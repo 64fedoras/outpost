@@ -269,7 +269,7 @@ function renderNodeFilter(nodes, rows, labels, dense) {
 }
 function renderNodes() {
   const a = document.activeElement;
-  if (a && a.matches && a.matches('[data-storage-limit]') && document.body.contains(a)) return; // typing a limit: redraw after
+  if (a && a.matches && a.matches('[data-storage-limit], [data-rec-node]') && document.body.contains(a)) return; // typing a limit: redraw after
   const nodes = state.nodes;
   const online = nodes.filter((n) => n.online).length;
   setHTML('node-count', nodes.length ? `${online} of ${nodes.length} online` : '');
@@ -295,7 +295,7 @@ function renderNodes() {
   setHTML('node-summary', clusterSummary(nodes));
   const body = !shown.length ? `<div class="empty u16">No nodes match. <button class="small" data-act="node-clear">Clear filters</button></div>`
     : nodeView === 'list' ? nodeListView(shown, dense, banner) : nodeView === 'detail' ? nodeDetailView(shown) : nodeGridView(shown, { dense, hideUpd: banner, attentionFirst: nodeSort === 'status' });
-  setHTML('nodes', chips + bannerHTML + (filtering && shown.length ? `<div class="sub nf-count">Showing ${shown.length} of ${nodes.length} nodes · <a href="#" data-act="node-clear">Clear filters</a></div>` : '') + body);
+  setHTML('nodes', chips + toolRecBanners() + bannerHTML + (filtering && shown.length ? `<div class="sub nf-count">Showing ${shown.length} of ${nodes.length} nodes · <a href="#" data-act="node-clear">Clear filters</a></div>` : '') + body);
   renderNodeDrawer(shown);
 }
 
@@ -338,11 +338,29 @@ document.addEventListener('keydown', (e) => {
   closeNodeDrawer();
 });
 
+const toolName = (k) => ({ go: 'Go', chromium: 'Chromium', openscad: 'OpenSCAD' }[k] || k);
+const recHidden = {};
+// "No node has X" notices with a recommended node and one Install button (controller_toolinstall.go).
+function toolRecBanners() {
+  return (state.tool_recs || []).filter((r) => {
+    if (recHidden[r.tool] === undefined) { try { recHidden[r.tool] = !!localStorage.getItem('outpost-rec-' + r.tool); } catch (e) { recHidden[r.tool] = false; } }
+    return !recHidden[r.tool];
+  }).map((r) => {
+    const busy = Object.values(state.ops || {}).some((o) => o && o.op === 'toolchain' && o.target === r.tool && !['done', 'ready', 'failed'].includes(o.state));
+    if (!r.nodes || !r.nodes.length) return `<div class="upd-banner"><span class="nv-grow"><b>No node has ${esc(r.label)}.</b> ${esc(r.why)} ${esc(r.reason || '')}</span><button class="small" data-act="rec-dismiss" data-tool="${esc(r.tool)}">Not now</button></div>`;
+    const opts = r.nodes.map((c, i) => `<option value="${esc(c.id)}">${esc(c.name)}${i ? '' : ' (recommended)'}</option>`).join('');
+    return `<div class="upd-banner"><span class="nv-grow"><b>No node has ${esc(r.label)}.</b> ${esc(r.why)} <span class="muted">Download ${esc(r.size)}.</span></span>
+      <select data-rec-node="${esc(r.tool)}" aria-label="Node to install ${esc(r.label)} on" class="rec-sel">${opts}</select>
+      <button class="small primary" data-act="rec-install" data-tool="${esc(r.tool)}"${busy ? ' disabled' : ''}>${busy ? 'Installing…' : 'Install ' + esc(r.label)}</button>
+      <button class="small" data-act="rec-dismiss" data-tool="${esc(r.tool)}">Not now</button></div>`;
+  }).join('');
+}
+
 function opView(n) {
   const o = state.ops && state.ops[n.id];
   if (!o || !o.op) return '';
   const age = (Date.now() - new Date(o.updated)) / 1000;
-  const what = { runtime: 'llama.cpp', toolchain: 'Installing Go', 'model.push': 'Copying model from controller', 'model.fetch': 'Downloading from Hugging Face', rpc: 'Lending memory', 'model.load': 'Loading model', 'model.unload': 'Unloading', 'model.remove': 'Removing model', 'model.cleanup': 'Cleaning up models' }[o.op] || o.op;
+  const what = { runtime: 'llama.cpp', toolchain: 'Installing ' + toolName(o.target), 'model.push': 'Copying model from controller', 'model.fetch': 'Downloading from Hugging Face', rpc: 'Lending memory', 'model.load': 'Loading model', 'model.unload': 'Unloading', 'model.remove': 'Removing model', 'model.cleanup': 'Cleaning up models' }[o.op] || o.op;
   if (o.op === 'model.cleanup' && o.state === 'done') return age < 600 && o.detail ? `<div class="sub u17">Cleanup: ${esc(o.detail)}</div>` : '';
   const lf = o.last_failure && (Date.now() - new Date(o.last_failure.at)) < 3600000 ? o.last_failure : null;
   if (lf) {
@@ -351,7 +369,7 @@ function opView(n) {
     const tries = lf.count > 1 ? ` (${lf.count} tries, last ${new Date(lf.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : '';
     return `<div class="note bad u17">${esc(lwhat)} failed${tries}: ${esc(lf.error)}</div>`;
   }
-  if (o.state === 'failed') return age < 3600 ? `<div class="note bad u17">${esc(what)} failed: ${esc(o.error)}</div>` : '';
+  if (o.state === 'failed') return age < 3600 ? `<div class="note bad u17">${esc(what)} failed: ${esc(o.error)}${o.hint === 'libs' && n.online ? ` <button class="small" data-act="install-tool" data-tool="${esc(o.target)}" data-libs="1" data-id="${n.id}">Install libraries with apt</button>` : ''}</div>` : '';
   if (['done', 'ready'].includes(o.state)) return '';
   const pct = o.bytes_total ? 100 * o.bytes_done / o.bytes_total : (o.state === 'loading' ? 100 : 0);
   return `<div class="prog u6"><span>${esc(what)}${o.target ? ' · ' + esc(o.target) : ''}: ${esc(o.state)}${o.bytes_total ? ` ${bytes(o.bytes_done)} of ${bytes(o.bytes_total)}` : '…'}</span>${bar(pct, 'good')}</div>`;
@@ -578,9 +596,14 @@ function toolsBox(n) {
   if (!n.exec_enabled || !h.shell) return n.exec_enabled ? '<div class="sub u17">Tools: unknown until the node updates</div>' : '';
   const tools = h.tools || [];
   const chips = tools.map((t) => `<span class="tag" title="${esc(t.path || '')}${t.managed ? ' (installed by Outpost)' : ''}">${esc(t.name)}${t.version ? ' ' + esc(t.version) : ''}</span>`).join(' ');
-  const hasGo = tools.some((t) => t.name === 'go');
+  const links = n.online ? ['go', 'chromium', 'openscad'].map((k) => {
+    const t = tools.find((x) => x.name === k);
+    if (t && !t.managed) return '';  // found on the system: detected, never touched
+    return t ? `<a href="#" data-act="install-tool" data-tool="${k}" data-id="${n.id}">Reinstall ${toolName(k)}</a> <a href="#" data-act="remove-tool" data-tool="${k}" data-id="${n.id}">Remove</a>`
+      : `<a href="#" data-act="install-tool" data-tool="${k}" data-id="${n.id}">Install ${toolName(k)}</a>`;
+  }).filter(Boolean).join(' · ') : '';
   return `<div class="sub wrap u17">Runs commands in ${esc(h.shell)} · ${chips || 'no tools found'}
-    ${n.online ? `<a href="#" data-act="install-tool" data-tool="go" data-id="${n.id}">${hasGo ? 'Reinstall' : 'Install'} Go</a>` : ''}</div>
+    ${links}</div>
 ${storageBox(n) ? '' : pkgStoreLine(n)}`;
 }
 

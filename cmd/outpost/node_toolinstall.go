@@ -1,0 +1,273 @@
+package main
+
+// Node side of the one-click Chromium and OpenSCAD install (controller side:
+// controller_toolinstall.go). The archive is unpacked into toolchains/<tool>.new,
+// started once, and only then swapped in, so a broken download never replaces a
+// working copy. No admin rights are needed except to install system libraries.
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"strings"
+	"time"
+)
+
+// chromeLibPkgs are the Debian/Ubuntu packages a minimal install usually lacks for headless Chromium.
+// A name with "|" lists alternatives (the first the system knows is used).
+var chromeLibPkgs = []string{"libnss3", "libnspr4", "libatk1.0-0t64|libatk1.0-0", "libatk-bridge2.0-0t64|libatk-bridge2.0-0", "libcups2t64|libcups2",
+	"libdrm2", "libxkbcommon0", "libxcomposite1", "libxdamage1", "libxfixes3", "libxrandr2", "libgbm1", "libasound2t64|libasound2",
+	"libpango-1.0-0", "libcairo2", "libx11-6", "libxcb1", "libxext6", "fonts-liberation"}
+
+var chromeMissingRe = regexp.MustCompile(`(\S+\.so[\w.]*) => not found`)
+
+// missingLibs lists the shared libraries a binary needs and the system lacks (Linux, via ldd).
+func missingLibs(path string) []string {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	out, _ := exec.Command("ldd", path).CombinedOutput()
+	var libs []string
+	for _, m := range chromeMissingRe.FindAllStringSubmatch(string(out), -1) {
+		libs = append(libs, m[1])
+	}
+	return libs
+}
+
+// installChromeLibs installs chromeLibPkgs with apt-get. Only a root node on Debian or Ubuntu can.
+func installChromeLibs() error {
+	var plain []string
+	for _, p := range chromeLibPkgs {
+		plain = append(plain, strings.SplitN(p, "|", 2)[0])
+	}
+	manual := "sudo apt-get install " + strings.Join(plain, " ")
+	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
+		return fmt.Errorf("this node does not run as root, so it cannot install system libraries; run: %s", manual)
+	}
+	apt, err := exec.LookPath("apt-get")
+	if err != nil {
+		return errors.New("this node has no apt-get; install the libraries headless Chromium needs with its package manager (on Debian and Ubuntu: " + manual + ")")
+	}
+	var pkgs []string
+	for _, alt := range chromeLibPkgs {
+		for _, p := range strings.Split(alt, "|") {
+			if exec.Command("apt-cache", "show", p).Run() == nil {
+				pkgs = append(pkgs, p)
+				break
+			}
+		}
+	}
+	if len(pkgs) == 0 {
+		return errors.New("apt does not know the Chromium libraries; run apt-get update first")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, apt, append([]string{"install", "-y", "-q", "--no-install-recommends"}, pkgs...)...)
+	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	if b, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("apt-get install failed: %v: %s", err, shortText(string(b), 400))
+	}
+	return nil
+}
+
+func toolSpecFor(name string) toolSpec {
+	for _, s := range toolSpecs {
+		if s.name == name {
+			return s
+		}
+	}
+	return toolSpec{}
+}
+
+// toolTestPath is the program to start once to check an unpacked tool works.
+func toolTestPath(tool, dir string) string {
+	win := runtime.GOOS == "windows"
+	switch {
+	case tool == "chromium" && win:
+		return filepath.Join(dir, "chrome-win64", "chrome.exe")
+	case tool == "chromium":
+		return filepath.Join(dir, "chrome-linux64", "chrome")
+	case win:
+		for _, f := range []string{"openscad.com", "openscad.exe"} {
+			if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+				return filepath.Join(dir, f)
+			}
+		}
+		return filepath.Join(dir, "openscad.com")
+	}
+	return filepath.Join(dir, "bin", "openscad")
+}
+
+// unpackTool unpacks an archive downloaded for tool into stage.
+func unpackTool(tool, archive, stage string) error {
+	if strings.HasSuffix(archive, ".zip") {
+		if err := extractZip(archive, stage); err != nil {
+			return err
+		}
+		if tool == "openscad" { // the Windows zip holds one folder; lift its contents
+			ents, _ := os.ReadDir(stage)
+			if len(ents) == 1 && ents[0].IsDir() {
+				top := filepath.Join(stage, ents[0].Name())
+				inner, _ := os.ReadDir(top)
+				for _, e := range inner {
+					if err := os.Rename(filepath.Join(top, e.Name()), filepath.Join(stage, e.Name())); err != nil {
+						return err
+					}
+				}
+				os.Remove(top)
+			}
+		}
+		return nil
+	}
+	// OpenSCAD's Linux build is an AppImage. Unpack it instead of running it so
+	// the node does not need FUSE; a small wrapper starts it headless.
+	img := filepath.Join(stage, "OpenSCAD.AppImage")
+	src, err := os.Open(archive)
+	if err != nil {
+		return err
+	}
+	dst, err := os.OpenFile(img, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+	if err != nil {
+		src.Close()
+		return err
+	}
+	_, err = io.Copy(dst, src)
+	src.Close()
+	dst.Close()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, img, "--appimage-extract")
+	cmd.Dir = stage
+	if b, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("unpack AppImage: %v: %s", err, shortText(string(b), 300))
+	}
+	os.Remove(img)
+	if err := os.MkdirAll(filepath.Join(stage, "bin"), 0o755); err != nil {
+		return err
+	}
+	wrapper := "#!/bin/sh\nQT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen} exec \"$(dirname \"$0\")/../squashfs-root/AppRun\" \"$@\"\n"
+	return os.WriteFile(filepath.Join(stage, "bin", "openscad"), []byte(wrapper), 0o755)
+}
+
+// installTool installs Chromium or OpenSCAD from an archive the controller serves.
+func (n *Node) installTool(ti ToolInstall) {
+	const op = "toolchain"
+	name := installableTools[ti.Tool]
+	fail := func(hint, format string, a ...any) {
+		msg := fmt.Sprintf(format, a...)
+		log.Printf("toolchain %s %s: %s", ti.Tool, ti.Version, msg)
+		st := OpStatus{Op: op, Target: ti.Tool, State: "failed", BytesTotal: ti.Bytes, Error: msg, Hint: hint}
+		_ = n.send("node.op_status", st)
+	}
+	if name == "" || ti.Tool == "go" {
+		fail("", "bad toolchain request")
+		return
+	}
+	root := n.toolchainDir()
+	final := filepath.Join(root, ti.Tool)
+	stage := filepath.Join(root, ti.Tool+".new")
+	if ti.Libs {
+		if _, err := os.Stat(stage); err != nil || ti.Tool != "chromium" {
+			fail("", "nothing is waiting for libraries; install %s again", name)
+			return
+		}
+		n.opStatus(op, ti.Tool, "installing", 0, 0, "")
+		if err := installChromeLibs(); err != nil {
+			fail("", "%v", err)
+			return
+		}
+	} else {
+		if !validName(ti.Archive) || strings.ContainsAny(ti.Archive, `/\`) {
+			fail("", "bad toolchain request")
+			return
+		}
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			fail("", "%v", err)
+			return
+		}
+		archive := filepath.Join(root, ti.Archive)
+		n.opStatus(op, ti.Tool, "downloading", 0, ti.Bytes, "")
+		err := n.fetchFile("/v1/toolchain/"+ti.Tool+"/"+ti.Archive, archive, ti.SHA256, ti.Bytes, func(d int64) {
+			n.opStatus(op, ti.Tool, "downloading", d, ti.Bytes, "")
+		})
+		if err != nil {
+			fail("", "%s", withDefenderHint("download: "+err.Error(), n.dataDir))
+			return
+		}
+		n.opStatus(op, ti.Tool, "installing", ti.Bytes, ti.Bytes, "")
+		os.RemoveAll(stage)
+		if err := os.MkdirAll(stage, 0o755); err != nil {
+			fail("", "%v", err)
+			return
+		}
+		err = unpackTool(ti.Tool, archive, stage)
+		os.Remove(archive)
+		if err != nil {
+			os.RemoveAll(stage)
+			fail("", "unpack: %v", err)
+			return
+		}
+	}
+	// Start it once. Chromium on a bare Linux install usually fails here for want of libraries.
+	test := toolTestPath(ti.Tool, stage)
+	ver, ok := toolVersion(test, toolSpecFor(ti.Tool))
+	if !ok {
+		if libs := missingLibs(test); len(libs) > 0 {
+			fail("libs", "%s is unpacked but cannot start: missing %s", name, strings.Join(libs, ", "))
+			return // the unpacked copy stays for the retry
+		}
+		os.RemoveAll(stage)
+		fail("", "the unpacked %s does not start on this node", name)
+		return
+	}
+	old := filepath.Join(root, "."+ti.Tool+"-old")
+	os.RemoveAll(old)
+	if _, err := os.Stat(final); err == nil {
+		if err := os.Rename(final, old); err != nil {
+			os.RemoveAll(stage)
+			fail("", "replace old %s: %v", name, err)
+			return
+		}
+	}
+	if err := os.Rename(stage, final); err != nil {
+		os.Rename(old, final)
+		os.RemoveAll(stage)
+		fail("", "%v", err)
+		return
+	}
+	os.RemoveAll(old)
+	log.Printf("%s %s installed at %s", ti.Tool, ver, final)
+	n.toolInventory(true)
+	n.opStatus(op, ti.Tool, "done", ti.Bytes, ti.Bytes, "")
+	n.resendHello()
+}
+
+// removeTool deletes a tool Outpost installed. Copies found on the system are never touched.
+func (n *Node) removeTool(tool string) {
+	if !n.removeToolFiles(tool) {
+		return
+	}
+	log.Printf("removed %s installed by Outpost", tool)
+	n.toolInventory(true)
+	n.resendHello()
+}
+
+func (n *Node) removeToolFiles(tool string) bool {
+	if installableTools[tool] == "" {
+		return false
+	}
+	for _, d := range []string{tool, tool + ".new", "." + tool + "-old"} {
+		os.RemoveAll(filepath.Join(n.toolchainDir(), d))
+	}
+	return true
+}
