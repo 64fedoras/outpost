@@ -199,7 +199,22 @@ $('bk-sched-save').onclick = async () => {
   try { settings = await post('/api/backup/schedule', { enabled: $('bk-on').checked, dir: $('bk-dir').value, passphrase: $('bk-sched-pass').value }); $('bk-sched-pass').value = ''; toast('Schedule saved'); loadSecurity(); } catch (e) { toast(e.message); }
 };
 async function saveSettings(body, msg) {
-  try { settings = await post('/api/settings', body); Guard.settingsSaved(); toast(msg); loadSettings(); refresh(); } catch (e) { toast(e.message); }
+  const hadKey = !!(settings && (settings.has_anthropic_key || settings.has_openrouter_key));
+  try { settings = await post('/api/settings', body); Guard.settingsSaved(); toast(msg); loadSettings(); refresh(); } catch (e) { toast(e.message); return; }
+  if (!hadKey && (body.anthropic_key || body.openrouter_key)) askMonthlyCap();
+}
+// Asked once, when the first cloud key is saved: money should have a limit before the first task, not after the bill.
+async function askMonthlyCap() {
+  if (!settings || settings.monthly_cap_usd > 0 || settings.monthly_cap_asked) return;
+  const v = await askText('Set a monthly limit for cloud models?', '25', { ok: 'Set limit', no: 'No limit', body: 'Dollars per month across every task, Claude and OpenRouter together. Tasks pause before a call that would pass it. You can change it any time under Spending.' });
+  const n = v === null ? 0 : Number(String(v).replace(/^\$/, ''));
+  try {
+    const cap = Number.isFinite(n) && n > 0 ? n : 0;
+    await post('/api/spending/cap', { cap_usd: cap });
+    settings.monthly_cap_usd = cap; settings.monthly_cap_asked = true;
+    toast(n > 0 ? `Monthly limit set to $${n}` : 'No monthly limit. Set one any time under Spending.');
+    refresh();
+  } catch (e) { toast(e.message); }
 }
 $('set-key-save').onclick = () => { const v = $('set-key').value.trim(); if (!v) return; $('set-key').value = ''; saveSettings({ anthropic_key: v }, 'API key saved'); };
 $('set-key-clear').onclick = async () => { if (await askConfirm('Remove the Claude API key?')) saveSettings({ anthropic_key: '' }, 'API key removed'); };
