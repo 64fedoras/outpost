@@ -2,7 +2,7 @@
 
 Self-hosted distributed local-AI cluster, written in Go as **one binary** with two modes:
 `controller` (web UI, planning, job dispatch, model and release storage) and `node` (runs
-llama.cpp, runs commands, keeps no job data). Current version: **0.8.0** (`const Version` in `cmd/outpost/proto.go`).
+llama.cpp, runs commands, keeps no job data). Base version: **0.8.0** (`const Version` in `cmd/outpost/proto.go`; releases are stamped higher by CI, see below).
 
 The owner uses it to fan programming tasks out across their home machines, as a supplement to Claude Code.
 You describe a task in the web UI; a planner (Claude API, or a local model on a node) splits it into
@@ -38,7 +38,22 @@ go vet ./... && go test ./...            # unit tests only
 sh build.sh                              # all 5 platforms into ../dist/outpost-<version>/bin
 sh winres/gen.sh                         # regenerate rsrc_windows_amd64.syso after bumping Version
 sh testing/e2e/run.sh up                 # full local rig with stub Claude + fake llama-server
+sh scripts/gen_notices.sh                # regenerate THIRD_PARTY_NOTICES.txt from vendor/ and bundled/
 ```
+CI (`.github/workflows/ci.yml`) runs `fast` and `race` on every pull request. `e2e` is run by hand.
+
+### Stub rig and e2e runs
+- `sh testing/e2e/run.sh up` builds with `-tags e2e` and starts a real controller and node on 127.0.0.1
+  (UI https://127.0.0.1:18460, self-signed), a stub Claude API (`mock_claude.py`) and a fake
+  llama-server (`fake_llama_server.py`). No model or API key needed. State is in `testing/e2e/run/`
+  (git-ignored); `run.sh pw` prints the admin password; `run.sh down` stops everything.
+- Browser scripts (`testing/e2e/*.py`, Python Playwright + Chromium) run against the rig with
+  `OUTPOST_E2E_DIR=$PWD/testing/e2e/run python3 testing/e2e/<script>.py`. `sh testing/run_all.sh e2e`
+  runs the standard set (`E2E_FULL=1` adds `flow.py`, about 4 minutes, and `soak.py`). The table of
+  scripts is in `testing/README.md`; add new scripts there.
+- Several scripts (chatpage, chatimages, cad, chatversions, groups) fail on plain `main` in the cloud
+  box; check against `main` before treating such a failure as a regression. `cad.py` needs `openscad`.
+- Lab testing on the home network (`testing/LAB.md`, `lab_*.py`) is reachable only from there.
 `build.sh` targets: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64, all with
 `CGO_ENABLED=0`. Windows is deliberately built **without** `-s -w` and with version info and a manifest
 (`winres/`), because stripped, metadata-free Go exes are a common Defender false positive.
@@ -48,7 +63,8 @@ sh testing/e2e/run.sh up                 # full local rig with stub Claude + fak
 All dependencies are in `vendor/` (fyne.io/systray, godbus/dbus/v5, golang.org/x/sys, coder/websocket).
 The original build machine could not reach proxy.golang.org, so `scripts/vendor_sync.sh` re-vendors from local
 git clones and patches `vendor/modules.txt`. **On a machine with normal network access just run
-`go mod tidy && go mod vendor`** and ignore that script. `go.mod` lists coder/websocket as `// indirect`
+`go mod tidy && go mod vendor`** and ignore that script. After any vendor/ change run
+`sh scripts/gen_notices.sh`: `TestNoticesCoverVendoredModules` fails otherwise (Dependabot Go bumps are handled by `.github/workflows/dependabot-notices.yml`). `go.mod` lists coder/websocket as `// indirect`
 although it is imported directly; harmless.
 
 ## Release routine
@@ -96,6 +112,24 @@ although it is imported directly; harmless.
   (see `testing/e2e/stop_all.sh`).
 - Join codes are single use and expire; "New code" cancels the previous unused code (`handleNewToken` with `replace`).
 - Playwright selectors: starter cards also contain words like "Python"; scope with `.opt >> text=...`.
+
+## Rules for Claude Code work here
+- **Never edit `const Version` for a patch and never edit `docs/ROADMAP.md`**; the owner keeps the roadmap himself.
+  When a change affects a roadmap row, say which rows and give pasteable text in the PR description instead.
+- **Single binary, no runtime dependencies.** Nodes keep no job data after a job (models and the agent binary are fine).
+- **No home-lab specifics** (IPs, subnets, hostnames, logins) in code, scripts, docs, tests or commits;
+  use `192.0.2.x`, `example.local`, `admin`, and keep real values overridable defaults.
+- **Favour reliability over new features.** Add a setting only if a wrong default costs real time, money or data.
+- **Say plainly what is untested.** Windows (service, tray, updates, Defender), macOS (the owner's Mac is Intel)
+  and the real cluster cannot be tested from a cloud build box; list them in the PR.
+- **UI changes need a mockup first**, then the built UI shown before merge. A mockup is ONE self-contained
+  HTML file with each image beside its notes (no PDF, no loose PNGs). UI is desktop first, clean, space
+  efficient, and must work with more than 10 nodes. Check light, dark and phone width; screenshots of
+  the built UI come from the e2e rig (Playwright).
+- Update the matching `docs/` topic page for user-visible changes.
+- **Git:** work on a branch, open a PR automatically when it is ready (attribution block per the project
+  instructions), and merge when done unless it is a UI the owner wants to see first. Text-only changes
+  (docs, CLAUDE.md) can be merged right away. CI stamps the version and builds the release on each merge to `main`.
 
 ## Status
 - v0.8.0 is one combined release: roadmap rows 5 to 23 (the features originally grouped as 0.8, 0.9, 1.0 and 1.1) on top of 0.7.3, kept under 0.8.0 at the owner's request. Gaps and deviations are listed in `docs/ROADMAP.md` ("0.8.0 build notes"). **Everything in it is untested on the real cluster**, and the Windows (PowerShell test runs, Go install) and macOS (LaunchAgent) parts are untested on real machines. New code is in `routing.go`, `bestofn.go`, `tasks_autoresume.go`, `tasks_rounds.go`, `tasks_live.go`, `notify.go`, `projects*.go`, `attachments.go`, `model_fit.go`, `controller_peers.go`, `node_peer.go`, `transfer/`, `install_launchd.go`, `toolchain.go`, `controller_toolchain.go`, `controller_files.go`, `node_artifacts.go`, `codeindex.go`, `agent.go`, `tasks_images.go`, `visual.go`, `instructions.go`, `weblookup.go`.
