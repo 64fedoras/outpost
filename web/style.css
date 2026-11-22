@@ -1584,3 +1584,26 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 .upl[open] > summary { margin-bottom: 10px; }
 .section-head .link-btn { margin-right: 10px; }
 .sprite { position: absolute; }
+
+/* Settings search (settings-search.js) */
+.set-search { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; background: var(--bg); padding: 10px 0 12px; margin-bottom: 6px; }
+.set-search input { flex: 1; padding: 8px 34px 8px 32px; border-radius: 8px; font-size: 14px; }
+.set-search .ss-ico { position: absolute; left: 11px; color: var(--muted); font-size: 16px; pointer-events: none; }
+.set-search .ss-kbd { position: absolute; right: 10px; border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; font-size: 11px; color: var(--muted); }
+.set-search .ss-x { position: absolute; right: 4px; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 4px 8px; }
+.set-main.ss-on { display: flex; flex-direction: column; }
+.ss-on .set-search { order: -10; }
+.ss-on .ss-none { order: 9999; }
+.ss-on .set-sec { display: flex; flex-direction: column; margin-bottom: 8px; }
+.ss-on .set-sec:not(.ss-single) .set-sec-title, .ss-on .ss-pointer { display: none; }
+.ss-on .set-sec.ss-single .set-sec-title { font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 22px 0 10px; }
+.ss-on .section-head h2::before { content: attr(data-sec) "  ›  "; color: var(--muted); font-weight: 400; }
+.ss-on .set-sec.ss-single .section-head { display: none; }
+.ss-hide { display: none !important; }
+::highlight(set-q) { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; }
+#set-nav a.ss-dim { opacity: .4; }
+#set-nav.ss-nav a.active { background: none; color: var(--muted); font-weight: 400; }
+#set-nav .ss-c { float: right; font-size: 11px; background: var(--tint); border-radius: 9px; padding: 0 6px; color: var(--accent); font-weight: 600; }
+.ss-none { padding: 30px 4px; color: var(--muted); }
+@media (max-width: 760px) { .set-search .ss-kbd { display: none; } }
+.set-search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }

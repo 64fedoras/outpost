@@ -446,6 +446,8 @@
           <a href="#set-maint" data-sec="maint">Storage and backup</a>
         </nav>
         <div class="set-main">
+        <div class="set-search"><span class="ss-ico" aria-hidden="true">⌕</span><input id="set-q" type="search" placeholder="Search settings" autocomplete="off" aria-label="Search settings"><kbd class="ss-kbd" aria-hidden="true">/</kbd><button class="ss-x hidden" id="set-q-x" aria-label="Clear search">✕</button></div>
+        <div class="ss-none hidden" id="set-none"></div>
         <section class="set-sec" id="set-tasks">
           <h2 class="set-sec-title">Tasks</h2>
         <p class="hint">Switches and dropdowns on this page save as you change them; boxes you type into have their own Save button.</p>
@@ -501,6 +503,7 @@
         </section>
         <section class="set-sec" id="set-keys">
           <h2 class="set-sec-title">API keys</h2>
+        <p class="hint ss-pointer">Keys Outpost uses to reach other services. Tokens that let your own scripts and tools reach Outpost are under <a href="#set-sec" data-goto="sec">Security › API tokens</a>.</p>
         <div class="section-head"><h2>Claude</h2></div>
         <div class="card">
           <p class="hint">Claude plans tasks, writes anything the local models cannot, and fixes failing tests. Use a separate API key for Outpost and set a monthly limit on it in the Claude Console as a backstop.</p>
@@ -657,7 +660,10 @@
           <label>Signed-in browsers</label>
           <div id="sessions-list"></div>
           <div class="modal-foot"><button class="danger" id="sess-all">Sign out everywhere</button></div>
-          <label class="u5" for="tok-name">API tokens <span class="muted">· for scripts: <code>Authorization: Bearer …</code></span></label>
+        </div>
+        <div class="section-head"><h2>API tokens</h2></div>
+        <div class="card">
+          <p class="hint">For scripts and tools: <code>Authorization: Bearer …</code>. Each token can be limited to chat, MCP or pictures.</p>
           <div id="tokens-list"></div>
           <p class="hint u3" id="agent-hint"></p>
           <div class="btns u3"><input id="tok-name" placeholder="Token name, e.g. nightly script" autocomplete="off"><button id="tok-create">Create token</button></div>
@@ -1151,6 +1157,7 @@
 <script src="updates.js"></script>
 <script src="spending.js"></script>
 <script src="settings.js"></script>
+<script src="settings-search.js"></script>
 <script src="dialogs.js"></script>
 <script src="tools.js"></script>
 <script src="images.js"></script>
