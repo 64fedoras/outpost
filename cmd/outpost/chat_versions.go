@@ -132,6 +132,7 @@ func (c *Controller) handleChatRegenerate(w http.ResponseWriter, r *http.Request
 	var req struct {
 		MsgID string `json:"msg_id"`
 		Node  string `json:"node"`
+		Need  string `json:"need"` // coding | vision | general: answer for this need (Auto only)
 	}
 	ch := c.chatForChange(w, r, &req)
 	if ch == nil {
@@ -152,6 +153,9 @@ func (c *Controller) handleChatRegenerate(w http.ResponseWriter, r *http.Request
 	all := ch.cutTail(i)
 	if req.Node != "" {
 		ch.Node = req.Node
+	}
+	if validNeed(req.Need) {
+		ch.needOverride = req.Need
 	}
 	c.beginAnswerLocked(ch, all, len(all))
 	writeJSON(w, 200, map[string]bool{"ok": true})

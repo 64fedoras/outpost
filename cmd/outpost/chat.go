@@ -41,6 +41,8 @@ type ChatMsg struct {
 	// Suggest is a fact the answering model offered to remember (memory.go),
 	// shown under the answer until the owner remembers or dismisses it.
 	Suggest string `json:"suggest,omitempty"`
+	// Need is what the message needed when Auto chose the model: coding, vision or general (chat_switch.go).
+	Need string `json:"need,omitempty"`
 	// Runs are the programs the model ran for this answer (chat_run.go).
 	Runs []CodeRun `json:"runs,omitempty"`
 	// Research is the record of a research-mode answer: its sub-questions and findings (research.go).
@@ -63,10 +65,13 @@ type Chat struct {
 	RunOn        string `json:"run_on,omitempty"`    // while Busy is "running": the node running it
 	// Research is the live state of a research answer while it works (research.go).
 	Research *ResearchRun `json:"research,omitempty"`
+	// Prompt is the question or progress line while Auto gets a model (chat_switch.go); not saved.
+	Prompt *ChatPrompt `json:"prompt,omitempty"`
 
-	dir    string
-	cancel context.CancelFunc
-	mu     sync.Mutex
+	needOverride string // the next answer is for this need (the "chosen for" menu)
+	dir          string
+	cancel       context.CancelFunc
+	mu           sync.Mutex
 }
 
 // Timings, shortened by tests.
@@ -108,7 +113,7 @@ func (c *Controller) loadChats() {
 		if json.Unmarshal(b, ch) != nil || ch.ID+".json" != e.Name() {
 			continue
 		}
-		ch.dir, ch.Busy, ch.RunOn, ch.Research = c.chatsDir(), "", "", nil
+		ch.dir, ch.Busy, ch.RunOn, ch.Research, ch.Prompt = c.chatsDir(), "", "", nil, nil
 		c.chats[ch.ID] = ch
 	}
 }
@@ -132,6 +137,7 @@ func (c *Controller) chatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/chats/{id}/run-file", c.auth(c.handleChatRunFile))
 	mux.HandleFunc("GET /api/chats/{id}/events", c.authSession(c.handleChatEvents))
 	mux.HandleFunc("POST /api/chats/{id}/edit", c.auth(c.handleChatEdit))
+	mux.HandleFunc("POST /api/chats/{id}/prompt", c.auth(c.handleChatPrompt))
 	mux.HandleFunc("POST /api/chats/{id}/regenerate", c.auth(c.handleChatRegenerate))
 	mux.HandleFunc("POST /api/chats/{id}/version", c.auth(c.handleChatVersion))
 	mux.HandleFunc("POST /api/chats/{id}/branch", c.auth(c.handleChatBranch))
@@ -178,6 +184,7 @@ type chatReq struct {
 	// Instructions (new chats only): nil takes the default from Settings.
 	Instructions *string `json:"instructions"`
 	RunCode      bool    `json:"run_code"` // new chats only: start with Run code on
+	Need         string  `json:"need"`     // coding | vision | general: answer for this need (Auto only)
 }
 
 func (req *chatReq) check() error {
@@ -207,7 +214,7 @@ func (req *chatReq) checked(c *Controller) ([]llmImage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !c.anyVisionNode(firstNonEmpty(req.Node, "auto")) {
+	if !c.anyVisionNode(firstNonEmpty(req.Node, "auto")) && !(firstNonEmpty(req.Node, "auto") == "auto" && c.anySwitchNode()) {
 		return nil, errNoVisionChat
 	}
 	return imgs, nil
@@ -277,6 +284,9 @@ func (c *Controller) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	ch.mu.Lock()
 	if req.Node != "" && ch.Busy == "" {
 		ch.Node = req.Node
+	}
+	if validNeed(req.Need) && ch.Busy == "" {
+		ch.needOverride = req.Need
 	}
 	ch.mu.Unlock()
 	if !c.startChatReplyAll(ch, req.Text, imgs, docs) {
@@ -511,6 +521,18 @@ func (c *Controller) answerChatMem(ctx context.Context, chatID, pref string, his
 
 // answerChatRun is answerChatMem that, with run set, lets the model run code (chat_run.go).
 func (c *Controller) answerChatRun(ctx context.Context, chatID, pref string, hist []ChatMessage, askMem bool, run *codeRunner, started func()) ChatMsg {
+	need, note, abort := c.chatSwitch(ctx, chatID, pref, hist)
+	if abort != nil {
+		abort.Need = need
+		return *abort
+	}
+	msg := c.answerChatNode(ctx, chatID, pref, hist, askMem, run, started)
+	msg.Need, msg.Note = need, joinNotes(note, msg.Note)
+	return msg
+}
+
+// answerChatNode answers on a ready node (answerChatRun after any model switch).
+func (c *Controller) answerChatNode(ctx context.Context, chatID, pref string, hist []ChatMessage, askMem bool, run *codeRunner, started func()) ChatMsg {
 	var want func(string) bool
 	for _, m := range hist {
 		if len(m.Images) > 0 {
@@ -544,6 +566,7 @@ func (c *Controller) answerChatRun(ctx context.Context, chatID, pref string, his
 		loaded = hb.LoadedModel
 	}
 	c.mu.Unlock()
+	c.chatSw.touch(node, loaded)
 	ran := false
 	if run != nil {
 		out, note, ran, err = c.answerWithRun(ctx, infer, loaded, hist, ctxTok, maxOut, run)

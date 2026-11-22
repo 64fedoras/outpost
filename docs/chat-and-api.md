@@ -28,6 +28,30 @@ reads like a picture request ("draw an image of…", "make a 3D model of…"), a
 **Not now** dismisses it. This is a plain wording check, not the model deciding. The Images (`#/image`) and 3D
 (`#/cad`) pages still exist and are in Ctrl+K search. Letting the chat load or switch models on nodes is not built.
 
+**Auto picks a model for each message.** Auto works out what a message needs: **vision** when a picture is
+attached, **coding** when it looks like code work (code blocks, file names such as `main.go`, words like
+bug, compile, refactor), otherwise **general**. This is a few simple rules, with no extra model call, and
+the answer ends with a *chosen for coding ▾* menu: change it and the message is answered again for that need.
+If a loaded model suits the need (a model that is both coding and vision suits both), chat uses it and nothing
+changes. Otherwise, on nodes with *Let chat switch models here* on (Nodes page, off by default), chat looks for
+a node that is idle and whose model chat did not change in the last 10 minutes, and picks the cheapest way to
+get a suitable model:
+
+1. a suitable model already on that node's disk (loaded without asking, the current model is replaced);
+2. a download that fits in the free space: chat asks first, with a **10 second** countdown. If nobody
+   answers, a download **under 20 GB** goes ahead; a bigger one does not;
+3. a download that needs room: chat lists the models it would remove and asks, with a **30 second**
+   countdown. Nobody answering means **use the loaded model instead**; nothing is removed.
+
+Removals keep one model of each type (coding, vision, general) and take from the type with the most
+models first; copies the controller also holds go first, then the least recently used. At most 2 models are
+removed for one message and 3 per node per day. A model used or loaded in the last 24 hours, the loaded model,
+models of unknown type (custom uploads) and models the controller does not know are never removed. If that is
+not enough room, chat removes nothing, answers with what is loaded and says what to do (raise the node's
+storage limit or remove models on the Models page). Pinning a node or a model never switches. The prompt has
+**Download now**, **Use loaded model instead** and **Cancel**. The memory of recent use and removals is
+kept in the controller's memory only, so it starts empty after a restart.
+
 **Screenshots in chats.** Paste a screenshot into the message box (Ctrl+V), drop image files on it, or
 use **Attach** in the ＋ menu: up to 5 PNG, JPEG, WebP or GIF images per message, 5 MB each (bigger photos are scaled
 down in the browser first). A message can be just an image ("Describe this image." is asked for you). Only a
