@@ -30,17 +30,26 @@ async function freshAddToken() {
   addToken = await post('/api/tokens');
   return null;
 }
+// The new machine's OS: start on the one this browser runs on; a tab switches. Only that platform's missing binaries are named.
+let addOs = /Windows/i.test(navigator.userAgent) ? 'win' : 'unix';
+function addOsRender() {
+  document.querySelectorAll('[data-addos]').forEach((b) => b.classList.toggle('on', b.dataset.addos === addOs));
+  $('add-unix').classList.toggle('hidden', addOs !== 'unix');
+  $('add-win').classList.toggle('hidden', addOs !== 'win');
+  const have = (addToken && addToken.platforms) || [];
+  const want = addOs === 'win' ? ['windows-amd64'] : ['linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64'];
+  const missing = want.filter((p) => !have.includes(p)), np = $('add-noplat');
+  np.textContent = missing.length ? `The one-paste command only works for platforms whose binary is uploaded in the Updates tab. Missing: ${missing.join(', ')}.` : '';
+  np.classList.toggle('hidden', !missing.length);
+}
+document.querySelectorAll('[data-addos]').forEach((b) => { b.onclick = () => { addOs = b.dataset.addos; addOsRender(); }; });
 function showAddToken(note) {
   renderAddCmds();
   $('cmd-win').textContent = '.\\' + addToken.windows.replace(/^outpost\.exe/, 'outpost-windows-amd64.exe');
   $('cmd-mac').textContent = 'chmod +x ./outpost-darwin-arm64 && sudo ./outpost-darwin-arm64 ' + addToken.macos.replace(/^outpost /, '');
   $('cmd-curl').textContent = addToken.curl_unix || '';
   $('cmd-curlwin').textContent = addToken.curl_win || '';
-  const have = addToken.platforms || [];
-  const missing = ['linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64', 'windows-amd64'].filter((p) => !have.includes(p));
-  const np = $('add-noplat');
-  np.textContent = missing.length ? `The one-paste commands only work for platforms whose binary is uploaded in the Updates tab. Missing: ${missing.join(', ')}.` : '';
-  np.classList.toggle('hidden', !missing.length);
+  addOsRender();
   const n = $('add-note');
   n.textContent = note || ''; n.classList.toggle('hidden', !note);
 }

@@ -100,7 +100,9 @@ function renderModels() {
   const sugg = (models.suggested || []).map((sg) => sg.id);
   const order = [...models.catalog].sort((a, b) => {
     const ia = sugg.indexOf(a.id), ib = sugg.indexOf(b.id);
-    return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
+    if ((ia < 0) !== (ib < 0) || ia >= 0) return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
+    // not suggested: what fits an online node first
+    return (catFits(b.id).some((f) => f.fit !== 'no') ? 1 : 0) - (catFits(a.id).some((f) => f.fit !== 'no') ? 1 : 0);
   });
   const q = catQuery.trim().toLowerCase();
   const shown = order.filter((c) => {
@@ -115,11 +117,12 @@ function renderModels() {
     const m = have[c.id];
     const fits = catFits(c.id), ok = fits.filter((f) => f.fit !== 'no'), vr = fits.filter((f) => f.fit === 'vram');
     const fitTxt = !onlineN ? 'no nodes online' : `fits ${ok.length} of ${onlineN} online${vr.length ? ` · ${vr.length} in VRAM` : ''}`;
+    const noFit = onlineN > 0 && !ok.length, pc = noFit ? '' : ' primary'; // a model nothing online can run is not the call to action
     const fitTitle = fits.map((f) => `${f.name}: ${FIT_TEXT[f.fit]}`).join('\n');
     const act = m ? (m.status === 'downloading' ? `<button class="small" disabled>Downloading ${m.bytes_total ? Math.floor(100 * m.bytes_done / m.bytes_total) : 0}%</button>`
         : m.status === 'failed' ? `<button class="small" data-act="model-retry" data-name="${esc(c.id)}">Retry</button>`
         : `<button class="small" data-act="pick-model" data-name="${esc(c.id)}" title="In the library (${isDirect(m) ? 'nodes download' : 'on the controller'})">Load on…</button>`)
-      : `<div class="split-btn"><button class="small primary" data-act="pick-model" data-name="${esc(c.id)}" data-catalog="1" title="Adds it to the library (nodes download it) and loads it on the node you pick">Add and load on…</button><details class="split-more"><summary class="small primary" aria-label="More ways to add">▾</summary><div class="split-menu">
+      : `<div class="split-btn"><button class="small${pc}" data-act="pick-model" data-name="${esc(c.id)}" data-catalog="1" title="${noFit ? 'Fits none of the online nodes now. ' : ''}Adds it to the library (nodes download it) and loads it on the node you pick">Add and load on…</button><details class="split-more"><summary class="small${pc}" aria-label="More ways to add">▾</summary><div class="split-menu">
           <button data-act="catalog-add" data-id="${esc(c.id)}" data-storage="direct"><b>Add · nodes download</b><span class="sub">Each node fetches it from Hugging Face when you load it. Uses no controller space.</span></button>
           <button data-act="catalog-add" data-id="${esc(c.id)}" data-storage="controller"><b>Store on controller</b><span class="sub">Download once (${bytes(c.bytes)}), then copy to nodes over your network.</span></button></div></details></div>`;
     return `<div class="cat-row"><div class="nv-min"><b>${esc(c.label)}</b>${c.mmproj ? ' <span class="pill st-ready" title="Reads images">Vision</span>' : ''}${recFor(c.id)}${m ? ' <span class="pill st-pending">In library</span>' : ''}

@@ -38,6 +38,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `rerun.py` | Edit the plan (before approval, via the pencil on the plan card) and re-run an approved plan. |
 | `taskmenu.py dark\|light` | Sidebar task menu: right-click, the ⋯ button, Shift+F10, F2 rename, pin, copy link and prompt, duplicate, delete, and the phone drawer. Screenshots go to `run/menu/`. |
 | `mobile.py` | The same pages at phone width. |
+| `usability1.py` | Usability batch 1: Adjust… on the plan card, Ask/Enter on the project composer, name-only New project dialog, Add node OS tabs; shots in `run/shots/usability1/`. |
 | `projectnew.py` | Projects page: "New task in this project" in a card's menu opens the new-task page with that project picked. |
 | `chatpage.py` | Chat page layout: model cards on a new chat, the docked composer, the chats panel and the phone sheet. |
 | `chatversions.py` | Chat edit and resend, regenerate, version arrows, branch, per-chat instructions and the Chats search box (desktop light and dark, phone). |

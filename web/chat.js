@@ -46,7 +46,7 @@ function chatPanelSet(open, reset) {
   const w = $('chat-wrap');
   if (chatPhone()) w.classList.toggle('sheet', open);
   else {
-    if (reset) { let v = null; try { v = localStorage.getItem('outpost-chat-panel'); } catch (e) { /* storage optional */ } open = v !== 'closed'; }
+    if (reset) { let v = null; try { v = localStorage.getItem('outpost-chat-panel'); } catch (e) { /* storage optional */ } open = v === 'open'; } // closed until the person opens it: the sidebar already lists the chats
     else { try { localStorage.setItem('outpost-chat-panel', open ? 'open' : 'closed'); } catch (e) { /* storage optional */ } }
     w.classList.toggle('closed', !open);
   }
@@ -57,8 +57,10 @@ function chatPanelOpen() { return chatPhone() ? $('chat-wrap').classList.contain
 // Model choice: Auto (the strongest free node) or a node with a model ready.
 function chatChoices() {
   const nodes = (state ? state.nodes : []).filter((n) => n.online && n.heartbeat && n.heartbeat.loaded_model);
-  const auto = { id: 'auto', t: 'Auto (local, strongest free node)', s: 'The best free node picks up your message', tone: 'on', note: '' };
-  const research = { id: 'research', t: 'Research (across nodes)', s: 'Splits the question, searches the web on several nodes, writes a report with sources', tone: 'on', note: 'web' };
+  // The dot is grey when nothing could answer: no loaded model and no node that may load one for Auto.
+  const canAnswer = nodes.length > 0 || (state ? state.nodes : []).some((n) => n.online && n.chat_switch);
+  const auto = { id: 'auto', t: 'Auto (local, strongest free node)', s: 'The best free node picks up your message', tone: canAnswer ? 'on' : 'needs', note: '' };
+  const research = { id: 'research', t: 'Research (across nodes)', s: 'Splits the question, searches the web on several nodes, writes a report with sources', tone: canAnswer ? 'on' : 'needs', note: 'web' };
   return [auto, research].concat(nodes.map((n) => {
     const h = n.heartbeat, busy = h.inference_busy > 0, paused = h.paused;
     return { id: n.id, t: h.loaded_model, s: nodeName(n), tone: busy || paused ? 'needs' : 'on', note: paused ? 'paused' : busy ? 'busy' : h.inference_ready === false ? 'loading' : 'local' };
@@ -104,7 +106,11 @@ function chatPickRender() {
   const shown = chatPhone() && !chatPickOpen && ready ? phoneOne() : all;
   const more = chatPhone() ? `<button type="button" class="chat-pick-more" id="chat-pick-more" aria-expanded="${chatPickOpen}">${chatPickOpen ? 'Hide' : ready ? 'Change' : ''}</button>` : '';
   setHTML('chat-msgs', `<div class="chat-pick-h"><span>Answer with</span><span class="grow"></span><span>${ready} ${ready === 1 ? 'model' : 'models'} ready</span>${ready ? more : ''}</div><div class="chat-pick">${shown.join('')}</div>`
-    + (ready ? '' : '<p class="chat-none">No node has a model loaded yet, so a chat has nowhere to run. Load one on the Models page, then ask.</p>'));
+    + (ready ? '' : (() => {
+      const first = (state ? state.nodes : []).find((n) => n.online);
+      return first ? `<p class="chat-none">No model is loaded yet. <button type="button" class="small primary" data-act="best" data-id="${esc(first.id)}">Set up a model on ${esc(nodeName(first))}</button><br><span class="hint">Outpost suggests the best one that fits that machine; you confirm before anything downloads.</span></p>`
+        : '<p class="chat-none">No node is online yet. <a href="#/nodes">Add one on the Nodes page</a>, then ask.</p>';
+    })()));
 }
 async function chatLoad(id) {
   try { chatCur = await api('/api/chats/' + id); } catch (e) { setHTML('chat-msgs', `<p class="error-msg">${esc(e.message)}</p>`); return; }

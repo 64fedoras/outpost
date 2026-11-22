@@ -164,6 +164,7 @@ function renderTask(t) {
   $('tv-download').classList.toggle('hidden', !files.length || !['done', 'cancelled', 'failed'].includes(t.status));
   $('tv-download').href = `/api/tasks/${t.id}/download`;
   $('tv-stop').classList.toggle('hidden', !canStop(t));
+  $('tv-stop').textContent = ['awaiting_approval', 'awaiting_answers'].includes(t.status) ? 'Cancel task' : 'Stop';
   // Stop next to Send while the task works (or waits to resume), so it is where the eye is.
   $('tm-stop').classList.toggle('hidden', !(WORKING.includes(t.status) || resuming(t)));
   $('tv-delete').classList.toggle('hidden', ACTIVE.includes(t.status));
@@ -349,6 +350,7 @@ function estMin(sec) { return sec < 90 ? '1 min' : Math.round(sec / 60) + ' min'
 // "Pick models for each node" on the live plan card (tasks_models.go). The
 // proposal comes from /model-plan, refreshed every 20 s; the switches live
 // here so a re-render keeps them.
+let planAdjust = ''; // id of the task whose plan card shows its adjustments
 const pickModels = { task: '', at: 0, data: null, on: false, keep: false, cap: '' };
 function pickModelsBlock(t) {
   if (pickModels.task !== t.id) Object.assign(pickModels, { task: t.id, at: 0, data: null, on: false, keep: false, cap: '' });
@@ -393,7 +395,7 @@ function planCard(t, m, live) {
     const e = est && est.subtasks && est.subtasks[s.id];
     return e ? `<span class="st-est" title="Estimated time for this subtask on its likely node">~${estMin(e.seconds)} on ${esc(e.node_name)}</span>` : '';
   };
-  const diffSel = (s) => live ? `<select class="small" data-diff="${esc(s.id)}" aria-label="Difficulty of ${esc(s.title)}" title="Hard subtasks go to the strongest model; easy ones to the fastest node">${['easy', 'normal', 'hard'].map((d) => `<option value="${d}" ${(s.difficulty || 'normal') === d ? 'selected' : ''}>${d}</option>`).join('')}</select>`
+  const diffSel = (s) => live && planAdjust === t.id ? `<select class="small" data-diff="${esc(s.id)}" aria-label="Difficulty of ${esc(s.title)}" title="Hard subtasks go to the strongest model; easy ones to the fastest node">${['easy', 'normal', 'hard'].map((d) => `<option value="${d}" ${(s.difficulty || 'normal') === d ? 'selected' : ''}>${d}</option>`).join('')}</select>`
     : (s.difficulty && s.difficulty !== 'normal' ? `<span class="tag">${esc(s.difficulty)}</span>` : '');
   const subs = (p.subtasks || []).map((s) => `<li><details><summary><span class="st-title">${esc(s.title)}</span>${diffSel(s)}<span class="st-files">${s.kind === 'investigate' ? 'investigates, writes no files' : s.files.map(esc).join(', ')}</span>${subEst(s)}</summary>
       <p class="st-ins">${esc(s.instructions)}</p>${s.depends_on && s.depends_on.length ? `<p class="st-dep">Starts after ${s.depends_on.map(esc).join(', ')}</p>` : ''}</details></li>`).join('');
@@ -405,9 +407,12 @@ function planCard(t, m, live) {
     if (p.test_command && !t.exec_nodes) warn.push('No node has exec on, so the tests will be skipped.');
     if (!t.workers_online) warn.push('No node has a model ready; work waits until one does.');
     const est = (t.planner === 'claude' || t.planner === 'openrouter') && t.estimate_usd ? `Planning cost ${usd(t.cost_usd)}; the rest is estimated at about ${usd(Math.max(0, t.estimate_usd - t.cost_usd))}.` : '';
-    actions = `${pickModelsBlock(t)}${warn.length || est ? `<p class="card-note">${esc([est, ...warn].filter(Boolean).join(' '))}</p>` : ''}
-      <div class="card-actions">${t.planner === 'claude' || t.planner === 'openrouter' ? `<label class="chip-input">cap $<input id="ta-cap" type="number" min="0.10" step="0.10" value="${t.cap_usd}" aria-label="Spending cap in US dollars"></label>` : ''}
-      <button class="primary" data-act="task-approve">Approve and start</button><span class="hint">or reply below to change the plan</span></div>`;
+    const adj = planAdjust === t.id, cloud = t.planner === 'claude' || t.planner === 'openrouter';
+    // One decision by default: Approve. Difficulty per subtask, per-node models and the cap sit behind "Adjust…".
+    actions = `${adj ? pickModelsBlock(t) : ''}${warn.length || est ? `<p class="card-note">${esc([est, ...warn].filter(Boolean).join(' '))}</p>` : ''}
+      <div class="card-actions">${adj && cloud ? `<label class="chip-input">cap $<input id="ta-cap" type="number" min="0.10" step="0.10" value="${t.cap_usd}" aria-label="Spending cap in US dollars"></label>` : ''}
+      <button class="primary" data-act="task-approve">Approve and start</button>
+      <span class="hint">${!adj && cloud ? `Up to ${usd(t.cap_usd)} · ` : ''}<button type="button" class="link-btn" data-act="task-adjust" aria-expanded="${adj}">${adj ? 'Hide adjustments' : 'Adjust models, difficulty' + (cloud ? ', cap' : '') + '…'}</button> · or reply below to change the plan</span></div>`;
   }
   const editable = canEditPlan(t, m);
   if (editable && !live) {
@@ -506,11 +511,24 @@ function resultCard(t, m) {
   const files = (m.files || []).map((f) => `<a href="#" data-act="view-file" data-path="${esc(f)}">${esc(f)}</a>`).join('');
   const tone = /tests still fail/.test(m.text) ? 'warn' : 'good';
   return `<div class="card-msg result ${tone}"><div class="card-head">${tone === 'good' ? 'Finished' : 'Finished with failing tests'}</div><p>${esc(m.text)}</p>${statsLine(m.stats)}
-    ${files ? `<div class="changed"><span class="hint">${m.round > 1 ? 'Changed in this request' : 'Files'}</span>${files}</div>` : ''}
+    ${files ? `<details class="changed-files"><summary class="hint">${(m.files || []).length} file${(m.files || []).length === 1 ? '' : 's'} ${m.round > 1 ? 'changed in this request' : 'written'}</summary><div class="changed">${files}</div></details>` : ''}
     ${latest ? artifactsBlock(t) : ''}
     ${latest && t.test_output && t.test_status !== 'passed' ? `<details class="testout"><summary>Last test output</summary><pre class="out">${esc(t.test_output)}</pre></details>` : ''}
-    ${(taskRounds || []).some((r) => r.round === m.round) ? `<div class="card-actions"><button class="small" data-act="show-changes" data-round="${m.round}">Changes</button><a href="/api/tasks/${t.id}/patch?round=${m.round}" title="This request's changes as a git diff (git apply)"><button class="small">.patch</button></a></div>` : ''}
-    ${latest ? `<div class="card-actions"><a href="/api/tasks/${t.id}/download"><button class="primary">Download .zip</button></a><a href="/api/tasks/${t.id}/handoff" title="The files plus HANDOFF.md and instruction files for Claude Code, Codex, Gemini CLI, GitHub Copilot and Cursor"><button class="small">Hand off to a coding assistant</button></a>${(taskRounds || []).length ? `<a href="/api/tasks/${t.id}/patch" title="Every change Outpost made, as one git diff"><button class="small">All changes .patch</button></a>` : ''}<span class="hint">Want changes? Send a follow-up below; it builds on these files.</span></div>` : ''}</div>`;
+    ${resultActions(t, m, latest)}</div>`;
+}
+
+// One visible action, Download .zip; changes, patches and the coding-assistant hand-off sit under More.
+function resultActions(t, m, latest) {
+  const hasRound = (taskRounds || []).some((r) => r.round === m.round);
+  const more = [];
+  if (hasRound) more.push(`<button type="button" data-act="show-changes" data-round="${m.round}">Show changes</button><a href="/api/tasks/${t.id}/patch?round=${m.round}" title="This request's changes as a git diff (git apply)">.patch for this request</a>`);
+  if (latest) {
+    more.push(`<a href="/api/tasks/${t.id}/handoff" title="The files plus HANDOFF.md and instruction files for Claude Code, Codex, Gemini CLI, GitHub Copilot and Cursor">Hand off to a coding assistant</a>`);
+    if ((taskRounds || []).length) more.push(`<a href="/api/tasks/${t.id}/patch" title="Every change Outpost made, as one git diff">All changes .patch</a>`);
+  }
+  const menu = more.length ? `<details class="menu"><summary class="small" aria-label="More ways to get the result">More</summary><div class="menu-list">${more.join('')}</div></details>` : '';
+  if (!latest) return menu ? `<div class="card-actions">${menu}</div>` : '';
+  return `<div class="card-actions"><a href="/api/tasks/${t.id}/download"><button class="primary">Download .zip</button></a>${menu}<span class="hint">Want changes? Send a follow-up below; it builds on these files.</span></div>`;
 }
 
 // Redo one subtask (tasks_redo.go).
@@ -795,8 +813,9 @@ async function taskAction(act, el) {
     switch (act) {
       case 'task-redo': openRedo(taskDetail, el.dataset.sub); return;
       case 'task-bestof': openBestOf(taskDetail, el.dataset.sub); return;
+      case 'task-adjust': planAdjust = planAdjust === id ? '' : id; renderTask(taskDetail); return;
       case 'task-approve': {
-        const pm = pickModels.task === id && pickModels.on;
+        const pm = planAdjust === id && pickModels.task === id && pickModels.on;
         await post(`/api/tasks/${id}/approve`, { cap_usd: parseFloat(($('ta-cap') || {}).value) || 0, auto_models: pm, keep_models: pm && pickModels.keep, model_cap_gb: pm ? parseFloat(pickModels.cap) || 0 : 0 });
         break;
       }

@@ -33,9 +33,14 @@ async def main():
             await pg.wait_for_selector(".chat-answer .chat-text", timeout=60000); await pg.wait_for_timeout(1200)
             assert await pg.locator(".mcard").count() == 0, "cards leave once a chat is open"
             await pg.screenshot(path=S + f"active-{scheme}.png")
+            # The Chats panel starts closed (the sidebar already lists the chats); the button opens it and closes it again.
+            assert await pg.locator(".chat-panel").is_hidden(), "panel starts closed"
+            await pg.screenshot(path=S + f"active-nopanel-{scheme}.png")
+            await pg.click("#chat-panel-btn")
+            assert await pg.locator(".chat-panel").is_visible(), "panel opens"
+            await pg.screenshot(path=S + f"active-{scheme}.png")
             await pg.click("#chat-panel-btn")
             assert await pg.locator(".chat-panel").is_hidden(), "panel toggles closed"
-            await pg.screenshot(path=S + f"active-nopanel-{scheme}.png")
             await ctx.close()
         ctx = await b.new_context(ignore_https_errors=True, viewport={"width": 390, "height": 844}, color_scheme="dark", is_mobile=True, has_touch=True, device_scale_factor=2)
         pg = await ctx.new_page(); pg.on("pageerror", lambda e: errs.append(str(e)))

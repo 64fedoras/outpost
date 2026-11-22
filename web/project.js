@@ -9,6 +9,8 @@ let pjTimer = 0, pjData = null, pjDataFor = '', pjFetchedAt = 0, pjFetching = fa
 const pjWide = () => matchMedia('(min-width: 1100px)').matches;
 function pjPanelPref() { try { const v = localStorage.getItem('pj-panel'); return v === null ? null : v === '1'; } catch (e) { return null; } }
 let pjPanelOpen = pjPanelPref() ?? pjWide();
+// Without a saved choice the panel opens only once the project has tasks; an empty one is just empty headings.
+const pjPanelDefault = (id) => pjWide() && projectTasks(id).length > 0;
 
 const projectById = (id) => (projects || []).find((p) => p.id === id);
 const projectTasks = (id) => (tasks || []).filter((t) => t.project_id === id);
@@ -38,7 +40,7 @@ function renderProjects() {
       <span class="pj-card-pills">${pills || '<span class="muted">No tasks yet</span>'}</span></a>
       <button class="side-task-more pj-card-more" data-proj-menu="${esc(p.id)}" aria-haspopup="menu" aria-expanded="${ctxProjId === p.id}" aria-label="Actions for ${esc(p.name)}" title="Actions">⋯</button></div>`;
   }).join('');
-  setHTML('projects-list', `<div class="pj-cards">${cards}<button class="pj-card pj-card-new" data-act="proj-new">＋ New project<span class="pj-card-sub">An empty folder, or a clone of a git repository</span></button></div>`);
+  setHTML('projects-list', `<div class="pj-cards">${cards || `<button class="pj-card pj-card-new" data-act="proj-new">＋ New project<span class="pj-card-sub">An empty folder, or a clone of a git repository</span></button>`}</div>`); // the header button covers it once there are cards
 }
 
 // ---------- one project ----------
@@ -60,7 +62,7 @@ function projectRoute() {
   if (pjDataFor !== pageArg) { pjData = null; pjResolvedOpen = false; }
   $('pj-text').value = pjNewDraft = '';
   autoGrow($('pj-text'));
-  pjPanelOpen = pjPanelPref() ?? pjWide();
+  pjPanelOpen = pjPanelPref() ?? pjPanelDefault(pageArg);
   if (!pjWide()) pjPanelOpen = false; // the phone opens the panel by hand, as a sheet
   renderProjectPage();
   pjFetch(true);
@@ -123,7 +125,7 @@ function renderPjFeed(p) {
   items.sort((x, y) => x.time - y.time);
   if (ov.chat && ov.chat.busy) items.push({ html: `<div class="pj-answer pj-thinking"><span class="dots" aria-label="Thinking"><i></i><i></i><i></i></span> <span class="muted">${(ov.chat.reading || []).length ? 'Reading the project…' : 'Thinking…'}</span> <button class="small" data-act="proj-chat-stop">Stop</button>${pjReads(ov.chat.reading)}</div>` });
   const more = hidden > 0 ? `<button class="link-btn pj-showres" data-act="proj-show-resolved">${pjResolvedOpen ? 'Hide resolved tasks' : `${hidden} resolved task${hidden === 1 ? '' : 's'} hidden. Show them`}</button>` : '';
-  if (!items.length) return `${more}<div class="pj-empty"><h3>What should ${esc(p.name)} do next?</h3><p class="hint">Ask about the project, or describe work to do: the planner answers here and starts tasks for it. <b>Start as task</b> skips the conversation and starts your message as a task. Every task starts from the project's current files, and one task works in the project at a time.</p></div>`;
+  if (!items.length) return `${more}<div class="pj-empty"><h3>What should ${esc(p.name)} do next?</h3><p class="hint"><b>Ask</b> talks it over with the planner, which can start tasks for you. <b>Start as task</b> skips the talk and runs your message as a task. Every task starts from the project's current files; one runs at a time.</p></div>`;
   return more + items.map((i) => `<div class="pj-item">${i.html}</div>`).join('');
 }
 
@@ -206,12 +208,12 @@ function renderPjPanel(p) {
   list.forEach((t) => groups[projectGroup(t)].push(t));
   const arts = (pjData && pjDataFor === p.id && pjData.artifacts) || [];
   const sec = (key, name, inner, extra = '') => `<section class="pj-sec ${key}"><div class="pj-sec-h"><b>${name} · ${groups[key].length}</b>${extra}</div>${inner}</section>`;
-  const rows = (key, empty) => groups[key].length ? groups[key].map((t) => pjRow(t, feed[t.id])).join('') : `<div class="pj-none">${empty}</div>`;
+  const rows = (key) => groups[key].map((t) => pjRow(t, feed[t.id])).join(''); // an empty section is its heading and a 0 only
   return `<section class="pj-sec"><div class="pj-sec-h"><b>Artifacts</b><span class="spacer"></span>${arts.length > 3 ? `<button class="link-btn" data-act="proj-arts">View all ${arts.length}</button>` : ''}</div>
-      ${arts.length ? `<div class="pj-arts">${arts.slice(0, 3).map(pjArtCard).join('')}</div>` : '<div class="pj-none">Screenshots, build outputs, result zips and pull requests from this project\'s tasks show up here.</div>'}</section>
-    ${sec('waiting', 'Waiting on you', rows('waiting', 'Questions and plans to approve show up here.'))}
-    ${sec('working', 'Working', rows('working', 'Nothing running.'), groups.working.length > 1 ? '<span class="spacer"></span><span class="pj-note">one task works at a time; the rest are queued</span>' : '')}
-    ${sec('idle', 'Idle', rows('idle', 'Finished tasks wait here until you resolve them.'), groups.idle.some(canResolve) ? '<span class="spacer"></span><button class="link-btn" data-act="proj-resolve-all">Resolve all</button>' : '')}
+      ${arts.length ? `<div class="pj-arts">${arts.slice(0, 3).map(pjArtCard).join('')}</div>` : ''}</section>
+    ${sec('waiting', 'Waiting on you', rows('waiting'))}
+    ${sec('working', 'Working', rows('working'), groups.working.length > 1 ? '<span class="spacer"></span><span class="pj-note">one task works at a time; the rest are queued</span>' : '')}
+    ${sec('idle', 'Idle', rows('idle'), groups.idle.some(canResolve) ? '<span class="spacer"></span><button class="link-btn" data-act="proj-resolve-all">Resolve all</button>' : '')}
     <section class="pj-sec resolved"><button class="pj-sec-h pj-toggle" data-act="proj-show-resolved" aria-expanded="${pjResolvedOpen}"><b>Resolved · ${groups.resolved.length}</b> <span aria-hidden="true">${pjResolvedOpen ? '▾' : '›'}</span></button>
       ${pjResolvedOpen ? rows('resolved', 'Nothing resolved yet. Resolve a finished task to tidy it away; a follow-up brings it back.') : ''}</section>`;
 }
@@ -276,7 +278,8 @@ async function pjSend(asTask) {
 }
 $('pj-go').onclick = () => pjSend(false);
 $('pj-task').onclick = () => pjSend(true);
-$('pj-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) pjSend(false); });
+// Enter asks, like Chat; Shift+Enter adds a line. Not while an input method is composing.
+$('pj-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); pjSend(false); } });
 $('pj-text').addEventListener('input', () => autoGrow($('pj-text')));
 $('pj-more').onclick = (e) => {
   e.preventDefault();
@@ -361,7 +364,7 @@ async function projectAction(act, el) {
 async function projPageAction(act, el) {
   const id = el.dataset.id;
   switch (act) {
-    case 'proj-new': open('modal-newproj'); return;
+    case 'proj-new': npGit(false); open('modal-newproj'); return;
     case 'proj-planner-pick': openPjSettings(id); return;
     case 'proj-planner-settings':
       location.hash = '#/settings';
@@ -398,6 +401,9 @@ async function projPageAction(act, el) {
   }
 }
 
+// The git fields stay out of sight until asked for: most projects start as an empty folder.
+function npGit(on) { $('np-git').classList.toggle('hidden', !on); $('np-git-show').classList.toggle('hidden', on); $('np-git-show').setAttribute('aria-expanded', String(on)); if (on) $('np-url').focus(); }
+$('np-git-show').onclick = () => npGit(true);
 $('np-go').onclick = async () => {
   const err = $('np-err'); err.classList.add('hidden');
   $('np-go').disabled = true; $('np-go').textContent = $('np-url').value.trim() ? 'Cloning…' : 'Creating…';
