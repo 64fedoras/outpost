@@ -225,7 +225,7 @@ function chatBubble(m, i, last) {
     const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-edit="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Change this message and answer again">✎ Edit</button><button data-copy-msg="${i}" title="Copy the text">⧉ Copy</button></div>`;
     return `<div class="bubble-row"><div class="bubble-col"><div class="bubble">${esc(m.text)}${pics}${docs}</div>${acts}</div></div>`;
   }
-  const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, m.note && esc(m.note), chatNeedTag(m)].filter(Boolean).join(' · ');
+  const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, chatCacheTag(m), m.note && esc(m.note), chatNeedTag(m)].filter(Boolean).join(' · ');
   const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-regen="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Answer again; this answer stays as an earlier version">↻ Regenerate</button>${chatTryOn(m, busy)}${m.text ? `<button data-copy-msg="${i}" title="Copy the answer">⧉ Copy</button>` : ''}${m.research && m.text ? `<button data-rs-open="${esc(m.id)}" title="Open the report in the side panel to download it or save it to a project">¶ Open report</button>` : ''}<button data-branch="${esc(m.id)}" title="Start a new chat with the conversation up to here">⑂ Branch</button></div>`;
   if (m.error) return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}${acts}</div>`;
   return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}<div class="chat-text md">${md(m.text)}</div>${pvCards(pvCollect(m.text))}${meta ? `<div class="sub">${meta}</div>` : ''}${acts}${memSuggestCard(m, { chat: chatCur.id })}</div>`;
@@ -263,6 +263,12 @@ function chatPromptTick() {
     el.textContent = Math.max(0, p.seconds - Math.floor((Date.now() - chatPromptAt) / 1000));
   }, 500);
 }
+// "1,200 of 1,500 prompt tokens reused": how much of the prompt the node did not have to read again.
+function chatCacheTag(m) {
+  if (!m.cached_tokens || !m.prompt_tokens) return '';
+  return `${m.cached_tokens.toLocaleString()} of ${m.prompt_tokens.toLocaleString()} prompt tokens reused`;
+}
+
 function chatNeedTag(m) {
   if (!m.need) return '';
   const o = (v, t) => `<option value="${v}" ${m.need === v ? 'selected' : ''}>${t}</option>`;
