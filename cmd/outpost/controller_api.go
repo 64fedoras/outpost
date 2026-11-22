@@ -185,7 +185,7 @@ func (c *Controller) stateView() map[string]any {
 		"version": Version, "platform": thisPlatform(), "controller_update_to": ctlUpdate,
 		"controller_rollback_to": previousVersion(c.agentDir()),
 		"fingerprint":            c.fingerprint, "advertise": c.advertise,
-		"nodes": nodes, "jobs": jobs, "releases": releases, "ops": c.nodeOps,
+		"nodes": nodes, "jobs": jobs, "releases": releases, "ops": c.nodeOps, "tool_recs": c.toolRecsLocked(),
 		"has_claude_key": c.settings.AnthropicKeyEnc != "", "default_planner": c.settings.DefaultPlanner,
 		"default_cap_usd": c.settings.DefaultCapUSD, "claude_model": c.settings.ClaudeModel,
 		"default_fix_rounds": maxFixRounds, "default_test_minutes": int(testTimeout / time.Minute),

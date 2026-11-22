@@ -47,7 +47,7 @@ const (
 
 var cadTemp = 0.2 // steady code, little invention
 
-const noOpenSCADNote = "No exec node has OpenSCAD, so nothing can be rendered. Install it on a node with exec enabled (for example `sudo apt install openscad`, `brew install --cask openscad` or the Windows installer from openscad.org); the Nodes page lists the tools each node has."
+const noOpenSCADNote = "No exec node has OpenSCAD, so nothing can be rendered. Use Install OpenSCAD on the Nodes page (one click on a Linux or Windows node), or install it on a node with exec enabled yourself (`brew install --cask openscad` on a Mac)."
 
 // CadParam is one numeric or true/false top-level variable of the file.
 type CadParam struct {

@@ -30,7 +30,8 @@ type ToolInfo struct {
 
 // ToolInstall asks a node to install a toolchain from GET /v1/toolchain/<tool>/<archive>.
 type ToolInstall struct {
-	Tool    string `json:"tool"` // only "go" so far
+	Tool    string `json:"tool"`           // go, chromium or openscad
+	Libs    bool   `json:"libs,omitempty"` // chromium: install system libraries with apt, then test the unpacked copy again
 	Version string `json:"version"`
 	Archive string `json:"archive"`
 	SHA256  string `json:"sha256"`
@@ -170,6 +171,14 @@ func (n *Node) toolchainDir() string { return filepath.Join(n.dataDir, "toolchai
 
 func (n *Node) goBinDir() string { return filepath.Join(n.toolchainDir(), "go", "bin") }
 
+// managedToolDirs are the folders holding tools Outpost installed (Go, Chromium,
+// OpenSCAD), searched before PATH and put on PATH for exec jobs.
+func (n *Node) managedToolDirs() []string {
+	r := n.toolchainDir()
+	return []string{n.goBinDir(), filepath.Join(r, "chromium", "chrome-linux64"), filepath.Join(r, "chromium", "chrome-win64"),
+		filepath.Join(r, "openscad", "bin"), filepath.Join(r, "openscad")}
+}
+
 type toolCache struct {
 	mu   sync.Mutex
 	list []ToolInfo
@@ -184,13 +193,13 @@ func (n *Node) toolInventory(force bool) []ToolInfo {
 	if !force && n.tools.list != nil && time.Since(n.tools.at) < time.Minute {
 		return n.tools.list
 	}
-	n.tools.list = detectTools([]string{n.goBinDir()}, n.goBinDir())
+	n.tools.list = detectTools(n.managedToolDirs(), n.toolchainDir())
 	n.tools.at = time.Now()
 	return n.tools.list
 }
 
 // detectTools looks for every known tool. extraDirs are searched before PATH;
-// a tool found under managedDir is flagged as installed by Outpost.
+// a tool found under managedDir (the toolchains folder) is flagged as installed by Outpost.
 func detectTools(extraDirs []string, managedDir string) []ToolInfo {
 	out := []ToolInfo{}
 	for _, spec := range toolSpecs {
@@ -203,19 +212,28 @@ func detectTools(extraDirs []string, managedDir string) []ToolInfo {
 			continue
 		}
 		out = append(out, ToolInfo{Name: spec.name, Cmd: cmd, Version: ver, Path: path,
-			Managed: managedDir != "" && filepath.Dir(path) == managedDir})
+			Managed: managedDir != "" && strings.HasPrefix(path, filepath.Clean(managedDir)+string(filepath.Separator))})
 	}
 	return out
 }
 
 func findTool(spec toolSpec, extraDirs []string) (path, cmd string) {
+	// Tools Outpost installed win over the system's, whatever the command is called.
 	for _, c := range spec.cmds {
 		for _, d := range extraDirs {
-			p := filepath.Join(d, c+exeSuffix(runtime.GOOS))
-			if st, err := os.Stat(p); err == nil && !st.IsDir() {
-				return p, c
+			exts := []string{exeSuffix(runtime.GOOS)}
+			if runtime.GOOS == "windows" && spec.name == "openscad" {
+				exts = []string{".com", ".exe"} // the console front end prints to the job log
+			}
+			for _, x := range exts {
+				p := filepath.Join(d, c+x)
+				if st, err := os.Stat(p); err == nil && !st.IsDir() {
+					return p, c
+				}
 			}
 		}
+	}
+	for _, c := range spec.cmds {
 		if p, err := exec.LookPath(c); err == nil {
 			return p, c
 		}
@@ -258,8 +276,14 @@ func toolVersion(path string, spec toolSpec) (string, bool) {
 // that Outpost installed on PATH, and cache folders when the service has no HOME.
 func (n *Node) execEnv() []string {
 	env := os.Environ()
-	if st, err := os.Stat(n.goBinDir()); err == nil && st.IsDir() {
-		env = append(env, "PATH="+n.goBinDir()+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var dirs []string
+	for _, d := range n.managedToolDirs() {
+		if st, err := os.Stat(d); err == nil && st.IsDir() {
+			dirs = append(dirs, d)
+		}
+	}
+	if len(dirs) > 0 {
+		env = append(env, "PATH="+strings.Join(dirs, string(os.PathListSeparator))+string(os.PathListSeparator)+os.Getenv("PATH"))
 	}
 	if _, err := os.UserCacheDir(); err != nil && os.Getenv("GOCACHE") == "" {
 		env = append(env, "GOCACHE="+filepath.Join(n.toolchainDir(), "gocache"))
@@ -299,7 +323,11 @@ func (n *Node) installToolchain(ti ToolInstall) {
 		log.Printf("toolchain %s %s: %s", ti.Tool, ti.Version, msg)
 		n.opStatus(op, ti.Tool, "failed", 0, ti.Bytes, msg)
 	}
-	if ti.Tool != "go" || !validName(ti.Version) || !validName(ti.Archive) || strings.ContainsAny(ti.Archive, `/\`) {
+	if ti.Tool != "go" {
+		n.installTool(ti)
+		return
+	}
+	if !validName(ti.Version) || !validName(ti.Archive) || strings.ContainsAny(ti.Archive, `/\`) {
 		fail("bad toolchain request")
 		return
 	}

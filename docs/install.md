@@ -400,8 +400,20 @@ can check detection without joining.
    on their card. The planner is told what each node has and which shell it uses, and each test or
    setup command goes to a node that has the tool it starts with. For Go, click **Install Go** on the
    node you choose: the controller downloads the official release once, checks its SHA-256 and
-   sends it; Outpost keeps it in its own data folder and puts it on the PATH of exec jobs. Other
-   tools are detected, not installed. Windows exec nodes run commands in PowerShell, not `sh`.
+   sends it; Outpost keeps it in its own data folder and puts it on the PATH of exec jobs. Windows exec nodes run commands in PowerShell, not `sh`.
+   **Chromium and OpenSCAD in one click.** When no exec node has Chromium (screenshots and visual review) or OpenSCAD
+   (the New 3D model page), the Nodes page shows a notice with a recommended node (online, Linux before Windows,
+   always taking work, most free disk) and an **Install** button; a drop-down picks another node, **Not now** hides the notice on that browser.
+   Each exec node's tools line also has **Install**, **Reinstall** and **Remove** links for these tools; Remove deletes only the copy Outpost
+   installed, never one found on the system. Chromium is Google's Chrome for Testing build, OpenSCAD is the official 2021.01
+   release (a portable zip on Windows, an unpacked AppImage on Linux, so no FUSE is needed). Both go into the node's data folder, so
+   no admin rights are needed, and count toward its storage. The controller downloads once and the node checks the file's SHA-256 against the
+   controller's copy. **Neither Google nor openscad.org publishes checksums**, so that hash is recorded at the first download and the
+   publisher is trusted through HTTPS only. The node starts the tool once before swapping it in, so a broken download never replaces a working copy.
+   On a bare Linux install Chromium usually needs system libraries; the failure lists them, and on a node running as root
+   on Debian or Ubuntu an **Install libraries with apt** button installs them and tests again. Linux and Windows (64-bit Intel/AMD) only: on a Mac or an Arm
+   machine install the tool by hand and Outpost detects it. **Untested:** the live Chrome for Testing and openscad.org downloads, Windows, and the
+   apt step on a real machine; covered by unit tests with a stub download.
    **Command sandbox (Linux nodes).** Commands run in a sandbox, set in Settings → *Command sandbox* and per
    node on its card (*default*, *off*, *basic*, *strict*). *Basic* (the default): a command can only
    change files in its own job folder, a private temporary folder and its task's build cache; it can read

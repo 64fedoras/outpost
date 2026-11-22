@@ -24,6 +24,7 @@ const minGoMinor = 24
 
 func (c *Controller) toolchainRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/nodes/{id}/toolchain", c.auth(c.handleInstallToolchain))
+	mux.HandleFunc("DELETE /api/nodes/{id}/toolchain/{tool}", c.auth(c.handleRemoveToolchain))
 	mux.HandleFunc("GET /v1/toolchain/{tool}/{file}", c.handleServeToolchain)
 }
 
@@ -259,7 +260,7 @@ func (c *Controller) handleServeToolchain(w http.ResponseWriter, r *http.Request
 		return
 	}
 	tool, file := r.PathValue("tool"), r.PathValue("file")
-	if tool != "go" || !toolFileRe.MatchString(file) || strings.Contains(file, "..") {
+	if installableTools[tool] == "" || !toolFileRe.MatchString(file) || strings.Contains(file, "..") {
 		writeJSON(w, 404, ErrInfo{Code: "no_toolchain", Message: "no such toolchain file"})
 		return
 	}
@@ -273,7 +274,7 @@ func (c *Controller) handleServeToolchain(w http.ResponseWriter, r *http.Request
 }
 
 // installToolchainOn downloads Go for the node's platform (once) and tells the node to install it.
-func (c *Controller) installToolchainOn(ctx context.Context, id, tool string) error {
+func (c *Controller) installToolchainOn(ctx context.Context, id, tool string, libs bool) error {
 	c.mu.Lock()
 	var hello Hello
 	if n := c.nodes[id]; n != nil && n.Hello != nil {
@@ -285,7 +286,10 @@ func (c *Controller) installToolchainOn(ctx context.Context, id, tool string) er
 		return fmt.Errorf("%s is offline", c.nodeLabel(id))
 	}
 	c.setNodeOp(id, OpStatus{Op: "toolchain", Target: tool, State: "preparing"})
-	rec, err := c.ensureGo(ctx, hello.OS, hello.Arch)
+	if libs { // retry after installing system libraries: nothing to download
+		return nc.send("toolchain.install", ToolInstall{Tool: tool, Libs: true})
+	}
+	rec, err := c.ensureToolArchive(ctx, tool, hello.OS, hello.Arch)
 	if err != nil {
 		c.setNodeOp(id, OpStatus{Op: "toolchain", Target: tool, State: "failed", Error: err.Error()})
 		return err
@@ -299,13 +303,14 @@ func (c *Controller) handleInstallToolchain(w http.ResponseWriter, r *http.Reque
 	id := r.PathValue("id")
 	var req struct {
 		Tool string `json:"tool"`
+		Libs bool   `json:"libs"`
 	}
 	if json.NewDecoder(r.Body).Decode(&req) != nil || req.Tool == "" {
 		writeJSON(w, 400, map[string]string{"error": "tool required"})
 		return
 	}
-	if req.Tool != "go" {
-		writeJSON(w, 400, map[string]string{"error": "Outpost can install only Go; other tools are detected, not installed"})
+	if installableTools[req.Tool] == "" {
+		writeJSON(w, 400, map[string]string{"error": "Outpost can install Go, Chromium and OpenSCAD; other tools are detected, not installed"})
 		return
 	}
 	c.mu.Lock()
@@ -324,7 +329,7 @@ func (c *Controller) handleInstallToolchain(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	go func() {
-		if err := c.installToolchainOn(context.Background(), id, req.Tool); err != nil {
+		if err := c.installToolchainOn(context.Background(), id, req.Tool, req.Libs); err != nil {
 			c.setNodeOp(id, OpStatus{Op: "toolchain", Target: req.Tool, State: "failed", Error: err.Error()})
 		}
 	}()

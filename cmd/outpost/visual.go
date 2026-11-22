@@ -61,7 +61,7 @@ func localURL(u string) bool {
 
 func (t *Task) shotsDir() string { return filepath.Join(t.dir, "shots") }
 
-const noChromiumNote = "No exec node has Chromium or Chrome, so no screenshots were taken. Install Chromium (for example `sudo apt install chromium`) or Chrome on a node with exec enabled; the Nodes page lists the tools each node has."
+const noChromiumNote = "No exec node has Chromium or Chrome, so no screenshots were taken. Use Install Chromium on the Nodes page (one click on a Linux or Windows node), or install Chromium or Chrome on a node with exec enabled yourself."
 
 // chromiumNode picks an exec node that reports Chromium or Chrome.
 func (c *Controller) chromiumNode() (string, ToolInfo, bool) {
