@@ -661,9 +661,13 @@
           <div id="tokens-list"></div>
           <p class="hint u3" id="agent-hint"></p>
           <div class="btns u3"><input id="tok-name" placeholder="Token name, e.g. nightly script" autocomplete="off"><button id="tok-create">Create token</button></div>
-          <label class="toggle u3"><input type="checkbox" id="tok-chat"> <span>Chat only: works with the OpenAI-compatible API (<code>/v1/chat/completions</code>, <code>/v1/models</code>) and nothing else. Use this for editors and chat apps.</span></label>
-          <label class="toggle u3"><input type="checkbox" id="tok-mcp"> <span>MCP only: works with the MCP server (<code>/mcp</code>) and nothing else. Use this for Claude Code, Claude Desktop and other MCP clients.</span></label>
-          <label class="toggle u3"><input type="checkbox" id="tok-img"> <span>Chat and pictures: like chat only, and also allows <code>/v1/images/generations</code> while the image API is switched on (Settings, Pictures).</span></label>
+          <div class="tok-scope u3" role="radiogroup" aria-labelledby="tok-scope-h">
+            <span class="muted" id="tok-scope-h">What can this token do?</span>
+            <label class="toggle"><input type="radio" name="tok-scope" value="chat" checked> <span><b>Chat only</b>: the OpenAI-compatible API (<code>/v1/chat/completions</code>, <code>/v1/models</code>) and nothing else. For editors and chat apps.</span></label>
+            <label class="toggle"><input type="radio" name="tok-scope" value="images"> <span><b>Chat and pictures</b>: like chat only, plus <code>/v1/images/generations</code> while the image API is on (Settings, Pictures).</span></label>
+            <label class="toggle"><input type="radio" name="tok-scope" value="mcp"> <span><b>MCP only</b>: the MCP server (<code>/mcp</code>) and nothing else. For Claude Code, Claude Desktop and other MCP clients.</span></label>
+            <label class="toggle"><input type="radio" name="tok-scope" value="full"> <span><b>Full access</b>: everything you can do signed in, including settings, nodes, updates and tasks. Only for your own scripts.</span></label>
+          </div>
           <div class="note hidden u6" id="tok-new"></div>
         </div>
         <div class="section-head"><h2>Connect a tool</h2></div>

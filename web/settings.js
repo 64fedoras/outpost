@@ -149,8 +149,8 @@ async function loadSecurity() {
     const lk = settings ? settings.locked_ips || [] : [];
     $('sec-lock').textContent = settings ? `${settings.login_failures} failed sign-in${settings.login_failures === 1 ? '' : 's'} in the last 15 minutes.` + (lk.length ? ` Locked out: ${lk.join(', ')}.` : '') + ' After 10 failures an address is blocked for 15 minutes.' : '';
     setHTML('sessions-list', ss.map((s) => `<div class="rowline"><span>${esc(s.ip || 'unknown')} · ${esc((s.ua || '').slice(0, 60))} <span class="muted">· signed in ${ago(s.created)}</span>${s.current ? ' ' + pill('done', 'this browser') : ''}</span>${s.current ? '' : `<button class="danger" data-sess="${esc(s.id)}">Sign out</button>`}</div>`).join('') || '<p class="muted">None</p>');
-    setHTML('tokens-list', tk.map((t) => `<div class="rowline"><span>${esc(t.name)}${t.scope === 'chat' ? ' ' + pill('ready', 'chat only') : t.scope === 'images' ? ' ' + pill('ready', 'chat and pictures') : t.scope === 'mcp' ? ' ' + pill('ready', 'MCP only') : ''} <span class="muted">· created ${ago(t.created)}${t.last_used && !t.last_used.startsWith('0001') ? ' · last used ' + ago(t.last_used) : ' · never used'}</span></span><button class="danger" data-tok="${esc(t.id)}">Revoke</button></div>`).join('') || '<p class="muted">No tokens yet.</p>');
-    setHTML('agent-hint', 'To connect an editor, agent or Claude Code, create a token (tick Chat only) and see <b>Connect a tool</b> below.');
+    setHTML('tokens-list', tk.map((t) => `<div class="rowline"><span>${esc(t.name)}${t.scope === 'chat' ? ' ' + pill('ready', 'chat only') : t.scope === 'images' ? ' ' + pill('ready', 'chat and pictures') : t.scope === 'mcp' ? ' ' + pill('ready', 'MCP only') : ' ' + pill('warn', 'full access')} <span class="muted">· created ${ago(t.created)}${t.last_used && !t.last_used.startsWith('0001') ? ' · last used ' + ago(t.last_used) : ' · never used'}</span></span><button class="danger" data-tok="${esc(t.id)}">Revoke</button></div>`).join('') || '<p class="muted">No tokens yet.</p>');
+    setHTML('agent-hint', 'To connect an editor, agent or Claude Code, create a token (Chat only, or MCP only for MCP clients) and see <b>Connect a tool</b> below.');
     connectRender();
     let info = `Fingerprint <code>${esc(tl.fingerprint)}</code>`;
     if (tl.subject) info += `<br>${tl.self_signed ? 'Self-signed' : 'Issued by ' + esc(tl.issuer)} for ${esc(tl.subject)}; expires ${new Date(tl.expires).toLocaleDateString()}.`;
@@ -173,8 +173,10 @@ $('sess-all').onclick = async () => { if (await askConfirm('Sign out every brows
 $('tok-create').onclick = async () => {
   const name = $('tok-name').value.trim(); if (!name) return;
   try {
-    const img = $('tok-img').checked, chat = $('tok-chat').checked || img, mcp = $('tok-mcp').checked && !chat;
-    const t = await post('/api/apitokens', { name, scope: img ? 'images' : chat ? 'chat' : mcp ? 'mcp' : '' }); $('tok-name').value = ''; $('tok-chat').checked = false; $('tok-img').checked = false; $('tok-mcp').checked = false;
+    const pick = document.querySelector('input[name=tok-scope]:checked'), scope = pick ? pick.value : 'chat';
+    const chat = scope === 'chat' || scope === 'images';
+    // Full access is stored as an empty scope, as it always was, so older tokens keep their meaning.
+    const t = await post('/api/apitokens', { name, scope: scope === 'full' ? '' : scope }); $('tok-name').value = ''; document.querySelector('input[name=tok-scope][value=chat]').checked = true;
     const n = $('tok-new'); n.classList.remove('hidden');
     setHTML('tok-new', `Copy this now, it is shown only once:<div class="codebox"><span id="tok-val">${esc(t.token)}</span><button id="tok-copy">Copy</button></div>${chat ? `<p class="hint u6">In your editor or chat app use the OpenAI provider with base URL <code>${esc(location.origin)}/v1</code>, this token as the API key, and model <code>auto</code> (or a model name from <code>/v1/models</code>). The controller's certificate is self-signed unless you replaced it, so the app may need to trust it.</p>` : ''}`);
     $('tok-copy').onclick = async () => { try { await navigator.clipboard.writeText(t.token); toast('Copied'); } catch (e) { toast('Select the token and press Ctrl+C'); } };

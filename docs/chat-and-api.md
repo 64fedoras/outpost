@@ -199,7 +199,7 @@ model:     auto   (or the name of a loaded model, from GET /v1/models)
 `POST /v1/chat/completions` supports streaming, `max_tokens`, `stop`, tools (tool calls are sent in one
 piece at the end of a stream), image parts as `data:` URIs for vision models, and `reasoning_content`
 for thinking models. A model name that no ready node has loaded returns 404; when every node is busy a
-request waits up to 2 minutes for a free slot, then returns 503. Tick **Chat only** when you create a
+request waits up to 2 minutes for a free slot, then returns 503. Choose **Chat only** when you create a
 token for a tool: such a token works on `/v1/` and nothing else. The controller's certificate is
 self-signed, so the tool must trust it (or use your own certificate, see [Sign-in security](operations.md#sign-in-security-api-tokens-certificate-and-backups)).
 
@@ -207,7 +207,7 @@ self-signed, so the tool must trust it (or use your own certificate, see [Sign-i
 
 An AI agent can use the cluster as its model backend, so the computing happens on your nodes:
 
-1. Settings → API tokens → name it after the agent, tick **Chat only**, create, copy the token.
+1. Settings → API tokens → name it after the agent, choose **Chat only**, create, copy the token.
 2. In the agent's settings choose an OpenAI-compatible provider and enter the base URL
    (`https://<controller>:8443/v1`, also shown under API tokens), the token as API key, and the model
    `auto` (or a name from `GET /v1/models`).
@@ -260,7 +260,7 @@ against the fake node in the unit tests.
 ### Outpost as an MCP server (Claude Code, Claude Desktop)
 
 `https://<controller>:8443/mcp` speaks the Model Context Protocol (Streamable HTTP, plain JSON replies, no
-event stream), so an MCP client can hand work to the cluster. Create a token with **MCP only** ticked
+event stream), so an MCP client can hand work to the cluster. Create a token with **MCP only** chosen
 (Settings → Sign-in security; a full-access token works too), then, for Claude Code:
 
 ```
