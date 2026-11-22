@@ -141,34 +141,36 @@ type Controller struct {
 	ghState    ghUpdateState
 	updates    map[string]*UpdateStatus
 
-	settings   Settings
-	nt         notifier
-	waiters    map[string]chan *JobResult
-	models     map[string]*ModelRec
-	runtimes   map[string]*RuntimeRec
-	rtCache    *runtimeCache
-	cad        *cadStore // 3D models (cad.go)
-	gens       *genStore // image generation: queue, stored results, settings (controller_images.go)
-	nodeOps    map[string]*nodeOpView
-	pipelines  map[string]*pipeline         // model setups in progress; cancel stops one
-	jobBlobs   map[string]map[string]string // job -> input path -> file on the controller, for nodes to download
-	peerBad    map[string]time.Time         // nodes skipped as model sources until then (served data failing its hash)
-	tasks      map[string]*Task
-	recovered  recoveredNotes           // damaged state files found at start-up (recovered.go)
-	asks       askWaiters               // node.ask requests waiting for their answer (node_ask.go)
-	check      clusterCheck             // the last Check cluster run (clustercheck.go)
-	lastBackup *backupCheck             // the newest scheduled backup, read back after writing
-	storage    storageState             // disk use and clean-up (storage.go)
-	rollout    *rolloutState            // the last one-node-first update (rollout.go)
-	clockSkew  map[string]time.Duration // node clock minus controller clock, from heartbeats
-	projects   map[string]*Project      // see projects.go
-	chats      map[string]*Chat         // chat.go, guarded by chatMu
-	chatSw     chatSwitchState          // model switching for chat (chat_switch.go)
-	chatMu     sync.Mutex
-	mcpMuxOnce sync.Once // in-process mux for MCP tools (mcp_server.go)
-	mcpMuxV    *http.ServeMux
-	groups     []Group // sidebar groups (groups.go), guarded by groupMu
-	groupMu    sync.Mutex
+	settings    Settings
+	nt          notifier
+	waiters     map[string]chan *JobResult
+	models      map[string]*ModelRec
+	runtimes    map[string]*RuntimeRec
+	rtCache     *runtimeCache
+	cad         *cadStore // 3D models (cad.go)
+	gens        *genStore // image generation: queue, stored results, settings (controller_images.go)
+	nodeOps     map[string]*nodeOpView
+	pipelines   map[string]*pipeline         // model setups in progress; cancel stops one
+	jobBlobs    map[string]map[string]string // job -> input path -> file on the controller, for nodes to download
+	peerBad     map[string]time.Time         // nodes skipped as model sources until then (served data failing its hash)
+	tasks       map[string]*Task
+	recovered   recoveredNotes           // damaged state files found at start-up (recovered.go)
+	asks        askWaiters               // node.ask requests waiting for their answer (node_ask.go)
+	check       clusterCheck             // the last Check cluster run (clustercheck.go)
+	lastBackup  *backupCheck             // the newest scheduled backup, read back after writing
+	storage     storageState             // disk use and clean-up (storage.go)
+	rollout     *rolloutState            // the last one-node-first update (rollout.go)
+	everything  *everythingState         // the last Update everything run (update_everything.go)
+	restartHook func(*Release) error     // tests: replaces the controller install and restart
+	clockSkew   map[string]time.Duration // node clock minus controller clock, from heartbeats
+	projects    map[string]*Project      // see projects.go
+	chats       map[string]*Chat         // chat.go, guarded by chatMu
+	chatSw      chatSwitchState          // model switching for chat (chat_switch.go)
+	chatMu      sync.Mutex
+	mcpMuxOnce  sync.Once // in-process mux for MCP tools (mcp_server.go)
+	mcpMuxV     *http.ServeMux
+	groups      []Group // sidebar groups (groups.go), guarded by groupMu
+	groupMu     sync.Mutex
 	// resumeWake wakes autoResumeInterrupted on node heartbeats (nudgeResume).
 	resumeWake chan struct{}
 	reserved   map[string]int // calls holding a node (see slotsLocked)
@@ -301,6 +303,7 @@ func runController(args []string) error {
 	mux.HandleFunc("DELETE /api/releases/{platform}", c.auth(c.handleDeleteRelease))
 	mux.HandleFunc("POST /api/nodes/{id}/update", c.auth(c.handleUpdateNode))
 	mux.HandleFunc("POST /api/update-all", c.auth(c.handleUpdateAll))
+	mux.HandleFunc("POST /api/update-everything", c.auth(c.handleUpdateEverything))
 	mux.HandleFunc("POST /api/controller/update", c.auth(c.handleUpdateController))
 	mux.HandleFunc("POST /api/github-updates/check", c.auth(c.handleCheckGitHub))
 	mux.HandleFunc("POST /api/github-updates/install", c.auth(c.handleInstallGitHub))

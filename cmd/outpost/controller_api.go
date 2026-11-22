@@ -196,6 +196,7 @@ func (c *Controller) stateView() map[string]any {
 		"recovered":             c.recoveredList(),
 		"disk_warning":          c.diskWarning(),
 		"rollout":               c.rollout,
+		"update_everything":     c.everything,
 		"labels":                c.allLabelsLocked(),
 		"templates":             c.templateViewsLocked(),
 		"schedules_paused":      c.settings.SchedulesPaused,

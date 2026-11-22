@@ -269,7 +269,15 @@ const ACTIVE = ['queued', 'planning', 'awaiting_answers', 'awaiting_approval', '
 const WORKING = ['planning', 'running', 'testing', 'building', 'fixing'];
 function workerCount() { return state.nodes.filter((n) => n.online && n.heartbeat && n.heartbeat.inference_ready && !n.heartbeat.paused).length; }
 function execCount() { return state.nodes.filter((n) => n.online && n.exec_enabled && !(n.heartbeat && n.heartbeat.paused)).length; }
-function updatesAvailable() { return state.nodes.filter((n) => n.update_to).length + (state.controller_update_to ? 1 : 0); }
+// What an update would touch right now: online nodes that are not already updating, the controller, and offline nodes
+// (which wait until they are back). The sidebar badge and the Updates button both use this.
+function updateCounts() {
+  const busy = (n) => n.update && UPD_BUSY.includes(n.update.state);
+  const out = state.nodes.filter((n) => n.update_to);
+  const nodes = out.filter((n) => n.online && !busy(n)).length;
+  return { nodes, ctl: !!state.controller_update_to, offline: out.filter((n) => !n.online).length };
+}
+function updatesAvailable() { const u = updateCounts(); return u.nodes + (u.ctl ? 1 : 0); }
 
 function renderBadges() {
   const offline = state.nodes.filter((n) => !n.online).length;

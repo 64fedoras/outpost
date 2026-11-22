@@ -350,7 +350,7 @@ document.addEventListener('click', async (e) => {
       case 'upd-more': updAll.add(el.dataset.key); renderUpdates(); return;
       case 'upd-group-go': {
         const ids = (el.dataset.ids || '').split(',').filter(Boolean);
-        if (!await askConfirm(`Update ${ids.length} node${ids.length === 1 ? '' : 's'} now? Each restarts on the new version; busy nodes wait for their jobs. "Update all" at the top updates one node first, checks it, then the rest.`, { ok: 'Update' })) return;
+        if (!await askConfirm(`Update ${ids.length} node${ids.length === 1 ? '' : 's'} now? Each restarts on the new version; busy nodes wait for their jobs. "Update everything" at the top updates one node first, checks it, then the rest.`, { ok: 'Update' })) return;
         const res = await Promise.allSettled(ids.map((i) => post(`/api/nodes/${i}/update`)));
         const bad = res.filter((r) => r.status === 'rejected').length;
         toast(bad ? `Update sent to ${ids.length - bad}; ${bad} could not start` : `Update sent to ${ids.length}`); break;

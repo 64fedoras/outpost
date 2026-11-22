@@ -392,7 +392,7 @@ func (c *Controller) autoInstall() {
 	}
 	c.mu.Lock()
 	rel := c.releases[thisPlatform()]
-	ok := rel != nil && compareVersions(rel.Version, Version) > 0 && (hold == "" || compareVersions(rel.Version, hold) > 0) && !c.rollout.running()
+	ok := rel != nil && compareVersions(rel.Version, Version) > 0 && (hold == "" || compareVersions(rel.Version, hold) > 0) && !c.rollout.running() && !c.everything.running()
 	if ok {
 		for _, u := range c.updates {
 			if time.Since(u.Updated) < 10*time.Minute && (u.State == "sent" || u.State == "downloading" || u.State == "installing" || u.State == "restarting") {
@@ -417,14 +417,9 @@ func (c *Controller) autoInstall() {
 		}
 	}
 	log.Printf("auto-install: updating the controller to %s", rel.Version)
-	if _, err := installRelease(c.releasePath(rel.Platform), c.agentDir(), rel.Version, rel.SHA256); err != nil {
+	if err := c.restartIntoRelease(rel, "auto-install"); err != nil {
 		log.Printf("auto-install: controller: %v", err)
-		return
 	}
-	c.prepareRestart("update installed")
-	relaunch(c.agentDir(), os.Args[1:])
-	controllerClosing.Store(false) // still running: the restart did not happen
-	log.Printf("auto-install: controller restart failed; still running %s", Version)
 }
 
 // holdAfterRollbackLocked stops auto-install from re-applying the version that was just left.
