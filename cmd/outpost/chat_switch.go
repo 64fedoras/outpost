@@ -276,14 +276,26 @@ func (c *Controller) freeForModelsLocked(id string, n *NodeRec) int64 {
 // planChatLoad finds the cheapest way to get a model for need onto an allowed,
 // idle node, or says why it cannot. c.mu must not be held.
 func (c *Controller) planChatLoad(need string) (*chatLoadPlan, string) {
+	return c.planChatLoadWith(need, false)
+}
+
+// whyNoOptIn is planChatLoad's reason when no node has chat switching turned on.
+const whyNoOptIn = "no node allows chat to switch models (turn on Let chat switch models here on the Nodes page)"
+
+// planChatLoadWith is planChatLoad; ignoreOptIn also considers nodes that have not allowed switching,
+// to show what turning it on would do (the "Allow" prompt). Nothing is changed by planning.
+func (c *Controller) planChatLoadWith(need string, ignoreOptIn bool) (*chatLoadPlan, string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := time.Now()
 	helpers := c.helperNodesLocked()
 	var best *chatLoadPlan
-	why := "no node allows chat to switch models (turn on Let chat switch models here on the Nodes page)"
+	why := whyNoOptIn
+	if ignoreOptIn {
+		why = "no online node can load a model for this"
+	}
 	for id, n := range c.nodes {
-		if !n.ChatSwitch || c.conns[id] == nil || n.Hello == nil {
+		if (!n.ChatSwitch && !ignoreOptIn) || c.conns[id] == nil || n.Hello == nil {
 			continue
 		}
 		hb := c.lastHB[id]
@@ -396,7 +408,7 @@ func (c *Controller) evictCandsLocked(id string, n *NodeRec, hb *Heartbeat) []ev
 
 // ChatPrompt is the question or progress line chat shows while it gets a model.
 type ChatPrompt struct {
-	State    string      `json:"state"` // ask | working
+	State    string      `json:"state"` // ask | allow | working
 	Need     string      `json:"need"`
 	Node     string      `json:"node"`
 	NodeName string      `json:"node_name"`
@@ -467,6 +479,24 @@ func (c *Controller) chatSwitch(ctx context.Context, chatID, pref string, hist [
 		}
 	}
 	plan, why := c.planChatLoad(need)
+	if plan == nil && why == whyNoOptIn {
+		// Nothing may switch yet: say what turning it on would do, and ask once instead of just refusing.
+		if offer, _ := c.planChatLoadWith(need, true); offer != nil {
+			switch c.askAllow(ctx, chatID, need, offer) {
+			case "allow_node", "allow_all":
+				plan, why = c.planChatLoad(need)
+			case "cancel":
+				c.setChatPrompt(chatID, nil)
+				return need, "", &ChatMsg{Role: "assistant", Error: "Cancelled. Nothing was changed on the node."}
+			case "ctx":
+				c.setChatPrompt(chatID, nil)
+				return need, "", &ChatMsg{Role: "assistant", Error: "stopped"}
+			default:
+				c.setChatPrompt(chatID, nil)
+				return need, fmt.Sprintf("Wanted a %s model; chat may not load one yet (answered with the loaded model).", need), nil
+			}
+		}
+	}
 	if plan == nil {
 		if why != "" {
 			note = fmt.Sprintf("Wanted a %s model; none is loaded and %s.", need, why)
@@ -544,6 +574,47 @@ func (c *Controller) askChat(ctx context.Context, chatID string, p *ChatPrompt, 
 	}
 }
 
+// askAllow offers to turn on "Let chat switch models" for one node or all nodes and applies the answer
+// (allow_node, allow_all); anything else is returned for chatSwitch to act on. Nobody answering counts as "loaded".
+func (c *Controller) askAllow(ctx context.Context, chatID, need string, offer *chatLoadPlan) string {
+	p := &ChatPrompt{State: "allow", Need: need, Node: offer.Node, NodeName: offer.NodeName, Model: offer.Model, Label: offer.Label,
+		Bytes: offer.Bytes, Download: offer.Download, Loaded: c.loadedFallback(), Seconds: int(chatAskOther / time.Second)}
+	p.Deadline = time.Now().Add(chatAskOther).UnixMilli()
+	a := c.askChat(ctx, chatID, p, chatAskOther)
+	switch a {
+	case "allow_node":
+		c.setChatSwitch(offer.Node)
+	case "allow_all":
+		c.setChatSwitch("")
+	}
+	if a == "allow_node" || a == "allow_all" {
+		c.setChatPrompt(chatID, nil)
+	}
+	return a
+}
+
+// setChatSwitch turns Let chat switch models on for one node, or for every online node when id is "".
+func (c *Controller) setChatSwitch(id string) {
+	c.mu.Lock()
+	var send []*nodeConn
+	var settings []NodeSettings
+	for nid, n := range c.nodes {
+		if (id != "" && nid != id) || (id == "" && c.conns[nid] == nil) {
+			continue
+		}
+		n.ChatSwitch = true
+		if nc := c.conns[nid]; nc != nil {
+			send = append(send, nc)
+			settings = append(settings, c.nodeSettingsLocked(n))
+		}
+	}
+	c.saveNodesLocked()
+	c.mu.Unlock()
+	for i, nc := range send {
+		_ = nc.send("node.settings", settings[i])
+	}
+}
+
 // runChatLoad removes the planned models, then downloads if needed and loads.
 func (c *Controller) runChatLoad(ctx context.Context, plan *chatLoadPlan) error {
 	for _, r := range plan.Removals {
@@ -577,8 +648,8 @@ func (c *Controller) handleChatPrompt(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Action string `json:"action"`
 	}
-	if err := readJSONBody(w, r, &req); err != nil || (req.Action != "go" && req.Action != "loaded" && req.Action != "cancel") {
-		writeJSON(w, 400, map[string]string{"error": "action must be go, loaded or cancel"})
+	if err := readJSONBody(w, r, &req); err != nil || (req.Action != "go" && req.Action != "loaded" && req.Action != "cancel" && req.Action != "allow_node" && req.Action != "allow_all") {
+		writeJSON(w, 400, map[string]string{"error": "action must be go, loaded, cancel, allow_node or allow_all"})
 		return
 	}
 	id := r.PathValue("id")
@@ -594,6 +665,12 @@ func (c *Controller) handleChatPrompt(w http.ResponseWriter, r *http.Request) {
 	default:
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// canOfferSwitch reports whether turning on chat switching somewhere would give a model for need.
+func (c *Controller) canOfferSwitch(need string) bool {
+	p, _ := c.planChatLoadWith(need, true)
+	return p != nil
 }
 
 // anySwitchNode reports whether some online node lets chat switch models.

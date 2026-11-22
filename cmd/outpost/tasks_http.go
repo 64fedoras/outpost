@@ -175,6 +175,14 @@ func (c *Controller) createTask(req createReq, files []attachedFile, opt createO
 	}
 	if req.Planner == "" {
 		req.Planner = set.DefaultPlanner
+		// The stock default is Claude, which cannot plan without a key; until one is saved, behave as Auto (a ready
+		// node first, then any API key that exists) instead of failing on the first task.
+		if (req.Planner == "claude" || req.Planner == "") && c.anthropicKey() == "" {
+			req.Planner = "auto_api"
+			if opt.Unattended {
+				req.Planner = "auto" // a schedule never spends money on its own
+			}
+		}
 	}
 	if req.Planner == "auto" || req.Planner == "auto_api" {
 		p, err := c.resolveAutoPlanner(req.Planner)

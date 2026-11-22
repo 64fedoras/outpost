@@ -217,7 +217,9 @@ func (req *chatReq) checked(c *Controller) ([]llmImage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !c.anyVisionNode(firstNonEmpty(req.Node, "auto")) && !(firstNonEmpty(req.Node, "auto") == "auto" && c.anySwitchNode()) {
+	// Auto may still get a vision model: from a node that allows switching, or, after one question, from a node
+	// that could be allowed to (chatSwitch asks).
+	if !c.anyVisionNode(firstNonEmpty(req.Node, "auto")) && !(firstNonEmpty(req.Node, "auto") == "auto" && (c.anySwitchNode() || c.canOfferSwitch(needVision))) {
 		return nil, errNoVisionChat
 	}
 	return imgs, nil

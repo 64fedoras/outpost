@@ -154,7 +154,7 @@ one back afterwards (see [using-tasks.md](using-tasks.md)). Off, tasks only use 
 
 **Let chat switch models here** (per node, off by default; on the node card). With **Auto** in chat, a node with
 this on may load a model for the message when none that is loaded suits it (see
-[chat-and-api.md](chat-and-api.md)). Off, chat only uses models already loaded. It never removes a model or starts a
+[chat-and-api.md](chat-and-api.md)). Off, chat only uses models already loaded, except that when Auto finds a suitable model it could load on a node with this off, chat asks once (**Allow on this node**, **Allow on every node**, or **Not now**) and the answer turns the setting on. It never removes a model or starts a
 download without asking you first.
 
 **Yield GPU to other programs** (per node, off by default; on the node card). On a desktop that is also used

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -31,8 +32,8 @@ Each worker sees only: the project summary, the list of all subtasks, its own in
 Follow-up requests on an existing project include its current files. Plan only the files to add or change; a subtask that changes an existing file lists it, and its worker gets the file's current content and outputs the complete new version. Keep the summary describing the whole project, and keep test_command running the whole test suite, and keep build_command and artifacts unless the build changes.
 
 Questions: if the request leaves open a choice that would change the design (language, interface, storage, platform, scope) and a wrong guess would waste the work, you may ask before planning, once per request. Prefer sensible defaults; most requests need no questions. To ask, answer with only:
-{"questions": [{"id": "q1", "question": "short question", "options": ["option A", "option B"], "multi": false}], "note": "one sentence on why you are asking"}
-Use at most 4 questions with 2 to 4 short options each; the user can also type their own answer.
+{"questions": [{"id": "q1", "question": "short question", "options": ["option A", "option B"], "multi": false, "recommended": ["option A"]}], "note": "one sentence on why you are asking"}
+Use at most 4 questions with 2 to 4 short options each; the user can also type their own answer. Always give "recommended": the option (or options, for a multi question) you would pick yourself, copied exactly from "options". The user may accept all your recommendations in one click.
 
 Otherwise answer with only a JSON object, no other text:
 {"title": "short name", "summary": "what the program does and how it is structured, including the key interfaces", "language": "main language", "setup_command": "", "test_command": "", "preview_page": "", "preview_command": "", "preview_url": "", "build_command": "", "artifacts": [], "delete": [], "rename": [], "note": "one or two sentences to the user: the approach and any assumption you made", "subtasks": [{"id": "t1", "title": "short title", "files": ["path/file.ext"], "depends_on": [], "difficulty": "normal", "instructions": "precise instructions"}]}`
@@ -254,6 +255,16 @@ func cleanQuestions(in []Question) []Question {
 			continue
 		}
 		q.Options = opts
+		var rec []string // keep only recommendations that are real options, once each, and one for a single-choice question
+		for _, r := range q.Recommended {
+			r = strings.TrimSpace(r)
+			for _, o := range opts {
+				if strings.EqualFold(o, r) && !slices.Contains(rec, o) && (q.Multi || len(rec) == 0) {
+					rec = append(rec, o)
+				}
+			}
+		}
+		q.Recommended = rec
 		q.ID = fmt.Sprintf("q%d", i+1)
 		out = append(out, q)
 	}

@@ -71,7 +71,7 @@ Each task is a conversation:
    "Claude Sonnet 5.5 · cap $2 · peer review on"). **Change options** opens the planner, Claude model,
    spending cap, peer review, mockups-first, fix-round and test-time-limit controls.
 2. **The planner may ask questions** when the request leaves open a choice that changes the design
-   (language, storage, interface). Click the answers, type your own, or skip any. It asks at most
+   (language, storage, interface). Each question comes with the planner's suggested answer already ticked and marked "suggested"; when every question has one the button reads **Looks right, plan it**. Change any answer, type your own, or skip any. It asks at most
    once per request; clear requests go straight to a plan.
 3. **The plan appears as a card.** Approve it, adjust the cap, or reply with changes ("use SQLite
    instead", "drop the web UI") and it revises the plan. Nothing runs until you approve.

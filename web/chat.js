@@ -246,6 +246,12 @@ function chatPromptCard(p) {
   const key = chatCur.id + '|' + p.state + '|' + p.model + '|' + p.deadline_ms;
   if (key !== chatPromptKey) { chatPromptKey = key; chatPromptAt = Date.now(); }
   const size = bytes(p.bytes), where = `<b>${esc(p.node_name)}</b>`;
+  if (p.state === 'allow') {
+    const what = { vision: 'read images', coding: 'write code' }[p.need] || 'answer this';
+    return `<div class="chat-prompt"><b>This needs a model that can ${esc(what)}.</b><div class="tag">Nothing loaded right now suits it. ${esc(p.label)} (${size}) fits on ${where}${p.download ? ' and would download first' : ' and is already there'}; it would replace what is loaded there. Chat may only do that on nodes you allow (Nodes → Details → Let chat switch models).</div>
+      <div class="status">Waiting <span id="chat-prompt-left">${p.seconds}</span> s for your OK, then answering with the loaded model</div>
+      <div class="btns"><button class="btn p" data-prompt="allow_node">Allow on ${where}, and answer</button><button class="btn" data-prompt="allow_all">Allow on every node</button><button class="btn" data-prompt="${p.loaded ? 'loaded' : 'cancel'}">${p.loaded ? 'Not now, use the loaded model' : 'Not now'}</button></div></div>`;
+  }
   if (p.state !== 'ask') return `<div class="chat-prompt"><div class="status">${esc(p.text || 'Loading…')}</div>${p.loaded ? '<div class="tag">The loaded model answers if this fails.</div>' : ''}</div>`;
   const rm = (p.removals || []).length;
   const title = rm ? `Make room for ${esc(p.label)} (${size}) on ${where}?` : `Download ${esc(p.label)} (${size}) to ${where}?`;
@@ -255,7 +261,7 @@ function chatPromptCard(p) {
 }
 function chatPromptTick() {
   clearInterval(chatPromptTimer);
-  if (!chatCur || !chatCur.prompt || chatCur.prompt.state !== 'ask') return;
+  if (!chatCur || !chatCur.prompt || !['ask', 'allow'].includes(chatCur.prompt.state)) return;
   const p = chatCur.prompt;
   chatPromptTimer = setInterval(() => {
     const el = document.getElementById('chat-prompt-left');

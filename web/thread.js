@@ -281,14 +281,15 @@ function questionsCard(m, live) {
   if (!live) {
     return `<div class="card-msg quiet"><div class="card-head">The planner asked</div><ul class="asked">${(m.questions || []).map((q) => `<li>${esc(q.question)}</li>`).join('')}</ul></div>`;
   }
+  const allRec = (m.questions || []).length > 0 && (m.questions || []).every((q) => (q.recommended || []).length);
   const qs = (m.questions || []).map((q) => {
     const type = q.multi ? 'checkbox' : 'radio';
     return `<fieldset class="q" data-q="${esc(q.id)}" ${live ? '' : 'disabled'}><legend>${esc(q.question)}</legend>
-      <div class="opts">${(q.options || []).map((o) => `<label class="opt"><input type="${type}" name="${esc(m.id + q.id)}" value="${esc(o)}"><span>${esc(o)}</span></label>`).join('')}
+      <div class="opts">${(q.options || []).map((o) => `<label class="opt"><input type="${type}" name="${esc(m.id + q.id)}" value="${esc(o)}" ${(q.recommended || []).includes(o) ? 'checked' : ''}><span>${esc(o)}${(q.recommended || []).includes(o) ? ' · suggested' : ''}</span></label>`).join('')}
       ${live ? `<input class="opt-other" placeholder="Something else…" aria-label="Your own answer to: ${esc(q.question)}">` : ''}</div></fieldset>`;
   }).join('');
   return `<div class="card-msg"><div class="card-head">A few questions before planning</div>${m.text ? `<p>${esc(m.text)}</p>` : ''}${qs}
-    ${live ? `<div class="card-actions"><button class="primary" data-act="task-answer" data-msg="${esc(m.id)}">Send answers</button><span class="hint">Skip any you don't mind; the planner picks a sensible default.</span></div>` : ''}</div>`;
+    ${live ? `<div class="card-actions"><button class="primary" data-act="task-answer" data-msg="${esc(m.id)}">${allRec ? 'Looks right, plan it' : 'Send answers'}</button><span class="hint">${allRec ? 'The planner pre-selected what it would pick. Change any, or just continue.' : "Skip any you don't mind; the planner picks a sensible default."}</span></div>` : ''}</div>`;
 }
 
 // A question an agent asked while working; the answer goes straight back to it.

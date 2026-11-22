@@ -327,6 +327,8 @@ The ledger keeps 24 months, is part of backups, and is in the controller's time 
 
 ### OpenRouter
 
+With no Claude key saved, the default planner behaves as **Auto** (a local model first, then OpenRouter if a key is set), so New task works without setup.
+
 **Planner: Auto** (New task → Change options, or Settings → Default planner) plans on the ready node
 with the biggest loaded model and records that node on the task. It needs at least one node with a model ready.
 
