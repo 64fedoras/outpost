@@ -115,12 +115,17 @@ jobs:
           ./build/bin/llama-server --version
           case "${{ matrix.name }}" in
             macos-x64-noavx2)
-              # Fail the job if any instruction from AVX2/FMA/AVX-512 slipped in.
+              # Fail the job if any instruction from AVX2/FMA/AVX-512 slipped in. Only the
+              # mnemonic and operand columns of the disassembly are looked at (not symbol names),
+              # and the first offenders are printed so a failure says what and where.
+              bad=0
               for f in build/bin/*.dylib; do
-                if otool -tv "$f" | grep -Eq '\bvfmadd|\bvfnmadd|\bvpbroadcast[bwdq]\b.*ymm|\bvperm(d|q|ps)\b|\bvp(add|sub|and|or|xor|cmpeq|max|min|shuf|maddubs|mull)[a-z]*\s.*ymm|zmm'; then
-                  echo "$f contains AVX2, FMA or AVX-512 instructions"; exit 1
-                fi
-              done ;;
+                hits=$(otool -tv "$f" | awk -F'\t' '
+                  $2 ~ /^v(fmadd|fnmadd|fmsub|fnmsub)/ || $2 ~ /^vperm(d|q|ps)$/ || $3 ~ /zmm/ ||
+                  ($2 ~ /^vp(add|sub|and|or|xor|cmpeq|max|min|shuf|maddubs|mull|broadcast)[a-z]*$/ && $3 ~ /ymm/)' | head -n 3)
+                if [ -n "$hits" ]; then echo "$f has AVX2, FMA or AVX-512 instructions:"; echo "$hits"; bad=1; fi
+              done
+              [ "$bad" = 0 ] ;;
             ubuntu22-arm64)
               for f in build/bin/llama-server build/bin/*.so*; do
                 v=$(objdump -T "$f" 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)
