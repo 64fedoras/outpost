@@ -229,8 +229,16 @@ func TestTemplatesAndSchedules(t *testing.T) {
 		m.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(body)))
 		return rec
 	}
-	// The default planner is Claude: a schedule is refused, a plain saved task is fine.
-	if rec := do("POST", "/api/templates", `{"request":{"prompt":"bump deps"},"schedule":{"every":"daily","at":"02:00"}}`); rec.Code != 400 || !strings.Contains(rec.Body.String(), "must plan on a node") {
+	// Without a Claude key the stock default plans on a node, so a schedule is fine.
+	if rec := do("POST", "/api/templates", `{"request":{"prompt":"bump deps"},"schedule":{"every":"daily","at":"02:00"}}`); rec.Code != 200 {
+		t.Fatalf("default planner without a key: %d %s", rec.Code, rec.Body)
+	} else {
+		var made struct{ ID string }
+		json.Unmarshal(rec.Body.Bytes(), &made)
+		do("DELETE", "/api/templates/"+made.ID, "")
+	}
+	// An explicit Claude planner: a schedule is refused, a plain saved task is fine.
+	if rec := do("POST", "/api/templates", `{"request":{"prompt":"bump deps","planner":"claude"},"schedule":{"every":"daily","at":"02:00"}}`); rec.Code != 400 || !strings.Contains(rec.Body.String(), "must plan on a node") {
 		t.Fatalf("cloud schedule: %d %s", rec.Code, rec.Body)
 	}
 	rec := do("POST", "/api/templates", `{"request":{"prompt":"bump deps\nand run tests","node_label":"GPU"}}`)

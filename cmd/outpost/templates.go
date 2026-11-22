@@ -268,6 +268,7 @@ func (c *Controller) templateViewsLocked() []templateView {
 // scheduleAllowed refuses a schedule whose planner would cost money.
 func (c *Controller) scheduleAllowed(req createReq) error {
 	p := req.Planner
+	explicit := p != ""
 	if p == "" {
 		if proj := c.getProject(req.Project); proj != nil {
 			p = proj.applyDefaults(req).Planner
@@ -278,7 +279,7 @@ func (c *Controller) scheduleAllowed(req createReq) error {
 		p = c.settings.DefaultPlanner
 	}
 	c.mu.Unlock()
-	if p == "" || (p == "claude" && c.anthropicKey() == "") {
+	if p == "" || (!explicit && p == "claude" && c.anthropicKey() == "") {
 		p = "auto" // the stock default without a key: a schedule plans on a node
 	}
 	if isCloudPlanner(p) || p == "auto_api" {
