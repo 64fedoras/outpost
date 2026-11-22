@@ -25,7 +25,19 @@ you turn on web search below.
 card above the box with your text, the options (model, size and count for pictures) and **Make it**, or
 **More settings…**, which opens the full Images or 3D page with your text filled in. If you type something that
 reads like a picture request ("draw an image of…", "make a 3D model of…"), a line under the box offers the skill;
-**Not now** dismisses it. This is a plain wording check, not the model deciding. The Images (`#/image`) and 3D
+**Not now** dismisses it. This is a plain wording check, not the model deciding.
+
+**3D requests go to the 3D card.** A message that clearly asks for a 3D part (a make or change word such as
+make, design, modify or remix, plus a 3D cue such as "3D model", "3D print", STL, 3MF, OpenSCAD, "rack mount" or a
+MakerWorld, Printables or Thingiverse link, and not phrased as a question) opens the 3D card when you press Send
+instead of going to the chat model. Nothing runs until you press **Make it**. **Answer in chat instead** sends it to
+the chat as normal and keeps that chat in chat from then on (remembered in this browser). A question about 3D printing
+("what infill should I use for a rack mount?"), a message with images or documents attached, or code ("the STL
+vector") stays in chat; when your message had a 3D cue, the answer gets a **◇ Make this in 3D** button that opens
+the same card. Outpost cannot edit an existing mesh: with a model link the card says so and offers a new OpenSCAD
+part instead, reading the linked page and looking up the measurements of the devices you name (see
+[3D models](3d-models.md)). If no node can render, the card has the one-click **Install OpenSCAD** and turns
+**Make it** on when the install is done. The Images (`#/image`) and 3D
 (`#/cad`) pages still exist and are in Ctrl+K search. Letting the chat load or switch models on nodes is not built.
 
 **Faster follow-ups (prompt cache).** A node keeps the processed start of the last prompt and skips it when the next

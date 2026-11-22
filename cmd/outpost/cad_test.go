@@ -369,3 +369,71 @@ func TestCadRealOpenSCAD(t *testing.T) {
 		t.Fatalf("broken file: %v %s", err, out)
 	}
 }
+
+func TestCadLookupMeasurements(t *testing.T) {
+	ct := newCadTest(t,
+		"GL-AR750 dimensions mm\n10 inch rack panel width",
+		`Here: [{"name":"GL-AR750 body","value":"100 × 68 × 24 mm","source":"example.com"},{"name":"","value":"skip"}]`,
+		"```openscad\nrouter_w = 100;\ncube([router_w, 5, 2]);\n```",
+		"OK",
+	)
+	var fetched, searched []string
+	ct.c.cad.fetchStub = func(ctx context.Context, u string) (string, error) {
+		fetched = append(fetched, u)
+		if strings.Contains(u, "bad") {
+			return "", errors.New("404")
+		}
+		return "Wall mount for a small router. Printed in PETG.", nil
+	}
+	ct.c.cad.searchStub = func(ctx context.Context, q string) (string, []string, error) {
+		searched = append(searched, q)
+		return "1. GL-AR750 specs\n   https://example.com/ar750\n   Size 100 x 68 x 24 mm", []string{"https://bad.example/x", "https://example.com/ar750"}, nil
+	}
+	body := `{"prompt":"modify this 3d model https://makerworld.example/models/1 for a GL.iNet GL-AR750","read_links":true,"lookup":true}`
+	out := ct.call(t, ct.c.handleNewCad, "POST", "/api/cad", "", body)
+	rec := ct.wait(t, out["model"].(map[string]any)["id"].(string))
+	if rec.Status != "done" {
+		t.Fatalf("status %s: %s", rec.Status, rec.Error)
+	}
+	if len(rec.Refs) != 1 || rec.Refs[0].Value != "100 × 68 × 24 mm" {
+		t.Fatalf("refs %+v", rec.Refs)
+	}
+	if len(searched) != 2 || searched[0] != "GL-AR750 dimensions mm" {
+		t.Errorf("searches %q", searched)
+	}
+	if len(fetched) == 0 || fetched[0] != "https://makerworld.example/models/1" {
+		t.Errorf("fetched %q", fetched)
+	}
+	if src := ct.seen[1][0].Content; !strings.Contains(src, "Wall mount for a small router") || !strings.Contains(src, "Size 100 x 68") {
+		t.Errorf("the measurement call did not get the sources: %q", src)
+	}
+	write := ct.seen[2][len(ct.seen[2])-1].Content
+	if !strings.Contains(write, "GL-AR750 body: 100 × 68 × 24 mm (example.com)") || !strings.Contains(write, "named parameter") {
+		t.Errorf("the writing call did not get the measurements: %q", write)
+	}
+}
+
+func TestCadLookupNothingFound(t *testing.T) {
+	ct := newCadTest(t, "NONE", "```openscad\ncube([10, 5, 2]);\n```", "OK")
+	ct.c.cad.searchStub = func(ctx context.Context, q string) (string, []string, error) {
+		t.Errorf("searched although the model said NONE: %q", q)
+		return "", nil, nil
+	}
+	out := ct.call(t, ct.c.handleNewCad, "POST", "/api/cad", "", `{"prompt":"a 3d printable 10 mm block","lookup":true}`)
+	rec := ct.wait(t, out["model"].(map[string]any)["id"].(string))
+	if rec.Status != "done" || len(rec.Refs) != 0 {
+		t.Fatalf("status %s refs %v err %s", rec.Status, rec.Refs, rec.Error)
+	}
+	if w := ct.seen[1][len(ct.seen[1])-1].Content; !strings.Contains(w, "No measurements were found") {
+		t.Errorf("writing call: %q", w)
+	}
+}
+
+func TestCadQueriesAndRefs(t *testing.T) {
+	if q := cadQueries("1. \"router size mm\"\n- 10 inch rack width\nthird one"); len(q) != 2 || q[0] != "router size mm" || q[1] != "10 inch rack width" {
+		t.Errorf("queries %q", q)
+	}
+	if r := parseCadRefs("no json here"); r != nil {
+		t.Errorf("refs %v", r)
+	}
+}
