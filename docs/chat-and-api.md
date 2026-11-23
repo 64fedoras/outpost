@@ -45,8 +45,8 @@ message starts with the same text. To make that happen more often, a follow-up i
 (with the same model loaded) that answered last. If that node is busy and the chat is long (about 1,000 prompt
 tokens or more) it waits a few seconds, otherwise any free node answers. Long chats are also trimmed in steps of
 four turns instead of one message per turn, so the start of the prompt stays the same for several messages. Under
-each answer, *N of M prompt tokens reused* shows how much the node did not have to read again (nothing shows
-when the node's llama.cpp build does not report it; the count comes from the progress report, the usage block or the timings block, whichever the build sends). The non-streaming `/v1/chat/completions` answer carries the same number as `usage.prompt_tokens_details.cached_tokens`. The cache is only a speed-up and is kept in the node's memory
+each answer, *N of M prompt tokens reused* shows how much the node did not have to read again (*N prompt tokens, none reused* when nothing was reused or the
+node's llama.cpp build does not report it, and the node's log says which; the count comes from the progress report, the usage block or the timings block, whichever the build sends). The non-streaming `/v1/chat/completions` answer carries the same number as `usage.prompt_tokens_details.cached_tokens`. The cache is only a speed-up and is kept in the node's memory
 only: nothing is saved to disk, and a model switch, idle unload or restart simply starts it again.
 
 **If a node drops out while answering,** the chat carries on: once the node has been offline for about 8 seconds,
