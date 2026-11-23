@@ -155,7 +155,25 @@ func (c *Controller) latestReleases(ctx context.Context, force bool) ([]ghReleas
 	if u := os.Getenv("OUTPOST_GITHUB_API"); u != "" { // for testing against a stub
 		base = strings.TrimRight(u, "/")
 	}
-	req, _ := http.NewRequestWithContext(ctx, "GET", base+"/repos/ggml-org/llama.cpp/releases?per_page=20", nil)
+	// The compatible-builds list does not depend on the upstream one, so fetch both at once.
+	var compat []ghRelease
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		compat = c.fetchCompatReleases(ctx, base)
+	}()
+	rels, err := fetchGHReleases(ctx, base+"/repos/ggml-org/llama.cpp/releases?per_page=20")
+	<-done
+	if err != nil {
+		return nil, err
+	}
+	rels = mergeCompat(rels, compat)
+	rc.releases, rc.checked = rels, time.Now()
+	return rels, nil
+}
+
+func fetchGHReleases(ctx context.Context, url string) ([]ghRelease, error) {
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "outpost/"+Version)
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
@@ -170,8 +188,6 @@ func (c *Controller) latestReleases(ctx context.Context, force bool) ([]ghReleas
 	if err := json.NewDecoder(resp.Body).Decode(&rels); err != nil {
 		return nil, err
 	}
-	rels = c.mergeCompatAssets(ctx, base, rels)
-	rc.releases, rc.checked = rels, time.Now()
 	return rels, nil
 }
 
@@ -183,31 +199,29 @@ func compatRepo() string {
 	return ghDefaultRepo
 }
 
-// mergeCompatAssets adds the compatible builds to the matching upstream releases, so every
+// mergeCompatAssets fetches the compatible builds and merges them into rels.
+func (c *Controller) mergeCompatAssets(ctx context.Context, base string, rels []ghRelease) []ghRelease {
+	return mergeCompat(rels, c.fetchCompatReleases(ctx, base))
+}
+
+// fetchCompatReleases lists the compatible builds. A failure here only means nodes that need a
+// compatible build cannot get one yet; upstream builds are unaffected, so it returns nothing.
+func (c *Controller) fetchCompatReleases(ctx context.Context, base string) []ghRelease {
+	compat, err := fetchGHReleases(ctx, base+"/repos/"+compatRepo()+"/releases?per_page=50")
+	if err != nil {
+		log.Printf("compatible llama.cpp builds: %v", err)
+		return nil
+	}
+	return compat
+}
+
+// mergeCompat adds the compatible builds to the matching upstream releases, so every
 // later lookup (newest, older, common build) treats them as one more asset of that release.
 // Releases there are tagged llama-compat-<upstream tag>. When the upstream release is not
 // in the recent list (llama.cpp publishes many builds a day, so a tag can scroll off, or
 // the newest tag may not be the newest release) the compatible build is added as a release
-// of its own, after the upstream ones. A failure here only means nodes that need a
-// compatible build cannot get one yet; upstream builds are unaffected.
-func (c *Controller) mergeCompatAssets(ctx context.Context, base string, rels []ghRelease) []ghRelease {
-	req, _ := http.NewRequestWithContext(ctx, "GET", base+"/repos/"+compatRepo()+"/releases?per_page=50", nil)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "outpost/"+Version)
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-	if err != nil {
-		log.Printf("compatible llama.cpp builds: %v", err)
-		return rels
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		log.Printf("compatible llama.cpp builds: GitHub: %s", resp.Status)
-		return rels
-	}
-	var compat []ghRelease
-	if json.NewDecoder(resp.Body).Decode(&compat) != nil {
-		return rels
-	}
+// of its own, after the upstream ones.
+func mergeCompat(rels, compat []ghRelease) []ghRelease {
 	merged := map[string]bool{}
 	for _, r := range compat { // newest first, as GitHub lists them
 		t, ok := strings.CutPrefix(r.TagName, "llama-compat-")

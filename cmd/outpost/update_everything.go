@@ -23,7 +23,7 @@ func (e *everythingState) running() bool { return e != nil && e.Ended == nil }
 
 // Timings, shortened by tests.
 var (
-	everythingPoll     = 2 * time.Second
+	everythingPoll     = 250 * time.Millisecond
 	everythingTaskWait = 60 * time.Minute // for running tasks to finish before the controller restarts
 )
 

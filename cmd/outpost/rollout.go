@@ -13,6 +13,7 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,10 +30,10 @@ type rolloutState struct {
 
 // Timings, shortened by tests.
 var (
-	rolloutBackWait  = 15 * time.Minute // for the canary to reconnect on the new version
-	rolloutModelWait = 10 * time.Minute // for its model to be loaded again
-	rolloutPoll      = 2 * time.Second
-	rolloutCallWait  = 3 * time.Minute // for each check call
+	rolloutBackWait  = 15 * time.Minute       // for the canary to reconnect on the new version
+	rolloutModelWait = 10 * time.Minute       // for its model to be loaded again
+	rolloutPoll      = 250 * time.Millisecond // in-memory reads only, so a short poll costs nothing
+	rolloutCallWait  = 3 * time.Minute        // for each check call
 )
 
 func (r *rolloutState) running() bool {
@@ -134,12 +135,14 @@ func (c *Controller) endRollout(state, text string) {
 
 func (c *Controller) runRollout(canary, version string, rest []string, hadModel, exec bool) {
 	name := c.nodeLabel(canary)
+	began := time.Now()
 	if err := c.waitCanaryBack(canary, version); err != nil {
 		msg := fmt.Sprintf("%s did not come back on v%s: %v. The other %d node(s) were not updated.", name, version, err, len(rest))
 		c.endRollout("failed", msg)
 		go c.deliverNotification("update_failed", "Update stopped", msg, "")
 		return
 	}
+	log.Printf("rollout: canary %s back on v%s after %s", name, version, time.Since(began).Round(time.Millisecond))
 	c.setRollout("checking", fmt.Sprintf("%s is on v%s; checking it", name, version))
 	if err := c.checkCanary(canary, hadModel, exec); err != nil {
 		rolled := c.rollBackCanary(canary, version)
@@ -192,40 +195,68 @@ func (c *Controller) waitCanaryBack(id, version string) error {
 	return fmt.Errorf("no answer after %s", rolloutBackWait)
 }
 
-// checkCanary runs the quick checks on the updated node.
+// checkCanary runs the quick checks on the updated node. The model call (after its model is
+// loaded again) and the test command do not depend on each other, so they run side by side.
 func (c *Controller) checkCanary(id string, hadModel, exec bool) error {
+	var wg sync.WaitGroup
+	var modelErr, execErr error
 	if hadModel {
-		deadline := time.Now().Add(rolloutModelWait)
-		for {
-			c.mu.Lock()
-			hb := c.lastHB[id]
-			c.mu.Unlock()
-			if hb != nil && hb.InferenceRdy && hb.LoadedModel != "" {
-				break
-			}
-			if time.Now().After(deadline) {
-				return errors.New("its model did not load again")
-			}
-			time.Sleep(rolloutPoll)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), rolloutCallWait)
-		spec := InferenceSpec{Messages: []ChatMessage{{Role: "user", Content: "Reply with the single word OK."}}, Params: InferenceParams{MaxTokens: 16}}
-		_, err := c.runInferenceJob(ctx, id, spec, "Update check", rolloutCallWait)
-		cancel()
-		if err != nil {
-			return fmt.Errorf("a model call failed: %w", err)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			modelErr = c.checkCanaryModel(id)
+		}()
 	}
 	if exec {
-		ctx, cancel := context.WithTimeout(context.Background(), rolloutCallWait)
-		out, status, err := c.runExecJob(ctx, id, c.execArgv(id, "echo outpost-check"), nil, "Update check", rolloutCallWait)
-		cancel()
-		if err != nil {
-			return fmt.Errorf("running a command failed: %w", err)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			execErr = c.checkCanaryExec(id)
+		}()
+	}
+	wg.Wait()
+	if modelErr != nil {
+		return modelErr
+	}
+	return execErr
+}
+
+func (c *Controller) checkCanaryModel(id string) error {
+	start := time.Now()
+	deadline := start.Add(rolloutModelWait)
+	for {
+		c.mu.Lock()
+		hb := c.lastHB[id]
+		c.mu.Unlock()
+		if hb != nil && hb.InferenceRdy && hb.LoadedModel != "" {
+			break
 		}
-		if out == nil || out.ExitCode != 0 {
-			return fmt.Errorf("running a command failed (%s)", status)
+		if time.Now().After(deadline) {
+			return errors.New("its model did not load again")
 		}
+		time.Sleep(rolloutPoll)
+	}
+	loaded := time.Since(start)
+	ctx, cancel := context.WithTimeout(context.Background(), rolloutCallWait)
+	spec := InferenceSpec{Messages: []ChatMessage{{Role: "user", Content: "Reply with the single word OK."}}, Params: InferenceParams{MaxTokens: 16}}
+	_, err := c.runInferenceJob(ctx, id, spec, "Update check", rolloutCallWait)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("a model call failed: %w", err)
+	}
+	log.Printf("rollout: canary %s model reloaded in %s, test call %s", id, loaded.Round(time.Millisecond), (time.Since(start) - loaded).Round(time.Millisecond))
+	return nil
+}
+
+func (c *Controller) checkCanaryExec(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), rolloutCallWait)
+	out, status, err := c.runExecJob(ctx, id, c.execArgv(id, "echo outpost-check"), nil, "Update check", rolloutCallWait)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("running a command failed: %w", err)
+	}
+	if out == nil || out.ExitCode != 0 {
+		return fmt.Errorf("running a command failed (%s)", status)
 	}
 	return nil
 }
