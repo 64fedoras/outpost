@@ -295,7 +295,7 @@ func (c *Controller) planChatLoadWith(need string, ignoreOptIn bool) (*chatLoadP
 		why = "no online node can load a model for this"
 	}
 	for id, n := range c.nodes {
-		if (!n.ChatSwitch && !ignoreOptIn) || c.conns[id] == nil || n.Hello == nil {
+		if (!n.chatSwitchOn() && !ignoreOptIn) || c.conns[id] == nil || n.Hello == nil {
 			continue
 		}
 		hb := c.lastHB[id]
@@ -602,7 +602,8 @@ func (c *Controller) setChatSwitch(id string) {
 		if (id != "" && nid != id) || (id == "" && c.conns[nid] == nil) {
 			continue
 		}
-		n.ChatSwitch = true
+		t := true
+		n.ChatSwitch = &t
 		if nc := c.conns[nid]; nc != nil {
 			send = append(send, nc)
 			settings = append(settings, c.nodeSettingsLocked(n))
@@ -678,7 +679,7 @@ func (c *Controller) anySwitchNode() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for id, n := range c.nodes {
-		if n.ChatSwitch && c.conns[id] != nil {
+		if n.chatSwitchOn() && c.conns[id] != nil {
 			return true
 		}
 	}

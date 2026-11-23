@@ -4,7 +4,7 @@ package main
 // is not answering anything and the GPU stays busy for yieldHotFor, the model
 // is unloaded to free VRAM, as an idle unload does. The node reports itself as
 // not ready meanwhile, so the controller sends it no work. When the GPU has
-// been quiet for yieldQuietFor the model loads again by itself. Off by default
+// been quiet for yieldQuietFor the model loads again by itself. On by default
 // (a per-node switch on the Nodes page). Utilisation comes from the heartbeat
 // sample, so it adds no polling. It cannot tell a game from any other program,
 // and image generation on the same node counts as "another program".

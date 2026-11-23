@@ -141,7 +141,7 @@ func (c *Controller) taskModelPlan(t *Task) (swaps, kept []ModelSwap) {
 			continue
 		}
 		hb := c.lastHB[id]
-		pc := pickCand{Node: id, OptIn: n.TaskModels, Busy: c.pipelines[id] != nil || len(n.Pool) > 0 || helpers[id]}
+		pc := pickCand{Node: id, OptIn: n.taskModelsOn(), Busy: c.pipelines[id] != nil || len(n.Pool) > 0 || helpers[id]}
 		if hb != nil && hb.Paused {
 			pc.Busy = true
 		}

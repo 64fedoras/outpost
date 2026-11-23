@@ -271,7 +271,7 @@ func (c *Controller) nodeSettingsLocked(n *NodeRec) NodeSettings {
 		idle = minIdleUnload // outside working hours: free the memory soon after the last call
 	}
 	return NodeSettings{HeartbeatS: heartbeatSeconds, ExecEnabled: n.ExecEnabled,
-		IdleUnloadS: int(idle / time.Second), YieldGPU: n.YieldGPU, MetalGPU: n.MetalGPU,
+		IdleUnloadS: int(idle / time.Second), YieldGPU: n.yieldOn(), MetalGPU: n.MetalGPU,
 		Sandbox:      effectiveSandbox(c.settings.Sandbox, n.Sandbox),
 		StorageLimit: int64(n.StorageLimitGB * (1 << 30)), StorageFull: n.StorageFull}
 }
@@ -381,16 +381,16 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 		n.Labels = normLabels(*req.Labels)
 	}
 	if req.YieldGPU != nil {
-		n.YieldGPU = *req.YieldGPU
+		n.YieldGPU = req.YieldGPU
 	}
 	if req.MetalGPU != nil {
 		n.MetalGPU = *req.MetalGPU
 	}
 	if req.ChatSwitch != nil {
-		n.ChatSwitch = *req.ChatSwitch
+		n.ChatSwitch = req.ChatSwitch
 	}
 	if req.TaskModels != nil {
-		n.TaskModels = *req.TaskModels
+		n.TaskModels = req.TaskModels
 	}
 	if req.ClearHours {
 		n.Hours = nil
