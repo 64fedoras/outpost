@@ -493,6 +493,12 @@ type InferenceParams struct {
 	// this shape (response_format json_schema). Used only for a retry after a
 	// local model's answer could not be parsed.
 	JSONSchema json.RawMessage `json:"json_schema,omitempty"`
+	// ThinkBudget stops a thinking model that has written this many thinking
+	// tokens and no answer yet: the call ends with finish reason "think_limit"
+	// and the caller asks again with NoThink. NoThink asks the chat template
+	// not to think at all (enable_thinking false; builds that ignore it just think).
+	ThinkBudget int  `json:"think_budget,omitempty"`
+	NoThink     bool `json:"no_think,omitempty"`
 }
 
 type InferenceOutput struct {
