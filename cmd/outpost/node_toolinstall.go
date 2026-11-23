@@ -107,6 +107,80 @@ func installChromeLibs() error {
 	return nil
 }
 
+// chromeWrapper is the script that starts Chromium with the fetched libraries on its library path.
+func chromeWrapper() string {
+	var dirs []string
+	for _, d := range chromeLibDirs {
+		dirs = append(dirs, `"$d/libs/root/`+d+`"`)
+	}
+	return "#!/bin/sh\nd=\"$(cd \"$(dirname \"$0\")/..\" && pwd)\"\nLD_LIBRARY_PATH=" + strings.Join(dirs, ":") +
+		"${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} exec \"$d/chrome-linux64/chrome\" \"$@\"\n"
+}
+
+var debNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
+
+// chromeLibDirs are the folders under libs/root that hold the unpacked libraries.
+var chromeLibDirs = []string{"usr/lib/x86_64-linux-gnu", "lib/x86_64-linux-gnu", "usr/lib/x86_64-linux-gnu/nss"}
+
+// installChromeLibsLocal fetches the libraries headless Chromium misses as .deb files,
+// with their missing dependencies, and unpacks them under stage/libs/root with dpkg -x.
+// That needs no root and nothing outside the node's data folder; a small wrapper in
+// stage/bin starts Chromium with LD_LIBRARY_PATH pointing there. Debian and Ubuntu only.
+func installChromeLibsLocal(stage string) error {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		return errors.New("fetching libraries needs a Debian or Ubuntu (amd64) node")
+	}
+	for _, t := range []string{"apt-get", "apt-cache", "dpkg", "dpkg-query"} {
+		if _, err := exec.LookPath(t); err != nil {
+			return fmt.Errorf("no %s on this node (not Debian or Ubuntu)", t)
+		}
+	}
+	// Everything the packages need, minus what is installed already.
+	args := append([]string{"depends", "--recurse", "--no-recommends", "--no-suggests", "--no-conflicts", "--no-breaks", "--no-replaces", "--no-enhances"}, resolveChromePkgs()...)
+	out, err := exec.Command("apt-cache", args...).Output()
+	if err != nil {
+		return fmt.Errorf("apt-cache depends: %v", err)
+	}
+	seen := map[string]bool{}
+	var want []string
+	for _, ln := range strings.Split(string(out), "\n") {
+		ln = strings.TrimSpace(ln)
+		if strings.HasPrefix(ln, "<") || ln == "" || strings.ContainsAny(ln, " :") || !debNameRe.MatchString(ln) || seen[ln] {
+			continue
+		}
+		seen[ln] = true
+		if b, _ := exec.Command("dpkg-query", "-W", "-f=${db:Status-Abbrev}", ln).Output(); strings.HasPrefix(string(b), "ii") {
+			continue
+		}
+		want = append(want, ln)
+	}
+	root := filepath.Join(stage, "libs")
+	debs := filepath.Join(root, "debs")
+	if err := os.MkdirAll(debs, 0o755); err != nil {
+		return err
+	}
+	defer os.RemoveAll(debs)
+	if len(want) > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "apt-get", append([]string{"download", "-q"}, want...)...)
+		cmd.Dir = debs
+		if b, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("apt-get download: %v: %s (if the package lists are out of date, run sudo apt-get update once)", err, shortText(string(b), 300))
+		}
+		files, _ := filepath.Glob(filepath.Join(debs, "*.deb"))
+		for _, f := range files {
+			if b, err := exec.Command("dpkg", "-x", f, filepath.Join(root, "root")).CombinedOutput(); err != nil {
+				return fmt.Errorf("dpkg -x %s: %v: %s", filepath.Base(f), err, shortText(string(b), 200))
+			}
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(stage, "bin"), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(stage, "bin", "chrome"), []byte(chromeWrapper()), 0o755)
+}
+
 func toolSpecFor(name string) toolSpec {
 	for _, s := range toolSpecs {
 		if s.name == name {
@@ -123,6 +197,9 @@ func toolTestPath(tool, dir string) string {
 	case tool == "chromium" && win:
 		return filepath.Join(dir, "chrome-win64", "chrome.exe")
 	case tool == "chromium":
+		if w := filepath.Join(dir, "bin", "chrome"); fileExists(w) { // libraries were fetched: start it through the wrapper
+			return w
+		}
 		return filepath.Join(dir, "chrome-linux64", "chrome")
 	case win:
 		for _, f := range []string{"openscad.com", "openscad.exe"} {
@@ -251,9 +328,21 @@ func (n *Node) installTool(ti ToolInstall) {
 	// Start it once. Chromium on a bare Linux install usually fails here for want of libraries.
 	test := toolTestPath(ti.Tool, stage)
 	ver, ok := toolVersion(test, toolSpecFor(ti.Tool))
+	if !ok && ti.Tool == "chromium" && !ti.Libs {
+		if libs := missingLibs(test); len(libs) > 0 {
+			// Fetch what it misses without root, into the tool's own folder, and try again.
+			n.opStatus(op, ti.Tool, "installing", 0, 0, "")
+			log.Printf("chromium misses %s; fetching them as .deb files into %s", strings.Join(libs, ", "), stage)
+			if err := installChromeLibsLocal(stage); err != nil {
+				log.Printf("chromium libraries: %v", err)
+			}
+			test = toolTestPath(ti.Tool, stage)
+			ver, ok = toolVersion(test, toolSpecFor(ti.Tool))
+		}
+	}
 	if !ok {
 		if libs := missingLibs(test); len(libs) > 0 {
-			fail("libs", "%s is unpacked but cannot start: missing %s. All the libraries it needs can be installed at once with: sudo apt-get install %s",
+			fail("libs", "%s is unpacked but cannot start: missing %s. Outpost could not fetch them itself; all of them can be installed at once with: sudo apt-get install %s",
 				name, strings.Join(libs, ", "), strings.Join(resolveChromePkgs(), " "))
 			return // the unpacked copy stays for the retry
 		}

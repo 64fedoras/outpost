@@ -167,3 +167,24 @@ func TestParseMissingLibsReportsAllAtOnce(t *testing.T) {
 		t.Errorf("one package per entry, got %d of %d", n, len(chromeLibPkgs))
 	}
 }
+
+func TestChromeWrapperPutsFetchedLibsOnPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script")
+	}
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "bin"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "chrome-linux64"), 0o755)
+	os.WriteFile(filepath.Join(dir, "chrome-linux64", "chrome"), []byte("#!/bin/sh\necho \"Google Chrome for Testing 131.0.1.2 $LD_LIBRARY_PATH\"\n"), 0o755)
+	os.WriteFile(filepath.Join(dir, "bin", "chrome"), []byte(chromeWrapper()), 0o755)
+	if got := toolTestPath("chromium", dir); got != filepath.Join(dir, "bin", "chrome") {
+		t.Fatalf("test path should be the wrapper once it exists: %s", got)
+	}
+	out, err := execOut(filepath.Join(dir, "bin", "chrome"))
+	if err != nil || !strings.Contains(out, filepath.Join(dir, "libs", "root", "usr/lib/x86_64-linux-gnu")) || !strings.Contains(out, "/nss") {
+		t.Errorf("wrapper output: %q %v", out, err)
+	}
+	if v, ok := toolVersion(filepath.Join(dir, "bin", "chrome"), toolSpecFor("chromium")); !ok || v != "131.0.1.2" {
+		t.Errorf("version through wrapper: %q %v", v, ok)
+	}
+}
