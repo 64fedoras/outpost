@@ -637,7 +637,7 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 	}
 	text := out.Text
 	if out.FinishReason == "length" {
-		text += "\n\n…(cut off at the length limit)"
+		text = cutOffText(text)
 	}
 	msg := ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note, Prompt: out.PromptTokens, Cached: out.CachedTokens}
 	c.noteChatNode(chatID, node, out.Model, out.PromptTokens)
@@ -657,6 +657,15 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 		msg.Suggest = suggestMemory(ctx, plain, owner, c.mem().forScope(""))
 	}
 	return msg, ""
+}
+
+// cutOffText marks an answer that hit the length limit. With no answer text at
+// all, a thinking model spent the whole limit on its thinking, which is worth saying.
+func cutOffText(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return "…(the model used the whole length limit thinking and wrote no answer. Ask again, ask for a shorter answer, or pick a model that thinks less.)"
+	}
+	return text + "\n\n…(cut off at the length limit)"
 }
 
 // chatModelPref is the start of a chat's node choice that means "this model, on

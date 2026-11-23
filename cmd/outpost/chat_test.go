@@ -350,3 +350,12 @@ func TestChatByModel(t *testing.T) {
 		t.Fatalf("error %q", msg.Error)
 	}
 }
+
+func TestCutOffText(t *testing.T) {
+	if got := cutOffText("abc"); got != "abc\n\n…(cut off at the length limit)" {
+		t.Fatal(got)
+	}
+	if got := cutOffText("  \n"); !strings.Contains(got, "thinking") {
+		t.Fatal(got)
+	}
+}
