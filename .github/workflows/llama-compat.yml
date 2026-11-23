@@ -20,6 +20,10 @@ on:
       tag:
         description: llama.cpp release tag to build (default is the latest, e.g. b12633 or v1.0.0)
         required: false
+      force:
+        description: rebuild and re-upload every build into an already published release (to add a new build variant)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -42,12 +46,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           WANT: ${{ inputs.tag }}
+          FORCE: ${{ inputs.force }}
         run: |
           tag="$WANT"
           [ -n "$tag" ] || tag=$(gh api repos/ggml-org/llama.cpp/releases/latest --jq .tag_name)
           echo "$tag" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,40}$' || { echo "unexpected llama.cpp tag: $tag"; exit 1; }
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           state=$(gh release view "llama-compat-$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          if [ "$state" = "false" ] && [ "$FORCE" = "true" ]; then
+            echo "llama-compat-$tag is published; rebuilding into it (force)"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$state" = "false" ]; then
             echo "llama-compat-$tag is already published"
             echo "build=false" >> "$GITHUB_OUTPUT"
