@@ -78,9 +78,16 @@ Each task is a conversation:
 1. **You describe the task.** The line under the box says what *Plan it* will use (for example
    "Claude Sonnet 5.5 · cap $2 · peer review on"). **Change options** opens the planner, Claude model,
    spending cap, peer review, mockups-first, fix-round and test-time-limit controls.
-2. **The planner may ask questions** when the request leaves open a choice that changes the design
-   (language, storage, interface). Each question comes with the planner's suggested answer already ticked and marked "suggested"; when every question has one the button reads **Looks right, plan it**. Change any answer, type your own, or skip any. It asks at most
-   once per request; clear requests go straight to a plan.
+2. **The planner plans first and shows what it assumed.** When the request leaves open a choice that
+   changes the design (language, storage, interface), it picks a sensible default, plans with it and lists
+   it in an **Assumed** row on the plan card (chips such as *Storage: SQLite*). Open a chip to pick one of
+   the alternatives the planner considered, or **Other…** to type your own; the main button then reads
+   **Re-plan with SQLite** (or **Re-plan with 2 changes**), and **Approve as it was** stays beside it.
+   Setting a chip back restores **Approve and start**. Only when it cannot guess (the request depends on an
+   existing system, API or file it cannot see) does it ask questions first, at most 2 and once per request;
+   each comes with a suggested answer already ticked, and when every question has one the button reads
+   **Looks right, plan it**. A request that settles everything shows no Assumed row. Unattended and
+   scheduled runs never ask and record their assumptions the same way.
 3. **The plan appears as a card.** Approve it, adjust the cap, or reply with changes ("use SQLite
    instead", "drop the web UI") and it revises the plan. Nothing runs until you approve.
    The card also says roughly how long the first pass will take, for example "about 9 min on 4

@@ -351,6 +351,24 @@ function estMin(sec) { return sec < 90 ? '1 min' : Math.round(sec / 60) + ' min'
 // "Pick models for each node" on the live plan card (tasks_models.go). The
 // proposal comes from /model-plan, refreshed every 20 s; the switches live
 // here so a re-render keeps them.
+// Assumptions the user changed on the plan card, waiting for "Re-plan": { msg: message id, ch: {topic: new choice} }.
+let asmEdit = { msg: '', ch: {} };
+const asmChanges = (m) => (asmEdit.msg === m.id ? asmEdit.ch : {});
+// One chip per assumption: the topic and a dropdown of the planner's options, plus Other… for the user's own.
+function assumedBox(t, m, live) {
+  const list = (m.plan || {}).assumptions || [];
+  if (!list.length) return '';
+  if (!live) return `<p class="plan-assumed"><b>Assumed</b> ${list.map((a) => `${esc(a.topic)}: ${esc(a.choice)}`).join(' · ')}</p>`;
+  const ch = asmChanges(m);
+  const chips = list.map((a) => {
+    const cur = ch[a.topic] !== undefined ? ch[a.topic] : a.choice;
+    const opts = a.options && a.options.length ? a.options.slice() : [a.choice];
+    if (!opts.includes(cur)) opts.push(cur);
+    return `<label class="as-chip${ch[a.topic] !== undefined ? ' as-changed' : ''}"><span class="as-topic">${esc(a.topic)}</span>
+      <select data-asm="${esc(a.topic)}" data-msg="${esc(m.id)}" aria-label="${esc(a.topic)}">${opts.map((o) => `<option ${o === cur ? 'selected' : ''}>${esc(o)}</option>`).join('')}<option value="__other">Other…</option></select></label>`;
+  }).join('');
+  return `<div class="as-box"><div class="as-head">Assumed <span class="hint">change any and the plan is redone; nothing runs until you approve</span></div><div class="as-row">${chips}</div></div>`;
+}
 let planAdjust = ''; // id of the task whose plan card shows its adjustments
 const pickModels = { task: '', at: 0, data: null, on: false, keep: false, cap: '' };
 function pickModelsBlock(t) {
@@ -408,11 +426,12 @@ function planCard(t, m, live) {
     if (p.test_command && !t.exec_nodes) warn.push('No node has exec on, so the tests will be skipped.');
     if (!t.workers_online) warn.push('No node has a model ready; work waits until one does.');
     const est = (t.planner === 'claude' || t.planner === 'openrouter') && t.estimate_usd ? `Planning cost ${usd(t.cost_usd)}; the rest is estimated at about ${usd(Math.max(0, t.estimate_usd - t.cost_usd))}.` : '';
+    const asmCh = asmChanges(m), asmN = Object.keys(asmCh).length;
     const adj = planAdjust === t.id, cloud = t.planner === 'claude' || t.planner === 'openrouter';
     // One decision by default: Approve. Difficulty per subtask, per-node models and the cap sit behind "Adjust…".
     actions = `${adj ? pickModelsBlock(t) : ''}${warn.length || est ? `<p class="card-note">${esc([est, ...warn].filter(Boolean).join(' '))}</p>` : ''}
       <div class="card-actions">${adj && cloud ? `<label class="chip-input">cap $<input id="ta-cap" type="number" min="0.10" step="0.10" value="${t.cap_usd}" aria-label="Spending cap in US dollars"></label>` : ''}
-      <button class="primary" data-act="task-approve">Approve and start</button>
+      ${asmN ? `<button class="primary" data-act="task-replan-asm">${esc(asmN === 1 ? 'Re-plan with ' + Object.values(asmCh)[0] : `Re-plan with ${asmN} changes`)}</button><button data-act="task-approve">Approve as it was</button>` : '<button class="primary" data-act="task-approve">Approve and start</button>'}
       <span class="hint">${!adj && cloud ? `Up to ${usd(t.cap_usd)} · ` : ''}<button type="button" class="link-btn" data-act="task-adjust" aria-expanded="${adj}">${adj ? 'Hide adjustments' : 'Adjust models, difficulty' + (cloud ? ', cap' : '') + '…'}</button> · or reply below to change the plan</span></div>`;
   }
   const editable = canEditPlan(t, m);
@@ -425,7 +444,7 @@ function planCard(t, m, live) {
   }
   const pencil = editable ? `<button class="msg-tool shown" data-act="task-pe-open" data-msg="${esc(m.id)}" title="Edit plan" aria-label="Edit plan">${PENCIL}</button>` : '';
   return `<div class="card-msg plan ${live ? 'live' : ''}"><div class="card-head">Plan · ${esc(p.title || '')}${m.edited ? ' <span class="edited-mark inline">edited</span>' : ''}${pencil}</div>
-    ${m.text ? `<p>${esc(m.text)}</p>` : ''}<p class="plan-summary">${esc(p.summary || '')}</p><p class="plan-facts">${facts}</p>
+    ${assumedBox(t, m, live)}${m.text ? `<p>${esc(m.text)}</p>` : ''}<p class="plan-summary">${esc(p.summary || '')}</p><p class="plan-facts">${facts}</p>
     <ol class="plan-steps">${subs}</ol>${fileOpsNote(p)}${actions}</div>`;
 }
 // Files the plan removes or moves (fileops.go), shown before approval.
@@ -814,6 +833,14 @@ async function taskAction(act, el) {
     switch (act) {
       case 'task-redo': openRedo(taskDetail, el.dataset.sub); return;
       case 'task-bestof': openBestOf(taskDetail, el.dataset.sub); return;
+      case 'task-replan-asm': {
+        const m = ((taskDetail && taskDetail.messages) || []).filter((x) => x.kind === 'plan' && x.plan).pop();
+        const ch = m ? asmChanges(m) : {};
+        const parts = ((m && m.plan.assumptions) || []).filter((a) => ch[a.topic] !== undefined).map((a) => `${a.topic}: ${ch[a.topic]} (was: ${a.choice})`);
+        if (!parts.length) return;
+        await post(`/api/tasks/${id}/messages`, { text: `Change these assumptions and plan again: ${parts.join('; ')}. Keep the other assumptions.` });
+        asmEdit = { msg: '', ch: {} }; toast('Planning again'); break;
+      }
       case 'task-adjust': planAdjust = planAdjust === id ? '' : id; renderTask(taskDetail); return;
       case 'task-approve': {
         const pm = planAdjust === id && pickModels.task === id && pickModels.on;

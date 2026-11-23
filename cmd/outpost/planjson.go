@@ -38,6 +38,8 @@ var planSchema = json.RawMessage(`{
       "artifacts": {"type": "array", "items": {"type": "string"}},
       "preview_page": {"type": "string"}, "preview_command": {"type": "string"}, "preview_url": {"type": "string"},
       "note": {"type": "string"},
+      "assumptions": {"type": "array", "items": {"type": "object", "required": ["topic", "choice"], "properties": {
+        "topic": {"type": "string"}, "choice": {"type": "string"}, "options": {"type": "array", "items": {"type": "string"}}}}},
       "delete": {"type": "array", "items": {"type": "string"}},
       "rename": {"type": "array", "items": {"type": "object", "required": ["from", "to"], "properties": {"from": {"type": "string"}, "to": {"type": "string"}}}},
       "subtasks": {"type": "array", "items": {"type": "object", "required": ["id", "title", "files", "instructions"], "properties": {

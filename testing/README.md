@@ -43,6 +43,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `usability3.py` | Update everything: one primary button, per-machine buttons behind "Choose individually…", one Check button, folded uploads, badge matches the page; shots in `run/shots/usability3/`. |
 | `usability4.py` | Monthly limit asked once on the first cloud key (Set limit / No limit); Scheduled shows the browser clock when it differs; shots in `run/shots/usability4/`. |
 | `usability5.py` | Settings autosave: planner defaults, running tasks and free-disk cards have no Save button and save after a change (including reordering Auto); shots in `run/shots/usability5/`. |
+| `assume.py` | Plan first with assumptions: Assumed row on the plan card, a changed chip turns the button into Re-plan, Other… takes a typed value, a clear request has no row; shots in `run/shots/assume/`. |
 | `projectnew.py` | Projects page: "New task in this project" in a card's menu opens the new-task page with that project picked. |
 | `chatpage.py` | Chat page layout: model cards on a new chat, the docked composer, the chats panel and the phone sheet. |
 | `chatversions.py` | Chat edit and resend, regenerate, version arrows, branch, per-chat instructions and the Chats search box (desktop light and dark, phone). |
@@ -81,6 +82,11 @@ WebSocket that executes the Chromium job locally. They use a headless Chromium f
 `/opt/pw-browsers` or `OUTPOST_TEST_CHROME=/path/to/chrome-headless-shell`, and skip without one.
 
 ## Lab checks (the real cluster)
+`testing/lab_assume.py` (run by hand, not in the Gitea workflow) compares planners on eight vague requests ("back up my
+photos"): once with the local planner (`auto`) and once with Claude if a key is saved. It never approves a plan, deletes its
+test tasks, and writes `lab-assume-report.html` (`OUTPOST_LAB_OUT`): planned at once or asked, the assumptions, time to a plan.
+Same `OUTPOST_LAB_URL`/`OUTPOST_LAB_TOKEN` as below; Claude costs a few cents (cap $0.50 per task).
+
 `testing/lab_smoke.py` talks to a real controller over its API: version and nodes, **Check cluster** on every
 online node (a failed step on an online node fails the run), `GET /v1/models` and one tiny chat message.
 It needs only Python 3 and two environment variables, so it also runs by hand:
