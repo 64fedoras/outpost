@@ -31,6 +31,8 @@ The planner tags every subtask `easy`, `normal` or `hard`, and the plan card let
 before you approve. Hard subtasks go to the strongest free model and wait up to 2 minutes for it
 before taking any free node. Easy ones go to the fastest free node. Normal ones take the best mix of
 tier and speed. Reviews prefer a node at least as strong as the one that wrote the code.
+Pooled models are not benchmarked: a pool reads prompts across the network, so a test there is slow and says little about one node, and it would keep chat waiting. The same goes for a node that is lending memory.
+
 The benchmark runs once for each node and model, when the model is ready; it is not repeated on
 restarts or updates. Use **Re-run benchmark** on the node card to measure again. Small CPU-only nodes
 (8 threads or fewer) get a shorter test, and so does a node whose benchmark failed; a failed or timed-out
