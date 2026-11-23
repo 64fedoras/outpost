@@ -346,6 +346,7 @@ func (l *llamaMgr) load(ml ModelLoad) {
 		l.n.touchModel(ml.Draft)
 		ml.DraftPath = p
 	}
+	l.n.applyKVFit(&ml, modelPath)
 	if err := l.start(rt, ml, modelPath, 0); err != nil {
 		fail("%v", err)
 		return

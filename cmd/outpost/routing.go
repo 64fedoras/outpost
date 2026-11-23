@@ -345,6 +345,14 @@ func (c *Controller) benchBlockedLocked(id string) string {
 	if n := c.nodes[id]; n != nil && n.Benching {
 		return "a benchmark is already running"
 	}
+	// A pooled model reads its prompt across the network: a benchmark there takes
+	// minutes, measures the pool rather than the node, and would keep chat out.
+	if n := c.nodes[id]; n != nil && len(n.Pool) > 0 {
+		return "the node serves a pooled model"
+	}
+	if c.lendingToLocked(id) != "" {
+		return "the node is lending its memory to a pool"
+	}
 	return ""
 }
 

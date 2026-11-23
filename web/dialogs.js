@@ -106,12 +106,12 @@ async function pollJob() {
   $('job-title').textContent = j.command;
   $('job-status').className = `pill st-${j.status}`; $('job-status').textContent = label(j.status);
   const dur = j.ended ? ((new Date(j.ended) - new Date(j.created)) / 1000).toFixed(1) + ' s' : 'running…';
-  const inf = j.inference;
+  const inf = j.inference && (j.inference.model || j.inference.prompt_tokens || j.inference.output_tokens) ? j.inference : null;
   $('job-kv').innerHTML = `<span>${j.kind === 'inference' ? 'model call' : 'command'} on <b>${esc(j.node_name)}</b></span><span>time <b>${dur}</b></span>${
     j.exec_output ? `<span>exit code <b>${j.exec_output.exit_code}</b></span>` : ''}${
     inf ? `<span>model <b>${esc(inf.model)}</b></span><span>tokens <b>${inf.prompt_tokens} in / ${inf.output_tokens} out</b></span><span>speed <b>${inf.tokens_per_s} tok/s</b></span>` : ''}`;
   const out = $('job-out'), atBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 20;
-  let html = (j.chunks || []).map((c) => c.stream === 'stderr' ? `<span class="err">${esc(c.data)}</span>` : esc(c.data)).join('');
+  let html = (j.chunks || []).filter((c) => c.stream !== 'progress').map((c) => c.stream === 'stderr' ? `<span class="err">${esc(c.data)}</span>` : esc(c.data)).join('');
   if (!html && j.exec_output) html = esc(j.exec_output.stdout_tail) + (j.exec_output.stderr_tail ? `<span class="err">${esc(j.exec_output.stderr_tail)}</span>` : '');
   if (!html && inf) html = esc(inf.text);
   if (j.truncated) html += '\n<span class="err">[output truncated in the UI after 1 MB]</span>';

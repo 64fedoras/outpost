@@ -31,6 +31,8 @@ The planner tags every subtask `easy`, `normal` or `hard`, and the plan card let
 before you approve. Hard subtasks go to the strongest free model and wait up to 2 minutes for it
 before taking any free node. Easy ones go to the fastest free node. Normal ones take the best mix of
 tier and speed. Reviews prefer a node at least as strong as the one that wrote the code.
+Pooled models are not benchmarked: a pool reads prompts across the network, so a test there is slow and says little about one node, and it would keep chat waiting. The same goes for a node that is lending memory.
+
 The benchmark runs once for each node and model, when the model is ready; it is not repeated on
 restarts or updates. Use **Re-run benchmark** on the node card to measure again. Small CPU-only nodes
 (8 threads or fewer) get a shorter test, and so does a node whose benchmark failed; a failed or timed-out
@@ -148,6 +150,8 @@ type, flash attention, draft model, calls at once, experts-in-RAM choice and ext
 that node (up to 20). A *Saved settings for this node* list then appears at the top of the dialog; picking one
 fills the form, and *Delete* removes it. Pool helpers are not part of a saved setting.
 
+
+**Big contexts on a GPU.** If the KV cache for the chosen context would take more than half the GPU memory (for example settings saved on a CPU-only run, then a GPU is added), the node keeps the cache in RAM (`--no-kv-offload`) when RAM can hold it, and otherwise lowers the context to fit; the node log says so. Choose `--no-kv-offload` yourself under extra arguments to skip this.
 **Let tasks change my model** (per node, off by default; on the node card). A task approved with
 *Pick models for each node* may load this node's best-fit model before work starts and put the previous
 one back afterwards (see [using-tasks.md](using-tasks.md)). Off, tasks only use the model you loaded.

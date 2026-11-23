@@ -171,4 +171,15 @@ func TestBenchBlocked(t *testing.T) {
 	if c.benchBlockedLocked("missing") == "" {
 		t.Error("an unknown node should be blocked")
 	}
+	// A pooled main node and a lending helper are not benchmarked.
+	c.lastHB["n"].InferenceRdy = true
+	c.nodes["n"].Pool = []string{"h"}
+	if c.benchBlockedLocked("n") == "" {
+		t.Error("a pooled main node should not be benchmarked")
+	}
+	c.nodes["n"].Pool = nil
+	c.nodes["m"] = &NodeRec{ID: "m", Pool: []string{"n"}}
+	if c.benchBlockedLocked("n") == "" {
+		t.Error("a node lending memory to a pool should not be benchmarked")
+	}
 }

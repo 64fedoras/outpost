@@ -125,8 +125,22 @@ def _reload(lab, n, prefs, label, had):
     if code != 200:
         lab.fail(f"{label}: could not load its own model {prefs['name']} again ({code}: {res})")
         return
-    _wait(lab, f"{label}: own model {prefs['name']} loaded again",
-          lambda st: _loaded(_find(st, n["name"])) == prefs["name"], 600)
+    def serving(st):
+        hb = (_find(st, n["name"]) or {}).get("heartbeat") or {}
+        if hb.get("llama_error"):
+            lab.fail(f"{label}: own model {prefs['name']} failed to start: {hb['llama_error'][:300]}")
+            return "error"
+        return _loaded(_find(st, n["name"])) == prefs["name"] and hb.get("inference_ready")
+
+    # Loaded in the heartbeat is not enough (it shows before llama-server is up, and
+    # a failed start comes later): it must be ready, and still ready 20 s on.
+    if not _wait(lab, f"{label}: own model {prefs['name']} ready again", serving, 600):
+        return
+    time.sleep(20)
+    if serving(_state(lab)):
+        lab.say("ok", f"{label}: own model {prefs['name']} still ready after 20 s")
+    else:
+        lab.fail(f"{label}: own model {prefs['name']} stopped being ready within 20 s of loading")
 
 
 def run(lab, st):
