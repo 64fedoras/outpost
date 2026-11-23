@@ -39,17 +39,15 @@ async def main():
             await pg.goto(U + "/#/chat"); await pg.wait_for_selector(".mcard"); await pg.evaluate("refresh()"); await pg.wait_for_timeout(800)
             if name == "phone" and await pg.locator("#chat-pick-more").count():
                 await pg.click("#chat-pick-more"); await pg.wait_for_timeout(200)
-            cards = await pg.locator(".mcard").count()
-            assert cards <= 2 + 2, f"Auto, Research and one card per model, not per node: {cards}"
-            assert await pg.locator(".mcard .ms-n").count() >= 1, "a model on several nodes says how many"
-            txt = await pg.locator(".mgroup").first.inner_text()
-            assert "nodes" in txt and "free" in txt, txt
+            assert await pg.locator(".mcard").count() == 2, "only Auto and Research are cards"
+            assert await pg.locator(".mpick-n").count() == 0, "the model list starts closed"
             await pg.screenshot(path=S + f"picker-{name}.png")
             await pg.locator("[data-specific]").first.click(); await pg.wait_for_timeout(200)
-            assert await pg.locator(".mpick-n").count() >= 2, "the specific-node list shows the nodes"
+            assert await pg.locator(".mpick-row").count() >= 2, "the list shows each model"
+            assert await pg.locator(".mpick-n", has_text="Any free node").count() >= 1, "a model on several nodes offers any free node"
             await pg.screenshot(path=S + f"picker-{name}-nodes.png")
-            await pg.locator(".mgroup .mcard").first.click(); await pg.wait_for_timeout(200)
-            assert (await pg.locator("#chat-node").input_value()).startswith("model:"), "the grouped card means any free node with that model"
+            await pg.locator(".mpick-n", has_text="Any free node").first.click(); await pg.wait_for_timeout(200)
+            assert (await pg.locator("#chat-node").input_value()).startswith("model:"), "the any-free-node chip means any free node with that model"
             await ctx.close()
         # the real controller accepts a model: choice
         ctx = await b.new_context(ignore_https_errors=True); pg = await ctx.new_page()
