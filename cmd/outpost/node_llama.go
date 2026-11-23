@@ -637,6 +637,9 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 	if spec.Params.FrequencyPenalty != nil {
 		body["frequency_penalty"] = *spec.Params.FrequencyPenalty
 	}
+	if spec.Params.NoThink {
+		body["chat_template_kwargs"] = map[string]any{"enable_thinking": false}
+	}
 	if len(spec.Params.ResponseFormat) > 0 && len(spec.Params.JSONSchema) == 0 {
 		body["response_format"] = spec.Params.ResponseFormat
 	}
@@ -687,6 +690,7 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 	var text strings.Builder
 	var calls []WireToolCall
 	var firstTok time.Time
+	reasonN, thinkCut := 0, false // thinking chunks seen (about one token each); budget spent
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
 	for sc.Scan() {
@@ -744,6 +748,10 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 		for _, c := range chunk.Choices {
 			if c.Delta.Reasoning != nil && *c.Delta.Reasoning != "" {
 				emit(true, *c.Delta.Reasoning)
+				reasonN++
+				if b := spec.Params.ThinkBudget; b > 0 && reasonN > b && text.Len() == 0 && len(calls) == 0 {
+					thinkCut = true
+				}
 			}
 			if c.Delta.Content != nil && *c.Delta.Content != "" {
 				if firstTok.IsZero() {
@@ -767,6 +775,10 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 				out.FinishReason = *c.FinishReason
 			}
 		}
+		if thinkCut {
+			cancelReq() // stop generating; the caller asks again without thinking
+			break
+		}
 		if t := chunk.Timings; t != nil && t.CacheN > 0 {
 			out.CachedTokens, cacheSource = t.CacheN, "timings"
 			if out.PromptTokens == 0 {
@@ -779,6 +791,11 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 				out.CachedTokens, cacheSource = d.Cached, "usage"
 			}
 		}
+	}
+	if thinkCut && outer.Err() == nil {
+		out.FinishReason = "think_limit"
+		log.Printf("chat thinking used its %d token budget with no answer; asking the caller to answer without thinking", spec.Params.ThinkBudget)
+		return out, nil
 	}
 	if dog.hung() {
 		return nil, dog.err()

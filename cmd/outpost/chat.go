@@ -32,6 +32,7 @@ type ChatMsg struct {
 	TPS    float64   `json:"tok_s,omitempty"`
 	Prompt int       `json:"prompt_tokens,omitempty"` // tokens in the prompt of the last model call
 	Cached int       `json:"cached_tokens,omitempty"` // of those, how many the node reused from its cache
+	Cut    bool      `json:"cut,omitempty"`           // the answer stopped at the length limit (the UI offers Continue)
 	Error  string    `json:"error,omitempty"`
 	Note   string    `json:"note,omitempty"` // e.g. that the web was searched, or why it was not
 	At     time.Time `json:"at"`
@@ -476,7 +477,7 @@ func chatHistoryDocs(msgs []ChatMsg, load func(string) string, doc func(DocInfo)
 		if m.Error != "" || (m.Text == "" && len(m.Images) == 0) {
 			continue
 		}
-		text := m.Text
+		text := strings.TrimSuffix(m.Text, cutOffMark)
 		if text == "" {
 			text = "Describe this image."
 		}
@@ -589,7 +590,7 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 	defer c.releaseNode(node)
 	started()
 	ctxTok := c.nodeCtx(node)
-	maxOut := min(4096, ctxTok/2)
+	maxOut := chatOutCap(ctxTok, c.nodeSpeed(node))
 	name := c.nodeLabel(node)
 	hist = append([]ChatMessage(nil), hist...)
 	clipForContext(hist, max((ctxTok-maxOut)*3-len(hist[0].Content)-2000, 2000)) // a long document must still leave room
@@ -601,6 +602,8 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 		defer live.End()
 		return c.runChatJob(ctx, node, name, spec, live)
 	}
+	var thinkNote string
+	infer = withThinkBudget(infer, maxOut, &thinkNote)
 	var out *InferenceOutput
 	var note string
 	c.mu.Lock()
@@ -626,6 +629,7 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 		hist = withSearchBrief(hist, brief)
 		out, err = infer(ctx, InferenceSpec{Messages: fitHistory(hist, (ctxTok-maxOut)*3), Params: InferenceParams{MaxTokens: maxOut}})
 	}
+	note = joinNotes(note, thinkNote)
 	switch {
 	case errors.Is(ctx.Err(), context.Canceled):
 		return ChatMsg{Role: "assistant", Node: name, Error: "stopped", Runs: run.done()}, ""
@@ -639,7 +643,8 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 	if out.FinishReason == "length" {
 		text = cutOffText(text)
 	}
-	msg := ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note, Prompt: out.PromptTokens, Cached: out.CachedTokens}
+	cut := out.FinishReason == "length" && strings.TrimSpace(out.Text) != ""
+	msg := ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note, Prompt: out.PromptTokens, Cached: out.CachedTokens, Cut: cut}
 	c.noteChatNode(chatID, node, out.Model, out.PromptTokens)
 	if run != nil {
 		msg.Runs = run.done()
@@ -665,8 +670,12 @@ func cutOffText(text string) string {
 	if strings.TrimSpace(text) == "" {
 		return "…(the model used the whole length limit thinking and wrote no answer. Ask again, ask for a shorter answer, or pick a model that thinks less.)"
 	}
-	return text + "\n\n…(cut off at the length limit)"
+	return text + cutOffMark
 }
+
+// cutOffMark ends an answer that stopped at the length limit; it is shown, but
+// not sent back to the model.
+const cutOffMark = "\n\n…(cut off at the length limit)"
 
 // chatModelPref is the start of a chat's node choice that means "this model, on
 // any free node that has it loaded" (the chat picker's grouped cards).

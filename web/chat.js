@@ -221,7 +221,7 @@ function chatBubble(m, i, last) {
     return `<div class="bubble-row"><div class="bubble-col"><div class="bubble">${esc(m.text)}${pics}${docs}</div>${acts}</div></div>`;
   }
   const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, chatCacheTag(m), m.note && esc(m.note), chatNeedTag(m)].filter(Boolean).join(' · ');
-  const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-regen="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Answer again; this answer stays as an earlier version">↻ Regenerate</button>${chatTryOn(m, busy)}${m.text ? `<button data-copy-msg="${i}" title="Copy the answer">⧉ Copy</button>` : ''}${m.research && m.text ? `<button data-rs-open="${esc(m.id)}" title="Open the report in the side panel to download it or save it to a project">¶ Open report</button>` : ''}<button data-branch="${esc(m.id)}" title="Start a new chat with the conversation up to here">⑂ Branch</button>${m.text && typeof skillAnswerAct === 'function' ? skillAnswerAct(chatCur.messages, i) : ''}</div>`;
+  const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-regen="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Answer again; this answer stays as an earlier version">↻ Regenerate</button>${chatTryOn(m, busy)}${m.cut && i === chatCur.messages.length - 1 ? `<button data-continue ${busy ? 'disabled' : ''} title="The answer stopped at the length limit: ask the model to carry on">▶ Continue</button>` : ''}${m.text ? `<button data-copy-msg="${i}" title="Copy the answer">⧉ Copy</button>` : ''}${m.research && m.text ? `<button data-rs-open="${esc(m.id)}" title="Open the report in the side panel to download it or save it to a project">¶ Open report</button>` : ''}<button data-branch="${esc(m.id)}" title="Start a new chat with the conversation up to here">⑂ Branch</button>${m.text && typeof skillAnswerAct === 'function' ? skillAnswerAct(chatCur.messages, i) : ''}</div>`;
   if (m.error) return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}${acts}</div>`;
   return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}<div class="chat-text md">${md(m.text)}</div>${pvCards(pvCollect(m.text))}${meta ? `<div class="sub">${meta}</div>` : ''}${acts}${memSuggestCard(m, { chat: chatCur.id })}</div>`;
 }
@@ -353,6 +353,7 @@ async function chatAct(t) {
     await chatDo('edit', { msg_id: el.dataset.editSend, text, node: $('chat-node').value });
   }
   else if ((el = b('prompt'))) await chatDo('prompt', { action: el.dataset.prompt });
+  else if (b('continue')) await chatDo('messages', { text: 'Please continue from exactly where you stopped.', node: $('chat-node').value, images: [], docs: [] });
   else if ((el = b('regen'))) await chatDo('regenerate', { msg_id: el.dataset.regen });
   else if ((el = b('ver')) && !el.disabled) await chatDo('version', { msg_id: el.dataset.msg, ver: Number(el.dataset.ver) });
   else if ((el = b('copy-msg'))) { const m = chatCur.messages[Number(el.dataset.copyMsg)]; if (m) { await copyText(m.text || ''); toast('Copied'); } }
