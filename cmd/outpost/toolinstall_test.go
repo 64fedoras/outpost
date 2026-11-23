@@ -153,3 +153,38 @@ func TestToolRecommendations(t *testing.T) {
 }
 
 func execCombined(path string) ([]byte, error) { return exec.Command(path).CombinedOutput() }
+
+func TestParseMissingLibsReportsAllAtOnce(t *testing.T) {
+	out := "\tlinux-vdso.so.1 (0x00007ffc)\n\tlibasound.so.2 => not found\n\tlibnss3.so => not found\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x7f)\n\tlibasound.so.2 => not found\n"
+	got := parseMissingLibs(out)
+	if len(got) != 2 || got[0] != "libasound.so.2" || got[1] != "libnss3.so" {
+		t.Errorf("parseMissingLibs: %v", got)
+	}
+	if m := loaderMissingRe.FindStringSubmatch("./chrome: error while loading shared libraries: libgbm.so.1: cannot open shared object file"); m == nil || m[1] != "libgbm.so.1" {
+		t.Errorf("loader message: %v", m)
+	}
+	if n := len(resolveChromePkgs()); n != len(chromeLibPkgs) {
+		t.Errorf("one package per entry, got %d of %d", n, len(chromeLibPkgs))
+	}
+}
+
+func TestChromeWrapperPutsFetchedLibsOnPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script")
+	}
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "bin"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "chrome-linux64"), 0o755)
+	os.WriteFile(filepath.Join(dir, "chrome-linux64", "chrome"), []byte("#!/bin/sh\necho \"Google Chrome for Testing 131.0.1.2 $LD_LIBRARY_PATH\"\n"), 0o755)
+	os.WriteFile(filepath.Join(dir, "bin", "chrome"), []byte(chromeWrapper()), 0o755)
+	if got := toolTestPath("chromium", dir); got != filepath.Join(dir, "bin", "chrome") {
+		t.Fatalf("test path should be the wrapper once it exists: %s", got)
+	}
+	out, err := execOut(filepath.Join(dir, "bin", "chrome"))
+	if err != nil || !strings.Contains(out, filepath.Join(dir, "libs", "root", "usr/lib/x86_64-linux-gnu")) || !strings.Contains(out, "/nss") {
+		t.Errorf("wrapper output: %q %v", out, err)
+	}
+	if v, ok := toolVersion(filepath.Join(dir, "bin", "chrome"), toolSpecFor("chromium")); !ok || v != "131.0.1.2" {
+		t.Errorf("version through wrapper: %q %v", v, ok)
+	}
+}

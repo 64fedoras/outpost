@@ -175,7 +175,7 @@ func (n *Node) goBinDir() string { return filepath.Join(n.toolchainDir(), "go", 
 // OpenSCAD), searched before PATH and put on PATH for exec jobs.
 func (n *Node) managedToolDirs() []string {
 	r := n.toolchainDir()
-	return []string{n.goBinDir(), filepath.Join(r, "chromium", "chrome-linux64"), filepath.Join(r, "chromium", "chrome-win64"),
+	return []string{n.goBinDir(), filepath.Join(r, "chromium", "bin"), filepath.Join(r, "chromium", "chrome-linux64"), filepath.Join(r, "chromium", "chrome-win64"),
 		filepath.Join(r, "openscad", "bin"), filepath.Join(r, "openscad")}
 }
 
