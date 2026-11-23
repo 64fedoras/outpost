@@ -212,4 +212,11 @@ func TestLlamaChatCachedTokens(t *testing.T) {
 	if e != nil || out.CachedTokens != 700 {
 		t.Fatalf("usage block: %v %+v", e, out)
 	}
+	// Builds that send neither progress nor usage details still report timings.
+	body = nil
+	usage = `"usage":{"prompt_tokens":800,"completion_tokens":2},"timings":{"cache_n":650,"prompt_n":150}`
+	out, e = l.chat(context.Background(), spec, func(string) {})
+	if e != nil || out.CachedTokens != 650 || out.PromptTokens != 800 {
+		t.Fatalf("timings: %v %+v", e, out)
+	}
 }

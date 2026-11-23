@@ -712,6 +712,12 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 				} `json:"prompt_tokens_details"`
 			} `json:"usage"`
 			Progress *promptProgress `json:"prompt_progress"`
+			// llama-server's timings block (final chunk): cache_n is the prompt
+			// tokens reused, prompt_n the ones it had to read.
+			Timings *struct {
+				CacheN  int `json:"cache_n"`
+				PromptN int `json:"prompt_n"`
+			} `json:"timings"`
 		}
 		if json.Unmarshal([]byte(data), &chunk) != nil {
 			continue
@@ -748,6 +754,12 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 			}
 			if c.FinishReason != nil {
 				out.FinishReason = *c.FinishReason
+			}
+		}
+		if t := chunk.Timings; t != nil && t.CacheN > 0 {
+			out.CachedTokens = t.CacheN
+			if out.PromptTokens == 0 {
+				out.PromptTokens = t.CacheN + t.PromptN
 			}
 		}
 		if chunk.Usage != nil {

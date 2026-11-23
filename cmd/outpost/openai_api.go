@@ -275,7 +275,8 @@ func (c *Controller) handleV1Chat(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, map[string]any{"id": id, "object": "chat.completion", "created": created, "model": out.Model,
 			"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": finish}},
-			"usage":   map[string]int{"prompt_tokens": out.PromptTokens, "completion_tokens": out.OutputTokens, "total_tokens": out.PromptTokens + out.OutputTokens}})
+			"usage": map[string]any{"prompt_tokens": out.PromptTokens, "completion_tokens": out.OutputTokens, "total_tokens": out.PromptTokens + out.OutputTokens,
+				"prompt_tokens_details": map[string]int{"cached_tokens": out.CachedTokens}}})
 		return
 	}
 	fl, ok := w.(http.Flusher)
