@@ -268,6 +268,10 @@ func (s *statSampler) sample() Heartbeat {
 		s.sampleWindows(&hb)
 		return hb
 	}
+	if runtime.GOOS == "darwin" {
+		s.sampleDarwin(&hb, runtime.NumCPU())
+		return hb
+	}
 	if runtime.GOOS != "linux" {
 		return hb
 	}
