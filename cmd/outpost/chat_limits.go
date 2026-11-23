@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // How long one chat answer may take at the node's measured speed. It stays well
@@ -55,4 +58,63 @@ func withThinkBudget(infer inferFn, maxOut int, note *string) inferFn {
 		*note = "The model's thinking used up its share of the length limit, so it was asked again to answer directly."
 		return infer(ctx, spec)
 	}
+}
+
+// chatAutoContinues is how many times a chat answer that stopped at the length
+// limit is carried on automatically before it is left cut off with the Continue button.
+const chatAutoContinues = 3
+
+// withAutoContinue wraps infer so an answer that stopped at the length limit is
+// carried on by asking the model to continue, up to chatAutoContinues times and
+// never past chatTimeout in all. It stops when a round adds nothing, when the
+// conversation would no longer fit the context, or when the call was a tool call.
+// The pieces are joined into one answer; note says how many rounds were added.
+func withAutoContinue(infer inferFn, ctxTok, maxOut int, note *string) inferFn {
+	return func(ctx context.Context, spec InferenceSpec) (*InferenceOutput, error) {
+		start := time.Now()
+		out, err := infer(ctx, spec)
+		if err != nil || out == nil || spec.Params.MaxTokens < maxOut {
+			return out, err
+		}
+		rounds := 0
+		for rounds < chatAutoContinues && out.FinishReason == "length" && strings.TrimSpace(out.Text) != "" && len(out.ToolCalls) == 0 {
+			// Room left: the prompt so far, the answer so far and another full answer must fit.
+			if ctx.Err() != nil || time.Since(start) > chatTimeout/2 || (ctxTok > 0 && out.PromptTokens+out.OutputTokens+maxOut > ctxTok) {
+				break
+			}
+			next := spec
+			next.Messages = append(append([]ChatMessage(nil), spec.Messages...),
+				ChatMessage{Role: "assistant", Content: out.Text, Reasoning: tailBytes(out.Reasoning, 16<<10)},
+				ChatMessage{Role: "user", Content: "Please continue from exactly where you stopped."})
+			more, err := infer(ctx, next)
+			if err != nil || more == nil || strings.TrimSpace(more.Text) == "" {
+				break // keep what there is; the answer stays marked as cut off
+			}
+			joined := *out
+			joined.Text += more.Text
+			joined.FinishReason = more.FinishReason
+			joined.OutputTokens += more.OutputTokens
+			joined.Reasoning = strings.TrimSpace(joined.Reasoning + "\n\n" + more.Reasoning)
+			joined.ThinkSecs += more.ThinkSecs
+			joined.TokensPerSec, joined.Model = more.TokensPerSec, more.Model
+			out = &joined
+			rounds++
+		}
+		if rounds > 0 {
+			*note = fmt.Sprintf("Carried on automatically %d time%s after hitting the length limit.", rounds, map[bool]string{true: "", false: "s"}[rounds == 1])
+		}
+		return out, nil
+	}
+}
+
+// tailBytes is the last n bytes of s (from a character boundary).
+func tailBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	s = s[len(s)-n:]
+	for len(s) > 0 && !utf8.RuneStart(s[0]) {
+		s = s[1:]
+	}
+	return s
 }

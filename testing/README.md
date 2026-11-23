@@ -45,6 +45,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `usability5.py` | Settings autosave: planner defaults, running tasks and free-disk cards have no Save button and save after a change (including reordering Auto); shots in `run/shots/usability5/`. |
 | `assume.py` | Plan first with assumptions: Assumed row on the plan card, a changed chip turns the button into Re-plan, Other… takes a typed value, a clear request has no row; shots in `run/shots/assume/`. |
 | `projectnew.py` | Projects page: "New task in this project" in a card's menu opens the new-task page with that project picked. |
+| `chatthink.py` | Chat thinking behind a fold (closed by default, stays open when opened, kept after reload), the green working bar, and an answer cut at the length limit carried on automatically. |
 | `chatpage.py` | Chat page layout: model cards on a new chat, the docked composer, the chats panel and the phone sheet. |
 | `chatversions.py` | Chat edit and resend, regenerate, version arrows, branch, per-chat instructions and the Chats search box (desktop light and dark, phone). |
 | `projectreads.py` | Project conversation reads files: chips for list, search and read calls, `path:line` links opening the read-only file viewer (light and dark). |

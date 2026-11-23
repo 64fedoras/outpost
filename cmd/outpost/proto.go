@@ -476,6 +476,7 @@ type ChatMessage struct {
 	Images     []string       `json:"images,omitempty"`       // data: URIs, for vision models; held in memory only
 	ToolCalls  []WireToolCall `json:"tool_calls,omitempty"`   // assistant turn that called tools
 	ToolCallID string         `json:"tool_call_id,omitempty"` // tool turn answering one call
+	Reasoning  string         `json:"reasoning,omitempty"`    // assistant turn: its thinking, passed on as reasoning_content (chat auto-continue)
 }
 
 type InferenceParams struct {
@@ -510,6 +511,8 @@ type InferenceOutput struct {
 	TokensPerSec float64        `json:"tokens_per_s"`
 	Model        string         `json:"model"`
 	ToolCalls    []WireToolCall `json:"tool_calls,omitempty"`
+	Reasoning    string         `json:"reasoning,omitempty"` // a thinking model's thinking text (never sent back to a model)
+	ThinkSecs    int            `json:"think_s,omitempty"`   // about how long it thought
 }
 
 // NodePause is "node.pause": the web UI's Pause menu on a node card.

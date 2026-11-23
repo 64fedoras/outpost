@@ -578,6 +578,9 @@ type promptProgress struct {
 	TimeMs    int64 `json:"time_ms"`
 }
 
+// maxThinkKeep caps how much thinking text is kept with an answer.
+const maxThinkKeep = 64 << 10
+
 // chatP is chat with an optional prompt-progress callback.
 // emit gets reasoning (thinking models) with reasoning true, the answer with false.
 func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reasoning bool, text string), prog func(promptProgress)) (*InferenceOutput, *ErrInfo) {
@@ -691,6 +694,8 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 	var calls []WireToolCall
 	var firstTok time.Time
 	reasonN, thinkCut := 0, false // thinking chunks seen (about one token each); budget spent
+	var think strings.Builder     // the thinking text, kept with the answer (capped)
+	var thinkStart, thinkEnd time.Time
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
 	for sc.Scan() {
@@ -748,6 +753,13 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 		for _, c := range chunk.Choices {
 			if c.Delta.Reasoning != nil && *c.Delta.Reasoning != "" {
 				emit(true, *c.Delta.Reasoning)
+				if thinkStart.IsZero() {
+					thinkStart = time.Now()
+				}
+				thinkEnd = time.Now()
+				if think.Len() < maxThinkKeep {
+					think.WriteString(*c.Delta.Reasoning)
+				}
 				reasonN++
 				if b := spec.Params.ThinkBudget; b > 0 && reasonN > b && text.Len() == 0 && len(calls) == 0 {
 					thinkCut = true
@@ -807,6 +819,10 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 		return nil, nil
 	}
 	out.Text = text.String()
+	out.Reasoning = think.String()
+	if !thinkStart.IsZero() {
+		out.ThinkSecs = max(int(thinkEnd.Sub(thinkStart).Seconds()+0.5), 1)
+	}
 	// One line per call so a missing reuse count can be told apart from a real miss in node.log.
 	log.Printf("chat prompt %d tokens, %d reused from cache (%s)", out.PromptTokens, out.CachedTokens, cacheSource)
 	for _, w := range calls {

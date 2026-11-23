@@ -271,6 +271,9 @@ func chatPayload(msgs []ChatMessage) []any {
 			if m.ToolCallID != "" {
 				msg["tool_call_id"] = m.ToolCallID
 			}
+			if m.Reasoning != "" {
+				msg["reasoning_content"] = m.Reasoning
+			}
 			out = append(out, msg)
 			continue
 		}
