@@ -35,7 +35,7 @@ var runtimeAssets = map[string]string{
 	"linux-arm64-cpu-compat": "-bin-ubuntu22-arm64.tar.gz",
 	"macos-x64-compat":       "-bin-macos-x64-noavx2.tar.gz",
 	// The same AVX-only build with Metal on, for Intel Macs with a discrete GPU. Used only on a
-	// node that opted in (a file named "metal" in its data folder); see metalOptIn.
+	// node whose owner turned on "Use GPU (Metal)" on the node card (Hello.MetalOptIn).
 	"macos-x64-compat-metal": "-bin-macos-x64-noavx2-metal.tar.gz",
 }
 
@@ -90,7 +90,7 @@ func nodeVariant(h *Hello) (variant, note string) {
 	case "darwin":
 		if arch == "x64" && h.NoAVX2 {
 			if h.MetalOptIn && len(h.GPUs) > 0 {
-				return "macos-x64-compat-metal", "experimental: the GPUs are used through Metal; delete the \"metal\" file in the node's data folder to go back to the CPU build"
+				return "macos-x64-compat-metal", "experimental: the GPUs are used through Metal; turn off \"Use GPU (Metal)\" on the node card to go back to the CPU build"
 			}
 			return "macos-x64-compat", ""
 		}

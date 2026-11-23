@@ -502,8 +502,10 @@ func (l *llamaMgr) watch(cmd *exec.Cmd, exited chan struct{}, gen int, rt *runti
 	l.mu.Unlock()
 	log.Printf("%s", l.lastErr)
 	if restarts >= 3 && rt != nil && rt.Variant == "macos-x64-compat-metal" {
-		// The Metal build keeps failing: drop the opt-in so the next load installs the CPU build.
-		_ = os.Remove(l.n.metalFile())
+		// The Metal build keeps failing: stop asking for it, so the next load installs the CPU build.
+		l.n.mu.Lock()
+		l.n.metalFailed = "the Metal build did not work on this Mac"
+		l.n.mu.Unlock()
 		l.lastErr += ". The Metal build did not work on this Mac, so Outpost switched this node back to the CPU build; load the model again"
 		log.Printf("%s", l.lastErr)
 		l.n.resendHello()

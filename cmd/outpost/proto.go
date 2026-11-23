@@ -129,7 +129,8 @@ type Hello struct {
 	SDRuntime         *RuntimeInfo `json:"sd_runtime,omitempty"` // stable-diffusion.cpp build, when installed (image generation)
 	VulkanAvailable   bool         `json:"vulkan_available"`
 	Glibc             string       `json:"glibc,omitempty"`        // Linux: this machine's glibc version, e.g. "2.35"
-	MetalOptIn        bool         `json:"metal_opt_in,omitempty"` // Intel Mac: a "metal" file in the data folder asks for the GPU (Metal) build
+	MetalOptIn        bool         `json:"metal_opt_in,omitempty"` // Intel Mac: the owner turned on the GPU (Metal) build
+	MetalFailed       string       `json:"metal_failed,omitempty"` // the Metal build did not start, so the CPU build is used
 	NoAVX2            bool         `json:"no_avx2,omitempty"`      // x86-64 CPU without AVX2: upstream macOS x64 llama.cpp crashes on it
 	LoadedModel       string       `json:"loaded_model"`
 	RollbackTo        string       `json:"rollback_to,omitempty"` // previous installed Outpost version
@@ -179,6 +180,7 @@ type NodeSettings struct {
 	ExecEnabled bool   `json:"exec_enabled"`
 	IdleUnloadS int    `json:"idle_unload_s"`       // unload the model after this many idle seconds; 0 = never
 	YieldGPU    bool   `json:"yield_gpu,omitempty"` // unload while another program uses the GPU (gpu_yield.go)
+	MetalGPU    bool   `json:"metal_gpu,omitempty"` // Intel Mac without AVX2: use the Metal build (experimental)
 	Sandbox     string `json:"sandbox,omitempty"`   // off | basic | strict; empty = the node's default (basic)
 	// StorageLimit is the most disk Outpost may use on this node, in bytes
 	// (models, caches, runtimes, the agent; not job folders). 0 = no limit.

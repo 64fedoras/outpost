@@ -452,6 +452,7 @@ function nodeCard(n) {
       ${n.online ? `<div class="sub u15">Unloads when idle: ${esc(n.idle_unload_effective || '1h')}${n.idle_unload ? '' : ' (default)'} · <a href="#" data-act="idle" data-id="${n.id}">change</a></div>` : ''}
       ${n.online ? `<div class="sub u15" title="When you use Auto in chat and no loaded model suits the message (coding, or a picture), chat may load a model here: one already on this disk first, then a download (it asks you first). It never removes a model without asking.">Let chat switch models here: ${n.chat_switch ? 'on' : 'off'} · <a href="#" data-act="chat-switch" data-id="${n.id}">${n.chat_switch ? 'turn off' : 'turn on'}</a></div>` : ''}
       ${n.online ? `<div class="sub u15" title="A task with Pick models for each node on may load its best-fit model here before work starts, and puts the previous one back afterwards.">Let tasks change my model: ${n.task_models ? 'on' : 'off'} · <a href="#" data-act="task-models" data-id="${n.id}">${n.task_models ? 'turn off' : 'turn on'}</a></div>` : ''}
+      ${n.online && h.os === 'darwin' && h.arch === 'amd64' && h.no_avx2 && (h.gpus || []).length ? `<div class="sub u15" title="Runs models on the Mac's AMD GPUs through llama.cpp's Metal backend. Old cards (Metal 2) may not work; if the build keeps failing to start, Outpost switches back to the CPU build.">Use GPU (Metal, experimental): ${n.metal_gpu ? 'on' : 'off'} · <a href="#" data-act="metal" data-id="${n.id}">${n.metal_gpu ? 'turn off' : 'turn on'}</a>${h.metal_failed ? ` · <span style="color:var(--warn)">${esc(h.metal_failed)}; using the CPU build</span>` : ''}</div>` : ''}
       ${n.online ? `<div class="sub u15" title="Unloads the model while a game or other program keeps the GPU busy, and loads it again after five quiet minutes.">Yield GPU to other programs: ${n.yield_gpu ? 'on' : 'off'} · <a href="#" data-act="yield" data-id="${n.id}">${n.yield_gpu ? 'turn off' : 'turn on'}</a></div>` : ''}
       ${benchLine(n, loaded, ready)}
       ${n.pool_names && n.pool_names.length ? `<div class="sub wrap u15">Pooled with <b>${n.pool_names.map(esc).join(', ')}</b></div>` : ''}
@@ -681,6 +682,11 @@ async function setNodeIdle(id) {
 async function toggleYield(id) {
   const n = nodeById(id);
   try { await post(`/api/nodes/${id}/settings`, { yield_gpu: !n.yield_gpu }); toast(n.yield_gpu ? 'Off' : 'On: the model unloads while another program keeps the GPU busy'); } catch (e) { toast(e.message); }
+  refresh();
+}
+async function toggleMetal(id) {
+  const n = nodeById(id); if (!n) return;
+  try { await post(`/api/nodes/${id}/settings`, { metal_gpu: !n.metal_gpu }); toast(n.metal_gpu ? 'Off: the CPU build is used from the next load' : 'On: the Metal build is installed on the next model load'); } catch (e) { toast(e.message); }
   refresh();
 }
 async function toggleChatSwitch(id) {
