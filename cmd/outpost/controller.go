@@ -42,6 +42,7 @@ type NodeRec struct {
 	Added       time.Time     `json:"added"`
 	Hello       *Hello        `json:"hello,omitempty"`
 	LoadPrefs   *ModelLoad    `json:"load_prefs,omitempty"`    // last model loaded from the UI
+	MetalGPU    bool          `json:"metal_gpu,omitempty"`     // Intel Mac without AVX2: try the GPUs through the Metal build (experimental)
 	YieldGPU    bool          `json:"yield_gpu,omitempty"`     // unload the model while another program uses the GPU (gpu_yield.go)
 	Profiles    []LoadProfile `json:"load_profiles,omitempty"` // named load settings (load_profiles.go)
 	Pool        []string      `json:"pool,omitempty"`          // helper nodes lending memory to this node's model

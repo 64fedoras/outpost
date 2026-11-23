@@ -20,6 +20,10 @@ on:
       tag:
         description: llama.cpp release tag to build (default is the latest, e.g. b12633 or v1.0.0)
         required: false
+      force:
+        description: rebuild and re-upload every build into an already published release (to add a new build variant)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -42,12 +46,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           WANT: ${{ inputs.tag }}
+          FORCE: ${{ inputs.force }}
         run: |
           tag="$WANT"
           [ -n "$tag" ] || tag=$(gh api repos/ggml-org/llama.cpp/releases/latest --jq .tag_name)
           echo "$tag" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,40}$' || { echo "unexpected llama.cpp tag: $tag"; exit 1; }
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           state=$(gh release view "llama-compat-$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          if [ "$state" = "false" ] && [ "$FORCE" = "true" ]; then
+            echo "llama-compat-$tag is published; rebuilding into it (force)"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$state" = "false" ]; then
             echo "llama-compat-$tag is already published"
             echo "build=false" >> "$GITHUB_OUTPUT"
@@ -70,6 +80,8 @@ jobs:
           - name: ubuntu22-arm64
             os: ubuntu-22.04-arm
           - name: macos-x64-noavx2
+            os: macos-15-intel
+          - name: macos-x64-noavx2-metal
             os: macos-15-intel
     runs-on: ${{ matrix.os }}
     steps:
@@ -97,12 +109,15 @@ jobs:
           fi
 
       - name: Build (macOS x64 without AVX2)
-        if: matrix.name == 'macos-x64-noavx2'
+        if: startsWith(matrix.name, 'macos-x64-noavx2')
         working-directory: llama.cpp
         run: |
-          # Plain AVX (Sandy/Ivy Bridge) and F16C only; no FMA, AVX2 or AVX-512.
+          # Plain AVX (Sandy/Ivy Bridge) and F16C only; no FMA, AVX2 or AVX-512. The -metal
+          # variant has the Metal GPU backend on (shaders embedded in the library), for Intel Macs
+          # with a discrete GPU; Outpost uses it only on nodes that opt in.
+          METAL=OFF; [ "${{ matrix.name }}" = macos-x64-noavx2-metal ] && METAL=ON
           cmake -B build \
-            -DGGML_METAL=OFF -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DGGML_METAL=$METAL -DGGML_METAL_EMBED_LIBRARY=$METAL -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
             -DCMAKE_INSTALL_RPATH='@loader_path' -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
             -DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_F16C=ON -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_BMI2=OFF \
             -DGGML_AVX512=OFF -DGGML_AVX_VNNI=OFF -DLLAMA_BUILD_BORINGSSL=ON \
@@ -114,7 +129,7 @@ jobs:
         run: |
           ./build/bin/llama-server --version
           case "${{ matrix.name }}" in
-            macos-x64-noavx2)
+            macos-x64-noavx2|macos-x64-noavx2-metal)
               # Fail the job if any instruction from AVX2/FMA/AVX-512 slipped into the code that
               # runs on every CPU: ggml (the maths) and llama itself. Only the mnemonic and operand
               # columns of the disassembly are looked at (not symbol names), and the first offenders

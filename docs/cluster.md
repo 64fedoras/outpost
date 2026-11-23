@@ -143,6 +143,17 @@ controller restart or update starts the charts empty again.
 GPU on the card and as a chart, and turns red at 85 °C. On Linux NVIDIA cards are read with `nvidia-smi` (installed with the driver). Windows and
 macOS report no temperature, and the row is left out. Untested on real GPUs so far.
 
+**GPUs on Intel Macs** (for example the AMD FirePro cards in a 2013 Mac Pro) are listed on the node card as
+"not used by this llama.cpp build". The llama.cpp builds Outpost installs for Intel Macs run on the CPU only, so
+these GPUs are not counted when sizing models. Detection reads `system_profiler`; untested on a real Mac.
+
+**Trying the GPUs on an Intel Mac without AVX2 (experimental).** Such a Mac normally gets Outpost's CPU-only
+compatible llama.cpp build. To try the Metal (GPU) build instead, turn on **Use GPU (Metal, experimental)** in the node's
+details, and load a model; Outpost installs the `macos-x64-compat-metal` build. Old AMD cards (FirePro D-series, Metal 2)
+may not work with llama.cpp's Metal kernels. If the Metal build keeps failing to start, Outpost deletes the file and
+the node says so there and the next load installs the CPU build again. Turn the setting off to go back at any time. Untested on a real Mac;
+the Metal build is only published by the "llama.cpp compatible builds" workflow for releases built after this was added.
+
 ## Saved load settings and yielding the GPU
 
 **Saved settings.** In the Load dialog, *Save these settings…* stores the model, context size, GPU layers, cache

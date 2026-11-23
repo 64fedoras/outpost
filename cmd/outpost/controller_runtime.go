@@ -34,6 +34,9 @@ var runtimeAssets = map[string]string{
 	// (Only a CPU build for arm64: an older Ubuntu has no usable Vulkan toolchain in CI.)
 	"linux-arm64-cpu-compat": "-bin-ubuntu22-arm64.tar.gz",
 	"macos-x64-compat":       "-bin-macos-x64-noavx2.tar.gz",
+	// The same AVX-only build with Metal on, for Intel Macs with a discrete GPU. Used only on a
+	// node whose owner turned on "Use GPU (Metal)" on the node card (Hello.MetalOptIn).
+	"macos-x64-compat-metal": "-bin-macos-x64-noavx2-metal.tar.gz",
 }
 
 // upstreamGlibcArm64 is the glibc the upstream Ubuntu arm64 releases need (built on Ubuntu 24.04).
@@ -86,6 +89,9 @@ func nodeVariant(h *Hello) (variant, note string) {
 		return "win-" + arch + "-cpu", ""
 	case "darwin":
 		if arch == "x64" && h.NoAVX2 {
+			if h.MetalOptIn && len(h.GPUs) > 0 {
+				return "macos-x64-compat-metal", "experimental: the GPUs are used through Metal; turn off \"Use GPU (Metal)\" on the node card to go back to the CPU build"
+			}
 			return "macos-x64-compat", ""
 		}
 		return "macos-" + arch, ""

@@ -271,7 +271,7 @@ func (c *Controller) nodeSettingsLocked(n *NodeRec) NodeSettings {
 		idle = minIdleUnload // outside working hours: free the memory soon after the last call
 	}
 	return NodeSettings{HeartbeatS: heartbeatSeconds, ExecEnabled: n.ExecEnabled,
-		IdleUnloadS: int(idle / time.Second), YieldGPU: n.YieldGPU,
+		IdleUnloadS: int(idle / time.Second), YieldGPU: n.YieldGPU, MetalGPU: n.MetalGPU,
 		Sandbox:      effectiveSandbox(c.settings.Sandbox, n.Sandbox),
 		StorageLimit: int64(n.StorageLimitGB * (1 << 30)), StorageFull: n.StorageFull}
 }
@@ -305,6 +305,7 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 		Sandbox     *string    `json:"sandbox"`     // "" = use the global setting; off | basic | strict
 		Labels      *[]string  `json:"labels"`
 		YieldGPU    *bool      `json:"yield_gpu"`
+		MetalGPU    *bool      `json:"metal_gpu"`
 		Hours       *WorkHours `json:"hours"` // {} or from == to... see hours.go; "clear_hours" removes them
 		ClearHours  bool       `json:"clear_hours"`
 		StorageGB   *float64   `json:"storage_limit_gb"` // 0 = no limit
@@ -381,6 +382,9 @@ func (c *Controller) handleNodeSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.YieldGPU != nil {
 		n.YieldGPU = *req.YieldGPU
+	}
+	if req.MetalGPU != nil {
+		n.MetalGPU = *req.MetalGPU
 	}
 	if req.ChatSwitch != nil {
 		n.ChatSwitch = *req.ChatSwitch

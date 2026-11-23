@@ -70,7 +70,9 @@ func (n *Node) applyKVFit(ml *ModelLoad, modelPath string) {
 		if g.Backend == "metal" {
 			return // unified memory: nothing to move
 		}
-		vram += g.VRAMBytes
+		if g.Backend != "" { // a detected GPU no build uses (Intel Mac) holds nothing
+			vram += g.VRAMBytes
+		}
 	}
 	if vram == 0 || ml.Ctx <= 0 {
 		return

@@ -78,6 +78,8 @@ type Node struct {
 	storeBytes  int64
 	storage     *StorageUse            // last measurement of Outpost's folders (node_storage.go)
 	storageKick chan struct{}          // asks storageLoop to measure again
+	metalOn     bool                   // owner asked for the Metal build (Intel Mac without AVX2)
+	metalFailed string                 // set when that build kept failing; cleared when the setting is turned off
 	storageMax  int64                  // storage limit in bytes from the controller; 0 = none
 	storageFull string                 // "" removes old models at the limit, "refuse" refuses
 	limitNote   string                 // last model copy refused by the limit, shown on the node card
@@ -520,6 +522,13 @@ func (n *Node) applySettings(s NodeSettings) {
 	}
 	n.llama.setIdleAfter(time.Duration(s.IdleUnloadS) * time.Second)
 	n.llama.setYield(s.YieldGPU)
+	if s.MetalGPU != n.metalOn {
+		n.metalOn = s.MetalGPU
+		if !s.MetalGPU {
+			n.metalFailed = ""
+		}
+		go n.resendHello() // the controller picks the llama.cpp build from this
+	}
 	n.storageMax, n.storageFull = s.StorageLimit, s.StorageFull
 }
 
@@ -564,8 +573,18 @@ func (n *Node) hello() Hello {
 		Tools:      n.toolInventory(false), Shell: nodeShell(),
 		Sandbox: n.sandboxMode(), SandboxLayers: sandboxLayers(n.sandboxMode()),
 	}
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "amd64" {
+		n.mu.Lock()
+		h.MetalOptIn, h.MetalFailed = n.metalOn && n.metalFailed == "", n.metalFailed
+		n.mu.Unlock()
+	}
 	if rt := n.currentRuntime(); rt != nil {
 		h.Runtime = &rt.RuntimeInfo
+		if rt.Variant == "macos-x64-compat-metal" { // the GPUs are used now
+			for i := range h.GPUs {
+				h.GPUs[i].Backend = "metal"
+			}
+		}
 	}
 	if rt := n.currentSD(); rt != nil {
 		h.SDRuntime = &rt.RuntimeInfo
