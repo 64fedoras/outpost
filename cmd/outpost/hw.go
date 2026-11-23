@@ -40,6 +40,13 @@ func detectHardware() Hardware {
 		}
 		if runtime.GOARCH == "arm64" {
 			hw.GPUs = append(hw.GPUs, GPUInfo{Vendor: "apple", Name: hw.CPU.Model + " GPU", VRAMBytes: hw.RAMBytes, Backend: "metal"})
+		} else {
+			// Intel Macs: listed so the node shows them. The Backend stays empty until the Metal
+			// build is installed (hello), because the default builds for them run on the CPU only.
+			hw.GPUs = parseMacGPUs([]byte(cmdOut("system_profiler", "SPDisplaysDataType", "-json")))
+			if len(hw.GPUs) == 0 { // the plain-text report is the format seen on a real Mac Pro
+				hw.GPUs = parseMacGPUsText(cmdOut("system_profiler", "SPDisplaysDataType"))
+			}
 		}
 	case "windows":
 		hw.CPU.Model = strings.TrimSpace(os.Getenv("PROCESSOR_IDENTIFIER"))
@@ -101,6 +108,62 @@ func parseMacGPUs(b []byte) []GPUInfo {
 		}
 		out = append(out, GPUInfo{Vendor: v, Name: it.Model, VRAMBytes: uint64(n)})
 	}
+	return out
+}
+
+// parseMacGPUsText reads the plain `system_profiler SPDisplaysDataType` report:
+// "Chipset Model: AMD FirePro D700", "VRAM (Total): 6 GB", "Vendor: AMD (0x1002)".
+func parseMacGPUsText(txt string) []GPUInfo {
+	out := []GPUInfo{}
+	var name, vendor, vram string
+	flush := func() {
+		defer func() { name, vendor, vram = "", "", "" }()
+		f := strings.Fields(vram)
+		if name == "" || len(f) != 2 || strings.Contains(strings.ToLower(vendor), "intel") {
+			return
+		}
+		n, err := strconv.ParseFloat(f[0], 64)
+		if err != nil {
+			return
+		}
+		switch strings.ToUpper(f[1]) {
+		case "GB":
+			n *= 1 << 30
+		case "MB":
+			n *= 1 << 20
+		default:
+			return
+		}
+		if n < 1<<30 {
+			return
+		}
+		v := "other"
+		l := strings.ToLower(vendor + " " + name)
+		switch {
+		case strings.Contains(l, "amd"), strings.Contains(l, "radeon"):
+			v = "amd"
+		case strings.Contains(l, "nvidia"):
+			v = "nvidia"
+		}
+		out = append(out, GPUInfo{Vendor: v, Name: name, VRAMBytes: uint64(n)})
+	}
+	for _, line := range strings.Split(txt, "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(line), ":")
+		if !ok {
+			continue
+		}
+		v = strings.TrimSpace(v)
+		switch k {
+		case "Chipset Model":
+			flush()
+			name = v
+		case "VRAM (Total)":
+			vram = v
+		case "Vendor":
+			vendor = v
+		}
+	}
+	flush()
 	return out
 }
 

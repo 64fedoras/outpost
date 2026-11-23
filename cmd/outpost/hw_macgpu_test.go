@@ -37,3 +37,26 @@ func TestNodeVariantMetalOptIn(t *testing.T) {
 		t.Error("asset suffixes must differ")
 	}
 }
+
+func TestParseMacGPUsText(t *testing.T) {
+	txt := `Graphics/Displays:
+
+    AMD FirePro D700:
+
+      Chipset Model: AMD FirePro D700
+      Type: GPU
+      VRAM (Total): 6 GB
+      Vendor: AMD (0x1002)
+      Metal Support: Metal 2
+
+    AMD FirePro D700:
+
+      Chipset Model: AMD FirePro D700
+      VRAM (Total): 6 GB
+      Vendor: AMD (0x1002)
+`
+	g := parseMacGPUsText(txt)
+	if len(g) != 2 || g[0].Vendor != "amd" || g[1].VRAMBytes != 6<<30 || g[0].Name != "AMD FirePro D700" {
+		t.Fatalf("got %+v", g)
+	}
+}
