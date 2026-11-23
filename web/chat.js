@@ -271,7 +271,8 @@ function chatPromptTick() {
 }
 // "1,200 of 1,500 prompt tokens reused": how much of the prompt the node did not have to read again.
 function chatCacheTag(m) {
-  if (!m.cached_tokens || !m.prompt_tokens) return '';
+  if (!m.prompt_tokens) return '';
+  if (!m.cached_tokens) return `${m.prompt_tokens.toLocaleString()} prompt tokens, none reused`;
   return `${m.cached_tokens.toLocaleString()} of ${m.prompt_tokens.toLocaleString()} prompt tokens reused`;
 }
 

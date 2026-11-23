@@ -652,7 +652,7 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 			}
 		}
 		plain := func(ctx context.Context, spec InferenceSpec) (*InferenceOutput, error) {
-			return c.runInferenceJob(ctx, node, spec, "Chat: memory", 2*time.Minute)
+			return c.runInferenceJob(ctx, node, memoryOnChat(spec, fitHistory(hist, (ctxTok-maxOut)*3), text), "Chat: memory", 2*time.Minute)
 		}
 		msg.Suggest = suggestMemory(ctx, plain, owner, c.mem().forScope(""))
 	}

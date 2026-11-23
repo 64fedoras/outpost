@@ -99,3 +99,16 @@ func TestSuggestMemory(t *testing.T) {
 		t.Fatal("no owner text must not call the model")
 	}
 }
+
+func TestMemoryOnChatKeepsChatPrefix(t *testing.T) {
+	hist := []ChatMessage{{Role: "system", Content: "s"}, {Role: "user", Content: "q"}}
+	spec := InferenceSpec{Messages: []ChatMessage{{Role: "system", Content: memorySuggestSystem}, {Role: "user", Content: "Known facts:"}}}
+	got := memoryOnChat(spec, hist, "a").Messages
+	if len(got) != 4 || got[0].Content != "s" || got[1].Content != "q" || got[2].Role != "assistant" || got[2].Content != "a" || got[3].Role != "user" {
+		t.Fatalf("%+v", got)
+	}
+	other := InferenceSpec{Messages: []ChatMessage{{Role: "user", Content: "x"}}}
+	if len(memoryOnChat(other, hist, "a").Messages) != 1 {
+		t.Fatal("unrelated call changed")
+	}
+}

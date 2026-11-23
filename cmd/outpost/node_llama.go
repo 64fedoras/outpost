@@ -674,6 +674,7 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 		return nil, errf("inference_failed", retry, "llama-server %s: %s", resp.Status, strings.TrimSpace(string(msg)))
 	}
 	out := &InferenceOutput{Model: model}
+	cacheSource := "not reported"
 	var text strings.Builder
 	var calls []WireToolCall
 	var firstTok time.Time
@@ -725,7 +726,7 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 		}
 		if chunk.Progress != nil {
 			if chunk.Progress.Total > 0 {
-				out.CachedTokens = chunk.Progress.Cache
+				out.CachedTokens, cacheSource = chunk.Progress.Cache, "progress"
 			}
 			if prog != nil {
 				prog(*chunk.Progress)
@@ -758,7 +759,7 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 			}
 		}
 		if t := chunk.Timings; t != nil && t.CacheN > 0 {
-			out.CachedTokens = t.CacheN
+			out.CachedTokens, cacheSource = t.CacheN, "timings"
 			if out.PromptTokens == 0 {
 				out.PromptTokens = t.CacheN + t.PromptN
 			}
@@ -766,7 +767,7 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 		if chunk.Usage != nil {
 			out.PromptTokens, out.OutputTokens = chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens
 			if d := chunk.Usage.PromptTokensDetails; d != nil && d.Cached > 0 {
-				out.CachedTokens = d.Cached
+				out.CachedTokens, cacheSource = d.Cached, "usage"
 			}
 		}
 	}
@@ -780,6 +781,8 @@ func (l *llamaMgr) chatP(ctx context.Context, spec InferenceSpec, emit func(reas
 		return nil, nil
 	}
 	out.Text = text.String()
+	// One line per call so a missing reuse count can be told apart from a real miss in node.log.
+	log.Printf("chat prompt %d tokens, %d reused from cache (%s)", out.PromptTokens, out.CachedTokens, cacheSource)
 	for _, w := range calls {
 		if w.Function.Name != "" {
 			out.ToolCalls = append(out.ToolCalls, w)
