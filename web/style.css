@@ -1592,7 +1592,9 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 .chat-prompt .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .chat-prompt .btn { border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 13px; }
 .chat-prompt .btn.p { background: var(--accent, #2f6fed); border-color: var(--accent, #2f6fed); color: #fff; }
-.need-tag select { font: inherit; font-size: 12px; color: inherit; background: transparent; border: 0; border-bottom: 1px dotted var(--muted); cursor: pointer; }
+.need-tag select { font: inherit; font-size: 12px; color: inherit; background: transparent; border: 0; border-bottom: 1px dotted var(--muted); border-radius: 0; padding: 0 2px; cursor: pointer; width: auto; min-width: 7ch; field-sizing: content; }
+/* The answer footer wraps instead of clipping, so the "chosen for" menu at its end always shows. */
+.chat-answer > .sub { white-space: normal; overflow: visible; text-overflow: clip; }
 .upl { margin-top: 18px; }
 .upl > summary { cursor: pointer; font-weight: 550; }
 .upl[open] > summary { margin-bottom: 10px; }
