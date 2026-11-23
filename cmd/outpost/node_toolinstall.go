@@ -26,7 +26,22 @@ var chromeLibPkgs = []string{"libnss3", "libnspr4", "libatk1.0-0t64|libatk1.0-0"
 	"libdrm2", "libxkbcommon0", "libxcomposite1", "libxdamage1", "libxfixes3", "libxrandr2", "libgbm1", "libasound2t64|libasound2",
 	"libpango-1.0-0", "libcairo2", "libx11-6", "libxcb1", "libxext6", "fonts-liberation"}
 
+var loaderMissingRe = regexp.MustCompile(`error while loading shared libraries: (\S+):`)
+
 var chromeMissingRe = regexp.MustCompile(`(\S+\.so[\w.]*) => not found`)
+
+// parseMissingLibs reads the "not found" lines of ldd output: every missing library, once.
+func parseMissingLibs(out string) []string {
+	var libs []string
+	seen := map[string]bool{}
+	for _, m := range chromeMissingRe.FindAllStringSubmatch(out, -1) {
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			libs = append(libs, m[1])
+		}
+	}
+	return libs
+}
 
 // missingLibs lists the shared libraries a binary needs and the system lacks (Linux, via ldd).
 func missingLibs(path string) []string {
@@ -34,20 +49,43 @@ func missingLibs(path string) []string {
 		return nil
 	}
 	out, _ := exec.Command("ldd", path).CombinedOutput()
-	var libs []string
-	for _, m := range chromeMissingRe.FindAllStringSubmatch(string(out), -1) {
-		libs = append(libs, m[1])
+	libs := parseMissingLibs(string(out))
+	if len(libs) == 0 { // no ldd: the loader names the first one it misses when the program starts
+		b, _ := exec.Command(path, "--version").CombinedOutput()
+		if m := loaderMissingRe.FindStringSubmatch(string(b)); m != nil {
+			libs = append(libs, m[1])
+		}
 	}
 	return libs
 }
 
-// installChromeLibs installs chromeLibPkgs with apt-get. Only a root node on Debian or Ubuntu can.
-func installChromeLibs() error {
-	var plain []string
-	for _, p := range chromeLibPkgs {
-		plain = append(plain, strings.SplitN(p, "|", 2)[0])
+// resolveChromePkgs picks, for each entry of chromeLibPkgs, the first package name
+// this system's apt knows (Ubuntu 24.04 renamed several with a t64 suffix). Without
+// apt-cache it returns the first name of each entry.
+func resolveChromePkgs() []string {
+	_, aptErr := exec.LookPath("apt-cache")
+	var pkgs []string
+	for _, alt := range chromeLibPkgs {
+		names := strings.Split(alt, "|")
+		if aptErr != nil {
+			pkgs = append(pkgs, names[len(names)-1])
+			continue
+		}
+		for _, p := range names {
+			if exec.Command("apt-cache", "show", p).Run() == nil {
+				pkgs = append(pkgs, p)
+				break
+			}
+		}
 	}
-	manual := "sudo apt-get install " + strings.Join(plain, " ")
+	return pkgs
+}
+
+// installChromeLibs installs every package headless Chromium needs with one apt-get
+// call, so the node never needs a round trip per library. Only a root node on Debian
+// or Ubuntu can.
+func installChromeLibs() error {
+	manual := "sudo apt-get install " + strings.Join(resolveChromePkgs(), " ")
 	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
 		return fmt.Errorf("this node does not run as root, so it cannot install system libraries; run: %s", manual)
 	}
@@ -55,15 +93,7 @@ func installChromeLibs() error {
 	if err != nil {
 		return errors.New("this node has no apt-get; install the libraries headless Chromium needs with its package manager (on Debian and Ubuntu: " + manual + ")")
 	}
-	var pkgs []string
-	for _, alt := range chromeLibPkgs {
-		for _, p := range strings.Split(alt, "|") {
-			if exec.Command("apt-cache", "show", p).Run() == nil {
-				pkgs = append(pkgs, p)
-				break
-			}
-		}
-	}
+	pkgs := resolveChromePkgs()
 	if len(pkgs) == 0 {
 		return errors.New("apt does not know the Chromium libraries; run apt-get update first")
 	}
@@ -223,7 +253,8 @@ func (n *Node) installTool(ti ToolInstall) {
 	ver, ok := toolVersion(test, toolSpecFor(ti.Tool))
 	if !ok {
 		if libs := missingLibs(test); len(libs) > 0 {
-			fail("libs", "%s is unpacked but cannot start: missing %s", name, strings.Join(libs, ", "))
+			fail("libs", "%s is unpacked but cannot start: missing %s. All the libraries it needs can be installed at once with: sudo apt-get install %s",
+				name, strings.Join(libs, ", "), strings.Join(resolveChromePkgs(), " "))
 			return // the unpacked copy stays for the retry
 		}
 		os.RemoveAll(stage)

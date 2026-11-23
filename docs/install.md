@@ -424,7 +424,7 @@ Until a node has a model ready, the New task page shows a short checklist: **Add
    no admin rights are needed, and count toward its storage. The controller downloads once and the node checks the file's SHA-256 against the
    controller's copy. **Neither Google nor openscad.org publishes checksums**, so that hash is recorded at the first download and the
    publisher is trusted through HTTPS only. The node starts the tool once before swapping it in, so a broken download never replaces a working copy.
-   On a bare Linux install Chromium usually needs system libraries; the failure lists them, and on a node running as root
+   On a bare Linux install Chromium usually needs system libraries; the failure lists every missing library and one `apt-get install` command with all the packages (Ubuntu 24.04 `t64` names included), and on a node running as root
    on Debian or Ubuntu an **Install libraries with apt** button installs them and tests again. Linux and Windows (64-bit Intel/AMD) only: on a Mac or an Arm
    machine install the tool by hand and Outpost detects it. **Untested:** the live Chrome for Testing and openscad.org downloads, Windows, and the
    apt step on a real machine; covered by unit tests with a stub download.

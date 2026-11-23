@@ -153,3 +153,17 @@ func TestToolRecommendations(t *testing.T) {
 }
 
 func execCombined(path string) ([]byte, error) { return exec.Command(path).CombinedOutput() }
+
+func TestParseMissingLibsReportsAllAtOnce(t *testing.T) {
+	out := "\tlinux-vdso.so.1 (0x00007ffc)\n\tlibasound.so.2 => not found\n\tlibnss3.so => not found\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x7f)\n\tlibasound.so.2 => not found\n"
+	got := parseMissingLibs(out)
+	if len(got) != 2 || got[0] != "libasound.so.2" || got[1] != "libnss3.so" {
+		t.Errorf("parseMissingLibs: %v", got)
+	}
+	if m := loaderMissingRe.FindStringSubmatch("./chrome: error while loading shared libraries: libgbm.so.1: cannot open shared object file"); m == nil || m[1] != "libgbm.so.1" {
+		t.Errorf("loader message: %v", m)
+	}
+	if n := len(resolveChromePkgs()); n != len(chromeLibPkgs) {
+		t.Errorf("one package per entry, got %d of %d", n, len(chromeLibPkgs))
+	}
+}
