@@ -1,6 +1,10 @@
 package main
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -83,5 +87,27 @@ func TestFlagsLackAVX2(t *testing.T) {
 	no := "processor : 0\nflags\t\t: fpu avx f16c\n"
 	if flagsLackAVX2(has, "flags") || !flagsLackAVX2(no, "flags") || flagsLackAVX2("nothing here", "flags") {
 		t.Fatal("flagsLackAVX2")
+	}
+}
+
+func TestCompatReleaseWithoutUpstreamEntry(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `[{"tag_name":"llama-compat-v1.0.0","assets":[{"name":"llama-v1.0.0-bin-ubuntu22-arm64.tar.gz","size":5,"browser_download_url":"https://example.invalid/a"}]},
+		 {"tag_name":"llama-compat-b2","assets":[{"name":"llama-b2-bin-ubuntu22-arm64.tar.gz","size":5,"browser_download_url":"https://example.invalid/b"}]}]`)
+	}))
+	defer srv.Close()
+	c := &Controller{}
+	up := ghRelease{TagName: "b2"}
+	rels := c.mergeCompatAssets(context.Background(), srv.URL, []ghRelease{{TagName: "b3"}, up})
+	// b2 is in the upstream list: its asset is merged. v1.0.0 is not: it becomes a release of its own.
+	build, _, _, _ := newestAsset(rels, "linux-arm64-cpu-compat")
+	if build != "b2" {
+		t.Fatalf("newest compat build %q, want b2 (the upstream-ordered list comes first)", build)
+	}
+	if name, _, _ := assetFor(rels, "linux-arm64-cpu-compat", "v1.0.0"); name == "" {
+		t.Fatal("a compat release whose upstream tag is not in the recent list must still be found")
+	}
+	if len(rels) != 3 {
+		t.Fatalf("got %d releases", len(rels))
 	}
 }
