@@ -95,7 +95,7 @@ function chatPickRender() {
     const on = g.id === sel || g.nodes.some((n) => n.id === sel);
     const sub = `<br><span class="ms-n">on ${g.nodes.length} nodes · ${g.free} free</span>`;
     const c = { id: g.id, t: g.name, s: 'Any free node with it', tone: g.free ? 'on' : 'needs', note: g.free ? 'local' : 'busy' };
-    return '<div class="mgroup">' + card(c, sub).replace('class="mcard ', `class="mcard ${on ? 'sel ' : ''}`)
+    return `<div class="mgroup${on ? ' sel' : ''}">` + card(c, sub).replace('class="mcard ', `class="mcard ${on ? 'sel ' : ''}`)
       + `<div class="mpick"><button type="button" class="link-btn" data-specific="${esc(g.name)}" aria-expanded="${chatSpecific === g.name}">Pick a specific node…</button>`
       + (chatSpecific === g.name ? `<div class="mpick-list">${g.nodes.map((n) => `<button type="button" class="mpick-n ${n.id === sel ? 'sel' : ''}" data-model="${esc(n.id)}">${esc(n.s)}${n.note !== 'local' ? ' · ' + esc(n.note) : ''}</button>`).join('')}</div>` : '') + '</div></div>';
   };

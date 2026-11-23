@@ -1544,11 +1544,15 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 
 /* chat picker: one card per model, "Pick a specific node…" lists the nodes that have it */
 .mcard .ms-n { color: var(--muted); }
-.mgroup { display: flex; flex-direction: column; min-width: 0; }
+.mgroup { display: flex; flex-direction: column; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.mgroup:hover { border-color: var(--muted); }
+.mgroup.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: var(--tint); }
+.mgroup > .mcard, .mgroup > .mcard:hover, .mgroup > .mcard.sel { border: 0; background: none; box-shadow: none; border-radius: 12px 12px 0 0; }
 .chat-pick { align-items: start; }
-.mpick { margin: 2px 0 0; }
-.mpick .link-btn { background: none; border: 0; padding: 2px 4px; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
-.mpick-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 2px; }
+/* The node link lives inside the model's card, so the two-column grid never breaks; many nodes scroll in place. */
+.mpick { margin: 0; padding: 0 12px 8px 36px; }
+.mpick .link-btn { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
+.mpick-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 0; max-height: 96px; overflow-y: auto; }
 .mpick-n { border: 1px solid var(--line); background: var(--panel); color: inherit; border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12px; cursor: pointer; }
 .mpick-n.sel { border-color: var(--accent); background: var(--tint); }
 
