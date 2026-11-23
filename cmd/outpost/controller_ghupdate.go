@@ -346,7 +346,7 @@ func (c *Controller) tasksBusy() bool {
 var nodeUpdateWait = 10 * time.Minute
 
 // nodeUpdatePoll is how often waitNodeUpdates looks at the node update states.
-var nodeUpdatePoll = 2 * time.Second
+var nodeUpdatePoll = 250 * time.Millisecond
 
 // waitNodeUpdates blocks until none of ids is still sent, downloading or installing, or until
 // max has passed. It reports whether they all settled.

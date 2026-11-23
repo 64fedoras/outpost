@@ -21,7 +21,7 @@ tab does the same once, on request. After a rollback, automatic install skips th
 that server. This path has only been tested against stub servers, not the live GitHub, GitLab or Gitea APIs.
 
 **Update everything.** The Updates tab has one primary button. It updates one node first and checks it (a model
-reload and a test command where the node has them); if that node fails it is rolled back and nothing else is touched,
+reload and a test command where the node has them, run side by side); if that node fails it is rolled back and nothing else is touched,
 the controller included. Once it passes, the other nodes update, then the controller restarts last, after the
 nodes' downloads have finished and once no task is planning, running or testing (it waits up to an hour for running
 tasks, then stops and says so). The page shows each step and a failure sends the usual "Update stopped" notification.
