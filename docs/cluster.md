@@ -150,6 +150,8 @@ type, flash attention, draft model, calls at once, experts-in-RAM choice and ext
 that node (up to 20). A *Saved settings for this node* list then appears at the top of the dialog; picking one
 fills the form, and *Delete* removes it. Pool helpers are not part of a saved setting.
 
+
+**Big contexts on a GPU.** If the KV cache for the chosen context would take more than half the GPU memory (for example settings saved on a CPU-only run, then a GPU is added), the node keeps the cache in RAM (`--no-kv-offload`) when RAM can hold it, and otherwise lowers the context to fit; the node log says so. Choose `--no-kv-offload` yourself under extra arguments to skip this.
 **Let tasks change my model** (per node, off by default; on the node card). A task approved with
 *Pick models for each node* may load this node's best-fit model before work starts and put the previous
 one back afterwards (see [using-tasks.md](using-tasks.md)). Off, tasks only use the model you loaded.
