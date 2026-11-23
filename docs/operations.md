@@ -155,9 +155,11 @@ cannot keep it crash-looping. Restart it after fixing the cause (see the control
 **Settings → Sign-in security.** After 10 failed sign-ins from one address in 15 minutes that address
 is blocked for 15 minutes (the page shows the failure count). It lists every signed-in browser with
 Sign out, and **Sign out everywhere**. **API tokens** are named, shown once, stored hashed, and sent
-as `Authorization: Bearer opt_…` to any `/api/` endpoint a script needs (state, tasks and so on).
+as `Authorization: Bearer opt_…`. When you create one you choose what it can do: **Chat only** (the
+default), **Chat and pictures**, **MCP only**, or **Full access**, which reaches any `/api/` endpoint a
+script needs (state, tasks and so on). Full-access tokens carry an amber **full access** label in the list.
 Tokens cannot manage tokens, sessions, the certificate or backups; only a browser sign-in can. A token
-made with **Chat only** ticked works only on the OpenAI-compatible `/v1/` API (see [Chat and the API](chat-and-api.md)).
+made with **Chat only** works only on the OpenAI-compatible `/v1/` API (see [Chat and the API](chat-and-api.md)).
 
 **Browser hardening.** Every controller response carries `Content-Security-Policy` (scripts, styles and
 images only from the controller itself, no inline code), `X-Frame-Options: DENY`,

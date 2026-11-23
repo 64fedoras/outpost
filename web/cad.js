@@ -69,6 +69,7 @@ function cadResult() {
     box.innerHTML = `<div class="section-head"><h2>Result</h2><span class="spacer"></span><span class="sub" id="cad-r-meta"></span></div>
       <div class="card cad-card"><div class="rowline"><b class="gen-prompt" id="cad-r-title"></b></div>
       <div class="sub" id="cad-r-sub"></div>
+      <div id="cad-refs"></div>
       <div class="cad-two">
         <div class="cad-view"><canvas id="cad-canvas" aria-label="3D view of the model"></canvas>
           <span class="cad-hint">Drag to rotate · scroll or pinch to zoom · double-click to reset</span>
@@ -92,6 +93,10 @@ function cadResult() {
   $('cad-r-meta').textContent = m.tris ? `${cadMM(m.size)} · ${m.tris.toLocaleString()} triangles · ${bytes(m.stl_bytes)}` : '';
   $('cad-r-sub').textContent = [m.model_name && 'by ' + m.model_name + (m.node_name ? ' on ' + m.node_name : ''), m.renderer && 'rendered on ' + m.renderer, ago(m.created),
     m.status === 'failed' ? 'failed: ' + (m.error || '') : m.status === 'stopped' ? 'stopped' : ''].filter(Boolean).join(' · ');
+  // Measurements looked up on the web before writing (cad_lookup.go).
+  const refs = m.refs || [];
+  setHTML('cad-refs', refs.length ? `<div class="cad-refs"><div class="cad-refs-head"><b>Measurements used</b><span class="cad-refs-tag">from the web, check before printing</span></div>`
+    + refs.map((r) => `<div class="cad-ref"><span>${esc(r.name)}</span><span>${esc(r.value)}${r.source ? ' · ' + esc(r.source) : ''}</span></div>`).join('') + '</div>' : '');
   const code = cadDetail.code || '';
   if ($('cad-code').textContent !== code) $('cad-code').textContent = code || (cadBusy(m) ? 'The model is writing the file…' : 'No file yet.');
   $('cad-dl-stl').href = `/api/cad/${m.id}/model.stl?download=1`; $('cad-dl-stl').classList.toggle('hidden', !m.tris);

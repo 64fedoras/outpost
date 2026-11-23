@@ -138,7 +138,7 @@ The history is kept in the controller's memory only. Nothing is written to disk 
 controller restart or update starts the charts empty again.
 
 **GPU temperature** is read on Linux from the GPU's hwmon sensor (AMD and Intel drivers). It shows next to the
-GPU on the card and as a chart, and turns red at 85 °C. NVIDIA cards on the proprietary driver, Windows and
+GPU on the card and as a chart, and turns red at 85 °C. On Linux NVIDIA cards are read with `nvidia-smi` (installed with the driver). Windows and
 macOS report no temperature, and the row is left out. Untested on real GPUs so far.
 
 ## Saved load settings and yielding the GPU
@@ -162,5 +162,4 @@ for games, the model is unloaded when the node is not answering anything and the
 for 30 seconds, and loaded again after five minutes below 10%. While unloaded the card says *GPU in use* and the
 controller sends the node no work. It uses the utilisation the node already reports, so it cannot tell a game
 from any other program, and image generation on the same node counts as another program. The reading comes
-from the hardware sample (amdgpu sysfs on Linux, performance counters on Windows). NVIDIA cards on Linux report no
-utilisation, so it never yields there. Neither reading has been tried with a real game.
+from the hardware sample (amdgpu sysfs on Linux, performance counters on Windows). On Linux, NVIDIA cards are read with `nvidia-smi`, so it works there only when that tool is installed. Neither reading has been tried with a real game.

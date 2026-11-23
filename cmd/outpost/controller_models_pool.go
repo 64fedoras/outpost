@@ -15,8 +15,31 @@ import (
 
 // ---------- pooling (llama.cpp RPC) ----------
 
-// installRuntimeOn makes sure node id runs llama.cpp (a given build, or the newest).
+// installRuntimeOn makes sure node id runs llama.cpp (a given build, or the newest). A node
+// is never left worse than before: when a new build cannot be installed or does not run
+// here and the node already has a working llama.cpp, that one stays and the load goes on.
 func (c *Controller) installRuntimeOn(ctx context.Context, id, build string) error {
+	err := c.installRuntimeTry(ctx, id, build)
+	if err == nil || build != "" || ctx.Err() != nil {
+		return err // pool members must share one build, so they cannot fall back
+	}
+	c.mu.Lock()
+	var have *RuntimeInfo
+	if n := c.nodes[id]; n != nil && n.Hello != nil && n.Hello.Runtime != nil {
+		r := *n.Hello.Runtime
+		have = &r
+	}
+	c.mu.Unlock()
+	if have == nil {
+		return err
+	}
+	msg := fmt.Sprintf("%v. Outpost kept the llama.cpp %s that was already working on %s and carried on with it.", err, have.Build, c.nodeLabel(id))
+	log.Printf("%s", msg)
+	c.setNodeOp(id, OpStatus{Op: "runtime", Target: have.Variant, State: "failed", Error: msg})
+	return nil
+}
+
+func (c *Controller) installRuntimeTry(ctx context.Context, id, build string) error {
 	c.mu.Lock()
 	var hello Hello
 	if n := c.nodes[id]; n != nil && n.Hello != nil {
@@ -42,6 +65,9 @@ func (c *Controller) installRuntimeOn(ctx context.Context, id, build string) err
 		c.setNodeOp(id, OpStatus{Op: "runtime", Target: variant, State: "preparing"})
 		rt, err := c.ensureRuntimeBuild(ctx, variant, build)
 		if err != nil {
+			if strings.HasSuffix(variant, "-compat") {
+				return fmt.Errorf("llama.cpp: %w. %s needs Outpost's compatible llama.cpp build (upstream's does not run on this machine: %s). It is made by the \"llama.cpp compatible builds\" workflow in Outpost's GitHub repository, which has not published one yet", err, c.nodeLabel(id), compatReason(&hello))
+			}
 			return fmt.Errorf("llama.cpp: %w", err)
 		}
 		if msg := c.runtimeBlocked(id, variant, rt.Build); msg != "" {
@@ -63,10 +89,14 @@ func (c *Controller) installRuntimeOn(ctx context.Context, id, build string) err
 		if explicit || attempt >= 8 || !strings.HasPrefix(err.Error(), glibcTooOldMarker) {
 			return fmt.Errorf("installing llama.cpp on %s: %w", c.nodeLabel(id), err)
 		}
-		if oldBuildsCannotHelp(variant) {
-			msg := fmt.Sprintf("installing llama.cpp on %s: %v. llama.cpp builds its Linux arm64 binaries on Ubuntu 24.04 (glibc 2.39), so no release runs on an older system; this machine needs Ubuntu 24.04 or newer (for a Jetson, JetPack 7), or a llama.cpp built from source", c.nodeLabel(id), err)
-			c.setRuntimeBlocked(id, variant, rt.Build, msg)
-			return errors.New(msg)
+		if cv := compatOf(variant); cv != "" {
+			// The node did not say which glibc it has (an older Outpost); the failure did.
+			log.Printf("%s: llama.cpp %s needs a newer glibc (%v); switching to Outpost's compatible build %s", c.nodeLabel(id), rt.Build, err, cv)
+			variant, build = cv, ""
+			continue
+		}
+		if strings.HasSuffix(variant, "-compat") {
+			return fmt.Errorf("installing llama.cpp on %s: %w. This is already Outpost's compatible build, so this machine needs a newer OS", c.nodeLabel(id), err)
 		}
 		rels, relErr := c.latestReleases(ctx, false)
 		next := ""
@@ -79,6 +109,14 @@ func (c *Controller) installRuntimeOn(ctx context.Context, id, build string) err
 		log.Printf("%s: llama.cpp %s does not run (%v); trying %s", c.nodeLabel(id), rt.Build, err, next)
 		build = next
 	}
+}
+
+// compatReason says in plain words why a node needs the compatible llama.cpp build.
+func compatReason(h *Hello) string {
+	if h.OS == "darwin" {
+		return "this Intel CPU has no AVX2"
+	}
+	return "glibc " + h.Glibc + " is older than the 2.38 it needs"
 }
 
 // poolBuild picks one llama.cpp build that all pool members can run.

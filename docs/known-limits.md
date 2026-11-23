@@ -44,6 +44,6 @@ See also [SECURITY.md](../SECURITY.md) for the security model and its limits (th
   called.
 
 
-## Linux arm64 needs Ubuntu 24.04 or newer
+## Linux arm64 on Ubuntu older than 24.04 runs CPU only
 
-llama.cpp publishes its Linux arm64 binaries built on Ubuntu 24.04 (glibc 2.39), and has done so since they were first offered, so stepping back to an older release does not help. A node on an older system (for example a Jetson on JetPack 6, Ubuntu 22.04, glibc 2.35) shows "glibc too old" when llama.cpp is installed. Outpost stops after the first try instead of downloading older builds, and remembers the answer for ten minutes. Upgrade the node to Ubuntu 24.04 or newer (JetPack 7 for a Jetson), or build llama.cpp from source. Linux x64 nodes still step back to an older release automatically.
+llama.cpp's Linux arm64 releases need glibc 2.38 (Ubuntu 24.04). A node on an older system (for example a Jetson on JetPack 6, Ubuntu 22.04, glibc 2.35) gets Outpost's own CPU-only compatible build instead (see install.md). There is no GPU/Vulkan build for it; use Ubuntu 24.04 or newer (JetPack 7) for that. The compatible build is made by a CI workflow after each llama.cpp release, so a brand new release can take up to a week to reach those nodes; the node keeps its current build meanwhile. Intel Macs without AVX2 likewise use a compatible build and run slower than newer Macs.

@@ -54,10 +54,13 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `runcode.py` | Run code in chat: turn it on for a new chat, the model's first Python program fails and the fixed one runs on the node for real; run cards (code, output, SVG chart, CSV download), toggle remembered (light, dark, phone). |
 | `research.py` | Research mode: pick Research, lanes (waiting, working, done) against a DuckDuckGo stand-in in `mock_claude.py`, report with numbered sources, lane record and Open report panel, Stop marks lanes stopped (light, dark, phone). |
 | `cad.py` | New 3D model page: a scripted model writes OpenSCAD (a typo first, fixed in round 2), the node renders it with the real OpenSCAD (needs `openscad` on PATH), the viewer draws it, a parameter re-renders and "Ask for changes" edits it. |
+| `chat3d.py` | Chat to 3D: a clear 3D request opens the 3D card on Send (mesh note, look-up boxes), Answer in chat instead (and the chat stays in chat), a 3D-printing question answered in chat with Make this in 3D, C++ STL text never routed, and Make it with the measurement look-up shown on the 3D page (needs `openscad`; without it, shoots the Install OpenSCAD card). |
 | `nodetools.py` | Nodes page notices "No node has Chromium/OpenSCAD": recommended node, Install posts the right request, Not now hides it. State is patched in the browser; nothing is downloaded. |
 | `chatimages.py` | Chat screenshots: `novision` checks the warning and refusal with the text-only rig model; `vision` (after adding `mmproj-F16.gguf` to `run/ctl/models/tiny-test/model.json` `hf_files` and restarting the controller) sends a pasted image and checks the thumbnail and that the fake server got it. |
-| `groups.py` | Sidebar groups: the By status / By group switch, new group, dragging a task and a chat onto a group, Move to group, rename, colour, move, delete, and the phone sheet. Runs first: it expects a controller with no groups yet. |
+| `groups.py` | Sidebar groups: the single grouped list (status icons, status order), new group, dragging a task and a chat onto a group, Move to group, rename, colour, move, delete, and the phone sheet. Runs first: it expects a controller with no groups yet. |
 | `schedules.py` | Schedule dialog (every few hours, chosen days and refusing none, monthly on the 31st, the preview line) and the Scheduled page: sidebar count, Run now history, open row, Pause/Resume, Pause all banner, ⋯ menu (Edit request, Duplicate, Remove schedule, Escape), phone layout. |
+| `settingssearch.py` | Settings search: "api token" finds Security › API tokens first, no-match line, folded help opens on a match, Esc restores the open section, "/" focuses the box, Connect a tool tab opens for "ollama", the API keys pointer link, phone width. |
+| `tokenscope.py` | Settings, Security: API token access is one choice (Chat only by default), each choice stores the right scope, Full access is stored as an empty scope like older tokens and is labelled "full access" in the list; light, dark and phone shots. Removes its tokens after. |
 | `shots.py` | Screenshots of every tab (needs a task id edited into the script). |
 | `soak.py` | No browser. Runs `SOAK_TASKS` tasks (default 8) through the API and, at random (`SOAK_SEED`), kills and restarts the node, the controller or both mid-task; every task must end `done`. Presses Resume for Claude tasks after a controller restart. Runs nightly in `.github/workflows/soak.yml`. |
 
@@ -115,8 +118,16 @@ release for its platform (Updates tab, or fetched from the update repository). I
 rolls it back to its previous copy, then updates it again, and after each switch checks the node is back on the right
 version within `OUTPOST_LAB_UPDATE_TIMEOUT` seconds (600), lists the same model files, kept its node settings and reloaded
 a loaded model within 5 minutes. A rollback holds auto-install at the version left; the stage puts the hold back as it was
-(`POST /api/github-updates/hold`), even after a failure. It never updates the controller. The pooling stage is not built yet.
-The inspect and update stages are not yet run on the real cluster (update tested against a stub controller only); tray, phone, Windows install and real GPU loads are still by hand.
+(`POST /api/github-updates/hold`), even after a failure. It never updates the controller.
+**Stage `pool`** (`testing/lab_pool.py`) **changes two nodes**: set `OUTPOST_LAB_POOL_MAIN`, `OUTPOST_LAB_POOL_HELPER` and
+`OUTPOST_LAB_POOL_MODEL` (a ready library model, ideally too big for main alone; the workflow has matching inputs).
+Refused on a scheduled run; trusted LAN only (llama.cpp RPC has no authentication or encryption). It checks that a pooled
+load is refused while pooling is off, switches pooling on, loads the model on main with the helper lending
+(`OUTPOST_LAB_POOL_TIMEOUT`, default 1800 s), checks the helper's RPC port closes a connection from the runner at once
+(the main-node-only allow-list), gets one chat answer, then switches pooling off and checks the pool dissolves and the
+port closes. The pooling setting is put back and each node's own model is loaded again afterwards, even after a failure.
+Not covered: a helper or main restart mid-pool, more than one helper, Windows or macOS helpers.
+The inspect and update stages passed on the real cluster on 2026-11-22; the pool stage has run only against a stub controller; tray, phone, Windows install and real GPU loads are still by hand.
 
 ## Not covered by any script (test by hand)
 - Screenshots on the real nodes: Chromium on each platform (snap Chromium on Ubuntu, Chrome on Windows

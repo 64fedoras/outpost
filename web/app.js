@@ -310,6 +310,29 @@ function taskTone(t) {
   return 'idle';
 }
 
+// The status icon: its shape alone says the state (colour only backs it up). `key` is
+// one of the symbols in the sprite at the top of index.html. See also statusRank().
+const ICON_TONE = { needs: 'needs', work: 'work', failed: 'bad', testfail: 'bad', paused: 'needs', chat: 'chat', chatbusy: 'work' };
+function taskIconKey(t) {
+  if (t.resolved) return 'done';
+  if (resuming(t)) return 'work';
+  if (t.status === 'paused_cap' || t.status === 'interrupted') return 'paused';
+  if (t.needs_you || t.status === 'awaiting_answers' || t.status === 'awaiting_approval') return 'needs';
+  if (WORKING.includes(t.status)) return 'work';
+  if (t.status === 'failed') return 'failed';
+  if (t.status === 'cancelled') return 'stopped';
+  if (t.status === 'done') return t.test_status === 'failing' ? 'testfail' : 'done';
+  return 'queued';
+}
+function statusIcon(key, label) {
+  const cls = 'sico s-' + (ICON_TONE[key] || 'idle') + (key === 'work' ? ' spin' : key === 'chatbusy' ? ' blink' : '');
+  return `<svg class="${cls}" ${label ? `role="img" aria-label="${esc(label)}"` : 'aria-hidden="true"'} focusable="false"><use href="#i-${key}"/></svg>`;
+}
+// Sort order inside a sidebar group: waiting on you, working, queued, paused, failed,
+// done with failing tests, stopped, then done and idle chats.
+const ICON_RANK = { needs: 0, work: 1, chatbusy: 1, queued: 2, paused: 3, failed: 4, testfail: 5, stopped: 6, done: 7, chat: 7 };
+const statusRank = (key) => ICON_RANK[key] ?? 7;
+
 function sideTaskHTML(t, projectName, tagGroup, snip) {
   const cls = [page === 'task' && pageArg === t.id ? 'active' : '', ctxTaskId === t.id ? 'menu-open' : ''].join(' ');
   const title = renamingId === t.id
@@ -317,7 +340,7 @@ function sideTaskHTML(t, projectName, tagGroup, snip) {
     : `<span class="side-task-title">${t.pinned ? '<span class="pin-mark" aria-label="Pinned">📌</span>' : ''}${esc(t.title)}</span>`;
   return `<div class="side-task ${cls}" draggable="true" data-task="${esc(t.id)}">
     <a href="#/tasks/${esc(t.id)}" class="side-task-link" draggable="false" aria-keyshortcuts="Shift+F10 F2 Delete">
-      <span class="tdot ${taskTone(t)}" aria-hidden="true"></span>
+      ${statusIcon(taskIconKey(t))}
       <span class="side-task-text">${title}
       <span class="side-task-meta ${t.needs_you ? 'needs' : ''}">${groupTag(tagGroup)}${projectName ? esc(projectName) + ' · ' : ''}${esc(statusWord(t))}${t.round > 1 ? ` · request ${t.round}` : ''} · ${ago(t.updated)}</span>${snipHTML(snip)}</span></a>
     <button class="side-task-more" data-task-menu="${esc(t.id)}" aria-haspopup="menu" aria-expanded="${ctxTaskId === t.id}" aria-label="Actions for ${esc(t.title)}" title="Actions">⋯</button></div>`;

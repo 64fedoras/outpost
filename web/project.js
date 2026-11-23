@@ -82,7 +82,7 @@ function pjTaskCard(t, f) {
   const act = t.needs_you ? `<a class="pj-open" href="#/tasks/${esc(t.id)}"><button class="small primary">${t.status === 'awaiting_approval' ? 'Review plan' : t.status === 'awaiting_answers' ? 'Answer' : 'Open'}</button></a>`
     : canResolve(t) ? `<button class="small" data-act="proj-resolve" data-id="${esc(t.id)}" data-on="${t.resolved ? '' : '1'}">${t.resolved ? 'Reopen' : '✓ Resolve'}</button>` : '';
   const result = f && f.result && RESTING.includes(t.status) ? `<p class="pj-result">${esc(f.result)}</p>` : '';
-  return `<div class="pj-tcard ${t.resolved ? 'resolved' : ''}"><span class="tdot ${tone}" aria-hidden="true"></span>
+  return `<div class="pj-tcard ${t.resolved ? 'resolved' : ''}">${statusIcon(taskIconKey(t))}
     <div class="pj-tbody"><a class="pj-ttitle" href="#/tasks/${esc(t.id)}">${esc(t.title)}</a>
       <div class="pj-tmeta ${tone === 'needs' ? 'needs' : tone === 'bad' ? 'bad' : ''}">${esc(pjTaskMeta(t))} · ${ago(t.updated)}</div>
       ${WORKING.includes(t.status) && f ? pjStrip(f.subtasks) : ''}${result}</div>
@@ -191,7 +191,7 @@ function pjRow(t, f) {
   else if (g === 'working') right = `${f && f.subtasks.length ? `<span class="pj-cnt">${t.done}/${t.total}</span>${pjStrip(f.subtasks, 'strip pj-mini')}` : ''}<span>${ago(t.updated).replace(' ago', '')}</span>`;
   else right = `<span>${ago(t.updated).replace(' ago', '')}</span>${canResolve(t) ? `<button class="pj-rb" data-act="proj-resolve" data-id="${esc(t.id)}" data-on="${t.resolved ? '' : '1'}" title="${t.resolved ? 'Reopen (move back to Idle)' : 'Mark resolved'}" aria-label="${t.resolved ? 'Reopen' : 'Mark resolved'}: ${esc(t.title)}">${t.resolved ? '↺' : '✓'}</button>` : ''}`;
   const tone = taskTone(t);
-  return `<div class="pj-row"><span class="tdot ${g === 'resolved' ? 'idle' : tone}" aria-hidden="true"></span>
+  return `<div class="pj-row">${statusIcon(g === 'resolved' ? 'done' : taskIconKey(t))}
     <a class="pj-row-main" href="#/tasks/${esc(t.id)}"><span class="pj-row-t">${esc(t.title)}</span><span class="pj-row-m ${tone === 'needs' ? 'needs' : tone === 'bad' && g !== 'resolved' ? 'bad' : ''}">${esc(statusWord(t))}${t.round > 1 ? ' · request ' + t.round : ''}</span></a>
     <span class="pj-row-r">${right}</span></div>`;
 }

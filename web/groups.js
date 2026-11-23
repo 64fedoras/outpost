@@ -1,14 +1,13 @@
 'use strict';
 // Sidebar groups (groups.go). Loads after app.js and shares its globals.
-// The sidebar list has two views: By status (Pinned, Needs you, Running, Earlier)
-// and By group (Pinned, Needs you, one collapsible section per group, No group).
+// The sidebar list is Pinned, then one collapsible section per group, then No group.
+// Inside a group, items are ordered by status (statusRank in app.js), newest first.
 // Tasks and chats both live in it. Move an item into a group by dragging its row onto
 // a group, or from the row's menu: Move to group ▸.
 
 let groups = [], sideChats = [], groupsAt = 0, sideSeq = 0, groupsPushed = false; // groupsPushed: the state stream carries groups and chats
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
-let sideMode = lsGet('outpost.sidemode') === 'group' ? 'group' : 'status';
 let groupClosed = (() => { try { return JSON.parse(lsGet('outpost.groupclosed') || '{}') || {}; } catch (e) { return {}; } })();
 let sideDragging = false, addingGroup = false, pendingMove = null, renamingGroupId = null, ctxGroup = null, ctxChat = null;
 const GROUP_COLORS = ['blue', 'green', 'purple', 'amber', 'red', 'teal'];
@@ -34,7 +33,7 @@ function sideChatHTML(c, tagGroup, snip) {
   const cls = [page === 'chat' && pageArg === c.id ? 'active' : '', ctxChat === c.id ? 'menu-open' : ''].join(' ');
   return `<div class="side-task side-chat ${cls}" draggable="true" data-chat="${esc(c.id)}">
     <a href="#/chat/${esc(c.id)}" class="side-task-link" draggable="false" aria-keyshortcuts="Shift+F10 Delete">
-      <span class="cdot" aria-hidden="true">💬</span>
+      ${statusIcon(c.busy ? 'chatbusy' : 'chat')}
       <span class="side-task-text"><span class="side-task-title">${esc(c.title)}</span>
       <span class="side-task-meta">${groupTag(tagGroup)}${c.busy ? 'Answering' : 'Chat'} · ${ago(c.updated)}</span>${snipHTML(snip)}</span></a>
     <button class="side-task-more" data-chat-menu="${esc(c.id)}" aria-haspopup="menu" aria-expanded="${ctxChat === c.id}" aria-label="Actions for ${esc(c.title)}" title="Actions">⋯</button></div>`;
@@ -66,30 +65,25 @@ function renderSideTasks(force) {
   const byNewest = (a, b) => b.time - a.time;
   const snip = (it) => sfSnippet(it.t ? 'task' : 'chat', it.t ? it.t.id : it.c.id);
   const html = (it, tag) => it.t ? sideTaskHTML(it.t, pnames[it.t.project_id], tag ? groupById(it.g) : null, snip(it)) : sideChatHTML(it.c, tag ? groupById(it.g) : null, snip(it));
-  const tone = (it) => it.t && taskTone(it.t);
+  const iconKey = (it) => it.t ? taskIconKey(it.t) : (it.c.busy ? 'chatbusy' : 'chat');
+  const rank = (it) => statusRank(iconKey(it));
+  const byStatus = (a, b) => (rank(a) - rank(b)) || byNewest(a, b);
   const pinned = items.filter((i) => i.t && i.t.pinned);
   const rest = items.filter((i) => !(i.t && i.t.pinned));
-  const needs = rest.filter((i) => tone(i) === 'needs');
-  const others = rest.filter((i) => tone(i) !== 'needs');
-  const running = (i) => i.t ? ACTIVE.includes(i.t.status) : !!i.c.busy;
-  const section = (name, list, cls, tag) => list.length ? `<div class="side-group ${cls || ''}">${name}</div>` + list.sort(byNewest).map((i) => html(i, tag)).join('') : '';
-  let out = section('Pinned', pinned, '', true) + section('Needs you', needs, 'needs', true);
-  if (sideMode === 'status') {
-    out += section('Running', others.filter(running), '', true) + section('Earlier', others.filter((i) => !running(i)), '', true);
-  } else {
-    const sec = (g) => {
-      const id = g ? g.id : '';
-      const list = others.filter((i) => i.g === id).sort((a, b) => (running(b) - running(a)) || byNewest(a, b));
-      const nd = needs.filter((i) => i.g === id).length;
-      if ((!g || filtering) && !list.length && !nd) return '';
-      const closed = !!groupClosed[id || '_none'];
-      const head = g ? groupHeadHTML(g, list.length, nd, closed)
-        : `<div class="gsec-h gc-none" data-gtoggle="_none" tabindex="0" role="button" aria-expanded="${!closed}"><span class="gchev" aria-hidden="true">${closed ? '▸' : '▾'}</span><i class="gsq" aria-hidden="true"></i><span class="gname">No group</span><span class="gct">${list.length}</span></div>`;
-      const body = list.length ? list.map((i) => html(i, false)).join('') : (g ? `<p class="side-empty gempty">Drag a task or chat here.</p>` : '');
-      return `<div class="gsec${closed ? ' closed' : ''}" data-gsec="${esc(id)}">${head}${body}</div>`;
-    };
-    out += groups.map(sec).join('') + sec(null);
-  }
+  const pinHTML = pinned.length ? `<div class="side-group">Pinned</div>` + pinned.sort(byNewest).map((i) => html(i, true)).join('') : '';
+  // One collapsible section per group, then No group. Inside a group the order is by status.
+  const sec = (g) => {
+    const id = g ? g.id : '';
+    const list = rest.filter((i) => i.g === id).sort(byStatus);
+    const nd = list.filter((i) => i.t && taskTone(i.t) === 'needs').length;
+    if ((!g || filtering) && !list.length) return '';
+    const closed = !!groupClosed[id || '_none'];
+    const head = g ? groupHeadHTML(g, list.length, nd, closed)
+      : `<div class="gsec-h gc-none" data-gtoggle="_none" tabindex="0" role="button" aria-expanded="${!closed}"><span class="gchev" aria-hidden="true">${closed ? '▸' : '▾'}</span><i class="gsq" aria-hidden="true"></i><span class="gname">No group</span><span class="gct">${list.length}</span></div>`;
+    const body = list.length ? list.map((i) => html(i, false)).join('') : (g ? `<p class="side-empty gempty">Drag a task or chat here.</p>` : '');
+    return `<div class="gsec${closed ? ' closed' : ''}" data-gsec="${esc(id)}">${head}${body}</div>`;
+  };
+  const out = pinHTML + groups.map(sec).join('') + sec(null);
   const head = filtering ? `<p class="side-empty sf-count" role="status">${sfCountText(items.length)}</p>` : '';
   setHTML('side-tasks', head + (out || (filtering ? '' : `<p class="side-empty">Nothing here yet.</p>`)));
 }
@@ -182,13 +176,12 @@ function sfClear() {
 
 // ---------- the view switch and "New group" ----------
 function renderGroupBar() {
-  const add = sideMode !== 'group' ? '' : addingGroup
+  const add = addingGroup
     ? `<div class="gadd"><input id="group-new" maxlength="40" placeholder="Group name, Enter to save" aria-label="Name for the new group"></div>`
     : `<div class="gadd"><button class="add-group" data-group-add>＋ New group</button></div>`;
-  const seg = `<div class="seg2" role="group" aria-label="Sidebar view"><button data-side-mode="status" class="${sideMode === 'status' ? 'on' : ''}" aria-pressed="${sideMode === 'status'}">By status</button><button data-side-mode="group" class="${sideMode === 'group' ? 'on' : ''}" aria-pressed="${sideMode === 'group'}">By group</button></div>`;
   const el = $('side-groupbar');
-  const fresh = el._h !== seg + add;
-  setHTML(el, seg + add);
+  const fresh = el._h !== add;
+  setHTML(el, add);
   if (fresh && addingGroup && $('group-new')) wireNewGroupInput();
 }
 function wireNewGroupInput() {
@@ -215,12 +208,7 @@ function wireNewGroupInput() {
   });
   inp.addEventListener('blur', () => finish(true));
 }
-function setSideMode(m) {
-  sideMode = m; lsSet('outpost.sidemode', m); addingGroup = false; pendingMove = null;
-  closeGroupCtx(false); closeTaskMenu(false); renderSideTasks(true);
-}
 function startNewGroup(move) {
-  if (sideMode !== 'group') setSideMode('group');
   addingGroup = true; pendingMove = move || null; renderSideTasks(true);
   if ($('side-groupbar') && $('group-new')) $('group-new').scrollIntoView({ block: 'nearest' });
 }
@@ -337,7 +325,6 @@ async function deleteGroup(id) {
 function startRenameGroup(id) {
   const g = groupById(id);
   if (!g) return;
-  if (sideMode !== 'group') setSideMode('group');
   renamingGroupId = id; renderSideTasks(true);
   const inp = $('group-rename');
   if (!inp) { renamingGroupId = null; return; }
@@ -399,8 +386,6 @@ async function runGroupCtx(act, kind, id) {
 (function wireGroups() {
   const side = $('side-tasks'), bar = $('side-groupbar'), m = $('group-ctx'), sub = $('group-sub');
   bar.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-side-mode]');
-    if (b) { setSideMode(b.dataset.sideMode); return; }
     if (e.target.closest('[data-group-add]')) startNewGroup();
   });
   // Rows
@@ -513,7 +498,7 @@ async function runGroupCtx(act, kind, id) {
     e.dataTransfer.setData('text/plain', drag.kind + ':' + drag.id);
     closeTaskMenu(false); closeGroupCtx(false);
     e.target.closest('.side-task').classList.add('dragging');
-    side.classList.toggle('dragging-items', sideMode === 'group');
+    side.classList.add('dragging-items');
   });
   const secOf = (e) => e.target.closest && e.target.closest('.gsec');
   const clearOver = () => side.querySelectorAll('.gsec.dropping').forEach((x) => x.classList.remove('dropping'));

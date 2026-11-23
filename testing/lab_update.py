@@ -31,7 +31,7 @@ def _node(lab, name):
     if code != 200 or not isinstance(st, dict):
         return None, None
     for n in st.get("nodes") or []:
-        if n.get("name") == name:
+        if (n.get("name") or "").lower() == name.lower():  # node names are matched without case
             return n, st
     return None, st
 

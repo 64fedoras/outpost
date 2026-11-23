@@ -43,7 +43,7 @@ The page was checked in a headless browser against stand-in data only.
 ## The OpenAI-style image API
 
 Off by default. Turn it on under **Settings, Pictures** ("Allow the image API"), and make an API
-token with **Chat and pictures** ticked (or use a full-access token). A chat-only token is refused.
+token with **Chat and pictures** chosen (or use a full-access token). A chat-only token is refused.
 
 ```sh
 curl -sk https://192.0.2.10:8443/v1/images/generations \

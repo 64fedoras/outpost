@@ -25,7 +25,19 @@ you turn on web search below.
 card above the box with your text, the options (model, size and count for pictures) and **Make it**, or
 **More settings…**, which opens the full Images or 3D page with your text filled in. If you type something that
 reads like a picture request ("draw an image of…", "make a 3D model of…"), a line under the box offers the skill;
-**Not now** dismisses it. This is a plain wording check, not the model deciding. The Images (`#/image`) and 3D
+**Not now** dismisses it. This is a plain wording check, not the model deciding.
+
+**3D requests go to the 3D card.** A message that clearly asks for a 3D part (a make or change word such as
+make, design, modify or remix, plus a 3D cue such as "3D model", "3D print", STL, 3MF, OpenSCAD, "rack mount" or a
+MakerWorld, Printables or Thingiverse link, and not phrased as a question) opens the 3D card when you press Send
+instead of going to the chat model. Nothing runs until you press **Make it**. **Answer in chat instead** sends it to
+the chat as normal and keeps that chat in chat from then on (remembered in this browser). A question about 3D printing
+("what infill should I use for a rack mount?"), a message with images or documents attached, or code ("the STL
+vector") stays in chat; when your message had a 3D cue, the answer gets a **◇ Make this in 3D** button that opens
+the same card. Outpost cannot edit an existing mesh: with a model link the card says so and offers a new OpenSCAD
+part instead, reading the linked page and looking up the measurements of the devices you name (see
+[3D models](3d-models.md)). If no node can render, the card has the one-click **Install OpenSCAD** and turns
+**Make it** on when the install is done. The Images (`#/image`) and 3D
 (`#/cad`) pages still exist and are in Ctrl+K search. Letting the chat load or switch models on nodes is not built.
 
 **Faster follow-ups (prompt cache).** A node keeps the processed start of the last prompt and skips it when the next
@@ -199,7 +211,7 @@ model:     auto   (or the name of a loaded model, from GET /v1/models)
 `POST /v1/chat/completions` supports streaming, `max_tokens`, `stop`, tools (tool calls are sent in one
 piece at the end of a stream), image parts as `data:` URIs for vision models, and `reasoning_content`
 for thinking models. A model name that no ready node has loaded returns 404; when every node is busy a
-request waits up to 2 minutes for a free slot, then returns 503. Tick **Chat only** when you create a
+request waits up to 2 minutes for a free slot, then returns 503. Choose **Chat only** when you create a
 token for a tool: such a token works on `/v1/` and nothing else. The controller's certificate is
 self-signed, so the tool must trust it (or use your own certificate, see [Sign-in security](operations.md#sign-in-security-api-tokens-certificate-and-backups)).
 
@@ -207,7 +219,7 @@ self-signed, so the tool must trust it (or use your own certificate, see [Sign-i
 
 An AI agent can use the cluster as its model backend, so the computing happens on your nodes:
 
-1. Settings → API tokens → name it after the agent, tick **Chat only**, create, copy the token.
+1. Settings → API tokens → name it after the agent, choose **Chat only**, create, copy the token.
 2. In the agent's settings choose an OpenAI-compatible provider and enter the base URL
    (`https://<controller>:8443/v1`, also shown under API tokens), the token as API key, and the model
    `auto` (or a name from `GET /v1/models`).
@@ -260,7 +272,7 @@ against the fake node in the unit tests.
 ### Outpost as an MCP server (Claude Code, Claude Desktop)
 
 `https://<controller>:8443/mcp` speaks the Model Context Protocol (Streamable HTTP, plain JSON replies, no
-event stream), so an MCP client can hand work to the cluster. Create a token with **MCP only** ticked
+event stream), so an MCP client can hand work to the cluster. Create a token with **MCP only** chosen
 (Settings → Sign-in security; a full-access token works too), then, for Claude Code:
 
 ```
