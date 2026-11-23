@@ -1,4 +1,4 @@
-# Chat picker with many nodes: one card per model ("on N nodes · N free"), "Pick a specific node…", and a chat sent to
+# Chat picker with many nodes: one card per model ("on N nodes · N free"), "Pick a specific model…", and a chat sent to
 # "this model, any free node". Run after `sh testing/e2e/run.sh up`. N=25 by default.
 import asyncio, os, sys, json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

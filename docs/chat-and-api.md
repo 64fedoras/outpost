@@ -8,7 +8,7 @@ Part of the [Outpost user guide](USER-GUIDE.md).
 
 **Chat** (sidebar) is a plain conversation with a model on your nodes, for quick questions that do not
 need a task. A new chat opens with two cards, **Auto (local, strongest free node)** and **Research**;
-**Pick a specific node…** under them lists each loaded model with *Any free node* (the chat goes to whichever
+**Pick a specific model…** under them lists each loaded model with *Any free node* (the chat goes to whichever
 node that has it is free) and a chip per node. Click a card or chip, or use the model box under the
 message box. The message box stays docked at the bottom, and the **Chats** button opens a panel with your earlier
 chats (on a phone it is a full-screen list). Replies stream in and are shown as formatted text (headings, bold, lists, tables, links and code blocks with a Copy button; HTML in an answer is shown as text, never run; the same goes for planner messages in a task and in the project chat), thinking
