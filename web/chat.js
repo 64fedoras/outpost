@@ -117,13 +117,14 @@ async function chatLoad(id) {
     chatES = new EventSource(`/api/chats/${id}/events`);
     chatES.onmessage = (e) => {
       let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
-      if (ev.t === 'start') chatLive[ev.call] = { text: ev.text || '', node: ev.node, tps: ev.tps || 0, read: ev.read || 0, total: ev.total || 0, left: ev.left || 0 };
+      if (ev.t === 'start') chatLive[ev.call] = { text: ev.ans != null ? ev.ans : (ev.text || ''), think: ev.think || '', t0: Date.now(), tok: ev.tok || 0, node: ev.node, tps: ev.tps || 0, read: ev.read || 0, total: ev.total || 0, left: ev.left || 0 };
       else if (ev.t === 'end') delete chatLive[ev.call];
       else if (ev.t === 'progress' && chatLive[ev.call]) Object.assign(chatLive[ev.call], { read: ev.read, total: ev.total, left: ev.left });
       else if (ev.t === 'delta' && chatLive[ev.call]) {
         const c = chatLive[ev.call];
-        if (!ev.reason) c.text += ev.text;
-        c.tps = ev.tps;
+        if (ev.reason) { c.think = (c.think + ev.text).slice(-64000); c.tThink = c.tThink || Date.now(); }
+        else { c.text += ev.text; if (c.tThink && !c.tWrite) c.tWrite = Date.now(); }
+        c.tps = ev.tps; c.tok = ev.tok || c.tok;
       } else if (ev.t === 'changed') { chatLoadSoon(id); return; }
       chatRenderLive();
     };
@@ -223,13 +224,17 @@ function chatBubble(m, i, last) {
   const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, chatCacheTag(m), m.note && esc(m.note), chatNeedTag(m)].filter(Boolean).join(' · ');
   const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-regen="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Answer again; this answer stays as an earlier version">↻ Regenerate</button>${chatTryOn(m, busy)}${m.cut && i === chatCur.messages.length - 1 ? `<button data-continue ${busy ? 'disabled' : ''} title="The answer stopped at the length limit: ask the model to carry on">▶ Continue</button>` : ''}${m.text ? `<button data-copy-msg="${i}" title="Copy the answer">⧉ Copy</button>` : ''}${m.research && m.text ? `<button data-rs-open="${esc(m.id)}" title="Open the report in the side panel to download it or save it to a project">¶ Open report</button>` : ''}<button data-branch="${esc(m.id)}" title="Start a new chat with the conversation up to here">⑂ Branch</button>${m.text && typeof skillAnswerAct === 'function' ? skillAnswerAct(chatCur.messages, i) : ''}</div>`;
   if (m.error) return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}${acts}</div>`;
-  return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}<div class="chat-text md">${md(m.text)}</div>${pvCards(pvCollect(m.text))}${meta ? `<div class="sub">${meta}</div>` : ''}${acts}${memSuggestCard(m, { chat: chatCur.id })}</div>`;
+  return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}${chatThinkFold(m.id, m.think_s ? `Thought for ${m.think_s} s` : 'Thinking', m.think)}<div class="chat-text md">${md(m.text)}</div>${pvCards(pvCollect(m.text))}${meta ? `<div class="sub">${meta}</div>` : ''}${acts}${memSuggestCard(m, { chat: chatCur.id })}</div>`;
 }
 function chatRender() {
   if (!chatCur) return;
   const box = $('chat-msgs'), stick = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   const instr = chatCur.instructions ? `<div class="note chat-instr">Instructions for this chat: <i>${esc(chatCur.instructions)}</i> <button class="link-btn" data-instr>Edit</button></div>` : '';
   pvReset();
+  if (chatThinkOpen.live) { // the fold opened while it was thinking stays open on the saved answer
+    const last = chatCur.messages[chatCur.messages.length - 1];
+    if (last && last.role === 'assistant' && last.think) { chatThinkOpen[last.id] = true; delete chatThinkOpen.live; }
+  }
   setHTML('chat-msgs', instr + chatCur.messages.map((m, i) => chatBubble(m, i)).join('') + '<div id="chat-live"></div>');
   chatRenderLive();
   chatButtons();
@@ -276,6 +281,19 @@ function chatNeedTag(m) {
   const o = (v, t) => `<option value="${v}" ${m.need === v ? 'selected' : ''}>${t}</option>`;
   return `<span class="need-tag" title="Auto chose the model for this kind of message. Change it to answer again for another kind.">chosen for <select data-need="${esc(m.id)}" aria-label="Chosen for">${o('coding', 'coding')}${o('vision', 'vision')}${o('general', 'general')}</select></span>`;
 }
+// Thinking models: their thinking sits behind a fold, closed unless the reader opened it.
+const chatThinkOpen = {};
+function chatThinkFold(key, label, text) {
+  if (!text) return '';
+  return `<details class="think" data-tk="${esc(key)}" ${chatThinkOpen[key] ? 'open' : ''}><summary>💭 ${esc(label)}</summary><div class="think-body">${esc(text)}</div></details>`;
+}
+// The green working bar: fills for real while the prompt is read, otherwise sweeps.
+function chatWorking(what, detail, pct) {
+  const b = pct != null ? bar(pct, 'good') : '<div class="bar"><i class="good sweep"></i></div>';
+  return `<div class="working">${b}<span><span class="w-what">${esc(what)}</span>${detail ? ' · ' + esc(detail) : ''}</span></div>`;
+}
+$('chat-msgs').addEventListener('toggle', (e) => { const d = e.target; if (d.dataset && d.dataset.tk) chatThinkOpen[d.dataset.tk] = d.open; }, true);
+setInterval(() => { if (page === 'chat' && chatCur && chatCur.busy) chatRenderLive(); }, 1000);
 function chatRenderLive() {
   const el = $('chat-live');
   if (!el || !chatCur) return;
@@ -283,11 +301,19 @@ function chatRenderLive() {
   const rs = chatCur.research ? researchLive(chatCur.research) : '';
   if (rs && (chatCur.research.stage !== 'writing' || !calls.length)) { setHTML('chat-live', rs); return; }
   if (chatCur.prompt) { setHTML('chat-live', chatPromptCard(chatCur.prompt)); chatPromptTick(); return; }
-  if (chatCur.busy === 'running') { setHTML('chat-live', `<p class="muted run-live">▶ Running code on ${esc(chatCur.run_on || 'a node')}…</p>`); return; }
-  if (!calls.length) { el.innerHTML = chatCur.busy === 'waiting' ? '<p class="muted">Waiting for a free node…</p>' : ''; return; }
-  const c = calls[0];
+  if (chatCur.busy === 'running') { setHTML('chat-live', `<div class="chat-answer">${chatWorking('Running code', 'on ' + (chatCur.run_on || 'a node'))}</div>`); return; }
+  if (!calls.length) { setHTML('chat-live', chatCur.busy === 'waiting' ? `<div class="chat-answer">${chatWorking('Waiting', 'for a free node')}</div>` : (chatCur.busy ? `<div class="chat-answer">${chatWorking('Working', '')}</div>` : '')); return; }
+  const c = calls[0], now = Date.now();
   const rate = liveRate(Object.assign({}, c, { text: c.text }));
-  setHTML('chat-live', `${rs}<div class="chat-answer"><div class="chat-text md">${md(c.text) || '<span class="muted">…</span>'}</div><div class="sub">${esc(c.node || '')}${rate ? ' · ' + esc(rate) : ''}</div></div>`);
+  const secs = (a, b) => Math.max(1, Math.round(((b || now) - a) / 1000));
+  let bw, label = '';
+  if (c.text) bw = chatWorking('Writing', c.tps ? c.tps + ' tok/s' : '');
+  else if (c.think) bw = chatWorking('Thinking', `${secs(c.tThink)} s${c.tok ? ' · ' + c.tok.toLocaleString() + ' tokens' : ''}`);
+  else if (c.total && c.read < c.total) bw = chatWorking('Reading your message', `${Math.round(100 * c.read / c.total)}%${c.left > 0 ? ', about ' + c.left + ' s left' : ''}`, 100 * c.read / c.total);
+  else bw = chatWorking('Working', '');
+  if (c.think) label = c.text ? `Thought for ${secs(c.tThink, c.tWrite)} s` : `Thinking… ${secs(c.tThink)} s`;
+  setHTML('chat-live', `${rs}<div class="chat-answer">${chatThinkFold('live', label, c.think)}${c.text ? `<div class="chat-text md">${md(c.text)}</div>` : ''}${bw}<div class="sub">${esc(c.node || '')}${rate ? ' · ' + esc(rate) : ''}</div></div>`);
+  const tb = el.querySelector('.think[open] .think-body'); if (tb) tb.scrollTop = tb.scrollHeight;
   const box = $('chat-msgs');
   if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) box.scrollTop = box.scrollHeight;
 }

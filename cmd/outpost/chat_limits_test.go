@@ -79,3 +79,54 @@ func TestLlamaThinkBudgetStopsAndNoThinkIsSent(t *testing.T) {
 		t.Fatalf("%v %+v %v", e, out, body)
 	}
 }
+
+func TestWithAutoContinueJoinsCutAnswers(t *testing.T) {
+	var specs []InferenceSpec
+	infer := func(_ context.Context, s InferenceSpec) (*InferenceOutput, error) {
+		specs = append(specs, s)
+		if len(specs) == 1 {
+			return &InferenceOutput{Text: "one ", FinishReason: "length", OutputTokens: 10, Reasoning: "hm", ThinkSecs: 3}, nil
+		}
+		return &InferenceOutput{Text: "two", FinishReason: "stop", OutputTokens: 5}, nil
+	}
+	var note string
+	spec := InferenceSpec{Messages: []ChatMessage{{Role: "user", Content: "q"}}, Params: InferenceParams{MaxTokens: 4096}}
+	out, err := withAutoContinue(infer, 32768, 4096, &note)(context.Background(), spec)
+	if err != nil || out.Text != "one two" || out.FinishReason != "stop" || out.OutputTokens != 15 || out.ThinkSecs != 3 || note == "" {
+		t.Fatalf("%v %+v note %q", err, out, note)
+	}
+	m := specs[1].Messages
+	if len(specs) != 2 || len(m) != 3 || m[1].Role != "assistant" || m[1].Content != "one " || m[1].Reasoning != "hm" || m[2].Role != "user" {
+		t.Fatalf("continuation asked wrong: %+v", specs)
+	}
+}
+
+func TestWithAutoContinueLimits(t *testing.T) {
+	calls := 0
+	always := func(_ context.Context, s InferenceSpec) (*InferenceOutput, error) {
+		calls++
+		return &InferenceOutput{Text: "x", FinishReason: "length", OutputTokens: 4096}, nil
+	}
+	var note string
+	spec := InferenceSpec{Params: InferenceParams{MaxTokens: 4096}}
+	// A model that never stops is asked a bounded number of times and the answer stays cut.
+	out, _ := withAutoContinue(always, 1<<20, 4096, &note)(context.Background(), spec)
+	if calls != 1+chatAutoContinues || out.FinishReason != "length" {
+		t.Fatalf("calls %d out %+v", calls, out)
+	}
+	// No room left in the context: no continuation.
+	calls = 0
+	withAutoContinue(always, 6000, 4096, &note)(context.Background(), spec)
+	if calls != 1 {
+		t.Fatalf("calls %d with no room", calls)
+	}
+	// A smaller call (not a chat answer) is left alone, and so is a cancelled chat.
+	calls = 0
+	withAutoContinue(always, 1<<20, 4096, &note)(context.Background(), InferenceSpec{Params: InferenceParams{MaxTokens: 300}})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	withAutoContinue(always, 1<<20, 4096, &note)(ctx, spec)
+	if calls != 2 {
+		t.Fatalf("calls %d", calls)
+	}
+}

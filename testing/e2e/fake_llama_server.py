@@ -66,6 +66,7 @@ class H(BaseHTTPRequestHandler):
             lf.write("=====\n" + user + "\n")
         if body.get("tools"):
             return self.agent_turn(body)
+        reason, finish = "", "stop"
         system = body["messages"][0]["content"] if body["messages"][0]["role"] == "system" else ""
         if "remember durable facts" in system:
             # Memory suggestion (memory.go): one fact when the owner states one, else NONE.
@@ -105,6 +106,12 @@ class H(BaseHTTPRequestHandler):
             # Documents in chat (docs.py): say which documents arrived and quote the first line of each.
             docs = re.findall(r"Attached document (\S+) \(([A-Z]+)[^\n]*\n<<<DOCUMENT>>>\n(?:\[[^\]\n]*\]\n)?(.*)", user)
             text = "I read " + ", ".join(f"{n} ({k}) starting “{first.strip()[:60]}”" for n, k, first in docs) + "."
+        elif "think test" in user:
+            reason, text = "Let me think this through step by step. " * 30, "The answer is 42."  # chat thinking fold (chatthink.py)
+        elif "length test" in user:
+            text, finish = "This answer is long and gets cut off right he", "length"  # auto-continue (chatthink.py)
+        elif user.startswith("Please continue from exactly") and any("length test" in str(m.get("content")) for m in body["messages"]):
+            text = "re, then carries on to the end."
         elif "markdown sample" in user:
             text = MARKDOWN_SAMPLE  # the chat page's markdown test (chatmd.py)
         elif "```html" in user or "```mermaid" in user:
@@ -123,10 +130,13 @@ class H(BaseHTTPRequestHandler):
             if body.get("return_progress"):
                 pp = {"choices": [], "prompt_progress": {"total": total, "cache": 0, "processed": total * k // 4, "time_ms": 1000 * k}}
                 self.wfile.write(b"data: " + json.dumps(pp).encode() + b"\n\n"); self.wfile.flush()
+        for i in range(0, len(reason), 40):
+            ch = {"choices": [{"index": 0, "delta": {"reasoning_content": reason[i:i+40]}, "finish_reason": None}]}
+            self.wfile.write(b"data: " + json.dumps(ch).encode() + b"\n\n"); self.wfile.flush(); time.sleep(0.15)
         for i in range(0, len(text), 40):
             ch = {"choices": [{"index": 0, "delta": {"content": text[i:i+40]}, "finish_reason": None}]}
             self.wfile.write(b"data: " + json.dumps(ch).encode() + b"\n\n"); self.wfile.flush(); time.sleep(0.01)
-        self.wfile.write(b'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n')
+        self.wfile.write(b'data: {"choices":[{"index":0,"delta":{},"finish_reason":"%s"}]}\n\n' % finish.encode())
         self.wfile.write(b'data: {"choices":[],"usage":{"prompt_tokens":500,"completion_tokens":%d}}\n\n' % (len(text)//4))
         self.wfile.write(b"data: [DONE]\n\n")
 SCAD = """w = {w}; // [40:200] base width

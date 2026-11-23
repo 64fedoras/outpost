@@ -29,6 +29,10 @@ type liveEvent struct {
 	Est   bool    `json:"est,omitempty"` // token count is an estimate (cloud planners)
 	// Reason marks a delta that is a thinking model's reasoning, not its answer.
 	Reason bool `json:"reason,omitempty"`
+	// Ans and Think split a start event's Text for the chat page: the answer
+	// so far and the thinking so far (Text keeps both, in order, for task panes).
+	Ans   string `json:"ans,omitempty"`
+	Think string `json:"think,omitempty"`
 	// Prompt reading progress before the first token (local nodes with a
 	// llama.cpp that reports it): tokens read, prompt size, seconds left.
 	Read  int `json:"read,omitempty"`
@@ -39,6 +43,7 @@ type liveEvent struct {
 type liveCall struct {
 	id, sub, label, node string
 	buf                  []byte
+	abuf, rbuf           []byte // the same text split into answer and thinking
 	tok                  int
 	est                  bool
 	first                time.Time
@@ -161,6 +166,14 @@ func (h *liveHub) addTextKind(lt *liveTask, lc *liveCall, text string, tokens in
 	if len(lc.buf) > liveBufBytes {
 		lc.buf = append([]byte(nil), lc.buf[len(lc.buf)-liveBufBytes:]...)
 	}
+	part := &lc.abuf
+	if reasoning {
+		part = &lc.rbuf
+	}
+	*part = append(*part, text...)
+	if len(*part) > liveBufBytes {
+		*part = append([]byte(nil), (*part)[len(*part)-liveBufBytes:]...)
+	}
 	h.broadcastLocked(lt, liveEvent{T: "delta", Call: lc.id, Text: text, Tok: lc.tok, TPS: lc.tps(), Reason: reasoning})
 }
 
@@ -172,7 +185,7 @@ func (lh *liveHandle) Write(text string) {
 // Reset clears the text, e.g. when a failed request is retried.
 func (lh *liveHandle) Reset() {
 	lh.with(func(lt *liveTask, lc *liveCall) {
-		lc.buf, lc.tok, lc.first = nil, 0, time.Time{}
+		lc.buf, lc.abuf, lc.rbuf, lc.tok, lc.first = nil, nil, nil, 0, time.Time{}
 		lh.h.broadcastLocked(lt, liveEvent{T: "reset", Call: lc.id})
 	})
 }
@@ -290,7 +303,7 @@ func (h *liveHub) subscribe(taskID string) ([]liveEvent, chan liveEvent, func())
 	for _, id := range lt.order {
 		lc := lt.calls[id]
 		snap = append(snap, liveEvent{T: "start", Call: lc.id, Sub: lc.sub, Label: lc.label, Node: lc.node,
-			Text: string(lc.buf), Tok: lc.tok, TPS: lc.tps(), Est: lc.est, Read: lc.read, Total: lc.total, Left: lc.left})
+			Text: string(lc.buf), Ans: string(lc.abuf), Think: string(lc.rbuf), Tok: lc.tok, TPS: lc.tps(), Est: lc.est, Read: lc.read, Total: lc.total, Left: lc.left})
 	}
 	// finished calls whose slot has no running call: start then end, so the
 	// browser files them as the slot's last output

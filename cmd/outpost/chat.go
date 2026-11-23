@@ -33,6 +33,8 @@ type ChatMsg struct {
 	Prompt int       `json:"prompt_tokens,omitempty"` // tokens in the prompt of the last model call
 	Cached int       `json:"cached_tokens,omitempty"` // of those, how many the node reused from its cache
 	Cut    bool      `json:"cut,omitempty"`           // the answer stopped at the length limit (the UI offers Continue)
+	Think  string    `json:"think,omitempty"`         // a thinking model's thinking, shown folded; never sent back to the model
+	ThinkS int       `json:"think_s,omitempty"`       // about how many seconds it thought
 	Error  string    `json:"error,omitempty"`
 	Note   string    `json:"note,omitempty"` // e.g. that the web was searched, or why it was not
 	At     time.Time `json:"at"`
@@ -602,8 +604,9 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 		defer live.End()
 		return c.runChatJob(ctx, node, name, spec, live)
 	}
-	var thinkNote string
+	var thinkNote, contNote string
 	infer = withThinkBudget(infer, maxOut, &thinkNote)
+	infer = withAutoContinue(infer, ctxTok, maxOut, &contNote)
 	var out *InferenceOutput
 	var note string
 	c.mu.Lock()
@@ -630,6 +633,7 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 		out, err = infer(ctx, InferenceSpec{Messages: fitHistory(hist, (ctxTok-maxOut)*3), Params: InferenceParams{MaxTokens: maxOut}})
 	}
 	note = joinNotes(note, thinkNote)
+	note = joinNotes(note, contNote)
 	switch {
 	case errors.Is(ctx.Err(), context.Canceled):
 		return ChatMsg{Role: "assistant", Node: name, Error: "stopped", Runs: run.done()}, ""
@@ -644,7 +648,7 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 		text = cutOffText(text)
 	}
 	cut := out.FinishReason == "length" && strings.TrimSpace(out.Text) != ""
-	msg := ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note, Prompt: out.PromptTokens, Cached: out.CachedTokens, Cut: cut}
+	msg := ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note, Prompt: out.PromptTokens, Cached: out.CachedTokens, Cut: cut, Think: out.Reasoning, ThinkS: out.ThinkSecs}
 	c.noteChatNode(chatID, node, out.Model, out.PromptTokens)
 	if run != nil {
 		msg.Runs = run.done()
