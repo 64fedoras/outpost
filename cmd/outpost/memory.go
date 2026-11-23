@@ -119,6 +119,22 @@ func (c *Controller) memoryPrompt(project string) string {
 
 const memorySuggestSystem = `You help an assistant remember durable facts about its owner across conversations. Read the owner's messages below. If they state one lasting fact about themselves, their setup, their projects or how they want answers (for example "I use Go 1.26", "the home lab runs Gitea", "answer briefly"), reply with that fact as one short sentence in the third person ("Uses Go 1.26."). Do not suggest anything about this one question, temporary details, secrets, passwords, keys, or anything already in the list of known facts. If there is nothing worth remembering, reply with exactly NONE.`
 
+// memoryOnChat turns the memory question into a continuation of the chat just
+// answered (the same messages, the answer, then the question) instead of a
+// separate prompt. A node has one prompt cache per slot, so a separate prompt
+// would replace the chat's cached start and the next message would be read from
+// scratch; as a continuation, the next message still shares the chat's prompt.
+func memoryOnChat(spec InferenceSpec, hist []ChatMessage, answer string) InferenceSpec {
+	if len(spec.Messages) != 2 || spec.Messages[0].Content != memorySuggestSystem || len(hist) == 0 {
+		return spec
+	}
+	msgs := append([]ChatMessage(nil), hist...)
+	msgs = append(msgs, ChatMessage{Role: "assistant", Content: answer},
+		ChatMessage{Role: "user", Content: spec.Messages[0].Content + "\n\n" + spec.Messages[1].Content})
+	spec.Messages = msgs
+	return spec
+}
+
 var memoryNoneRe = regexp.MustCompile(`(?i)^\W*none\W*$`)
 
 // suggestMemory asks the model for one fact from the owner's messages; "" when none.
