@@ -27,6 +27,7 @@ func TestChatScreenshots(t *testing.T) {
 	var specs []InferenceSpec
 	var mu sync.Mutex
 	fakeInferNode(t, c, "n", &specs, &mu)
+	c.nodes["n"].ChatSwitch = bp(false) // switching is on by default; this test is about refusing without it
 	m := mux2(c)
 	m.HandleFunc("GET /api/chats/{id}/image", c.handleChatImage)
 	do := func(method, path, body string) *httptest.ResponseRecorder {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -96,7 +97,7 @@ func switchCtl(h *Hello, loaded string) *Controller {
 	c := loadOptsCtl(map[string]*Hello{"n": h})
 	c.lastHB = map[string]*Heartbeat{"n": {LoadedModel: loaded, InferenceRdy: true}}
 	c.catShapes = fakeCatalogShapes()
-	c.nodes["n"].ChatSwitch = true
+	c.nodes["n"].ChatSwitch = bp(true)
 	return c
 }
 
@@ -122,11 +123,11 @@ func TestPlanChatLoad(t *testing.T) {
 		t.Fatalf("download plan: %+v (%s)", p, why)
 	}
 	// Not allowed on the node: no plan, with a reason.
-	c.nodes["n"].ChatSwitch = false
+	c.nodes["n"].ChatSwitch = bp(false)
 	if p, why := c.planChatLoad(needCoding); p != nil || why == "" {
 		t.Errorf("planned on a node that did not opt in: %+v", p)
 	}
-	c.nodes["n"].ChatSwitch = true
+	c.nodes["n"].ChatSwitch = bp(true)
 	// A coding model already on the disk is used, with no download.
 	id := "qwen2.5-coder-7b-q4km"
 	libModel(c, id, true)
@@ -303,7 +304,7 @@ func TestChatSwitchFallsBackWhenNobodyAnswers(t *testing.T) {
 func TestChatSwitchAllowPrompt(t *testing.T) {
 	c := switchCtl(bigCPU(), "")
 	c.dataDir = t.TempDir() // setChatSwitch saves the node list
-	c.nodes["n"].ChatSwitch = false
+	c.nodes["n"].ChatSwitch = bp(false)
 	c.chats = map[string]*Chat{"c1": {ID: "c1"}}
 	old := chatAskOther
 	chatAskOther = 40 * time.Millisecond
@@ -313,7 +314,7 @@ func TestChatSwitchAllowPrompt(t *testing.T) {
 	if need != needVision || abort != nil || !strings.Contains(note, "may not load one yet") {
 		t.Fatalf("need %s abort %v note %q", need, abort, note)
 	}
-	if c.nodes["n"].ChatSwitch {
+	if c.nodes["n"].chatSwitchOn() {
 		t.Fatal("switching turned on without an answer")
 	}
 	// Answering allow_node applies to the node in the offer.
@@ -346,9 +347,35 @@ func TestChatSwitchAllowPrompt(t *testing.T) {
 	reply <- "allow_node"
 	got := <-done
 	c.mu.Lock()
-	on := c.nodes["n"].ChatSwitch
+	on := c.nodes["n"].chatSwitchOn()
 	c.mu.Unlock()
 	if got != "allow_node" || !on {
 		t.Fatalf("answer %s, switch %v", got, on)
+	}
+}
+
+func bp(b bool) *bool { return &b }
+
+// Node settings that were never saved are on; explicit values are kept.
+func TestNodeSettingDefaultsOn(t *testing.T) {
+	var n NodeRec
+	if !n.chatSwitchOn() || !n.taskModelsOn() || !n.yieldOn() {
+		t.Fatal("unset settings should default to on")
+	}
+	var old NodeRec
+	if err := json.Unmarshal([]byte(`{"id":"x","name":"x"}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	if !old.chatSwitchOn() || !old.taskModelsOn() || !old.yieldOn() {
+		t.Fatal("a node saved without the settings should default to on")
+	}
+	n = NodeRec{ChatSwitch: bp(false), TaskModels: bp(false), YieldGPU: bp(false)}
+	b, _ := json.Marshal(n)
+	var back NodeRec
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.chatSwitchOn() || back.taskModelsOn() || back.yieldOn() {
+		t.Fatalf("explicit off lost in a save/load round trip: %s", b)
 	}
 }

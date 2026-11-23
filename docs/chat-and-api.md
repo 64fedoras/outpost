@@ -60,7 +60,7 @@ attached, **coding** when it looks like code work (code blocks, file names such 
 bug, compile, refactor), otherwise **general**. This is a few simple rules, with no extra model call, and
 the answer ends with a *chosen for coding ▾* menu: change it and the message is answered again for that need.
 If a loaded model suits the need (a model that is both coding and vision suits both), chat uses it and nothing
-changes. Otherwise, on nodes with *Let chat switch models here* on (Nodes page, off by default), chat looks for
+changes. Otherwise, on nodes with *Let chat switch models here* on (Nodes page, on by default), chat looks for
 a node that is idle and whose model chat did not change in the last 10 minutes, and picks the cheapest way to
 get a suitable model:
 

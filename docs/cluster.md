@@ -163,16 +163,18 @@ fills the form, and *Delete* removes it. Pool helpers are not part of a saved se
 
 
 **Big contexts on a GPU.** If the KV cache for the chosen context would take more than half the GPU memory (for example settings saved on a CPU-only run, then a GPU is added), the node keeps the cache in RAM (`--no-kv-offload`) when RAM can hold it, and otherwise lowers the context to fit; the node log says so. Choose `--no-kv-offload` yourself under extra arguments to skip this.
-**Let tasks change my model** (per node, off by default; on the node card). A task approved with
+The three switches below are **on by default**, for new nodes and for any node that never had the switch saved. A switch you turned off yourself after this default arrived stays off; one you left off on an older version reads as never saved, so check it.
+
+**Let tasks change my model** (per node, on by default; on the node card). A task approved with
 *Pick models for each node* may load this node's best-fit model before work starts and put the previous
 one back afterwards (see [using-tasks.md](using-tasks.md)). Off, tasks only use the model you loaded.
 
-**Let chat switch models here** (per node, off by default; on the node card). With **Auto** in chat, a node with
+**Let chat switch models here** (per node, on by default; on the node card). With **Auto** in chat, a node with
 this on may load a model for the message when none that is loaded suits it (see
 [chat-and-api.md](chat-and-api.md)). Off, chat only uses models already loaded, except that when Auto finds a suitable model it could load on a node with this off, chat asks once (**Allow on this node**, **Allow on every node**, or **Not now**) and the answer turns the setting on. It never removes a model or starts a
 download without asking you first.
 
-**Yield GPU to other programs** (per node, off by default; on the node card). On a desktop that is also used
+**Yield GPU to other programs** (per node, on by default; on the node card). On a desktop that is also used
 for games, the model is unloaded when the node is not answering anything and the GPU stays more than 35% busy
 for 30 seconds, and loaded again after five minutes below 10%. While unloaded the card says *GPU in use* and the
 controller sends the node no work. It uses the utilisation the node already reports, so it cannot tell a game

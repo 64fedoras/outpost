@@ -43,7 +43,7 @@ type NodeRec struct {
 	Hello       *Hello        `json:"hello,omitempty"`
 	LoadPrefs   *ModelLoad    `json:"load_prefs,omitempty"`    // last model loaded from the UI
 	MetalGPU    bool          `json:"metal_gpu,omitempty"`     // Intel Mac without AVX2: try the GPUs through the Metal build (experimental)
-	YieldGPU    bool          `json:"yield_gpu,omitempty"`     // unload the model while another program uses the GPU (gpu_yield.go)
+	YieldGPU    *bool         `json:"yield_gpu,omitempty"`     // unload the model while another program uses the GPU (gpu_yield.go); nil = on (yieldOn)
 	Profiles    []LoadProfile `json:"load_profiles,omitempty"` // named load settings (load_profiles.go)
 	Pool        []string      `json:"pool,omitempty"`          // helper nodes lending memory to this node's model
 	Bench       *NodeBench    `json:"bench,omitempty"`         // measured speed of the loaded model
@@ -58,10 +58,26 @@ type NodeRec struct {
 	TargetTPS   float64 `json:"target_tps,omitempty"`
 	StorageFull string  `json:"storage_full,omitempty"` // "" = remove old models at the limit, "refuse" = refuse the copy
 	// TaskModels lets a task load its best-fit model here before work starts (tasks_models.go).
-	TaskModels bool `json:"task_models,omitempty"`
+	// nil = on (taskModelsOn); an explicit false is kept.
+	TaskModels *bool `json:"task_models,omitempty"`
 	// ChatSwitch lets chat load, download and (when space is short) remove models here for its Auto choice (chat_switch.go).
-	ChatSwitch bool `json:"chat_switch,omitempty"`
+	// nil = on (chatSwitchOn); an explicit false is kept.
+	ChatSwitch *bool `json:"chat_switch,omitempty"`
 }
+
+// A node setting that was never saved (nil) is on: new nodes get these three
+// by default, and so do nodes saved before the default changed. Only a value
+// the owner set explicitly (true or false) is kept as is.
+func boolOr(p *bool, def bool) bool {
+	if p == nil {
+		return def
+	}
+	return *p
+}
+
+func (n *NodeRec) chatSwitchOn() bool { return boolOr(n.ChatSwitch, true) }
+func (n *NodeRec) taskModelsOn() bool { return boolOr(n.TaskModels, true) }
+func (n *NodeRec) yieldOn() bool      { return boolOr(n.YieldGPU, true) }
 
 type nodeConn struct {
 	conn *websocket.Conn
