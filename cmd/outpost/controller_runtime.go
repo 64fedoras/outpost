@@ -170,7 +170,7 @@ func (c *Controller) latestReleases(ctx context.Context, force bool) ([]ghReleas
 	if err := json.NewDecoder(resp.Body).Decode(&rels); err != nil {
 		return nil, err
 	}
-	c.mergeCompatAssets(ctx, base, rels)
+	rels = c.mergeCompatAssets(ctx, base, rels)
 	rc.releases, rc.checked = rels, time.Now()
 	return rels, nil
 }
@@ -185,37 +185,48 @@ func compatRepo() string {
 
 // mergeCompatAssets adds the compatible builds to the matching upstream releases, so every
 // later lookup (newest, older, common build) treats them as one more asset of that release.
-// Releases there are tagged llama-compat-<upstream tag>. A failure here only means nodes
-// that need a compatible build cannot get one yet; upstream builds are unaffected.
-func (c *Controller) mergeCompatAssets(ctx context.Context, base string, rels []ghRelease) {
+// Releases there are tagged llama-compat-<upstream tag>. When the upstream release is not
+// in the recent list (llama.cpp publishes many builds a day, so a tag can scroll off, or
+// the newest tag may not be the newest release) the compatible build is added as a release
+// of its own, after the upstream ones. A failure here only means nodes that need a
+// compatible build cannot get one yet; upstream builds are unaffected.
+func (c *Controller) mergeCompatAssets(ctx context.Context, base string, rels []ghRelease) []ghRelease {
 	req, _ := http.NewRequestWithContext(ctx, "GET", base+"/repos/"+compatRepo()+"/releases?per_page=50", nil)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "outpost/"+Version)
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	if err != nil {
 		log.Printf("compatible llama.cpp builds: %v", err)
-		return
+		return rels
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		log.Printf("compatible llama.cpp builds: GitHub: %s", resp.Status)
-		return
+		return rels
 	}
 	var compat []ghRelease
 	if json.NewDecoder(resp.Body).Decode(&compat) != nil {
-		return
+		return rels
 	}
-	byTag := map[string]ghRelease{}
-	for _, r := range compat {
-		if t, ok := strings.CutPrefix(r.TagName, "llama-compat-"); ok {
-			byTag[t] = r
+	merged := map[string]bool{}
+	for _, r := range compat { // newest first, as GitHub lists them
+		t, ok := strings.CutPrefix(r.TagName, "llama-compat-")
+		if !ok || len(r.Assets) == 0 {
+			continue
 		}
-	}
-	for i := range rels {
-		if cr, ok := byTag[rels[i].TagName]; ok {
-			rels[i].Assets = append(rels[i].Assets, cr.Assets...)
+		found := false
+		for i := range rels {
+			if rels[i].TagName == t {
+				rels[i].Assets = append(rels[i].Assets, r.Assets...)
+				found = true
+			}
 		}
+		if !found && !merged[t] {
+			rels = append(rels, ghRelease{TagName: t, Assets: r.Assets})
+		}
+		merged[t] = true
 	}
+	return rels
 }
 
 // newestAsset finds the newest release with a binary for variant.
