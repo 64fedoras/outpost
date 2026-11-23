@@ -1542,7 +1542,7 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 
 .task-bar-tools .tb-more { display: none; } /* phone only: Files, Activity and Delete fold into it (see the max-width block) */
 
-/* chat picker: one card per model, "Pick a specific node…" lists the nodes that have it */
+/* chat picker: one card per model, "Pick a specific model…" lists the nodes that have it */
 .mcard .ms-n { color: var(--muted); }
 .chat-pick { align-items: start; }
 /* Specific models and nodes sit behind one link under the two lead cards; many nodes scroll in place. */

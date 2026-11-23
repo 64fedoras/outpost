@@ -99,7 +99,7 @@ function chatPickRender() {
   }).join('');
   const picked = ch.slice(2).concat(groups.filter((g) => g.nodes.length > 1).map((g) => ({ id: g.id, t: g.name, s: 'any free node' }))).find((c) => c.id === sel);
   const label = picked ? `${picked.t} · ${picked.s}` : '';
-  const specific = ready ? `<div class="mpick"><button type="button" class="link-btn" data-specific="1" aria-expanded="${chatSpecific}">${picked ? `Using ${esc(label)} · change…` : 'Pick a specific node…'}</button>${chatSpecific ? `<div class="mpick-list">${rows}</div>` : ''}</div>` : '';
+  const specific = ready ? `<div class="mpick"><button type="button" class="link-btn" data-specific="1" aria-expanded="${chatSpecific}">${picked ? `Using ${esc(label)} · change…` : 'Pick a specific model…'}</button>${chatSpecific ? `<div class="mpick-list">${rows}</div>` : ''}</div>` : '';
   setHTML('chat-msgs', `<div class="chat-pick-h"><span>Answer with</span><span class="grow"></span><span>${ready} ${ready === 1 ? 'model' : 'models'} ready</span></div><div class="chat-pick">${lead.join('')}${specific}</div>`
     + (ready ? '' : (() => {
       const first = (state ? state.nodes : []).find((n) => n.online);
