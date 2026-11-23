@@ -143,6 +143,10 @@ controller restart or update starts the charts empty again.
 GPU on the card and as a chart, and turns red at 85 °C. On Linux NVIDIA cards are read with `nvidia-smi` (installed with the driver). Windows and
 macOS report no temperature, and the row is left out. Untested on real GPUs so far.
 
+**GPUs on Intel Macs** (for example the AMD FirePro cards in a 2013 Mac Pro) are listed on the node card as
+"not used by this llama.cpp build". The llama.cpp builds Outpost installs for Intel Macs run on the CPU only, so
+these GPUs are not counted when sizing models. Detection reads `system_profiler`; untested on a real Mac.
+
 ## Saved load settings and yielding the GPU
 
 **Saved settings.** In the Load dialog, *Save these settings…* stores the model, context size, GPU layers, cache

@@ -193,7 +193,7 @@ function gaugeCard(n, o = {}) {
     <div class="gc-rings">
       ${ring(f.cpu, 'CPU', `${cpu.cores || '?'}C/${cpu.threads || '?'}T`)}
       ${ring(f.ram, 'RAM', ramTot ? bytes(ramTot) : '—')}
-      ${g ? ring(f.vram || 0, g.vendor === 'apple' ? 'GPU' : 'VRAM', bytes(g.vram_bytes) + (hb && hb.gpu_temp_c && hb.gpu_temp_c[0] > 0 ? ` · ${hb.gpu_temp_c[0]} °C` : '')) : ringNone('no GPU')}
+      ${g && !g.backend ? ringNone('GPU not used') : g ? ring(f.vram || 0, g.vendor === 'apple' ? 'GPU' : 'VRAM', bytes(g.vram_bytes) + (hb && hb.gpu_temp_c && hb.gpu_temp_c[0] > 0 ? ` · ${hb.gpu_temp_c[0]} °C` : '')) : ringNone('no GPU')}
       <div class="ring gc-speed"><div>${nvTps(f, true)}</div><div class="sub">${n.online ? `${n.running_jobs}/${n.max_jobs} jobs` : n.last_seen ? 'seen ' + ago(n.last_seen) : 'never connected'}</div></div>
     </div>
     ${dense ? '' : gaugeSparks(n)}
@@ -432,7 +432,7 @@ function nodeCard(n) {
     const util = hb && hb.gpu_util_pct ? hb.gpu_util_pct[i] : 0;
     const temp = hb && hb.gpu_temp_c && hb.gpu_temp_c[i] > 0 ? hb.gpu_temp_c[i] : 0;
     return `<div class="metric"><span class="k">GPU</span>${bar(util)}<span class="v">${util || 0}% · ${bytes(used)}/${bytes(g.vram_bytes)}${temp ? ` · <span class="${temp >= 85 ? 'temp-hot' : ''}">${temp} °C</span>` : ''}</span></div>
-      <div class="sub u19">${esc(g.name)}</div>`;
+      <div class="sub u19">${esc(g.name)}${g.backend ? '' : ' · not used by this llama.cpp build'}</div>`;
   }).join('');
   const status = n.online ? `online · ${n.running_jobs}/${n.max_jobs} jobs` : (n.last_seen ? `offline · seen ${ago(n.last_seen)}` : 'never connected');
   const paused = n.online && hb && hb.paused;

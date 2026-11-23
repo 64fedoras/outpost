@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,6 +55,53 @@ func detectHardware() Hardware {
 		}
 	}
 	return hw
+}
+
+// parseMacGPUs reads `system_profiler SPDisplaysDataType -json` and returns the discrete
+// GPUs (1 GB of VRAM or more; Intel integrated graphics share system RAM and are skipped).
+// Their Backend is empty: detected, not used by any installed llama.cpp build.
+func parseMacGPUs(b []byte) []GPUInfo {
+	var d struct {
+		Items []struct {
+			Model  string `json:"sppci_model"`
+			Vendor string `json:"spdisplays_vendor"`
+			VRAM   string `json:"spdisplays_vram"`
+		} `json:"SPDisplaysDataType"`
+	}
+	out := []GPUInfo{}
+	if json.Unmarshal(b, &d) != nil {
+		return out
+	}
+	for _, it := range d.Items {
+		f := strings.Fields(it.VRAM)
+		if len(f) != 2 || it.Model == "" {
+			continue
+		}
+		n, err := strconv.ParseFloat(f[0], 64)
+		if err != nil {
+			continue
+		}
+		switch strings.ToUpper(f[1]) {
+		case "GB":
+			n *= 1 << 30
+		case "MB":
+			n *= 1 << 20
+		default:
+			continue
+		}
+		if n < 1<<30 || strings.Contains(it.Vendor, "intel") { // Intel graphics share system RAM
+			continue
+		}
+		v := "other"
+		switch {
+		case strings.Contains(it.Vendor, "amd"), strings.Contains(it.Model, "AMD"), strings.Contains(it.Model, "Radeon"):
+			v = "amd"
+		case strings.Contains(it.Vendor, "nvidia"):
+			v = "nvidia"
+		}
+		out = append(out, GPUInfo{Vendor: v, Name: it.Model, VRAMBytes: uint64(n)})
+	}
+	return out
 }
 
 func cmdOut(name string, args ...string) string {
