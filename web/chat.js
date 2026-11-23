@@ -76,7 +76,7 @@ function chatModelGroups() {
     return { name, nodes, free, id: nodes.length > 1 ? 'model:' + name : nodes[0].id };
   });
 }
-let chatSpecific = null; // model name whose per-node list is open in the picker
+let chatSpecific = false; // the list of specific models and nodes is open in the picker
 function fillChatNodes() {
   const cur = $('chat-node').value || (chatCur && chatCur.node) || 'auto';
   const groups = chatModelGroups().filter((g) => g.nodes.length > 1);
@@ -90,22 +90,17 @@ function chatPickRender() {
   if (chatCur) return;
   const sel = $('chat-node').value || 'auto', ch = chatChoices(), groups = chatModelGroups(), ready = groups.length;
   const card = (c, extra) => `<button type="button" class="mcard ${c.id === sel ? 'sel' : ''}" data-model="${esc(c.id)}" aria-pressed="${c.id === sel}"><span class="tdot ${c.tone === 'on' ? 'work' : 'needs'}"></span><span class="mt">${esc(c.t)}</span><span class="mr">${c.id === sel ? '✓ selected' : esc(c.note)}</span><span class="ms">${esc(c.s)}${extra || ''}</span></button>`;
-  const gcard = (g) => {
-    if (g.nodes.length === 1) return card(g.nodes[0]);
-    const on = g.id === sel || g.nodes.some((n) => n.id === sel);
-    const sub = `<br><span class="ms-n">on ${g.nodes.length} nodes · ${g.free} free</span>`;
-    const c = { id: g.id, t: g.name, s: 'Any free node with it', tone: g.free ? 'on' : 'needs', note: g.free ? 'local' : 'busy' };
-    return `<div class="mgroup${on ? ' sel' : ''}">` + card(c, sub).replace('class="mcard ', `class="mcard ${on ? 'sel ' : ''}`)
-      + `<div class="mpick"><button type="button" class="link-btn" data-specific="${esc(g.name)}" aria-expanded="${chatSpecific === g.name}">Pick a specific node…</button>`
-      + (chatSpecific === g.name ? `<div class="mpick-list">${g.nodes.map((n) => `<button type="button" class="mpick-n ${n.id === sel ? 'sel' : ''}" data-model="${esc(n.id)}">${esc(n.s)}${n.note !== 'local' ? ' · ' + esc(n.note) : ''}</button>`).join('')}</div>` : '') + '</div></div>';
-  };
   const lead = ch.slice(0, 2).map((c) => card(c));
-  const all = lead.concat(groups.map(gcard));
-  const selIdx = ch.findIndex((c) => c.id === sel);
-  const phoneOne = () => (selIdx >= 0 && selIdx < 2 ? [lead[selIdx]] : [gcard(groups.find((g) => g.id === sel || g.nodes.some((n) => n.id === sel)) || groups[0])].filter((x) => x && x !== 'undefined'));
-  const shown = chatPhone() && !chatPickOpen && ready ? phoneOne() : all;
-  const more = chatPhone() ? `<button type="button" class="chat-pick-more" id="chat-pick-more" aria-expanded="${chatPickOpen}">${chatPickOpen ? 'Hide' : ready ? 'Change' : ''}</button>` : '';
-  setHTML('chat-msgs', `<div class="chat-pick-h"><span>Answer with</span><span class="grow"></span><span>${ready} ${ready === 1 ? 'model' : 'models'} ready</span>${ready ? more : ''}</div><div class="chat-pick">${shown.join('')}</div>`
+  // Specific models and nodes live behind one link under Auto and Research, so the grid stays two cards wide.
+  const opt = (id, label, note, on) => `<button type="button" class="mpick-n ${on ? 'sel' : ''}" data-model="${esc(id)}" aria-pressed="${on}">${esc(label)}${note ? `<span class="mpn-note"> · ${esc(note)}</span>` : ''}</button>`;
+  const rows = groups.map((g) => {
+    if (g.nodes.length === 1) { const n = g.nodes[0]; return `<div class="mpick-row"><span class="mpick-m">${esc(g.name)}</span><div class="mpick-chips">${opt(n.id, n.s, n.note !== 'local' ? n.note : '', n.id === sel)}</div></div>`; }
+    return `<div class="mpick-row"><span class="mpick-m">${esc(g.name)}</span><div class="mpick-chips">${opt(g.id, 'Any free node', g.free + ' of ' + g.nodes.length + ' free', g.id === sel)}${g.nodes.map((n) => opt(n.id, n.s, n.note !== 'local' ? n.note : '', n.id === sel)).join('')}</div></div>`;
+  }).join('');
+  const picked = ch.slice(2).concat(groups.filter((g) => g.nodes.length > 1).map((g) => ({ id: g.id, t: g.name, s: 'any free node' }))).find((c) => c.id === sel);
+  const label = picked ? `${picked.t} · ${picked.s}` : '';
+  const specific = ready ? `<div class="mpick"><button type="button" class="link-btn" data-specific="1" aria-expanded="${chatSpecific}">${picked ? `Using ${esc(label)} · change…` : 'Pick a specific node…'}</button>${chatSpecific ? `<div class="mpick-list">${rows}</div>` : ''}</div>` : '';
+  setHTML('chat-msgs', `<div class="chat-pick-h"><span>Answer with</span><span class="grow"></span><span>${ready} ${ready === 1 ? 'model' : 'models'} ready</span></div><div class="chat-pick">${lead.join('')}${specific}</div>`
     + (ready ? '' : (() => {
       const first = (state ? state.nodes : []).find((n) => n.online);
       return first ? `<p class="chat-none">No model is loaded yet. <button type="button" class="small primary" data-act="best" data-id="${esc(first.id)}">Set up a model on ${esc(nodeName(first))}</button><br><span class="hint">Outpost suggests the best one that fits that machine; you confirm before anything downloads.</span></p>`
@@ -334,7 +329,7 @@ $('chat-new').onclick = chatNew; $('chat-new2').onclick = chatNew;
 $('chat-panel-btn').onclick = () => chatPanelSet(!chatPanelOpen());
 $('chat-panel-x').onclick = () => chatPanelSet(false);
 $('chat-node').addEventListener('change', () => { chatPickRender(); if (typeof chatImg !== 'undefined') chatImg.refresh(); });
-$('chat-msgs').addEventListener('click', (e) => { const sp = e.target.closest('[data-specific]'); if (sp) { chatSpecific = chatSpecific === sp.dataset.specific ? null : sp.dataset.specific; chatPickRender(); return; }
+$('chat-msgs').addEventListener('click', (e) => { const sp = e.target.closest('[data-specific]'); if (sp) { chatSpecific = !chatSpecific; chatPickRender(); return; }
   const b = e.target.closest('[data-model]'); if (b) { $('chat-node').value = b.dataset.model; chatPickOpen = false; chatPickRender(); $('chat-text').focus(); return; }
   if (e.target.closest('#chat-pick-more')) { chatPickOpen = !chatPickOpen; chatPickRender(); return; }
   chatAct(e.target); });
