@@ -128,8 +128,9 @@ type Hello struct {
 	Runtime           *RuntimeInfo `json:"runtime,omitempty"`
 	SDRuntime         *RuntimeInfo `json:"sd_runtime,omitempty"` // stable-diffusion.cpp build, when installed (image generation)
 	VulkanAvailable   bool         `json:"vulkan_available"`
-	Glibc             string       `json:"glibc,omitempty"`   // Linux: this machine's glibc version, e.g. "2.35"
-	NoAVX2            bool         `json:"no_avx2,omitempty"` // x86-64 CPU without AVX2: upstream macOS x64 llama.cpp crashes on it
+	Glibc             string       `json:"glibc,omitempty"`        // Linux: this machine's glibc version, e.g. "2.35"
+	MetalOptIn        bool         `json:"metal_opt_in,omitempty"` // Intel Mac: a "metal" file in the data folder asks for the GPU (Metal) build
+	NoAVX2            bool         `json:"no_avx2,omitempty"`      // x86-64 CPU without AVX2: upstream macOS x64 llama.cpp crashes on it
 	LoadedModel       string       `json:"loaded_model"`
 	RollbackTo        string       `json:"rollback_to,omitempty"` // previous installed Outpost version
 	Paused            bool         `json:"paused,omitempty"`

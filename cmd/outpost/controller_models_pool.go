@@ -64,6 +64,12 @@ func (c *Controller) installRuntimeTry(ctx context.Context, id, build string) er
 	for attempt := 0; ; attempt++ {
 		c.setNodeOp(id, OpStatus{Op: "runtime", Target: variant, State: "preparing"})
 		rt, err := c.ensureRuntimeBuild(ctx, variant, build)
+		if err != nil && variant == "macos-x64-compat-metal" {
+			// No Metal build published for this llama.cpp release yet: use the CPU one.
+			log.Printf("%s: no Metal build of llama.cpp available (%v); using the CPU compatible build", c.nodeLabel(id), err)
+			variant = "macos-x64-compat"
+			continue
+		}
 		if err != nil {
 			if strings.HasSuffix(variant, "-compat") {
 				return fmt.Errorf("llama.cpp: %w. %s needs Outpost's compatible llama.cpp build (upstream's does not run on this machine: %s). It is made by the \"llama.cpp compatible builds\" workflow in Outpost's GitHub repository, which has not published one yet", err, c.nodeLabel(id), compatReason(&hello))

@@ -147,6 +147,14 @@ macOS report no temperature, and the row is left out. Untested on real GPUs so f
 "not used by this llama.cpp build". The llama.cpp builds Outpost installs for Intel Macs run on the CPU only, so
 these GPUs are not counted when sizing models. Detection reads `system_profiler`; untested on a real Mac.
 
+**Trying the GPUs on an Intel Mac without AVX2 (experimental).** Such a Mac normally gets Outpost's CPU-only
+compatible llama.cpp build. To try the Metal (GPU) build instead, create an empty file named `metal` in the node's
+data folder (for a service install: `sudo touch "/Library/Application Support/outpost/node/metal"`), restart the
+node, and load a model; Outpost installs the `macos-x64-compat-metal` build. Old AMD cards (FirePro D-series, Metal 2)
+may not work with llama.cpp's Metal kernels. If the Metal build keeps failing to start, Outpost deletes the file and
+the next load installs the CPU build again. Delete the file yourself to go back at any time. Untested on a real Mac;
+the Metal build is only published by the "llama.cpp compatible builds" workflow for releases built after this was added.
+
 ## Saved load settings and yielding the GPU
 
 **Saved settings.** In the Load dialog, *Save these settings…* stores the model, context size, GPU layers, cache

@@ -19,3 +19,21 @@ func TestParseMacGPUs(t *testing.T) {
 		t.Error("garbage should give none")
 	}
 }
+
+func TestNodeVariantMetalOptIn(t *testing.T) {
+	h := &Hello{OS: "darwin", Arch: "amd64", NoAVX2: true, GPUs: []GPUInfo{{Vendor: "amd", Name: "D700", VRAMBytes: 6 << 30}}}
+	if v, _ := nodeVariant(h); v != "macos-x64-compat" {
+		t.Errorf("without opt-in: %s", v)
+	}
+	h.MetalOptIn = true
+	if v, _ := nodeVariant(h); v != "macos-x64-compat-metal" {
+		t.Errorf("with opt-in: %s", v)
+	}
+	h.GPUs = nil
+	if v, _ := nodeVariant(h); v != "macos-x64-compat" {
+		t.Errorf("opt-in but no GPU: %s", v)
+	}
+	if runtimeAssets["macos-x64-compat-metal"] == runtimeAssets["macos-x64-compat"] {
+		t.Error("asset suffixes must differ")
+	}
+}

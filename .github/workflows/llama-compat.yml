@@ -71,6 +71,8 @@ jobs:
             os: ubuntu-22.04-arm
           - name: macos-x64-noavx2
             os: macos-15-intel
+          - name: macos-x64-noavx2-metal
+            os: macos-15-intel
     runs-on: ${{ matrix.os }}
     steps:
       - name: Get llama.cpp
@@ -97,12 +99,15 @@ jobs:
           fi
 
       - name: Build (macOS x64 without AVX2)
-        if: matrix.name == 'macos-x64-noavx2'
+        if: startsWith(matrix.name, 'macos-x64-noavx2')
         working-directory: llama.cpp
         run: |
-          # Plain AVX (Sandy/Ivy Bridge) and F16C only; no FMA, AVX2 or AVX-512.
+          # Plain AVX (Sandy/Ivy Bridge) and F16C only; no FMA, AVX2 or AVX-512. The -metal
+          # variant has the Metal GPU backend on (shaders embedded in the library), for Intel Macs
+          # with a discrete GPU; Outpost uses it only on nodes that opt in.
+          METAL=OFF; [ "${{ matrix.name }}" = macos-x64-noavx2-metal ] && METAL=ON
           cmake -B build \
-            -DGGML_METAL=OFF -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DGGML_METAL=$METAL -DGGML_METAL_EMBED_LIBRARY=$METAL -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
             -DCMAKE_INSTALL_RPATH='@loader_path' -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
             -DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_F16C=ON -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_BMI2=OFF \
             -DGGML_AVX512=OFF -DGGML_AVX_VNNI=OFF -DLLAMA_BUILD_BORINGSSL=ON \
@@ -114,7 +119,7 @@ jobs:
         run: |
           ./build/bin/llama-server --version
           case "${{ matrix.name }}" in
-            macos-x64-noavx2)
+            macos-x64-noavx2|macos-x64-noavx2-metal)
               # Fail the job if any instruction from AVX2/FMA/AVX-512 slipped into the code that
               # runs on every CPU: ggml (the maths) and llama itself. Only the mnemonic and operand
               # columns of the disassembly are looked at (not symbol names), and the first offenders

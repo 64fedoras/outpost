@@ -564,8 +564,17 @@ func (n *Node) hello() Hello {
 		Tools:      n.toolInventory(false), Shell: nodeShell(),
 		Sandbox: n.sandboxMode(), SandboxLayers: sandboxLayers(n.sandboxMode()),
 	}
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "amd64" {
+		_, err := os.Stat(n.metalFile())
+		h.MetalOptIn = err == nil
+	}
 	if rt := n.currentRuntime(); rt != nil {
 		h.Runtime = &rt.RuntimeInfo
+		if rt.Variant == "macos-x64-compat-metal" { // the GPUs are used now
+			for i := range h.GPUs {
+				h.GPUs[i].Backend = "metal"
+			}
+		}
 	}
 	if rt := n.currentSD(); rt != nil {
 		h.SDRuntime = &rt.RuntimeInfo
