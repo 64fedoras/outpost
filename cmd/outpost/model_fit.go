@@ -67,7 +67,14 @@ func loadableMemory(h *Hello) (vram, ram int64, ok bool) {
 	if variant == "" {
 		return 0, ram, false
 	}
-	if !strings.HasSuffix(variant, "-vulkan") {
+	switch {
+	case variant == "macos-x64-compat-metal":
+		// llama.cpp's Metal backend drives one GPU, so count the biggest card, not the sum.
+		vram = 0
+		for _, g := range h.GPUs {
+			vram = max(vram, int64(g.VRAMBytes))
+		}
+	case !strings.HasSuffix(variant, "-vulkan"):
 		vram = 0
 	}
 	return vram, ram, true

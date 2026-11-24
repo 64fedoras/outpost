@@ -60,3 +60,15 @@ func TestParseMacGPUsText(t *testing.T) {
 		t.Fatalf("got %+v", g)
 	}
 }
+
+func TestLoadableMemoryMetalUsesOneGPU(t *testing.T) {
+	h := &Hello{OS: "darwin", Arch: "amd64", NoAVX2: true, MetalOptIn: true, RAMBytes: 32 << 30,
+		GPUs: []GPUInfo{{Vendor: "amd", VRAMBytes: 6 << 30}, {Vendor: "amd", VRAMBytes: 6 << 30}}}
+	if v, _, ok := loadableMemory(h); !ok || v != 6<<30 {
+		t.Errorf("metal: vram %d ok %v", v, ok)
+	}
+	h.MetalOptIn = false
+	if v, _, _ := loadableMemory(h); v != 0 {
+		t.Errorf("cpu build: vram %d", v)
+	}
+}
