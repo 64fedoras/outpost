@@ -60,7 +60,7 @@ func glibcBelow(have, want string) bool { return have != "" && compareVersions(h
 // nodeVariant picks the llama.cpp build for a node. GPU nodes get Vulkan,
 // which covers AMD, Intel and NVIDIA cards without vendor toolkits.
 func nodeVariant(h *Hello) (variant, note string) {
-	hasGPU := false
+	hasGPU := len(h.IntegratedGPUs) > 0 // integrated graphics get the Vulkan build too; the speed check decides
 	for _, g := range h.GPUs {
 		if g.Vendor != "apple" {
 			hasGPU = true

@@ -144,6 +144,9 @@ func (c *Controller) rankBestFit(id string, n *NodeRec, opts []LoadOption, vram,
 			if apple && (sp.Source == "estimate" || sp.Source == "bandwidth") {
 				sp.TPS, sp.Source = sp.TPS*appleGPUFactor, "apple"
 			}
+			if r := integratedSpeedup(h); r > 1 && (sp.Source == "estimate" || sp.Source == "bandwidth") {
+				sp.TPS *= r // the measured gain of this node's integrated GPU over its CPU
+			}
 			o.EstTPS, o.SpeedSrc, o.Unified = sp.TPS, sp.Source, apple
 		case fitSplit:
 			// The share in VRAM runs fast and the rest at the CPU's pace. A benchmark of
@@ -279,6 +282,16 @@ func speedNote(o *LoadOption, target float64) string {
 		s += fmt.Sprintf(". That is under your target of %.0f tok/s", target)
 	}
 	return s
+}
+
+// integratedSpeedup is how much faster a node's integrated GPU generated than its CPU in the
+// speed check (1..3: it shares the CPU's memory bandwidth, so big gains are not expected), or 1
+// when there is none, it was slower, or it was not measured.
+func integratedSpeedup(h *Hello) float64 {
+	if h == nil || len(h.GPUs) > 0 || len(h.IntegratedGPUs) == 0 || h.GPUCheck == nil || h.GPUCheck.Slower || h.GPUCheck.GPUTPS <= 0 || h.GPUCheck.CPUTPS <= 0 {
+		return 1
+	}
+	return min(max(h.GPUCheck.GPUTPS/h.GPUCheck.CPUTPS, 1), 3)
 }
 
 // gpuSpeedup is how much faster the node's GPU generates than its CPU: measured by the

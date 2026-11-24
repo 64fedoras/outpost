@@ -85,7 +85,8 @@ func (n *Node) clearGPUCheck() {
 // result (nil when no check applies). It is called with no llama-server running, so the
 // GPU is free.
 func (n *Node) ensureGPUCheck(rt *runtimeRecord, model string) *GPUCheck {
-	gpus := detectHardware().GPUs
+	hw := detectHardware()
+	gpus := hw.checkGPUs()
 	if !gpuCheckWanted(rt.Variant, gpus) {
 		return nil
 	}
@@ -104,7 +105,7 @@ func (n *Node) ensureGPUCheck(rt *runtimeRecord, model string) *GPUCheck {
 		return c
 	}
 	n.opStatus("model.load", model, "checking GPU speed", 0, 0, "")
-	c := n.runGPUCheck(rt, gpus)
+	c := n.runGPUCheck(rt, gpus, hw.RAMBytes)
 	c.Key, c.At = key, time.Now()
 	if c.Skipped == "" {
 		t := GPUTrial{Variant: rt.Variant, GPUTPS: c.GPUTPS, CPUTPS: c.CPUTPS}
@@ -128,7 +129,7 @@ func (n *Node) ensureGPUCheck(rt *runtimeRecord, model string) *GPUCheck {
 	return c
 }
 
-func (n *Node) runGPUCheck(rt *runtimeRecord, gpus []GPUInfo) *GPUCheck {
+func (n *Node) runGPUCheck(rt *runtimeRecord, gpus []GPUInfo, ramBytes uint64) *GPUCheck {
 	bench := filepath.Join(filepath.Dir(rt.ServerPath), "llama-bench")
 	if runtime.GOOS == "windows" {
 		bench += ".exe"
@@ -136,13 +137,9 @@ func (n *Node) runGPUCheck(rt *runtimeRecord, gpus []GPUInfo) *GPUCheck {
 	if _, err := os.Stat(bench); err != nil {
 		return &GPUCheck{Skipped: "this llama.cpp build has no llama-bench"}
 	}
-	var maxVRAM uint64
-	for _, g := range gpus {
-		maxVRAM = max(maxVRAM, g.VRAMBytes)
-	}
-	model := n.gpuCheckModel(int64(maxVRAM) * 6 / 10)
+	model := n.gpuCheckModel(gpuCheckLimit(gpus, ramBytes))
 	if model == "" {
-		return &GPUCheck{Skipped: "no model on this node is small enough to fit its GPU; it is checked after a smaller model is stored here"}
+		return &GPUCheck{Skipped: "no model on this node is small enough for the speed check; it is checked after a smaller model is stored here"}
 	}
 	c := &GPUCheck{Model: filepath.Base(filepath.Dir(model))}
 	cpu, err := runLlamaBench(bench, model, "0")
@@ -158,6 +155,31 @@ func (n *Node) runGPUCheck(rt *runtimeRecord, gpus []GPUInfo) *GPUCheck {
 	c.GPUTPS = gpu
 	c.Slower = gpuSlower(gpu, cpu)
 	return c
+}
+
+// gpuCheckLimit is the biggest test model, in bytes: 60% of the biggest GPU's memory, or for
+// integrated graphics (which use system RAM) a quarter of the RAM, so the check never squeezes the machine.
+func gpuCheckLimit(gpus []GPUInfo, ramBytes uint64) int64 {
+	var maxVRAM uint64
+	integrated := len(gpus) > 0
+	for _, g := range gpus {
+		maxVRAM = max(maxVRAM, g.VRAMBytes)
+		integrated = integrated && g.Integrated
+	}
+	if integrated {
+		return int64(ramBytes / 4)
+	}
+	return int64(maxVRAM) * 6 / 10
+}
+
+// integratedOnly says whether every GPU in the list is integrated graphics.
+func integratedOnly(gpus []GPUInfo) bool {
+	for _, g := range gpus {
+		if !g.Integrated {
+			return false
+		}
+	}
+	return len(gpus) > 0
 }
 
 func gpuSlower(gpu, cpu float64) bool { return cpu > 0 && gpu < cpu*gpuSlowerShare }

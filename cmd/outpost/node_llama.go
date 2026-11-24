@@ -346,8 +346,13 @@ func (l *llamaMgr) load(ml ModelLoad) {
 		l.n.touchModel(ml.Draft)
 		ml.DraftPath = p
 	}
-	if c := l.n.ensureGPUCheck(rt, ml.Name); c != nil && c.Slower && (ml.GPULayers == "" || ml.GPULayers == "auto") {
-		ml.GPULayers = "0" // measured: this GPU is slower than the CPU (an explicit layer count is kept)
+	if c := l.n.ensureGPUCheck(rt, ml.Name); c != nil && (ml.GPULayers == "" || ml.GPULayers == "auto") {
+		switch {
+		case c.Slower:
+			ml.GPULayers = "0" // measured: this GPU is slower than the CPU (an explicit layer count is kept)
+		case c.Skipped != "" && integratedOnly(detectHardware().checkGPUs()):
+			ml.GPULayers = "0" // an integrated GPU is only used once it has been measured faster
+		}
 	}
 	l.n.applyKVFit(&ml, modelPath)
 	if err := l.start(rt, ml, modelPath, 0); err != nil {

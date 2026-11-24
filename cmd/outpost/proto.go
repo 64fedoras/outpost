@@ -100,6 +100,9 @@ type GPUInfo struct {
 	Name      string `json:"name"`
 	VRAMBytes uint64 `json:"vram_bytes"`
 	Backend   string `json:"backend"`
+	// Integrated is an Intel iGPU or AMD APU graphics that shares system RAM. VRAMBytes is only
+	// its small carve-out, so it never counts as VRAM; the speed check decides whether it is used.
+	Integrated bool `json:"integrated,omitempty"`
 }
 
 // GPUCheck is a node's measured generation speed with a small model all on the GPU and all
@@ -150,13 +153,14 @@ type Hello struct {
 	Runtime           *RuntimeInfo `json:"runtime,omitempty"`
 	SDRuntime         *RuntimeInfo `json:"sd_runtime,omitempty"` // stable-diffusion.cpp build, when installed (image generation)
 	VulkanAvailable   bool         `json:"vulkan_available"`
-	Glibc             string       `json:"glibc,omitempty"`         // Linux: this machine's glibc version, e.g. "2.35"
-	GPUCheck          *GPUCheck    `json:"gpu_check,omitempty"`     // GPU vs CPU speed on the installed build (node_gpucheck.go)
-	NvidiaDriver      string       `json:"nvidia_driver,omitempty"` // installed NVIDIA driver version (Windows), decides whether the CUDA build is tried
-	GPUTrials         []GPUTrial   `json:"gpu_trials,omitempty"`    // Vulkan and CUDA timings on these GPUs (cuda.go)
-	CUDABlocked       bool         `json:"-"`                       // controller only: a CUDA install failed here lately
-	MetalFailed       string       `json:"metal_failed,omitempty"`  // the Metal build did not start, so the CPU build is used
-	NoAVX2            bool         `json:"no_avx2,omitempty"`       // x86-64 CPU without AVX2: upstream macOS x64 llama.cpp crashes on it
+	Glibc             string       `json:"glibc,omitempty"`           // Linux: this machine's glibc version, e.g. "2.35"
+	GPUCheck          *GPUCheck    `json:"gpu_check,omitempty"`       // GPU vs CPU speed on the installed build (node_gpucheck.go)
+	NvidiaDriver      string       `json:"nvidia_driver,omitempty"`   // installed NVIDIA driver version (Windows), decides whether the CUDA build is tried
+	IntegratedGPUs    []GPUInfo    `json:"integrated_gpus,omitempty"` // iGPUs on a node with no discrete GPU; kept apart from GPUs so they never count as VRAM
+	GPUTrials         []GPUTrial   `json:"gpu_trials,omitempty"`      // Vulkan and CUDA timings on these GPUs (cuda.go)
+	CUDABlocked       bool         `json:"-"`                         // controller only: a CUDA install failed here lately
+	MetalFailed       string       `json:"metal_failed,omitempty"`    // the Metal build did not start, so the CPU build is used
+	NoAVX2            bool         `json:"no_avx2,omitempty"`         // x86-64 CPU without AVX2: upstream macOS x64 llama.cpp crashes on it
 	LoadedModel       string       `json:"loaded_model"`
 	RollbackTo        string       `json:"rollback_to,omitempty"` // previous installed Outpost version
 	Paused            bool         `json:"paused,omitempty"`

@@ -61,7 +61,7 @@ function nodeFacts(n) {
     if (lf) issues.push({ lvl: 'bad', short: 'Failed', text: lf.error || 'The last model operation failed.', act: 'load', fix: 'Load model…' });
     else if (hb && hb.llama_error && !ready) issues.push({ lvl: 'bad', short: 'Model error', text: hb.llama_error, act: 'load', fix: 'Load model…' });
     if (hb && hb.paused) issues.push({ lvl: 'warn', short: 'Paused', text: pauseText(n), ...(canPause(n) ? { act: 'node-resume', fix: 'Resume' } : {}) });
-    if (h.os === 'linux' && (h.gpus || []).some((x) => x.vendor !== 'apple') && !h.vulkan_available) issues.push({ lvl: 'warn', short: 'No Vulkan', text: 'GPU found, but no Vulkan driver, so models run on CPU.' });
+    if (h.os === 'linux' && ((h.gpus || []).some((x) => x.vendor !== 'apple') || (h.integrated_gpus || []).length) && !h.vulkan_available) issues.push({ lvl: 'warn', short: 'No Vulkan', text: 'GPU found, but no Vulkan driver, so models run on CPU.' });
     if (h.models_free_bytes && h.models_free_bytes < 10 * 1024 ** 3) issues.push({ lvl: 'warn', short: 'Low disk', text: `${bytes(h.models_free_bytes)} free for models. The next model copy may need a cleanup.`, act: 'clean', fix: 'Clean up…' });
     const sf = storageFacts(n);
     if (sf && sf.full) issues.push({ lvl: 'warn', short: 'At limit', text: `Outpost uses ${bytes(sf.u.total)} of its ${bytes(sf.lim)} storage limit. New models are ${n.storage_full === 'refuse' ? 'refused' : 'only copied after old ones are removed'}.`, act: 'clean', fix: 'Clean up…' });
@@ -445,7 +445,7 @@ function nodeCard(n) {
   const loaded = hb && hb.loaded_model, ready = hb && hb.inference_ready;
   const stored = (h.models || []);
   const inUse = new Set([loaded, n.load_prefs && n.load_prefs.name].filter(Boolean));
-  const needsVulkan = h.os === 'linux' && (h.gpus || []).some((g) => g.vendor !== 'apple') && !h.vulkan_available;
+  const needsVulkan = h.os === 'linux' && ((h.gpus || []).some((g) => g.vendor !== 'apple') || (h.integrated_gpus || []).length) && !h.vulkan_available;
   const modelBox = n.lending_to ? `<div class="model-box">
       <div class="row"><span class="dot ${hb && hb.rpc_endpoint ? 'on' : 'busy'}"></span><span class="grow">Lending memory to <b>${esc(n.lending_to)}</b>${hb && hb.rpc_endpoint ? '' : ' · starting'}</span></div>
       <div class="sub wrap u15">Its RAM${(h.gpus || []).length ? ' and VRAM' : ''} hold part of ${esc(n.lending_to)}'s model. Unload that model to get this node back.</div>
@@ -690,17 +690,17 @@ async function toggleYield(id) {
   try { await post(`/api/nodes/${id}/settings`, { yield_gpu: n.yield_gpu === false }); toast((n.yield_gpu !== false) ? 'Off' : 'On: the model unloads while another program keeps the GPU busy'); } catch (e) { toast(e.message); }
   refresh();
 }
-// gpuCheckLine shows the node's GPU vs CPU speed check (node_gpucheck.go) for nodes with a discrete GPU.
+// gpuCheckLine shows the node's GPU vs CPU speed check (node_gpucheck.go) for nodes with a discrete or integrated GPU.
 function gpuCheckLine(n, h) {
   const c = h.gpu_check;
   if (h.metal_failed) return `<div class="sub u15"><span class="hint warn-text">${esc(h.metal_failed)}; using the CPU build</span></div>`;
-  if (!c || !(h.gpus || []).some((g) => g.vendor !== 'apple')) return '';
+  if (!c || !((h.gpus || []).some((g) => g.vendor !== 'apple') || (h.integrated_gpus || []).length)) return '';
   const tps = (v) => (v >= 10 ? v.toFixed(0) : v.toFixed(1));
   const re = n.online ? ` · <a href="#" data-act="gpu-recheck" data-id="${n.id}" title="Measure again on the next model load, for example after a driver update">Re-check</a>` : '';
   const tip = 'Measured with llama-bench on a small model, all on the GPU and all on the CPU, once per llama.cpp build and GPU.';
   if (c.skipped) return `<div class="sub u15" title="${esc(tip)}"><span title="${esc(c.skipped)}">GPU speed not checked</span>${re}</div>`;
   if (c.slower) return `<div class="sub u15" title="${esc(tip)}"><span class="hint warn-text">GPU slower than CPU${c.gpu_tps ? ` (${tps(c.gpu_tps)} vs ${tps(c.cpu_tps)} tok/s)` : ''}: models use the CPU</span>${c.note ? ` · ${esc(c.note)}` : ''}${re}</div>`;
-  return `<div class="sub u15" title="${esc(tip)}">GPU ${tps(c.gpu_tps)} tok/s, CPU ${tps(c.cpu_tps)} tok/s (speed check)${re}</div>`;
+  return `<div class="sub u15" title="${esc(tip)}">${(h.gpus || []).length ? 'GPU' : 'Integrated GPU'} ${tps(c.gpu_tps)} tok/s, CPU ${tps(c.cpu_tps)} tok/s (speed check)${re}</div>`;
 }
 async function gpuRecheck(id) {
   try { await post(`/api/nodes/${id}/gpu-recheck`, {}); toast('The GPU speed is measured again on the next model load'); } catch (e) { toast(e.message); }

@@ -165,6 +165,16 @@ GPU change. If the CUDA build cannot be downloaded or installed, the node stays 
 day. There is no setting. Machines with an NVIDIA and another make of card keep Vulkan, which drives every card, and
 Linux keeps Vulkan (upstream publishes no Linux CUDA build). Untested on real NVIDIA hardware and on Windows.
 
+**Integrated GPUs (Intel iGPU, AMD APU).** A node with no discrete GPU but an Intel or AMD integrated GPU (under 1 GB of
+dedicated memory) used to be treated as a plain CPU machine. It is now detected, listed apart from the real GPUs, and
+gets the Vulkan build (on Linux this needs the Vulkan loader and Mesa drivers, as for any GPU). The speed check times a
+small model on it the same way, using a model up to a quarter of the node's RAM, since an iGPU works in system RAM. The
+iGPU is used only when it generates at least as fast as 90% of the CPU: otherwise, and until it has been measured,
+models run on the CPU, as before. Its shared memory is never counted as VRAM; when it wins, Pick best multiplies the
+CPU speed estimate by the measured gain (capped at 3x, since it shares the CPU's memory bandwidth). A machine that also
+has a discrete GPU ignores its integrated one. A node that moves to the Vulkan build downloads it once. Untested on real
+Intel or AMD integrated graphics and on Windows.
+
 **GPUs on Intel Macs** (for example the AMD FirePro cards in a 2013 Mac Pro) are read with `system_profiler` and
 listed in the node's details. An Intel Mac with a discrete GPU gets a llama.cpp build with Metal (Outpost's AVX-only
 `macos-x64-compat-metal` build on CPUs without AVX2), and the GPU speed check decides whether it is used. llama.cpp's
