@@ -235,3 +235,19 @@ func TestChatSearchesStash(t *testing.T) {
 		t.Fatalf("clear %d", rec.Code)
 	}
 }
+
+func TestStashSearchFusesWordsAndMeaning(t *testing.T) {
+	ix := &stashIndex{dim: 2, ps: []Passage{
+		{Res: "a", N: 1, Text: "Customers can ask for a refund within thirty days."},
+		{Res: "a", N: 2, Text: "The dice roller now supports custom faces."},
+	}, vecs: []float32{0.6, 0.8, 0.8, 0.6}}
+	ix.build()
+	// Closer in meaning to the second passage, but only the first one has the words.
+	hits := ix.search("refund policy for customers", []float32{0.8, 0.6}, 2)
+	if len(hits) != 2 || hits[0].Index != 0 {
+		t.Fatalf("words and meaning should be fused, got %+v", hits)
+	}
+	if hits[0].Fused <= hits[1].Fused {
+		t.Fatalf("hits are not ordered by the fused rank: %+v", hits)
+	}
+}

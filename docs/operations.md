@@ -178,7 +178,7 @@ connection attempt. Update nodes to 0.7.0 before replacing the certificate.
 
 **Settings → Backup.** *Download backup* gives one encrypted `.opb` file (AES-256-GCM, key from your
 passphrase with PBKDF2) holding settings, the encrypted Claude key and `secret.key`, node keys, the
-TLS certificate, API tokens, the spending ledger and all tasks. Models, runtimes and releases are left out unless you tick
+TLS certificate, API tokens, the spending ledger, all tasks, projects and the Stash (documents and indexes). Models, runtimes and releases are left out unless you tick
 the box. The passphrase cannot be recovered. On a fresh machine:
 
 ```sh

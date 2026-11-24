@@ -28,7 +28,7 @@ async def main():
             await pg.goto(U + "/#/chat"); await pg.wait_for_selector("#chat-plus"); await pg.wait_for_timeout(600)
             # menu
             await pg.click("#chat-plus"); await pg.wait_for_selector("#chat-plus-menu:not(.hidden)")
-            assert await pg.locator("#chat-plus-menu [data-sk-menu]").count() == 4
+            assert await pg.locator("#chat-plus-menu [data-sk-menu]").count() == 5
             await pg.screenshot(path=S + f"menu-{name}.png")
             await pg.keyboard.press("Escape"); assert await pg.locator("#chat-plus-menu.hidden").count() == 1
             # run code from the menu shows a chip

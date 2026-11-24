@@ -421,7 +421,7 @@ func (c *Controller) stashSearch(ctx context.Context, ids []string, q string, k 
 		}
 		s.mu.Unlock()
 	}
-	sort.SliceStable(all, func(i, j int) bool { return all[i].Score > all[j].Score })
+	sort.SliceStable(all, func(i, j int) bool { return all[i].Fused > all[j].Fused })
 	if len(all) > k {
 		all = all[:k]
 	}

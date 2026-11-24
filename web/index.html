@@ -71,6 +71,7 @@
     <nav class="side-rows" aria-label="Pages">
       <a class="side-row side-projects" href="#/chat" data-tab="chat"><span aria-hidden="true">💬</span> Chat</a>
       <a class="side-row side-projects" href="#/projects" data-tab="projects"><span aria-hidden="true">▤</span> Projects</a>
+      <a class="side-row side-projects" href="#/stash" data-tab="stash"><span aria-hidden="true">▦</span> Stash</a>
       <nav class="side-pins hidden" id="side-pins" aria-label="Pinned projects"></nav>
       <a class="side-row side-projects" href="#/scheduled" data-tab="scheduled"><span aria-hidden="true">⏱</span> Scheduled <span class="badge hidden side-badge" id="badge-sched" title="Active schedules"></span></a>
     </nav>
@@ -395,6 +396,9 @@
       </details>
       <p class="sub wrap u5" id="ctl-info"></p>
     </section>
+
+    <!-- STASH -->
+    <section data-page="stash" class="hidden"><div id="sh-root"></div></section>
 
     <!-- SPENDING -->
     <section data-page="spending" class="hidden">
@@ -752,6 +756,15 @@
     <h3 id="leave-title">Leave without saving?</h3>
     <p class="hint" id="leave-what"></p>
     <div class="modal-foot"><button id="leave-discard" class="danger">Discard changes</button><button id="leave-save" class="primary hidden">Save and leave</button><button id="leave-stay">Stay</button></div>
+  </div>
+</div>
+
+<div id="modal-passage" class="overlay hidden">
+  <div class="modal">
+    <h3 id="sh-pass-title">Passage</h3>
+    <p class="sub" id="sh-pass-sub"></p>
+    <div class="sh-pass" id="sh-pass-body"></div>
+    <div class="modal-foot"><button data-close>Close</button></div>
   </div>
 </div>
 
@@ -1202,6 +1215,7 @@
 <script src="images.js"></script>
 <script src="viewer3d.js"></script>
 <script src="cad.js"></script>
+<script src="stash.js"></script>
 <script src="chatskills.js"></script>
 <script src="chatpolish.js"></script>
 <script src="boot.js"></script>

@@ -125,16 +125,16 @@ function refreshIcons() {
     l.replaceWith(c);
   });
 }
-const PAGES = ['new', 'image', 'cad', 'task', 'chat', 'scheduled', 'projects', 'project', 'nodes', 'models', 'updates', 'spending', 'settings'];
+const PAGES = ['new', 'image', 'cad', 'task', 'chat', 'scheduled', 'projects', 'project', 'stash', 'nodes', 'models', 'updates', 'spending', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
   ntDraft.flush(); tmDraft.flush();
   const m = location.hash.match(/^#\/(\w+)(?:\/([\w-]+))?/) || [];
   page = m[1] === 'tasks' && m[2] ? 'task' : m[1] === 'projects' && m[2] ? 'project' : m[1] === 'project' ? 'projects' : PAGES.includes(m[1]) ? m[1] : 'new';
-  pageArg = page === 'task' || page === 'chat' || page === 'project' ? m[2] || null : null;
+  pageArg = page === 'task' || page === 'chat' || page === 'project' || page === 'stash' ? m[2] || null : null;
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
   document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === (page === 'project' ? 'projects' : page)));
-  document.querySelector('.page-plain').classList.toggle('hidden', !['scheduled', 'projects', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
+  document.querySelector('.page-plain').classList.toggle('hidden', !['scheduled', 'projects', 'stash', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image', cad: 'New 3D model' }[page] || page[0].toUpperCase() + page.slice(1));
   refreshIcons();
   clampHints();
@@ -147,6 +147,7 @@ function route() {
   if (page === 'settings') loadSettings();
   if (page === 'spending') loadSpending();
   if (page === 'chat') chatOpen(pageArg);
+  if (page === 'stash') stashRoute();
   if (page === 'project') projectRoute();
   if (typeof imgRoute === 'function') imgRoute(page);
   if (typeof cadRoute === 'function') cadRoute(page);
@@ -258,6 +259,7 @@ function renderAll() {
   if (page === 'new') renderNew();
   if (page === 'projects' || page === 'project') renderProjects();
   if (page === 'scheduled') renderScheduled();
+  if (page === 'stash') stashTick();
   if (page === 'chat' && document.activeElement !== $('chat-node')) fillChatNodes();
   if (page === 'nodes') { renderNodes(); renderJobs(); }
   if (page === 'models') renderModels();

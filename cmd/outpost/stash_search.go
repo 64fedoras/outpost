@@ -15,7 +15,7 @@ const (
 	bm25K1       = 1.2
 	bm25B        = 0.75
 	rrfK         = 60.0
-	stashMinCos  = 0.35 // a passage this close in meaning is relevant for a chat
+	stashMinCos  = 0.45 // a passage this close in meaning is relevant for a chat
 	stashMinTerm = 2    // or one that shares this many distinctive words with the question
 )
 
@@ -105,6 +105,7 @@ type StashHit struct {
 	Terms int     `json:"terms"` // different question words in the passage
 	Score float64 `json:"score"` // relevance for display, 0 to 1
 	Stash string  `json:"stash,omitempty"`
+	Fused float64 `json:"-"` // the rank-fusion value the list is ordered by
 }
 
 // search returns the top k passages for query. qvec is the question's embedding (nil: words only).
@@ -171,7 +172,7 @@ func (ix *stashIndex) search(query string, qvec []float32, k int) []StashHit {
 	})
 	var out []StashHit
 	for _, i := range ids[:min(len(ids), k)] {
-		h := StashHit{Passage: ix.ps[i], Index: i, Cos: math.Max(cos[i], 0), BM25: bs[i], Terms: terms[i]}
+		h := StashHit{Passage: ix.ps[i], Index: i, Cos: math.Max(cos[i], 0), BM25: bs[i], Terms: terms[i], Fused: rank[i]}
 		switch {
 		case len(cos) > 0:
 			h.Score = math.Min(h.Cos, 1)

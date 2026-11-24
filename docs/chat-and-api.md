@@ -257,6 +257,37 @@ model file. With no embedding model in the library the API answers 404 and says 
 file names and sizes for the two models were typed from the Hugging Face listings and could not be checked
 from the build machine; if a download fails, use *Add a model from Hugging Face* instead.
 
+### The Stash: documents your chats can search
+
+The **Stash** page (sidebar) holds *stashes*: named collections of *resources* (PDF, Word, Excel, OpenDocument,
+text, Markdown, CSV and code files up to 50 MB each, or text you paste). Drop files on a stash or use *choose
+files*; each resource is cut into passages of about 800 characters (a page number is kept for PDFs), embedded
+with the embedding model above and indexed. A stash holds up to 500 resources and 200,000 passages in all
+(6,000 per resource); there can be 50 stashes.
+
+Where things live: the original files, the passages and the vectors are all on the **controller**
+(`data/stash/<id>/`). A node is only sent the passage text to embed, in memory, and sends vectors back; it
+keeps nothing, and nothing goes to the cloud. The Stash is part of the encrypted backup and shows as its own
+part in Settings → Storage.
+
+Search combines meaning (vectors) with exact words (BM25) and merges the two rankings. *Try a search* on a
+stash page shows what a chat would find, with the matching words marked; a hit opens the passage with its
+neighbours. If the embedding model changes, the stash shows *Needs re-index* and answers by words only until
+you press *Re-index*. *Advanced* sets passage size and overlap (changing them re-indexes). Without any
+embedding model in the library the page offers *Add Nomic Embed Text*.
+
+**In a chat:** ＋ → *Search a stash* and tick one or more stashes (up to 5; a chip shows them next to ＋, and
+the choice is kept with the chat). Before each answer the question is searched; passages that are close enough
+are numbered and put in front of the model, which is told to cite them as [1], [2] and to ignore any
+instructions written inside them. The answer shows *Sources* chips (click one to read the passage) and a
+folded *Searched the stash* line. If nothing is close enough the model is told so and says it. Your files are
+added after any cloud web search has run, so they are never sent to Claude or OpenRouter. Research mode does
+not use the Stash.
+
+Untested: real embedding models (the relevance cut-off of cosine 0.45 is a guess for Nomic and Qwen3 and may
+need tuning), large PDFs and large stashes, scanned PDFs (no text means no passages; the resource shows
+*failed*), and Safari, Firefox and real phones.
+
 ### The Anthropic and Ollama APIs
 
 Some tools only speak Claude's API or Ollama's. The same API tokens work for both; Settings → Sign-in

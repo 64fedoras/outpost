@@ -55,7 +55,9 @@ def embed_text(text, dim=64):
     """Bag of words hashed into dim buckets: texts that share words get similar vectors, so search tests are meaningful."""
     import hashlib
     v = [0.0] * dim
+    stop = {"the", "a", "an", "is", "are", "of", "to", "in", "on", "and", "or", "what", "how", "do", "does", "have", "has", "for", "it", "i", "was", "if", "not", "with", "ask", "search", "query", "document"}
     for w in re.findall(r"[a-z0-9]+", text.lower()):
+        if w in stop: continue
         v[int(hashlib.md5(w.encode()).hexdigest(), 16) % dim] += 1.0
     return v
 
@@ -117,6 +119,12 @@ class H(BaseHTTPRequestHandler):
                                {"name": "10-inch rack panel width", "value": "254 mm, 1U = 44.5 mm", "source": "example.org"}])
         elif "You write OpenSCAD files" in system:
             text = scad_reply(user)  # the New 3D model page (cad.py)
+        elif "Passages from the user's stash" in user:
+            # Chats that search a Stash (stash.py): answer from passage [1] and cite it.
+            first = re.search(r"^\[1\] [^\n]*\n(.*)", user, re.M)
+            text = "From your stash: " + (first.group(1).strip()[:120] if first else "?") + " [1]"
+        elif "nothing relevant was found" in user:
+            text = "Your stash has nothing on that."
         elif imgs:
             text = f"I can see {imgs} image(s). The screenshot shows a terminal with an error message."  # chat screenshots (chatimages.py)
         elif "<<<DOCUMENT>>>" in user:
