@@ -243,6 +243,8 @@ you fill it in (set it if you reach the controller by a name or IP different fro
 | Updates | `releases/`, `agent/` | `agent/` |
 | Logs | journald on Linux (`journalctl -u outpost-controller`) | journald on Linux; `node.log` on Windows and macOS, and when a tray started the node |
 
+**Old llama.cpp builds clean themselves up.** A node keeps the llama.cpp build it is using plus the one before it (so a switch back, such as to a compatible or CPU build, needs no download). After each runtime install, and once when the node starts, it deletes the older `llama/<build>-<variant>/` folders and leftover download files. A build that a running llama-server or RPC server was started from is never deleted, and models are never touched. There is nothing to configure.
+
 **Safe saves.** Settings, nodes, sessions, tokens, projects, model records and each task's `task.json` are written to a
 temporary file, flushed to disk and renamed into place, so a power cut or a full disk leaves the old file or the new one,
 never half of each. `settings.json`, `nodes.json`, `project.json`, `task.json` and the node's `node.json` also keep the

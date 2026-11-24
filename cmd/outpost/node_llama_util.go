@@ -167,15 +167,99 @@ func writeGunzip(dst string, gz []byte) error {
 	return os.Rename(tmp, dst)
 }
 
-// pruneLlamaBuilds keeps the current build and the previous one (for rollback).
-func pruneLlamaBuilds(root, current, previous string) {
+// llamaKeepDirs is the folder names under the llama folder that are not builds and
+// must never be pruned (the pooling cache).
+var llamaKeepDirs = map[string]bool{"rpc-cache": true}
+
+// pruneLlamaBuilds deletes old llama.cpp build folders and leftover archives in root.
+// It keeps the current build, the previous one (for rollback or a fallback variant such
+// as a compat or CPU build), any folder in keep (builds a running llama-server or
+// ggml-rpc-server was started from), and the pooling cache. Models are never touched
+// (they live elsewhere). An empty current or previous is ignored.
+func pruneLlamaBuilds(root, current, previous string, keep ...string) {
+	protect := map[string]bool{}
+	for _, p := range append([]string{current, previous}, keep...) {
+		if p != "" {
+			protect[filepath.Clean(p)] = true
+		}
+	}
 	entries, _ := os.ReadDir(root)
 	for _, e := range entries {
 		p := filepath.Join(root, e.Name())
-		if e.IsDir() && p != current && p != previous {
-			os.RemoveAll(p)
+		switch {
+		case e.IsDir():
+			if protect[p] || llamaKeepDirs[e.Name()] {
+				continue
+			}
+			if err := os.RemoveAll(p); err != nil {
+				log.Printf("llama.cpp: could not remove old build %s: %v", e.Name(), err)
+			} else {
+				log.Printf("llama.cpp: removed old build %s", e.Name())
+			}
+		case strings.HasSuffix(e.Name(), ".tar.gz"), strings.HasSuffix(e.Name(), ".zip"), strings.HasSuffix(e.Name(), ".part"):
+			// A download or extraction that was interrupted. Skip fresh files: a download
+			// may be in progress.
+			if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > time.Hour {
+				os.Remove(p)
+			}
 		}
 	}
+}
+
+// runningBuildDirs lists the build folders that a running llama-server or
+// ggml-rpc-server was started from.
+func (n *Node) runningBuildDirs() []string {
+	var out []string
+	if n.llama != nil {
+		n.llama.mu.Lock()
+		if c := n.llama.cmd; c != nil && c.Path != "" {
+			out = append(out, filepath.Dir(c.Path))
+		}
+		n.llama.mu.Unlock()
+	}
+	if n.rpc != nil {
+		n.rpc.mu.Lock()
+		if c := n.rpc.cmd; c != nil && c.Path != "" {
+			out = append(out, filepath.Dir(c.Path))
+		}
+		n.rpc.mu.Unlock()
+	}
+	return out
+}
+
+// buildFolderOf returns the folder directly under root that contains path, or "".
+func buildFolderOf(root, path string) string {
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return ""
+	}
+	return filepath.Join(root, strings.SplitN(filepath.ToSlash(rel), "/", 2)[0])
+}
+
+// pruneOldBuildsAtStart cleans up after a node that was updated before pruning existed
+// or crashed mid-install: keeps the current build and the most recently installed other one.
+func (n *Node) pruneOldBuildsAtStart() {
+	cur := n.currentRuntime()
+	if cur == nil {
+		return
+	}
+	root := n.llamaDir()
+	curDir := buildFolderOf(root, cur.ServerPath)
+	if curDir == "" {
+		return
+	}
+	prev, prevTime := "", time.Time{}
+	entries, _ := os.ReadDir(root)
+	for _, e := range entries {
+		p := filepath.Join(root, e.Name())
+		if !e.IsDir() || p == curDir || llamaKeepDirs[e.Name()] {
+			continue
+		}
+		if info, err := e.Info(); err == nil && info.ModTime().After(prevTime) {
+			prev, prevTime = p, info.ModTime()
+		}
+	}
+	pruneLlamaBuilds(root, curDir, prev, n.runningBuildDirs()...)
 }
 
 // fetchModel downloads a model straight from Hugging Face (resumable, verified

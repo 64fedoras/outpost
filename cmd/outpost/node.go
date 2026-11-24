@@ -163,6 +163,7 @@ func runNode(args []string) error {
 	go n.llama.idleLoop(context.Background())
 	go n.sd.idleLoop(context.Background())
 	go n.autostartRPC()
+	go n.pruneOldBuildsAtStart()
 	go migratePeerFirewallRule()
 	n.startPeerServer()
 
