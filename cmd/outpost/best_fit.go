@@ -150,7 +150,7 @@ func (c *Controller) rankBestFit(id string, n *NodeRec, opts []LoadOption, vram,
 			// this very model on this node replaces the estimate.
 			cpu := estimateCPUTokPerSec(h, cost)
 			inV := float64(uv) / float64(o.Need)
-			o.EstTPS, o.SpeedSrc = cpu/((1-inV)+inV/splitGPUSpeedup), "split"
+			o.EstTPS, o.SpeedSrc = cpu/((1-inV)+inV/gpuSpeedup(h)), "split"
 			if b := n.Bench; b != nil && b.Model == o.Name && max(b.GenTPS, b.TokPerSec) > 0 {
 				o.EstTPS, o.SpeedSrc = b.GenTPS, "measured"
 				if o.EstTPS <= 0 {
@@ -279,4 +279,13 @@ func speedNote(o *LoadOption, target float64) string {
 		s += fmt.Sprintf(". That is under your target of %.0f tok/s", target)
 	}
 	return s
+}
+
+// gpuSpeedup is how much faster the node's GPU generates than its CPU: measured by the
+// node's GPU speed check when there is one (clamped to 1..20), else splitGPUSpeedup.
+func gpuSpeedup(h *Hello) float64 {
+	if h != nil && h.GPUCheck != nil && h.GPUCheck.GPUTPS > 0 && h.GPUCheck.CPUTPS > 0 {
+		return min(max(h.GPUCheck.GPUTPS/h.GPUCheck.CPUTPS, 1), 20)
+	}
+	return splitGPUSpeedup
 }

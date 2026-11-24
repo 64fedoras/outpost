@@ -42,7 +42,6 @@ type NodeRec struct {
 	Added       time.Time     `json:"added"`
 	Hello       *Hello        `json:"hello,omitempty"`
 	LoadPrefs   *ModelLoad    `json:"load_prefs,omitempty"`    // last model loaded from the UI
-	MetalGPU    bool          `json:"metal_gpu,omitempty"`     // Intel Mac without AVX2: try the GPUs through the Metal build (experimental)
 	YieldGPU    *bool         `json:"yield_gpu,omitempty"`     // unload the model while another program uses the GPU (gpu_yield.go); nil = on (yieldOn)
 	Profiles    []LoadProfile `json:"load_profiles,omitempty"` // named load settings (load_profiles.go)
 	Pool        []string      `json:"pool,omitempty"`          // helper nodes lending memory to this node's model
@@ -361,6 +360,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/nodes/{id}/load-options", c.auth(c.handleLoadOptions))
 	mux.HandleFunc("POST /api/nodes/{id}/load", c.auth(c.handleLoadModel))
 	mux.HandleFunc("POST /api/nodes/{id}/benchmark", c.auth(c.handleBenchmarkNode))
+	mux.HandleFunc("POST /api/nodes/{id}/gpu-recheck", c.auth(c.handleGPURecheck))
 	mux.HandleFunc("POST /api/nodes/{id}/health/reset", c.auth(c.handleResetHealth))
 	mux.HandleFunc("POST /api/nodes/{id}/profiles", c.auth(c.handleSaveLoadProfile))
 	mux.HandleFunc("DELETE /api/nodes/{id}/profiles/{name}", c.auth(c.handleDeleteLoadProfile))

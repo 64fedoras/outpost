@@ -346,6 +346,9 @@ func (l *llamaMgr) load(ml ModelLoad) {
 		l.n.touchModel(ml.Draft)
 		ml.DraftPath = p
 	}
+	if c := l.n.ensureGPUCheck(rt, ml.Name); c != nil && c.Slower && (ml.GPULayers == "" || ml.GPULayers == "auto") {
+		ml.GPULayers = "0" // measured: this GPU is slower than the CPU (an explicit layer count is kept)
+	}
 	l.n.applyKVFit(&ml, modelPath)
 	if err := l.start(rt, ml, modelPath, 0); err != nil {
 		fail("%v", err)

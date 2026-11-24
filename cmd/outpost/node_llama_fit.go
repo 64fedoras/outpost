@@ -67,7 +67,7 @@ func (n *Node) applyKVFit(ml *ModelLoad, modelPath string) {
 	h := n.hello()
 	var vram uint64
 	for _, g := range h.GPUs {
-		if g.Backend == "metal" {
+		if g.Vendor == "apple" {
 			return // unified memory: nothing to move
 		}
 		if g.Backend != "" { // a detected GPU no build uses (Intel Mac) holds nothing

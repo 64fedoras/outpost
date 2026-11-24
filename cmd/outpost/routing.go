@@ -458,6 +458,22 @@ func (c *Controller) handleBenchmarkNode(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, 202, map[string]bool{"ok": true})
 }
 
+// handleGPURecheck makes a node forget its GPU speed check; it runs again on the next load.
+func (c *Controller) handleGPURecheck(w http.ResponseWriter, r *http.Request) {
+	c.mu.Lock()
+	nc := c.conns[r.PathValue("id")]
+	c.mu.Unlock()
+	if nc == nil {
+		writeJSON(w, 409, map[string]string{"error": "The node is offline."})
+		return
+	}
+	if err := nc.send("gpu.recheck", struct{}{}); err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 202, map[string]bool{"ok": true})
+}
+
 // ---------- API ----------
 
 // handleSetModelTier sets a model's tier ("small", "medium", "large") or clears it ("").
