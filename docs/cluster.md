@@ -143,16 +143,24 @@ controller restart or update starts the charts empty again.
 GPU on the card and as a chart, and turns red at 85 °C. On Linux NVIDIA cards are read with `nvidia-smi` (installed with the driver). Windows and
 macOS report no temperature, and the row is left out. Untested on real GPUs so far.
 
-**GPUs on Intel Macs** (for example the AMD FirePro cards in a 2013 Mac Pro) are listed on the node card as
-"not used by this llama.cpp build". The llama.cpp builds Outpost installs for Intel Macs run on the CPU only, so
-these GPUs are not counted when sizing models. Detection reads `system_profiler`; untested on a real Mac.
+**GPU speed check.** Some GPUs are slower than the CPU next to them (old or small cards, or a backend that lacks
+the features llama.cpp's fast kernels need). Before the first model load on a new llama.cpp build, or after the GPUs
+change, a node with a discrete GPU times the smallest model it has (one that fits in 60% of its biggest GPU) with
+`llama-bench`: once all on the GPU and once all on the CPU. This takes about a minute, once, and the load shows
+"checking GPU speed". If the GPU generates under 90% of the CPU's speed, loads on that node run on the CPU (an explicit
+GPU layer count in the Load dialog is kept), Pick best stops counting its VRAM, and the node's details say
+"GPU slower than CPU here". Otherwise the details show both speeds, and Pick best uses the measured ratio to estimate
+models split between VRAM and RAM. **Re-check** measures again on the next load, for example after a driver update.
+The check is skipped (and says why) when the build has no `llama-bench` or no stored model fits the GPU; then the node
+behaves as before. Apple Silicon is not checked: its GPU shares memory with the CPU and is always the faster one.
+Untested on real GPU nodes so far.
 
-**Trying the GPUs on an Intel Mac without AVX2 (experimental).** Such a Mac normally gets Outpost's CPU-only
-compatible llama.cpp build. To try the Metal (GPU) build instead, turn on **Use GPU (Metal, experimental)** in the node's
-details, and load a model; Outpost installs the `macos-x64-compat-metal` build. Old AMD cards (FirePro D-series, Metal 2)
-may not work with llama.cpp's Metal kernels. If the Metal build keeps failing to start, Outpost deletes the file and
-the node says so there and the next load installs the CPU build again. Turn the setting off to go back at any time. Untested on a real Mac;
-the Metal build is only published by the "llama.cpp compatible builds" workflow for releases built after this was added.
+**GPUs on Intel Macs** (for example the AMD FirePro cards in a 2013 Mac Pro) are read with `system_profiler` and
+listed in the node's details. An Intel Mac with a discrete GPU gets a llama.cpp build with Metal (Outpost's AVX-only
+`macos-x64-compat-metal` build on CPUs without AVX2), and the GPU speed check decides whether it is used. llama.cpp's
+Metal backend drives one GPU, so only the biggest card counts as VRAM. On a 2013 Mac Pro (FirePro D700, Metal 2) the
+GPU measured about 6 times slower than the CPU, so such a Mac runs models on its CPU. If the Metal build keeps failing to
+start, the node switches to the CPU-only build until it restarts. Untested on other Macs.
 
 ## Saved load settings and yielding the GPU
 

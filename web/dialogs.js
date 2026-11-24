@@ -308,7 +308,7 @@ document.addEventListener('click', async (e) => {
       case 'idle': setNodeIdle(id); break;
       case 'health-reset': resetHealth(id); break;
       case 'yield': toggleYield(id); break;
-      case 'metal': toggleMetal(id); break;
+      case 'gpu-recheck': gpuRecheck(id); break;
       case 'task-models': toggleTaskModels(id); break;
       case 'chat-switch': toggleChatSwitch(id); break;
       case 'restart': {
