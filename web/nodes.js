@@ -696,11 +696,12 @@ function gpuCheckLine(n, h) {
   if (h.metal_failed) return `<div class="sub u15"><span class="hint warn-text">${esc(h.metal_failed)}; using the CPU build</span></div>`;
   if (!c || !((h.gpus || []).some((g) => g.vendor !== 'apple') || (h.integrated_gpus || []).length)) return '';
   const tps = (v) => (v >= 10 ? v.toFixed(0) : v.toFixed(1));
+  const gl = (h.gpus || []).length ? 'GPU' : 'iGPU';
   const re = n.online ? ` · <a href="#" data-act="gpu-recheck" data-id="${n.id}" title="Measure again on the next model load, for example after a driver update">Re-check</a>` : '';
   const tip = 'Measured with llama-bench on a small model, all on the GPU and all on the CPU, once per llama.cpp build and GPU.';
-  if (c.skipped) return `<div class="sub u15" title="${esc(tip)}"><span title="${esc(c.skipped)}">GPU speed not checked</span>${re}</div>`;
-  if (c.slower) return `<div class="sub u15" title="${esc(tip)}"><span class="hint warn-text">GPU slower than CPU${c.gpu_tps ? ` (${tps(c.gpu_tps)} vs ${tps(c.cpu_tps)} tok/s)` : ''}: models use the CPU</span>${c.note ? ` · ${esc(c.note)}` : ''}${re}</div>`;
-  return `<div class="sub u15" title="${esc(tip)}">${(h.gpus || []).length ? 'GPU' : 'Integrated GPU'} ${tps(c.gpu_tps)} tok/s, CPU ${tps(c.cpu_tps)} tok/s (speed check)${re}</div>`;
+  if (c.skipped) return `<div class="sub u15" title="${esc(tip)}"><span title="${esc(c.skipped)}">${gl} speed not checked</span>${re}</div>`;
+  if (c.slower) return `<div class="sub u15" title="${esc(tip)}"><span class="hint warn-text">${gl} slower than CPU${c.gpu_tps ? ` (${tps(c.gpu_tps)} vs ${tps(c.cpu_tps)} tok/s)` : ''}: models use the CPU</span>${c.note ? ` · ${esc(c.note)}` : ''}${re}</div>`;
+  return `<div class="sub u15" title="${esc(tip)}">${gl} ${tps(c.gpu_tps)} tok/s, CPU ${tps(c.cpu_tps)} tok/s (speed check)${re}</div>`;
 }
 async function gpuRecheck(id) {
   try { await post(`/api/nodes/${id}/gpu-recheck`, {}); toast('The GPU speed is measured again on the next model load'); } catch (e) { toast(e.message); }
