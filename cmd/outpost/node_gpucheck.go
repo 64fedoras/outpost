@@ -39,7 +39,7 @@ func gpuCheckWanted(variant string, gpus []GPUInfo) bool {
 			return false
 		}
 	}
-	return strings.HasSuffix(variant, "-vulkan") || variant == "macos-x64" || variant == "macos-x64-compat-metal"
+	return strings.HasSuffix(variant, "-vulkan") || strings.HasSuffix(variant, "-cuda") || variant == "macos-x64" || variant == "macos-x64-compat-metal"
 }
 
 // gpuCheckKey names what a check result is valid for.
@@ -93,9 +93,26 @@ func (n *Node) ensureGPUCheck(rt *runtimeRecord, model string) *GPUCheck {
 	if c := n.savedGPUCheck(key); c != nil {
 		return c
 	}
+	// A build that was timed before (the node switches between Vulkan and CUDA while it
+	// compares them) reuses its timing instead of running again.
+	if t := trialFor(n.gpuTrials(gpus), rt.Variant); t != nil && t.Failed == "" && t.GPUTPS > 0 && t.CPUTPS > 0 {
+		c := &GPUCheck{Key: key, At: time.Now(), GPUTPS: t.GPUTPS, CPUTPS: t.CPUTPS, Slower: gpuSlower(t.GPUTPS, t.CPUTPS)}
+		if b, err := json.Marshal(c); err == nil {
+			_ = os.WriteFile(n.gpuCheckFile(), b, 0o644)
+		}
+		go n.resendHello()
+		return c
+	}
 	n.opStatus("model.load", model, "checking GPU speed", 0, 0, "")
 	c := n.runGPUCheck(rt, gpus)
 	c.Key, c.At = key, time.Now()
+	if c.Skipped == "" {
+		t := GPUTrial{Variant: rt.Variant, GPUTPS: c.GPUTPS, CPUTPS: c.CPUTPS}
+		if c.GPUTPS == 0 {
+			t.Failed = c.Note
+		}
+		n.recordGPUTrial(gpus, t)
+	}
 	if b, err := json.Marshal(c); err == nil {
 		_ = os.WriteFile(n.gpuCheckFile(), b, 0o644)
 	}

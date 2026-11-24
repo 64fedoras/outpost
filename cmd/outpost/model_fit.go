@@ -82,7 +82,7 @@ func loadableMemory(h *Hello) (vram, ram int64, ok bool) {
 				vram = max(vram, int64(g.VRAMBytes))
 			}
 		}
-	case !strings.HasSuffix(variant, "-vulkan"):
+	case !strings.HasSuffix(variant, "-vulkan") && !strings.HasSuffix(variant, "-cuda"):
 		vram = 0
 	}
 	return vram, ram, true

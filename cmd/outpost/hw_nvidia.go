@@ -61,6 +61,8 @@ func nvidiaSMI() map[string]nvidiaStat {
 	return m
 }
 
+// (nvidiaDriverVersion is in cuda.go.)
+
 // parseVulkanHeap returns the size of the largest device-local memory heap in
 // `vulkaninfo` output, or 0 if none is found. Used as the VRAM total of an
 // NVIDIA card when nvidia-smi is not installed.
