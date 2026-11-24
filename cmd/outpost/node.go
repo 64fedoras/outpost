@@ -561,7 +561,7 @@ func (n *Node) hello() Hello {
 		CPU: hw.CPU, RAMBytes: hw.RAMBytes, GPUs: hw.GPUs, Backends: hw.Backends,
 		Models: n.listModels(), FreedNote: freedNote, FreedAt: freedAt, LimitNote: limitNote, LimitAt: limitAt, WorkFreeBytes: diskFree(n.workRoot), ModelsFreeBytes: diskFree(filepath.Join(n.dataDir, "models")),
 		MaxConcurrentJobs: autoMaxJobs(hw), ExecEnabled: execOn, RunningJobs: n.runningIDs(),
-		VulkanAvailable: vulkanAvailable(), NvidiaDriver: nvidiaDriverVersion(), Glibc: localGlibc(), NoAVX2: cpuLacksAVX2(),
+		IntegratedGPUs: hw.Integrated, VulkanAvailable: vulkanAvailable(), NvidiaDriver: nvidiaDriverVersion(), Glibc: localGlibc(), NoAVX2: cpuLacksAVX2(),
 		RollbackTo: previousVersion(n.agentDir()),
 		Paused:     n.isPaused(),
 		Features:   nodeFeatures,
@@ -582,8 +582,8 @@ func (n *Node) hello() Hello {
 				}
 			}
 		}
-		h.GPUCheck = n.currentGPUCheck(hw.GPUs)
-		h.GPUTrials = n.gpuTrials(hw.GPUs)
+		h.GPUCheck = n.currentGPUCheck(hw.checkGPUs())
+		h.GPUTrials = n.gpuTrials(hw.checkGPUs())
 	}
 	if rt := n.currentSD(); rt != nil {
 		h.SDRuntime = &rt.RuntimeInfo
