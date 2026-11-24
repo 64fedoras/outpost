@@ -234,9 +234,28 @@ Agents that call tools work when the model's own chat template supports tools (n
 with `--jinja`; `tool_choice`, `top_p`, `seed`, penalties, `response_format` and
 `stream_options.include_usage` are passed through). Requests share free model slots with chat, so a busy
 cluster makes an agent wait up to 2 minutes and then answer 503; agents should retry. Not offered yet:
-embeddings and per-token rate or spend limits. The API is plain HTTPS
+per-token rate or spend limits. The API is plain HTTPS
 with a self-signed certificate by default; keep it on your LAN, or put a trusted certificate in front
 before exposing it. Not tested against Hermes or the real cluster.
+
+### Embeddings
+
+`POST /v1/embeddings` works like OpenAI's: `{"model": "auto", "input": "text" or ["text", ...]}` returns one
+vector per input, scaled to length 1, with `usage`. `encoding_format` may be `float` (default) or `base64`
+(what the OpenAI Python client asks for). Up to 512 inputs per call and 32,000 characters each; token
+arrays and `dimensions` are refused. A **Chat only** token works here. `GET /v1/models` lists the ready
+embedding models with `"capabilities": ["embedding"]`.
+
+Embedding models are small models that turn text into vectors for search. Add one on the **Models** page
+(*Add to library* on Nomic Embed Text, the default, or Qwen3 Embedding 0.6B for other languages; any
+Hugging Face GGUF whose name says "embed" works too). They get an *Embedding* tag, have no *Load* button
+and are never offered as chat or task models. When a request arrives, Outpost picks an online node that has
+llama.cpp (preferring one that already has the model, then the one with the most CPU threads), copies the
+model there if needed, and starts a second llama-server on the CPU just for embeddings, so the chat model
+keeps the GPU. That server stops after 5 minutes without a request; nothing is kept on the node but the
+model file. With no embedding model in the library the API answers 404 and says what to add. The catalog
+file names and sizes for the two models were typed from the Hugging Face listings and could not be checked
+from the build machine; if a download fails, use *Add a model from Hugging Face* instead.
 
 ### The Anthropic and Ollama APIs
 

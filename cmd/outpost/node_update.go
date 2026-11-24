@@ -66,7 +66,8 @@ func (n *Node) applyUpdate(u NodeUpdate) {
 		return
 	}
 	log.Printf("installed %s; restarting into it", path)
-	n.llama.stop() // the new process reloads the model (autoload)
+	n.llama.stop()
+	n.embed.stop() // the new process reloads the model (autoload)
 	status("restarting", "")
 	time.Sleep(300 * time.Millisecond) // let the status message go out
 

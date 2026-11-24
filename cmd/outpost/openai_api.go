@@ -25,6 +25,7 @@ func (c *Controller) openAIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/models", c.apiCORS(c.authAPI(c.handleV1Models)))
 	mux.HandleFunc("GET /v1/models/{id...}", c.apiCORS(c.authAPI(c.handleV1Model)))
 	mux.HandleFunc("POST /v1/chat/completions", c.apiCORS(c.authAPI(c.handleV1Chat)))
+	mux.HandleFunc("POST /v1/embeddings", c.apiCORS(c.authAPI(c.handleV1Embeddings)))
 	mux.HandleFunc("OPTIONS /v1/", c.apiCORS(func(w http.ResponseWriter, r *http.Request) {}))
 	c.openAIImageRoutes(mux)
 	c.anthropicRoutes(mux)
@@ -88,6 +89,9 @@ func (c *Controller) handleV1Models(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Unix()
 	for _, id := range c.v1ModelIDs() {
 		data = append(data, map[string]any{"id": id, "object": "model", "created": now, "owned_by": "outpost"})
+	}
+	for _, id := range c.readyEmbeddingModels() {
+		data = append(data, map[string]any{"id": id, "object": "model", "created": now, "owned_by": "outpost", "capabilities": []string{"embedding"}})
 	}
 	if c.imageAPIOn() {
 		for i := range imageCatalog {

@@ -51,12 +51,29 @@ for i, o in enumerate(onions):
 <script>window.mdTestHacked = 1</script> <img src=x onerror="window.mdTestHacked = 1"> [bad link](javascript:window.mdTestHacked=1)
 """
 
+def embed_text(text, dim=64):
+    """Bag of words hashed into dim buckets: texts that share words get similar vectors, so search tests are meaningful."""
+    import hashlib
+    v = [0.0] * dim
+    for w in re.findall(r"[a-z0-9]+", text.lower()):
+        v[int(hashlib.md5(w.encode()).hexdigest(), 16) % dim] += 1.0
+    return v
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
+    def embeddings(self, body):
+        inp = body.get("input", [])
+        inp = [inp] if isinstance(inp, str) else inp
+        data = [{"object": "embedding", "index": i, "embedding": embed_text(t)} for i, t in enumerate(inp)]
+        toks = sum(len(re.findall(r"[a-z0-9]+", t.lower())) for t in inp)
+        out = json.dumps({"object": "list", "data": data, "model": body.get("model", "fake"), "usage": {"prompt_tokens": toks, "total_tokens": toks}}).encode()
+        self.send_response(200); self.send_header("content-type", "application/json"); self.send_header("content-length", str(len(out))); self.end_headers(); self.wfile.write(out)
     def do_GET(self):
         self.send_response(200); self.send_header("content-type","application/json"); self.end_headers(); self.wfile.write(b'{"status":"ok"}')
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+        if self.path.endswith("/embeddings"):
+            return self.embeddings(body)
         user = body["messages"][-1]["content"]
         imgs = 0
         if isinstance(user, list):  # a message with images (vision models): text part plus image_url parts

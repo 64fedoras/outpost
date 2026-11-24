@@ -82,8 +82,8 @@ func (c *Controller) loadOptionsTarget(id string, maxRecommended int, target flo
 		opts = append(opts, o)
 	}
 	for _, m := range c.models {
-		if m.Status != "ready" {
-			continue
+		if m.Status != "ready" || m.Embedding || isEmbeddingName(m.Name) {
+			continue // embedding models are not chat models (embed.go)
 		}
 		ce := catalog[m.Name]
 		add(LoadOption{Name: m.Name, Label: m.Label, Bytes: m.BytesTotal, Ctx: m.Ctx, InLibrary: true,
@@ -93,6 +93,9 @@ func (c *Controller) loadOptionsTarget(id string, maxRecommended int, target flo
 		}
 	}
 	for _, e := range cat {
+		if e.Embedding {
+			continue
+		}
 		if m := c.models[e.ID]; m != nil && m.Status != "failed" {
 			continue // in the library (or on its way there)
 		}
