@@ -47,6 +47,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `projectnew.py` | Projects page: "New task in this project" in a card's menu opens the new-task page with that project picked. |
 | `chatthink.py` | Chat thinking behind a fold (closed by default, stays open when opened, kept after reload), the green working bar, and an answer cut at the length limit carried on automatically. |
 | `chatpage.py` | Chat page layout: model cards on a new chat, the docked composer, the chats panel and the phone sheet. |
+| `storagechats.py` | Settings → Storage: chat parts in the bar, Chats by size, clearing a chat's code files, deleting a chat; desktop dark and light and phone. |
 | `chatpolish.py` | Chat export (Markdown, text, print view), personas (save, pick, delete), Compare between two nodes (joins a second real node from the same binary) and the Local models tile on Spending; desktop dark and light and phone. |
 | `chatversions.py` | Chat edit and resend, regenerate, version arrows, branch, per-chat instructions and the Chats search box (desktop light and dark, phone). |
 | `projectreads.py` | Project conversation reads files: chips for list, search and read calls, `path:line` links opening the read-only file viewer (light and dark). |

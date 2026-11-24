@@ -29,7 +29,7 @@ type storageInfo struct {
 	Free     uint64           `json:"free"`
 	Total    uint64           `json:"total"`
 	Low      bool             `json:"low"`
-	Parts    map[string]int64 `json:"parts"` // tasks, models, releases, runtime, projects, other
+	Parts    map[string]int64 `json:"parts"` // tasks, chats, chat_images, chat_docs, chat_runs, models, releases, runtime, projects, other
 	Measured time.Time        `json:"measured"`
 	// Clean-up settings and what the last run did.
 	CleanupDays   int        `json:"cleanup_days"`
@@ -71,6 +71,14 @@ func (c *Controller) measureStorage(force bool) (map[string]int64, time.Time) {
 			size = dirSize(p)
 		} else if fi, err := e.Info(); err == nil {
 			size = fi.Size()
+		}
+		if e.IsDir() && e.Name() == "chats" {
+			text, images, docs, runs := chatSizes(p)
+			parts["chats"] += text
+			parts["chat_images"] += images
+			parts["chat_docs"] += docs
+			parts["chat_runs"] += runs
+			continue
 		}
 		key := known[e.Name()]
 		if key == "" {

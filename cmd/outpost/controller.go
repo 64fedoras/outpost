@@ -307,6 +307,8 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/scorecard", c.auth(c.handleScorecard))
 	mux.HandleFunc("GET /api/storage", c.auth(c.handleStorage))
 	mux.HandleFunc("POST /api/storage", c.authSession(c.handleStorageSettings))
+	mux.HandleFunc("GET /api/storage/chats", c.auth(c.handleStorageChats))
+	mux.HandleFunc("POST /api/storage/chats/clear-runs", c.authSession(c.handleStorageClearRuns))
 	mux.HandleFunc("GET /api/nodes/{id}/logs", c.auth(c.handleNodeLogs))
 	mux.HandleFunc("GET /api/node-history", c.auth(c.handleNodeHistory))
 	mux.HandleFunc("GET /api/cluster/check", c.auth(c.handleGetClusterCheck))
