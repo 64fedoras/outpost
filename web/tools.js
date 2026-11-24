@@ -179,7 +179,7 @@ $('dg-download').onclick = async () => {
 };
 
 // ---- Storage (storage.go) ----
-const ST_PARTS = [['tasks', 'Tasks'], ['models', 'Models'], ['releases', 'Releases and updates'], ['runtime', 'llama.cpp builds'], ['projects', 'Projects'], ['other', 'Settings, logs and keys']];
+const ST_PARTS = [['tasks', 'Tasks'], ['chats', 'Chats'], ['chat_images', 'Chat images'], ['chat_docs', 'Chat documents'], ['chat_runs', 'Chat code files'], ['models', 'Models'], ['releases', 'Releases and updates'], ['runtime', 'llama.cpp builds'], ['projects', 'Projects'], ['other', 'Settings, logs and keys']];
 // Hover, keyboard focus or tap on a bar segment shows a tooltip (native title is slow and absent on touch).
 (function () {
   const bar = $('st-bar'), host = bar.parentElement; host.classList.add('st-host');
@@ -220,3 +220,43 @@ async function saveStorage(run) {
 }
 $('st-save').onclick = () => saveStorage(false);
 $('st-run').onclick = () => saveStorage(true);
+
+// Chats by size: what each chat takes, with clearing of the files its code made, or deleting it.
+async function loadStorageChats() {
+  const el = $('st-chats');
+  try {
+    const r = await api('/api/storage/chats');
+    setHTML('st-chats', (r.chats || []).length ? r.chats.map((c) => `<div class="st-chat-row">
+      <a class="st-chat-t" href="#/chat/${esc(c.id)}">${esc(c.title || 'Chat')}</a>
+      <span class="sub st-chat-s">${bytes(c.total)}${c.images ? ` · images ${bytes(c.images)}` : ''}${c.docs ? ` · documents ${bytes(c.docs)}` : ''}${c.runs ? ` · code files ${bytes(c.runs)}` : ''} · ${ago(c.updated)}</span>
+      <span class="st-chat-b">${c.runs ? `<button class="small" data-st-clear="${esc(c.id)}">Clear code files</button>` : ''}<button class="small danger" data-st-del="${esc(c.id)}" data-st-title="${esc(c.title || 'Chat')}">Delete</button></span></div>`).join('') : '<p class="hint">No chats.</p>');
+  } catch (e) { el.textContent = e.message; }
+}
+$('st-chats-btn').onclick = () => {
+  const el = $('st-chats'), show = el.classList.contains('hidden');
+  el.classList.toggle('hidden', !show); $('st-chats-btn').setAttribute('aria-expanded', String(show));
+  if (show) loadStorageChats();
+};
+$('st-chats').addEventListener('click', async (e) => {
+  const clr = e.target.closest('[data-st-clear]'), del = e.target.closest('[data-st-del]');
+  try {
+    if (clr) {
+      const r = await post('/api/storage/chats/clear-runs', { id: clr.dataset.stClear });
+      toast(r.busy ? 'That chat is answering; try again when it is done' : `Freed ${bytes(r.freed)}`);
+    } else if (del) {
+      if (!await askConfirm(`Delete the chat “${del.dataset.stTitle}” with its images, documents and files? This cannot be undone.`)) return;
+      await api('/api/chats/' + del.dataset.stDel, { method: 'DELETE' }); toast('Chat deleted');
+    } else return;
+    loadStorageChats(); loadStorage();
+  } catch (err) { toast(err.message); }
+});
+$('st-runs-old').onclick = async () => {
+  const days = parseInt($('st-runs-days').value, 10) || 0;
+  if (days < 1) return;
+  if (!await askConfirm(`Remove the files made by code in chats not used for ${days} days? The conversations, code and output text stay; only the downloadable files go.`)) return;
+  try {
+    const r = await post('/api/storage/chats/clear-runs', { older_than_days: days });
+    toast(r.chats ? `Freed ${bytes(r.freed)} from ${r.chats} chat${r.chats === 1 ? '' : 's'}` : 'Nothing to clear');
+    loadStorage(); if (!$('st-chats').classList.contains('hidden')) loadStorageChats();
+  } catch (e) { toast(e.message); }
+};

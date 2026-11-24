@@ -267,6 +267,13 @@ rounds can then no longer be undone), screenshots and the cached result zip (reb
 and, if ticked, their build outputs. Conversations, the task's files and attachments always stay, and the
 task's event log notes what was removed. **Clean up now** runs it at once.
 
+Chats are listed separately in the bar: chat text, images, documents, and the files code wrote (*Chat code
+files*). **Chats by size** lists each chat with what it uses, largest first, with **Clear code files**
+(removes only the files its code wrote; the conversation, the code and the output text stay, and the
+download links for those files go) and **Delete** (the whole chat, after a confirmation). **Clear files made by
+code in chats not used for N days** does the same for every older chat in one go. A chat that is answering
+is skipped.
+
 **Hung model watchdog.** While a node runs a model call, it watches llama-server: if nothing has come back
 for 3 minutes and llama-server's health check then fails twice, the call is stopped, llama-server is
 restarted, and the subtask goes back in the queue for another node. A model that is merely slow (a long

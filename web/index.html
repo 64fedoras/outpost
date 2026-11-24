@@ -703,6 +703,9 @@
           <p class="hint">How the controller's disk is used. Below 10% (or 5 GB) free, a warning shows at the top of every page and a <i>disk low</i> notification is sent.</p>
           <div id="st-bar" class="st-bar" role="img" aria-label="Disk use"></div>
           <div id="st-legend" class="st-legend"></div>
+          <div class="st-chats-head"><button class="small" id="st-chats-btn" aria-expanded="false">Chats by size</button>
+            <span class="st-chats-old">Clear files made by code in chats not used for <input id="st-runs-days" type="number" min="1" max="3650" value="30" class="st-days" aria-label="Days"> days <button class="small" id="st-runs-old">Clear</button></span></div>
+          <div id="st-chats" class="st-chats hidden"></div>
           <label class="check u5"><input type="checkbox" id="st-on"> Clean up tasks that finished more than <input id="st-days" type="number" min="1" max="3650" value="30" class="st-days" aria-label="Days"> days ago</label>
           <p class="hint">Removes their per-round copies (so their rounds can no longer be undone), screenshots and the cached result zip (made again when you download). Conversations, files, attachments and the download itself stay. Runs once a day.</p>
           <label class="check"><input type="checkbox" id="st-builds"> Also remove their build outputs (the files a build step produced)</label>
