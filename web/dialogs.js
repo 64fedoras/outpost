@@ -39,7 +39,7 @@ function addOsRender() {
   const have = (addToken && addToken.platforms) || [];
   const want = addOs === 'win' ? ['windows-amd64'] : ['linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64'];
   const missing = want.filter((p) => !have.includes(p)), np = $('add-noplat');
-  np.textContent = missing.length ? `The one-paste command only works for platforms whose binary is uploaded in the Updates tab. Missing: ${missing.join(', ')}.` : '';
+  np.textContent = missing.length ? `The one-paste command only works for platforms whose binary is uploaded in the Details panel of the Nodes page. Missing: ${missing.join(', ')}.` : '';
   np.classList.toggle('hidden', !missing.length);
 }
 document.querySelectorAll('[data-addos]').forEach((b) => { b.onclick = () => { addOs = b.dataset.addos; addOsRender(); }; });
@@ -359,6 +359,9 @@ document.addEventListener('click', async (e) => {
       case 'hours': openHours(id); return;
       case 'label-filter': nodeLabel = el.dataset.label; renderNodes(); return;
       case 'upd-group': { const k = el.dataset.key; if (updOpen.has(k)) updOpen.delete(k); else updOpen.add(k); renderUpdates(); return; }
+      case 'upd-toggle': updPanel = !$('upd-panel').classList.contains('hidden') ? false : true; renderUpdates(); return;
+      case 'gh-check': ghAction('/api/github-updates/check', 'Checked ' + ((state.github_updates || {}).host || 'GitHub')); return;
+      case 'upd-all': updateEverything(); return;
       case 'upd-more': updAll.add(el.dataset.key); renderUpdates(); return;
       case 'upd-group-go': {
         const ids = (el.dataset.ids || '').split(',').filter(Boolean);

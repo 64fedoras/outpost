@@ -1,9 +1,10 @@
 'use strict';
-// Updates page. Plain script, no modules: shares globals with app.js and loads after it (see index.html).
+// Update bar and Details panel on the Nodes page. Plain script, no modules: shares globals with app.js and loads after it (see index.html).
 
 // ---------- updates ----------
 const UPD_BUSY = ['sent', 'downloading', 'installing', 'restarting'];
 let ctlUpdating = false;
+let updPanel = null; // Details panel: null opens it by itself while an update runs or fails, true/false is the user's choice
 let updIndiv = false; // per-machine Update buttons are hidden until "Choose individually…"
 let ctlWaiting = false;
 function nodeUpdRow(n) {
@@ -20,7 +21,7 @@ function nodeUpdRow(n) {
     const busy = u && UPD_BUSY.includes(u.state);
     const canUpdate = updIndiv && n.update_to && n.online && !busy;
     return `<tr><td><span class="dot ${n.online ? 'on' : ''}" title="${n.online ? 'service online' : 'offline'}"></span></td><td><b>${esc(nodeName(n))}</b><div class="sub u2">${n.online ? 'online' : n.last_seen ? 'offline · seen ' + ago(n.last_seen) : 'never connected'}</div></td>
-      <td>${esc(h.os ? h.os + '-' + h.arch : '?')}</td><td>${h.agent_version ? 'v' + esc(h.agent_version) : '?'}</td>
+      <td class="hide-ph">${esc(h.os ? h.os + '-' + h.arch : '?')}</td><td>${h.agent_version ? 'v' + esc(h.agent_version) : '?'}</td>
       <td>${n.update_to ? 'v' + esc(n.update_to) : '<span class="muted">' + (!h.os ? 'waiting for first connection' : state.releases.some((r) => r.platform === (h.os + '-' + h.arch)) ? 'up to date' : 'no release uploaded') + '</span>'}</td>
       <td>${prog}</td>
       <td class="r">${canUpdate ? `<button class="small primary" data-act="node-update" data-id="${n.id}" ${n.running_jobs ? 'disabled title="Waits until running jobs finish"' : ''}>Update</button>` : ''}
@@ -55,7 +56,7 @@ function updGroupRows(nodes) {
     const label = key === 'offline' ? `${list.length} offline` : `${list.length} node${list.length === 1 ? '' : 's'}`;
     const nodeIds = can.map((n) => n.id).join(',');
     out.push(`<tr class="upd-g click" data-act="upd-group" data-key="${esc(key)}" aria-expanded="${open}"><td><span class="chev">${open ? '▾' : '▸'}</span></td><td><b>${label}</b></td>
-      <td>${key === 'offline' ? '<span class="muted">mixed</span>' : esc(key)}</td><td>${vers.length ? vers.map((v) => 'v' + esc(v)).join(', ') : '?'}</td>
+      <td class="hide-ph">${key === 'offline' ? '<span class="muted">mixed</span>' : esc(key)}</td><td>${vers.length ? vers.map((v) => 'v' + esc(v)).join(', ') : '?'}</td>
       <td>${avail.length ? avail.map((v) => 'v' + esc(v)).join(', ') : key === 'offline' ? '<span class="muted">when back online</span>' : '<span class="muted">up to date</span>'}</td><td></td>
       <td class="r">${updIndiv && can.length ? `<button class="small primary" data-act="upd-group-go" data-ids="${nodeIds}" ${can.some((n) => n.running_jobs) ? 'title="Nodes with running jobs wait until they finish"' : ''}>Update ${can.length === 1 ? 'this node' : 'these ' + can.length}</button>` : ''}</td></tr>`);
     if (!open) continue;
@@ -70,7 +71,7 @@ function renderUpdates() {
   renderGitHub();
   const rows = [];
   const cu = state.controller_update_to;
-  rows.push(`<tr><td><span class="dot on"></span></td><td><b>Controller</b></td><td>${esc(state.platform)}</td><td>v${esc(state.version)}</td>
+  rows.push(`<tr><td><span class="dot on"></span></td><td><b>Controller</b></td><td class="hide-ph">${esc(state.platform)}</td><td>v${esc(state.version)}</td>
     <td>${cu ? 'v' + esc(cu) : '<span class="muted">up to date</span>'}</td>
     <td>${ctlUpdating ? `<div class="prog"><span>installing and restarting…</span>${bar(100, 'good')}</div>` : ''}</td>
     <td class="r">${updIndiv && cu && !ctlUpdating ? `<button class="small primary" data-act="ctl-update">Update</button>` : ''}
@@ -79,23 +80,38 @@ function renderUpdates() {
   const grouped = state.nodes.length >= NODE_FILTER_MIN;
   if (!grouped) for (const n of state.nodes) rows.push(nodeUpdRow(n));
   else rows.push(...updGroupRows(state.nodes));
-  setHTML('upd-table', `<table><thead><tr><th class="u26"></th><th>Machine</th><th>Platform</th><th>Running</th><th>Available</th><th>Progress</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`);
+  setHTML('upd-table', `<table><thead><tr><th class="u26"></th><th>Machine</th><th class="hide-ph">Platform</th><th>Running</th><th>Available</th><th>Progress</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`);
   const uc = updateCounts(), ro = state.rollout, ue = state.update_everything;
   const roRunning = ro && !ro.ended, ueRunning = ue && !ue.ended;
   const recent = (x) => x && x.ended && Date.now() - new Date(x.ended) < 24 * 3600e3;
-  const rn = $('rollout-note');
-  // One note: the whole run when Update everything is running or just ended badly, else the node rollout.
-  const note = ueRunning || (ue && ue.state === 'failed' && recent(ue)) ? { text: (roRunning && ueRunning ? `${ro.text}${ro.rest ? `; ${ro.rest} more wait until it passes a quick check` : ''}` : ue.text) + (ueRunning ? '…' : ''), cls: ue.state === 'failed' ? 'bad' : '' }
-    : roRunning ? { text: `${ro.text}${ro.rest ? `; ${ro.rest} more wait until it passes a quick check` : ''}…`, cls: '' }
-    : recent(ro) ? { text: `${ro.text} (${ago(ro.ended)})`, cls: ro.state === 'failed' ? 'bad' : ro.state === 'done' ? 'good' : '' } : null;
-  rn.classList.toggle('hidden', !note);
-  if (note) { rn.className = `note ${note.cls}`; rn.textContent = note.text; }
+  // One line for the whole run when Update everything is running or just ended badly, else the node rollout.
+  const note = ueRunning || (ue && ue.state === 'failed' && recent(ue)) ? { text: (roRunning && ueRunning ? `${ro.text}${ro.rest ? `; ${ro.rest} more wait until it passes a quick check` : ''}` : ue.text) + (ueRunning ? '…' : ''), bad: ue.state === 'failed' }
+    : roRunning ? { text: `${ro.text}${ro.rest ? `; ${ro.rest} more wait until it passes a quick check` : ''}…`, bad: false }
+    : recent(ro) && ro.state === 'failed' ? { text: `${ro.text} (${ago(ro.ended)})`, bad: true } : null;
   const total = uc.nodes + (uc.ctl ? 1 : 0), working = roRunning || ueRunning || ctlUpdating;
-  const b = $('btn-upd-all');
-  b.disabled = !total || working; b.className = total && !working ? 'primary' : '';
-  b.textContent = working ? 'Updating…' : total ? 'Update everything' : 'Everything is up to date';
   const parts = [uc.nodes ? `${uc.nodes} node${uc.nodes === 1 ? '' : 's'}` : '', uc.ctl ? 'the controller' : ''].filter(Boolean);
-  b.title = total ? `Updates ${parts.join(' and ')}: one node first, a quick check, the other nodes, and the controller last (it restarts).${uc.offline ? ` ${uc.offline} offline node${uc.offline === 1 ? '' : 's'} update when back.` : ''}` : '';
+  const to = state.controller_update_to || (state.nodes.find((n) => n.update_to) || {}).update_to;
+  const g = state.github_updates || {};
+  const open = updPanel === null ? !!(working || (note && note.bad)) : updPanel;
+  const det = `<button type="button" class="small link-btn" data-act="upd-toggle" aria-expanded="${open}">${open ? '▾' : '▸'} Details</button>`;
+  let bar0;
+  if (working) {
+    // Share of the machines that were told to update and are already done.
+    const flagged = state.nodes.filter((n) => n.update && (n.update_to || n.update.state === 'done') && (UPD_BUSY.includes(n.update.state) || n.update.state === 'done') && Date.now() - new Date(n.update.updated) < 3600e3);
+    const done = flagged.filter((n) => n.update.state === 'done').length;
+    const pct = flagged.length ? Math.max(5, 100 * done / flagged.length) : 5;
+    bar0 = `<div class="upd-bar avail"><span class="ic" aria-hidden="true">⬆</span><span class="g"><b>Updating${to ? ' to v' + esc(to) : ''}</b>${note ? ': ' + esc(note.text) : ctlUpdating ? ': the controller is installing and restarting…' : ''}<div class="upd-prog">${bar(pct, 'good')}</div></span>${det}<button id="btn-upd-all" disabled>Updating…</button></div>`;
+  } else if (note && note.bad) {
+    bar0 = `<div class="upd-bar bad"><span class="ic" aria-hidden="true">⚠</span><span class="g"><b>Update stopped</b>: ${esc(note.text)}</span>${det}${total ? `<button id="btn-upd-all" class="primary" data-act="upd-all">Try again</button>` : ''}</div>`;
+  } else if (total) {
+    const sub = `One node goes first and is checked, then the rest, then the controller (it restarts).${uc.offline ? ` ${uc.offline} offline node${uc.offline === 1 ? '' : 's'} update when back.` : ''}`;
+    bar0 = `<div class="upd-bar avail"><span class="ic" aria-hidden="true">⬆</span><span class="g"><b>${to ? 'v' + esc(to) + ' is available' : 'Updates are available'}</b> for ${parts.join(' and ')}<span class="sub">${esc(sub)}${g.checked && g.checked > '2000' ? ' Checked ' + ago(g.checked) + '.' : ''}</span></span>${det}<button id="btn-upd-all" class="primary" data-act="upd-all" title="Updates ${esc(parts.join(' and '))}: one node first, a quick check, the other nodes, and the controller last (it restarts).">Update everything</button></div>`;
+  } else {
+    const src = !g.enabled ? 'automatic checks are off' : g.branch ? `following the ${esc(g.branch)} branch` : 'Stable channel';
+    bar0 = `<div class="upd-bar ok"><span class="ic" aria-hidden="true">✓</span><span class="g">Everything runs <b>v${esc(state.version)}</b>${g.checked && g.checked > '2000' ? ' · checked ' + ago(g.checked) : ''} · ${src}</span>${det}<button class="small" data-act="gh-check" title="Looks for a newer release now">Check now</button></div>`;
+  }
+  setHTML('upd-bar', bar0);
+  $('upd-panel').classList.toggle('hidden', !open);
   $('btn-upd-indiv').setAttribute('aria-pressed', updIndiv);
   $('btn-upd-indiv').textContent = updIndiv ? 'Hide per-machine buttons' : 'Choose individually…';
   if (ueRunning && ue.state === 'controller' && !ctlWaiting) { ctlWaiting = true; ctlUpdating = true; waitControllerBack(state.controller_update_to, 'update', () => { ctlWaiting = false; }); }
@@ -157,7 +173,7 @@ async function ghAction(path, msg) {
   refresh();
 }
 $('btn-gh-check').onclick = () => ghAction('/api/github-updates/check', 'Checked ' + ((state.github_updates || {}).host || 'GitHub'));
-$('btn-upd-all').onclick = async () => {
+async function updateEverything() {
   const uc = updateCounts();
   const parts = [uc.nodes ? `${uc.nodes} node${uc.nodes === 1 ? '' : 's'}` : '', uc.ctl ? 'the controller' : ''].filter(Boolean).join(' and ');
   const order = uc.nodes ? 'One node goes first and is checked; if it fails it is rolled back and nothing else is touched. ' : '';
@@ -168,7 +184,7 @@ $('btn-upd-all').onclick = async () => {
     toast(r.nodes ? `Updating ${r.canary} first${r.nodes > 1 ? `; ${r.nodes - 1} more follow once it passes` : ''}${r.controller ? ', then the controller' : ''}` : 'Updating the controller', 6000);
     refresh();
   } catch (e) { toast(e.message, 6000); }
-};
+}
 $('btn-upd-indiv').onclick = () => { updIndiv = !updIndiv; renderUpdates(); };
 // Wait for the restarted controller to answer on the expected version, then reload the page.
 async function waitControllerBack(version, word, done) {
@@ -213,7 +229,7 @@ function uploadRelease(f, onProgress) {
   });
 }
 async function uploadFiles(files) {
-  $('upl').open = true; // show the list the new files land in
+  updPanel = true; $('upl').open = true; renderUpdates(); // show the list the new files land in
   const n = files.length;
   for (const [i, f] of files.entries()) {
     const tag = (n > 1 ? `[${i + 1}/${n}] ` : '') + f.name;
@@ -231,13 +247,13 @@ async function uploadFiles(files) {
   let depth = 0;
   const hide = () => { depth = 0; ov.classList.add('hidden'); };
   // Whole page is the drop zone while Updates is showing; text drags are ignored.
-  window.addEventListener('dragenter', (e) => { if (page !== 'updates' || !hasFiles(e)) return; e.preventDefault(); depth++; ov.classList.remove('hidden'); });
-  window.addEventListener('dragover', (e) => { if (page !== 'updates' || !hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
-  window.addEventListener('dragleave', (e) => { if (page !== 'updates' || !hasFiles(e)) return; if (--depth <= 0) hide(); });
+  window.addEventListener('dragenter', (e) => { if (page !== 'nodes' || !hasFiles(e)) return; e.preventDefault(); depth++; ov.classList.remove('hidden'); });
+  window.addEventListener('dragover', (e) => { if (page !== 'nodes' || !hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+  window.addEventListener('dragleave', (e) => { if (page !== 'nodes' || !hasFiles(e)) return; if (--depth <= 0) hide(); });
   window.addEventListener('drop', (e) => {
     if (!hasFiles(e)) return;
     e.preventDefault(); // never let the browser navigate to a dropped file
-    const onUpdates = page === 'updates';
+    const onUpdates = page === 'nodes';
     hide();
     if (onUpdates) uploadFiles([...e.dataTransfer.files]);
   });

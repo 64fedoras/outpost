@@ -521,7 +521,7 @@ function artifactsBlock(t) {
   if (!arts.length) return '';
   const links = arts.map((a) => `<a href="/api/tasks/${t.id}/artifact?path=${encodeURIComponent(a.path)}">${esc(a.path)} <span class="muted">(${bytes(a.bytes)})</span></a>`).join('');
   const publish = arts.some((a) => /^(.*\/)?outpost-(linux|darwin|windows)-(amd64|arm64)(\.exe)?$/.test(a.path))
-    ? '<button class="small" data-act="task-publish" title="Upload the outpost-&lt;platform&gt; binaries as releases. Updating the controller and nodes stays a click on the Updates tab.">Publish to Updates</button>' : '';
+    ? '<button class="small" data-act="task-publish" title="Upload the outpost-&lt;platform&gt; binaries as releases. Updating the controller and nodes stays a click on the Nodes page.">Publish to Updates</button>' : '';
   return `<div class="changed"><span class="hint">Build outputs</span>${links}</div>
     <div class="card-actions">${publish}<a href="/api/tasks/${t.id}/artifacts.zip"><button class="small">artifacts.zip</button></a><a href="/api/tasks/${t.id}/download?artifacts=1"><button class="small">Source and artifacts .zip</button></a></div>`;
 }
@@ -920,7 +920,7 @@ async function taskAction(act, el) {
       case 'task-publish': {
         const r = await post(`/api/tasks/${id}/publish`);
         const bad = Object.entries(r.refused || {}).map(([k, v]) => `${k}: ${v}`);
-        toast(`${(r.published || []).length} published to Updates` + (bad.length ? `. Refused: ${bad.join('; ')}` : '. Update the controller and nodes from the Updates tab.'), bad.length ? 9000 : 4000);
+        toast(`${(r.published || []).length} published (Nodes page, Details)` + (bad.length ? `. Refused: ${bad.join('; ')}` : '. Update the controller and nodes from the Nodes page.'), bad.length ? 9000 : 4000);
         return;
       }
       case 'task-cancel': if (!await askConfirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return; await post(`/api/tasks/${id}/cancel`); break;
