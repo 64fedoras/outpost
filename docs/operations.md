@@ -9,7 +9,7 @@ Part of the [Outpost user guide](USER-GUIDE.md).
 Every merge to `main` is built by GitHub Actions as the next patch version (0.8.1, 0.8.2, ...; after patch 19 the minor rolls, so 0.8.19 is followed by 0.9.0) and published as a release `v<version>` with the five binaries, a zip and `SHA256SUMS`, so each build shows up as a newer version in the Updates tab. Major versions (1.0) are set by hand in `cmd/outpost/proto.go`, and versions compare numerically (0.8.10 is newer than 0.8.9) in `cmd/outpost/proto.go`.
 
 **From GitHub, GitLab or Gitea (on by default).** The controller checks the update repository's latest release (this project's GitHub repository unless you set another, see below) every 6 hours
-(and when you click **Check for updates** on the Updates tab) and downloads the binaries for its own platform
+(and when you click **Check now** in the Nodes page's update Details) and downloads the binaries for its own platform
 and for the platforms of the nodes it knows. Each file must match the release's `SHA256SUMS` and be an
 Outpost binary of that version, or it is discarded; accepted ones are kept exactly like a manual upload (listed under *Upload your own builds*), so **Update everything** and rollback work unchanged. `SHA256SUMS` catches
 corrupt downloads but is not signed, so it does not protect against a tampered repository. Under
@@ -20,7 +20,7 @@ tab does the same once, on request. After a rollback, automatic install skips th
 (and older ones) until a newer release appears. Nothing but the version check and the downloads goes to
 that server. This path has only been tested against stub servers, not the live GitHub, GitLab or Gitea APIs.
 
-**Update everything.** The Updates tab has one primary button. It updates one node first and checks it (a model
+**Update everything.** The Nodes page has an update bar under the cluster summary: it says what is available and has one primary button (there is no separate Updates tab any more; old `#/updates` links open Nodes). **Details** on the bar unfolds the controller and machine table, where updates come from, and uploads. A node that can update shows a small chip by its name. It updates one node first and checks it (a model
 reload and a test command where the node has them, run side by side); if that node fails it is rolled back and nothing else is touched,
 the controller included. Once it passes, the other nodes update, then the controller restarts last, after the
 nodes' downloads have finished and once no task is planning, running or testing (it waits up to an hour for running
@@ -32,7 +32,7 @@ things: online nodes that can update now, plus the controller. Your own binaries
 is fine because the restart is its last step. Only tested against stub nodes; a Windows node as the first node, the
 real restart path and Windows are untested.
 
-**Following a branch.** Under *Published releases* the Updates tab has an **Update channel** dropdown. *Stable*
+**Following a branch.** In Details, under *Where updates come from*, there is an **Update channel** dropdown. *Stable*
 is the normal behaviour above. The other entries are branches that have a build on GitHub; the list is read
 from the update repository each time you open the dropdown. Picking one makes the controller follow that branch's newest
 build (shown as a version like `0.12.19-dev.7`) instead of the latest release. The build goes through the same
@@ -96,7 +96,7 @@ a real GitLab, Gitea or Forgejo instance; the private GitHub path likewise only 
 
 Or by hand:
 
-1. **Updates tab:** drop the new binaries anywhere on the page (or click the box to choose them), one per platform you use (`outpost-linux-amd64`, …).
+1. **Nodes page:** drop the new binaries anywhere on the page (or click the box to choose them), one per platform you use (`outpost-linux-amd64`, …).
 2. Click **Update** on the controller row (updates the web UI too; you stay signed in), then
    **Update N nodes, one first**. Each row shows the machine's status, its version and a live progress bar.
    From 8 nodes the table groups them by platform (offline nodes in their own group): click a group row to
@@ -119,7 +119,7 @@ Each release also carries `catalog.json`, the list of suggested models (checked 
 like the binaries). When the controller checks GitHub for updates it fetches that list from the newest
 release and uses it on top of the one built into its own version: entries are updated and new models
 are added, none are removed. So new good models show up on the Models page without updating Outpost.
-The Updates page says which list is in use. Every entry is still checked against each node's memory
+The update Details say which list is in use. Every entry is still checked against each node's memory
 before it is suggested. Turning off GitHub checks (Settings) turns this off too.
 
 ### Rolling back

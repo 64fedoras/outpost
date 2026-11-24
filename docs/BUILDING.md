@@ -57,7 +57,7 @@ Both scripts check the Go version first and stop with a clear message if Go is m
 build with `CGO_ENABLED=0 -trimpath`, and print the SHA-256 of every binary.
 
 **Where the output goes:** `../dist/outpost-<version>/bin/` (next to your checkout) unless you name a
-directory. Files are named `outpost-<os>-<arch>` (`.exe` on Windows), the same names the Updates tab
+directory. Files are named `outpost-<os>-<arch>` (`.exe` on Windows), the same names the Nodes page's update Details
 expects. To build without the scripts: `CGO_ENABLED=0 go build -trimpath -o outpost ./cmd/outpost`
 
 **Versions.** The binary's version is the base `const Version` in `cmd/outpost/proto.go`. For releases, CI stamps the

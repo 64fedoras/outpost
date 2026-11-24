@@ -25,7 +25,7 @@ accepted for this step; to allow others add `--setup-allow-from 203.0.113.0/24,1
 
 ### Nodes
 
-**One paste (easiest).** Upload the binary for each platform you use in the **Updates** tab once. On the
+**One paste (easiest).** Upload the binary for each platform you use once in **Details** on the **Nodes** page (the update bar). On the
 **Nodes** tab click **Add node**: the dialog shows a ready-to-paste command with the controller
 address and a join code already filled in, for the OS of the browser you are using (the **Linux / macOS** and **Windows** tabs switch). On Linux or macOS run
 
