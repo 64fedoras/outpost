@@ -179,7 +179,7 @@ $('dg-download').onclick = async () => {
 };
 
 // ---- Storage (storage.go) ----
-const ST_PARTS = [['tasks', 'Tasks'], ['chats', 'Chats'], ['chat_images', 'Chat images'], ['chat_docs', 'Chat documents'], ['chat_runs', 'Chat code files'], ['models', 'Models'], ['releases', 'Releases and updates'], ['runtime', 'llama.cpp builds'], ['projects', 'Projects'], ['other', 'Settings, logs and keys']];
+const ST_PARTS = [['tasks', 'Tasks'], ['chats', 'Chats'], ['chat_images', 'Chat images'], ['chat_docs', 'Chat documents'], ['chat_runs', 'Chat code files'], ['models', 'Models'], ['releases', 'Releases and updates'], ['runtime', 'llama.cpp builds'], ['projects', 'Projects'], ['stash', 'Stash'], ['other', 'Settings, logs and keys']];
 // Hover, keyboard focus or tap on a bar segment shows a tooltip (native title is slow and absent on touch).
 (function () {
   const bar = $('st-bar'), host = bar.parentElement; host.classList.add('st-host');

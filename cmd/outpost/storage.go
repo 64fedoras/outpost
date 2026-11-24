@@ -62,7 +62,7 @@ func (c *Controller) measureStorage(force bool) (map[string]int64, time.Time) {
 	}
 	c.storage.mu.Unlock()
 	parts := map[string]int64{}
-	known := map[string]string{"tasks": "tasks", "models": "models", "releases": "releases", "runtime": "runtime", "projects": "projects", "agent": "releases"}
+	known := map[string]string{"tasks": "tasks", "models": "models", "releases": "releases", "runtime": "runtime", "projects": "projects", "stash": "stash", "agent": "releases"}
 	ents, _ := os.ReadDir(c.dataDir)
 	for _, e := range ents {
 		p := filepath.Join(c.dataDir, e.Name())

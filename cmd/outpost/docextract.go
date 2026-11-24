@@ -70,9 +70,14 @@ var errNotDoc = errors.New("not a PDF, DOCX, XLSX, ODT or CSV file")
 
 // extractDocument returns the document's text and what was read.
 func extractDocument(name string, data []byte) (text string, info DocInfo, err error) {
+	return extractDocumentMax(name, data, maxDocBytes, maxDocText)
+}
+
+// extractDocumentMax is extractDocument with its own limits on the file size and on the text kept (the Stash reads bigger files).
+func extractDocumentMax(name string, data []byte, maxBytes, maxText int) (text string, info DocInfo, err error) {
 	info = DocInfo{Name: name, Kind: docKind(name)}
-	if len(data) > maxDocBytes {
-		return "", info, fmt.Errorf("%s is larger than %d MB", name, maxDocBytes>>20)
+	if len(data) > maxBytes {
+		return "", info, fmt.Errorf("%s is larger than %d MB", name, maxBytes>>20)
 	}
 	defer func() { // the parsers are given untrusted files; a panic is a bad file, not a crash
 		if r := recover(); r != nil {
@@ -102,8 +107,8 @@ func extractDocument(name string, data []byte) (text string, info DocInfo, err e
 	text = strings.ToValidUTF8(text, "")
 	text = regexp.MustCompile(`[ \t]+\n`).ReplaceAllString(text, "\n")
 	text = strings.TrimSpace(regexp.MustCompile(`\n{3,}`).ReplaceAllString(text, "\n\n"))
-	if len(text) > maxDocText {
-		text, info.Cut = strings.ToValidUTF8(text[:maxDocText], "")+"\n…(cut: the document is longer)", true
+	if len(text) > maxText {
+		text, info.Cut = strings.ToValidUTF8(text[:maxText], "")+"\n…(cut: the document is longer)", true
 	}
 	info.Words = len(strings.Fields(docMarks.ReplaceAllString(text, "")))
 	return text, info, nil

@@ -179,6 +179,7 @@ type Controller struct {
 	check       clusterCheck             // the last Check cluster run (clustercheck.go)
 	lastBackup  *backupCheck             // the newest scheduled backup, read back after writing
 	storage     storageState             // disk use and clean-up (storage.go)
+	stash       stashStore               // the Stash: resources chats and tasks can search (stash.go)
 	rollout     *rolloutState            // the last one-node-first update (rollout.go)
 	everything  *everythingState         // the last Update everything run (update_everything.go)
 	restartHook func(*Release) error     // tests: replaces the controller install and restart
@@ -372,6 +373,7 @@ func runController(args []string) error {
 	c.projectRoutes(mux)
 	c.projectChatRoutes(mux)
 	c.chatRoutes(mux)
+	c.stashRoutes(mux)
 	c.compareRoutes(mux)
 	c.groupRoutes(mux)
 	c.templateRoutes(mux)

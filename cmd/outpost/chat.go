@@ -37,7 +37,10 @@ type ChatMsg struct {
 	ThinkS int       `json:"think_s,omitempty"`       // about how many seconds it thought
 	Error  string    `json:"error,omitempty"`
 	Note   string    `json:"note,omitempty"` // e.g. that the web was searched, or why it was not
-	At     time.Time `json:"at"`
+	// Sources and Searched: the stash passages the answer was given and what was searched (stash_chat.go).
+	Sources  []StashSource `json:"sources,omitempty"`
+	Searched string        `json:"searched,omitempty"`
+	At       time.Time     `json:"at"`
 	// Other versions of the conversation from this message on (chat_versions.go):
 	// an edit adds one on the user message, a regenerate on the answer. Ver is
 	// this version's place among all of them, counted from 0.
@@ -63,11 +66,12 @@ type Chat struct {
 	Messages []ChatMsg `json:"messages"`
 	GroupID  string    `json:"group_id,omitempty"` // sidebar group (groups.go)
 	// Instructions are this chat's standing rules, added to the system prompt.
-	Instructions string `json:"instructions,omitempty"`
-	Busy         string `json:"busy,omitempty"`      // "" | waiting | answering (not saved meaningfully; reset at load)
-	MemTries     int    `json:"mem_tries,omitempty"` // answers that asked for a memory suggestion (memory.go)
-	RunCode      bool   `json:"run_code,omitempty"`  // the model may run code on an exec node (chat_run.go)
-	RunOn        string `json:"run_on,omitempty"`    // while Busy is "running": the node running it
+	Instructions string   `json:"instructions,omitempty"`
+	Busy         string   `json:"busy,omitempty"`      // "" | waiting | answering (not saved meaningfully; reset at load)
+	MemTries     int      `json:"mem_tries,omitempty"` // answers that asked for a memory suggestion (memory.go)
+	RunCode      bool     `json:"run_code,omitempty"`  // the model may run code on an exec node (chat_run.go)
+	RunOn        string   `json:"run_on,omitempty"`    // while Busy is "running": the node running it
+	Stashes      []string `json:"stashes,omitempty"`   // stashes searched before each answer (stash_chat.go)
 	// Research is the live state of a research answer while it works (research.go).
 	Research *ResearchRun `json:"research,omitempty"`
 	// Prompt is the question or progress line while Auto gets a model (chat_switch.go); not saved.
@@ -140,6 +144,7 @@ func (c *Controller) chatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/chats/{id}/image", c.auth(c.handleChatImage))
 	mux.HandleFunc("GET /api/chats/{id}/doc", c.auth(c.handleChatDoc))
 	mux.HandleFunc("POST /api/chats/{id}/runcode", c.auth(c.handleChatRunCode))
+	mux.HandleFunc("POST /api/chats/{id}/stash", c.auth(c.handleChatStash))
 	mux.HandleFunc("GET /api/chats/{id}/run-file", c.auth(c.handleChatRunFile))
 	mux.HandleFunc("GET /api/chats/{id}/events", c.authSession(c.handleChatEvents))
 	mux.HandleFunc("POST /api/chats/{id}/edit", c.auth(c.handleChatEdit))
@@ -188,9 +193,10 @@ type chatReq struct {
 	Images []imageUpload `json:"images"`
 	Docs   []imageUpload `json:"docs"` // PDF, DOCX, XLSX, ODT, CSV (chat_docs.go)
 	// Instructions (new chats only): nil takes the default from Settings.
-	Instructions *string `json:"instructions"`
-	RunCode      bool    `json:"run_code"` // new chats only: start with Run code on
-	Need         string  `json:"need"`     // coding | vision | general: answer for this need (Auto only)
+	Instructions *string  `json:"instructions"`
+	RunCode      bool     `json:"run_code"` // new chats only: start with Run code on
+	Need         string   `json:"need"`     // coding | vision | general: answer for this need (Auto only)
+	Stashes      []string `json:"stashes"`  // new chats only: stashes to search
 }
 
 func (req *chatReq) check() error {
@@ -244,7 +250,7 @@ func (c *Controller) handleNewChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	ch := &Chat{ID: newID("chat"), Title: chatTitle(firstNonEmpty(req.Text, "Image")), Node: firstNonEmpty(req.Node, "auto"), RunCode: req.RunCode, Created: now, Updated: now, dir: c.chatsDir()}
+	ch := &Chat{ID: newID("chat"), Title: chatTitle(firstNonEmpty(req.Text, "Image")), Node: firstNonEmpty(req.Node, "auto"), RunCode: req.RunCode, Stashes: c.validStashIDs(req.Stashes), Created: now, Updated: now, dir: c.chatsDir()}
 	if req.Instructions != nil {
 		ch.Instructions = clipChatInstructions(*req.Instructions)
 	} else {
@@ -403,6 +409,7 @@ func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
 	ch.Updated, ch.Busy, ch.cancel = time.Now(), "waiting", cancel
 	hist := chatHistoryDocs(ch.Messages, ch.imageURI, ch.docText)
 	hist[0].Content = c.chatSystemPrompt(ch.Instructions)
+	stashIDs := append([]string(nil), ch.Stashes...)
 	askMem := ch.MemTries < maxMemoryTries && c.memorySuggestOn()
 	if askMem {
 		for _, m := range ch.Messages {
@@ -433,11 +440,15 @@ func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
 			taskLive.changed("chat_" + ch.ID)
 		}
 		var msg ChatMsg
+		var found *stashFound
 		if pref == chatResearch {
 			msg = c.answerResearch(ctx, ch, hist, started)
 		} else {
-			msg = c.answerChatRun(ctx, ch.ID, pref, hist, askMem, run, started)
+			sctx, f := c.withStash(ctx, stashIDs, hist)
+			found = f
+			msg = c.answerChatRun(sctx, ch.ID, pref, hist, askMem, run, started)
 		}
+		found.apply(&msg)
 		ch.mu.Lock()
 		msg.ID, msg.At, msg.Alts, msg.Ver = newID("m"), time.Now(), alts, ver
 		ch.Messages = append(ch.Messages, msg)
@@ -617,6 +628,10 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 	c.mu.Unlock()
 	c.chatSw.touch(node, loaded)
 	ran := false
+	pre := stashBriefFrom(ctx)
+	if run != nil || c.chatToolsOn() {
+		hist, pre = withSearchBrief(hist, pre), "" // local paths: nothing leaves the cluster
+	}
 	if run != nil {
 		out, note, ran, err = c.answerWithRun(ctx, infer, loaded, hist, ctxTok, maxOut, run)
 	}
@@ -629,7 +644,7 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 	default:
 		brief, n2 := c.chatSearchBrief(ctx, chatID, hist)
 		note = joinNotes(note, n2)
-		hist = withSearchBrief(hist, brief)
+		hist = withSearchBrief(withSearchBrief(hist, brief), pre)
 		out, err = infer(ctx, InferenceSpec{Messages: fitHistory(hist, (ctxTok-maxOut)*3), Params: InferenceParams{MaxTokens: maxOut}})
 	}
 	note = joinNotes(note, thinkNote)
