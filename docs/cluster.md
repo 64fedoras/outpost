@@ -143,16 +143,44 @@ controller restart or update starts the charts empty again.
 GPU on the card and as a chart, and turns red at 85 °C. On Linux NVIDIA cards are read with `nvidia-smi` (installed with the driver). Windows and
 macOS report no temperature, and the row is left out. Untested on real GPUs so far.
 
-**GPUs on Intel Macs** (for example the AMD FirePro cards in a 2013 Mac Pro) are listed on the node card as
-"not used by this llama.cpp build". The llama.cpp builds Outpost installs for Intel Macs run on the CPU only, so
-these GPUs are not counted when sizing models. Detection reads `system_profiler`; untested on a real Mac.
+**GPU speed check.** Some GPUs are slower than the CPU next to them (old or small cards, or a backend that lacks
+the features llama.cpp's fast kernels need). Before the first model load on a new llama.cpp build, or after the GPUs
+change, a node with a discrete GPU times the smallest model it has (one that fits in 60% of its biggest GPU) with
+`llama-bench`: once all on the GPU and once all on the CPU. This takes about a minute, once, and the load shows
+"checking GPU speed". If the GPU generates under 90% of the CPU's speed, loads on that node run on the CPU (an explicit
+GPU layer count in the Load dialog is kept), Pick best stops counting its VRAM, and the node's details say
+"GPU slower than CPU here". Otherwise the details show both speeds, and Pick best uses the measured ratio to estimate
+models split between VRAM and RAM. **Re-check** measures again on the next load, for example after a driver update.
+The check is skipped (and says why) when the build has no `llama-bench` or no stored model fits the GPU; then the node
+behaves as before. Apple Silicon is not checked: its GPU shares memory with the CPU and is always the faster one.
+Untested on real GPU nodes so far.
 
-**Trying the GPUs on an Intel Mac without AVX2 (experimental).** Such a Mac normally gets Outpost's CPU-only
-compatible llama.cpp build. To try the Metal (GPU) build instead, turn on **Use GPU (Metal, experimental)** in the node's
-details, and load a model; Outpost installs the `macos-x64-compat-metal` build. Old AMD cards (FirePro D-series, Metal 2)
-may not work with llama.cpp's Metal kernels. If the Metal build keeps failing to start, Outpost deletes the file and
-the node says so there and the next load installs the CPU build again. Turn the setting off to go back at any time. Untested on a real Mac;
-the Metal build is only published by the "llama.cpp compatible builds" workflow for releases built after this was added.
+**CUDA on NVIDIA (Windows).** Outpost's GPU build is Vulkan, which runs on any card. A Windows node whose GPUs are all
+NVIDIA, with a driver of 551.61 or newer (read from `nvidia-smi`), also tries llama.cpp's CUDA 12.4 build once: after
+Vulkan has been timed by the speed check, the next load installs the CUDA build (the controller downloads it with its
+`cudart` runtime libraries and sends them as one archive; a few hundred MB, once), times it the same way, and keeps
+whichever generates faster. CUDA has to win by at least 5%; if it does not start, fails its timing or is not faster, the node goes
+back to Vulkan. The timings are kept per GPU set and driver, so this happens once, and again only after a driver or
+GPU change. If the CUDA build cannot be downloaded or installed, the node stays on Vulkan and does not retry for a
+day. There is no setting. Machines with an NVIDIA and another make of card keep Vulkan, which drives every card, and
+Linux keeps Vulkan (upstream publishes no Linux CUDA build). Untested on real NVIDIA hardware and on Windows.
+
+**Integrated GPUs (Intel iGPU, AMD APU).** A node with no discrete GPU but an Intel or AMD integrated GPU (under 1 GB of
+dedicated memory) used to be treated as a plain CPU machine. It is now detected, listed apart from the real GPUs, and
+gets the Vulkan build (on Linux this needs the Vulkan loader and Mesa drivers, as for any GPU). The speed check times a
+small model on it the same way, using a model up to a quarter of the node's RAM, since an iGPU works in system RAM. The
+iGPU is used only when it generates at least as fast as 90% of the CPU: otherwise, and until it has been measured,
+models run on the CPU, as before. Its shared memory is never counted as VRAM; when it wins, Pick best multiplies the
+CPU speed estimate by the measured gain (capped at 3x, since it shares the CPU's memory bandwidth). A machine that also
+has a discrete GPU ignores its integrated one. A node that moves to the Vulkan build downloads it once. Untested on real
+Intel or AMD integrated graphics and on Windows.
+
+**GPUs on Intel Macs** (for example the AMD FirePro cards in a 2013 Mac Pro) are read with `system_profiler` and
+listed in the node's details. An Intel Mac with a discrete GPU gets a llama.cpp build with Metal (Outpost's AVX-only
+`macos-x64-compat-metal` build on CPUs without AVX2), and the GPU speed check decides whether it is used. llama.cpp's
+Metal backend drives one GPU, so only the biggest card counts as VRAM. On a 2013 Mac Pro (FirePro D700, Metal 2) the
+GPU measured about 6 times slower than the CPU, so such a Mac runs models on its CPU. If the Metal build keeps failing to
+start, the node switches to the CPU-only build until it restarts. Untested on other Macs.
 
 ## Saved load settings and yielding the GPU
 

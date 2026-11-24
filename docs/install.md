@@ -309,14 +309,14 @@ Until a node has a model ready, the New task page shows a short checklist: **Add
    (failed load, model error, paused, no Vulkan, low disk under 10 GB, update available) and the model with
    Change/Unload; nodes that need attention come first, and a memory pool (a node and the helpers lending
    it memory) sits in one dashed frame with **Unload pool**. **List** shows two-line rows grouped into
-   Needs attention, Healthy and Offline; click a row (or **Details**) and the node's full card opens right
-   below it (every control: idle unload, benchmark, stored models, tools, exec and sandbox, Pause, Restart,
+   Needs attention, Healthy and Offline; click a row (or **Details**) and the node's full card opens in the details panel
+   described below (every control: idle unload, benchmark, stored models, tools, exec and sandbox, Pause, Restart,
    Logs, Rename, Remove, Run). An optional **Detailed list** view (a short list on the left, the full card
    and recent jobs on the right) is off by default; turn it on in **Settings → Display and alerts → Appearance**
-   (kept in this browser only). Click a Grid card (or its **Details**) and a details panel opens on the
-   right with the same full card and the node's recent jobs, while the grid stays in view: click another
-   card to switch, use the arrows in the panel header to step through the nodes, and close it with the
-   cross, Esc, or a click on empty space. The panel floats over the page and the grid does not move; on a phone it fills the screen.
+   (kept in this browser only). Click a Grid card or List row (or its **Details**) and a details panel opens on the
+   right with the same full card and the node's recent jobs, while the page stays in view: click another
+   card or row to switch, use the arrows in the panel header to step through the nodes, and close it with the
+   cross, Esc, or a click on empty space. The panel floats over the page and the page underneath does not move; on a phone it fills the screen.
    **Many nodes.** From 8 nodes on, the page switches to a compact layout: a **filter bar** (search by name,
    host, OS, GPU, loaded model or label; quick filters All, Online, Offline, Needs attention, Has GPU, No model
    and Can update, each with a count; one chip per label; **Sort** by status, name or speed, remembered in this

@@ -98,8 +98,9 @@ type winGPU struct {
 }
 
 var (
-	gpuOnce sync.Once
-	gpuList []winGPU
+	gpuOnce       sync.Once
+	gpuList       []winGPU
+	gpuIntegrated []winGPU // Intel iGPUs and AMD APUs, listed apart from gpuList
 )
 
 // IID_IDXGIFactory1 {770aae78-f26f-4dba-a829-253c83d1b387}
@@ -165,14 +166,32 @@ func windowsGPUList() []winGPU {
 			default:
 				continue
 			}
-			if g.VRAMBytes < 1<<30 || seen[g.luid] {
-				continue // integrated graphics or a duplicate entry
+			if seen[g.luid] {
+				continue // a duplicate entry
+			}
+			if g.VRAMBytes < 1<<30 {
+				if g.Vendor != "nvidia" { // Intel iGPU or AMD APU: kept apart, never counted as VRAM
+					g.Integrated = true
+					seen[g.luid] = true
+					gpuIntegrated = append(gpuIntegrated, g)
+				}
+				continue
 			}
 			seen[g.luid] = true
 			gpuList = append(gpuList, g)
 		}
 	})
 	return gpuList
+}
+
+// windowsIntegratedGPUs lists Intel iGPUs and AMD APUs (under 1 GB of dedicated memory).
+func windowsIntegratedGPUs() []GPUInfo {
+	windowsGPUList()
+	out := []GPUInfo{}
+	for _, g := range gpuIntegrated {
+		out = append(out, g.GPUInfo)
+	}
+	return out
 }
 
 func windowsGPUs() []GPUInfo {

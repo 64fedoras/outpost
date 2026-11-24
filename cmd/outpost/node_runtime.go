@@ -93,7 +93,7 @@ func (n *Node) installRuntime(ri RuntimeInstall) {
 		fail("%v", err)
 		return
 	}
-	pruneLlamaBuilds(n.llamaDir(), dest, prev)
+	pruneLlamaBuilds(n.llamaDir(), dest, prev, n.runningBuildDirs()...)
 	log.Printf("llama.cpp %s (%s) installed at %s", ri.Build, ri.Variant, server)
 	n.opStatus(op, ri.Variant, "done", ri.Bytes, ri.Bytes, "")
 	n.resendHello()

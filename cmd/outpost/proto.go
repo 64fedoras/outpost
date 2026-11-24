@@ -100,6 +100,31 @@ type GPUInfo struct {
 	Name      string `json:"name"`
 	VRAMBytes uint64 `json:"vram_bytes"`
 	Backend   string `json:"backend"`
+	// Integrated is an Intel iGPU or AMD APU graphics that shares system RAM. VRAMBytes is only
+	// its small carve-out, so it never counts as VRAM; the speed check decides whether it is used.
+	Integrated bool `json:"integrated,omitempty"`
+}
+
+// GPUCheck is a node's measured generation speed with a small model all on the GPU and all
+// on the CPU (llama-bench), for the installed llama.cpp build and GPUs (Key).
+type GPUCheck struct {
+	Key     string    `json:"key"`
+	Model   string    `json:"model,omitempty"`
+	GPUTPS  float64   `json:"gpu_tps,omitempty"`
+	CPUTPS  float64   `json:"cpu_tps,omitempty"`
+	Slower  bool      `json:"slower,omitempty"`  // the GPU is slower: loads run on the CPU
+	Skipped string    `json:"skipped,omitempty"` // why no check ran
+	Note    string    `json:"note,omitempty"`
+	At      time.Time `json:"at"`
+}
+
+// GPUTrial is one llama.cpp build's timing on this node's GPUs, kept while the node tries
+// the Vulkan and CUDA builds (cuda.go). Failed is set when the build did not run.
+type GPUTrial struct {
+	Variant string  `json:"variant"`
+	GPUTPS  float64 `json:"gpu_tps,omitempty"`
+	CPUTPS  float64 `json:"cpu_tps,omitempty"`
+	Failed  string  `json:"failed,omitempty"`
 }
 
 type ModelInfo struct {
@@ -128,10 +153,14 @@ type Hello struct {
 	Runtime           *RuntimeInfo `json:"runtime,omitempty"`
 	SDRuntime         *RuntimeInfo `json:"sd_runtime,omitempty"` // stable-diffusion.cpp build, when installed (image generation)
 	VulkanAvailable   bool         `json:"vulkan_available"`
-	Glibc             string       `json:"glibc,omitempty"`        // Linux: this machine's glibc version, e.g. "2.35"
-	MetalOptIn        bool         `json:"metal_opt_in,omitempty"` // Intel Mac: the owner turned on the GPU (Metal) build
-	MetalFailed       string       `json:"metal_failed,omitempty"` // the Metal build did not start, so the CPU build is used
-	NoAVX2            bool         `json:"no_avx2,omitempty"`      // x86-64 CPU without AVX2: upstream macOS x64 llama.cpp crashes on it
+	Glibc             string       `json:"glibc,omitempty"`           // Linux: this machine's glibc version, e.g. "2.35"
+	GPUCheck          *GPUCheck    `json:"gpu_check,omitempty"`       // GPU vs CPU speed on the installed build (node_gpucheck.go)
+	NvidiaDriver      string       `json:"nvidia_driver,omitempty"`   // installed NVIDIA driver version (Windows), decides whether the CUDA build is tried
+	IntegratedGPUs    []GPUInfo    `json:"integrated_gpus,omitempty"` // iGPUs on a node with no discrete GPU; kept apart from GPUs so they never count as VRAM
+	GPUTrials         []GPUTrial   `json:"gpu_trials,omitempty"`      // Vulkan and CUDA timings on these GPUs (cuda.go)
+	CUDABlocked       bool         `json:"-"`                         // controller only: a CUDA install failed here lately
+	MetalFailed       string       `json:"metal_failed,omitempty"`    // the Metal build did not start, so the CPU build is used
+	NoAVX2            bool         `json:"no_avx2,omitempty"`         // x86-64 CPU without AVX2: upstream macOS x64 llama.cpp crashes on it
 	LoadedModel       string       `json:"loaded_model"`
 	RollbackTo        string       `json:"rollback_to,omitempty"` // previous installed Outpost version
 	Paused            bool         `json:"paused,omitempty"`
@@ -180,7 +209,6 @@ type NodeSettings struct {
 	ExecEnabled bool   `json:"exec_enabled"`
 	IdleUnloadS int    `json:"idle_unload_s"`       // unload the model after this many idle seconds; 0 = never
 	YieldGPU    bool   `json:"yield_gpu,omitempty"` // unload while another program uses the GPU (gpu_yield.go)
-	MetalGPU    bool   `json:"metal_gpu,omitempty"` // Intel Mac without AVX2: use the Metal build (experimental)
 	Sandbox     string `json:"sandbox,omitempty"`   // off | basic | strict; empty = the node's default (basic)
 	// StorageLimit is the most disk Outpost may use on this node, in bytes
 	// (models, caches, runtimes, the agent; not job folders). 0 = no limit.

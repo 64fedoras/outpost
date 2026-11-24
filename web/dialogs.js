@@ -150,7 +150,7 @@ function palSource() {
     { t: 'Theme: dark', k: 'action', run: () => { $('set-theme').value = 'dark'; $('set-theme').dispatchEvent(new Event('change')); } },
     { t: 'Theme: same as the system', k: 'action', run: () => { $('set-theme').value = ''; $('set-theme').dispatchEvent(new Event('change')); } },
   ];
-  (state ? state.nodes : []).forEach((n) => items.push({ t: nodeName(n), k: 'node', sub: n.online ? (n.heartbeat && n.heartbeat.loaded_model) || 'online' : 'offline', run: () => { nodeSel = n.id; nodeOpen.add(n.id); nodeView = showDetailed ? 'detail' : 'list'; location.hash = '#/nodes'; renderNodes(); } }));
+  (state ? state.nodes : []).forEach((n) => items.push({ t: nodeName(n), k: 'node', sub: n.online ? (n.heartbeat && n.heartbeat.loaded_model) || 'online' : 'offline', run: () => { nodeSel = n.id; nodeView = showDetailed ? 'detail' : 'list'; nodeDrawer = nodeView === 'list' ? n.id : null; location.hash = '#/nodes'; renderNodes(); } }));
   (tasks || []).forEach((t) => items.push({ t: t.title || 'Task', k: 'task', sub: statusWord(t), run: go('#/tasks/' + t.id) }));
   (projects || []).forEach((p) => items.push({ t: p.name, k: 'project', run: go('#/projects') }));
   (state && state.templates || []).forEach((tp) => items.push({ t: 'Run saved task: ' + tp.name, k: 'action', run: () => templateAction('tpl-run', tp.id).catch((e) => toast(e.message)) }));
@@ -308,7 +308,7 @@ document.addEventListener('click', async (e) => {
       case 'idle': setNodeIdle(id); break;
       case 'health-reset': resetHealth(id); break;
       case 'yield': toggleYield(id); break;
-      case 'metal': toggleMetal(id); break;
+      case 'gpu-recheck': gpuRecheck(id); break;
       case 'task-models': toggleTaskModels(id); break;
       case 'chat-switch': toggleChatSwitch(id); break;
       case 'restart': {
@@ -321,7 +321,6 @@ document.addEventListener('click', async (e) => {
       case 'node-detail': openNodeDrawer(id); return; // Grid card or its Details button: the details panel
       case 'node-drawer-go': if (id) openNodeDrawer(id); return;
       case 'node-drawer-close': closeNodeDrawer(); return;
-      case 'node-toggle': if (nodeOpen.has(id)) nodeOpen.delete(id); else nodeOpen.add(id); renderNodes(); return;
       case 'node-select': nodeSel = id; renderNodes(); return;
       case 'node-view': setNodeView(el.dataset.nodeView); return;
       case 'cat-filter': catFilter = el.dataset.catFilter; renderModels(); return;

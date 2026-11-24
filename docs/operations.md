@@ -243,6 +243,8 @@ you fill it in (set it if you reach the controller by a name or IP different fro
 | Updates | `releases/`, `agent/` | `agent/` |
 | Logs | journald on Linux (`journalctl -u outpost-controller`) | journald on Linux; `node.log` on Windows and macOS, and when a tray started the node |
 
+**Old llama.cpp builds clean themselves up.** A node keeps the llama.cpp build it is using plus the one before it (so a switch back, such as to a compatible or CPU build, needs no download). After each runtime install, and once when the node starts, it deletes the older `llama/<build>-<variant>/` folders and leftover download files. A build that a running llama-server or RPC server was started from is never deleted, and models are never touched. There is nothing to configure.
+
 **Safe saves.** Settings, nodes, sessions, tokens, projects, model records and each task's `task.json` are written to a
 temporary file, flushed to disk and renamed into place, so a power cut or a full disk leaves the old file or the new one,
 never half of each. `settings.json`, `nodes.json`, `project.json`, `task.json` and the node's `node.json` also keep the
@@ -264,6 +266,13 @@ the top of every page says so and a *disk low* notification is sent once (it cle
 rounds can then no longer be undone), screenshots and the cached result zip (rebuilt when you download it),
 and, if ticked, their build outputs. Conversations, the task's files and attachments always stay, and the
 task's event log notes what was removed. **Clean up now** runs it at once.
+
+Chats are listed separately in the bar: chat text, images, documents, and the files code wrote (*Chat code
+files*). **Chats by size** lists each chat with what it uses, largest first, with **Clear code files**
+(removes only the files its code wrote; the conversation, the code and the output text stay, and the
+download links for those files go) and **Delete** (the whole chat, after a confirmation). **Clear files made by
+code in chats not used for N days** does the same for every older chat in one go. A chat that is answering
+is skipped.
 
 **Hung model watchdog.** While a node runs a model call, it watches llama-server: if nothing has come back
 for 3 minutes and llama-server's health check then fails twice, the call is stopped, llama-server is

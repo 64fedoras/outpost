@@ -83,6 +83,7 @@ func (c *Controller) runInferenceJobLive(ctx context.Context, nodeID string, spe
 		if err := json.Unmarshal(res.Output, &out); err != nil {
 			return nil, err
 		}
+		c.recordLocal(&out)
 		return &out, nil
 	case <-ctx.Done():
 		c.cancelJob(job.JobID)

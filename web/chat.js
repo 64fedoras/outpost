@@ -145,6 +145,7 @@ function chatButtons() {
   $('chat-run').setAttribute('aria-pressed', String(run));
   setHTML('chat-run', `▶<span class="hide-ph"> Run code${run ? ': on' : ''}</span>`);
   $('chat-run').setAttribute('aria-label', 'Run code');
+  chatPolishButtons();
 }
 async function chatRunToggle() {
   if (!chatCur) { chatPendingRun = !chatPendingRun; chatButtons(); if (chatPendingRun) chatRunHint(); return; }

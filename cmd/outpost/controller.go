@@ -42,7 +42,6 @@ type NodeRec struct {
 	Added       time.Time     `json:"added"`
 	Hello       *Hello        `json:"hello,omitempty"`
 	LoadPrefs   *ModelLoad    `json:"load_prefs,omitempty"`    // last model loaded from the UI
-	MetalGPU    bool          `json:"metal_gpu,omitempty"`     // Intel Mac without AVX2: try the GPUs through the Metal build (experimental)
 	YieldGPU    *bool         `json:"yield_gpu,omitempty"`     // unload the model while another program uses the GPU (gpu_yield.go); nil = on (yieldOn)
 	Profiles    []LoadProfile `json:"load_profiles,omitempty"` // named load settings (load_profiles.go)
 	Pool        []string      `json:"pool,omitempty"`          // helper nodes lending memory to this node's model
@@ -132,6 +131,10 @@ type Controller struct {
 	dataDir     string
 	spend       *spendLedger // cloud spending ledger (spend.go); use spendLedger()
 	spendOnce   sync.Once
+	cmp         *compareStore // side-by-side comparisons (compare.go); use compares()
+	cmpOnce     sync.Once
+	local       *localUsage // local model usage per day (localusage.go); use localUsage()
+	localOnce   sync.Once
 	catShapes   map[string]*ModelShape // GGUF headers of catalog models, read from Hugging Face in the background
 	advertise   string
 	fingerprint string
@@ -303,6 +306,8 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/scorecard", c.auth(c.handleScorecard))
 	mux.HandleFunc("GET /api/storage", c.auth(c.handleStorage))
 	mux.HandleFunc("POST /api/storage", c.authSession(c.handleStorageSettings))
+	mux.HandleFunc("GET /api/storage/chats", c.auth(c.handleStorageChats))
+	mux.HandleFunc("POST /api/storage/chats/clear-runs", c.authSession(c.handleStorageClearRuns))
 	mux.HandleFunc("GET /api/nodes/{id}/logs", c.auth(c.handleNodeLogs))
 	mux.HandleFunc("GET /api/node-history", c.auth(c.handleNodeHistory))
 	mux.HandleFunc("GET /api/cluster/check", c.auth(c.handleGetClusterCheck))
@@ -357,6 +362,7 @@ func runController(args []string) error {
 	mux.HandleFunc("GET /api/nodes/{id}/load-options", c.auth(c.handleLoadOptions))
 	mux.HandleFunc("POST /api/nodes/{id}/load", c.auth(c.handleLoadModel))
 	mux.HandleFunc("POST /api/nodes/{id}/benchmark", c.auth(c.handleBenchmarkNode))
+	mux.HandleFunc("POST /api/nodes/{id}/gpu-recheck", c.auth(c.handleGPURecheck))
 	mux.HandleFunc("POST /api/nodes/{id}/health/reset", c.auth(c.handleResetHealth))
 	mux.HandleFunc("POST /api/nodes/{id}/profiles", c.auth(c.handleSaveLoadProfile))
 	mux.HandleFunc("DELETE /api/nodes/{id}/profiles/{name}", c.auth(c.handleDeleteLoadProfile))
@@ -366,6 +372,7 @@ func runController(args []string) error {
 	c.projectRoutes(mux)
 	c.projectChatRoutes(mux)
 	c.chatRoutes(mux)
+	c.compareRoutes(mux)
 	c.groupRoutes(mux)
 	c.templateRoutes(mux)
 	c.openAIRoutes(mux)

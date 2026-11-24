@@ -20,55 +20,44 @@ func TestParseMacGPUs(t *testing.T) {
 	}
 }
 
-func TestNodeVariantMetalOptIn(t *testing.T) {
+func TestNodeVariantIntelMacGPU(t *testing.T) {
 	h := &Hello{OS: "darwin", Arch: "amd64", NoAVX2: true, GPUs: []GPUInfo{{Vendor: "amd", Name: "D700", VRAMBytes: 6 << 30}}}
-	if v, _ := nodeVariant(h); v != "macos-x64-compat" {
-		t.Errorf("without opt-in: %s", v)
-	}
-	h.MetalOptIn = true
 	if v, _ := nodeVariant(h); v != "macos-x64-compat-metal" {
-		t.Errorf("with opt-in: %s", v)
+		t.Errorf("with a GPU: %s", v)
 	}
-	h.GPUs = nil
+	h.MetalFailed = "did not start"
 	if v, _ := nodeVariant(h); v != "macos-x64-compat" {
-		t.Errorf("opt-in but no GPU: %s", v)
+		t.Errorf("after the Metal build failed: %s", v)
+	}
+	h.MetalFailed, h.GPUs = "", nil
+	if v, _ := nodeVariant(h); v != "macos-x64-compat" {
+		t.Errorf("no GPU: %s", v)
 	}
 	if runtimeAssets["macos-x64-compat-metal"] == runtimeAssets["macos-x64-compat"] {
 		t.Error("asset suffixes must differ")
 	}
 }
 
-func TestParseMacGPUsText(t *testing.T) {
-	txt := `Graphics/Displays:
-
-    AMD FirePro D700:
-
-      Chipset Model: AMD FirePro D700
-      Type: GPU
-      VRAM (Total): 6 GB
-      Vendor: AMD (0x1002)
-      Metal Support: Metal 2
-
-    AMD FirePro D700:
-
-      Chipset Model: AMD FirePro D700
-      VRAM (Total): 6 GB
-      Vendor: AMD (0x1002)
-`
-	g := parseMacGPUsText(txt)
-	if len(g) != 2 || g[0].Vendor != "amd" || g[1].VRAMBytes != 6<<30 || g[0].Name != "AMD FirePro D700" {
-		t.Fatalf("got %+v", g)
-	}
-}
-
-func TestLoadableMemoryMetalUsesOneGPU(t *testing.T) {
-	h := &Hello{OS: "darwin", Arch: "amd64", NoAVX2: true, MetalOptIn: true, RAMBytes: 32 << 30,
+func TestLoadableMemoryFollowsGPUCheck(t *testing.T) {
+	mac := &Hello{OS: "darwin", Arch: "amd64", NoAVX2: true, RAMBytes: 32 << 30,
 		GPUs: []GPUInfo{{Vendor: "amd", VRAMBytes: 6 << 30}, {Vendor: "amd", VRAMBytes: 6 << 30}}}
-	if v, _, ok := loadableMemory(h); !ok || v != 6<<30 {
-		t.Errorf("metal: vram %d ok %v", v, ok)
+	if v, _, _ := loadableMemory(mac); v != 0 {
+		t.Errorf("Mac before a check: vram %d", v)
 	}
-	h.MetalOptIn = false
-	if v, _, _ := loadableMemory(h); v != 0 {
-		t.Errorf("cpu build: vram %d", v)
+	mac.GPUCheck = &GPUCheck{GPUTPS: 3.9, CPUTPS: 22.5, Slower: true}
+	if v, _, _ := loadableMemory(mac); v != 0 {
+		t.Errorf("Mac with a slower GPU: vram %d", v)
+	}
+	mac.GPUCheck = &GPUCheck{GPUTPS: 60, CPUTPS: 20}
+	if v, _, _ := loadableMemory(mac); v != 6<<30 {
+		t.Errorf("Mac with a faster GPU counts one card: vram %d", v)
+	}
+	lin := &Hello{OS: "linux", Arch: "amd64", VulkanAvailable: true, RAMBytes: 64 << 30, GPUs: []GPUInfo{{Vendor: "nvidia", VRAMBytes: 8 << 30}}}
+	if v, _, _ := loadableMemory(lin); v != 8<<30 {
+		t.Errorf("Linux Vulkan before a check keeps its VRAM: %d", v)
+	}
+	lin.GPUCheck = &GPUCheck{GPUTPS: 2, CPUTPS: 10, Slower: true}
+	if v, _, _ := loadableMemory(lin); v != 0 {
+		t.Errorf("Linux with a slower GPU: %d", v)
 	}
 }

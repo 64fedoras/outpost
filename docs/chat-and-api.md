@@ -199,6 +199,11 @@ in Spending and the monthly cap. It needs that provider's API key. If there is n
 the cap would be passed or the search fails, the chat is still answered and the answer notes why the web
 was not used. When it did search, the answer notes how many searches and what it cost.
 
+**Export, personas and Compare.**
+- **Export** (header of an open chat): *Markdown* (`.md`, with headings and code blocks), *Plain text* (`.txt`), or *Print or save as PDF*, which opens your browser's print dialog with a clean copy of the chat (choose "Save as PDF" as the printer). Images and documents are listed by name, not embedded. Nothing is sent anywhere; the file is made in your browser.
+- **Personas**: in **Instructions**, pick a saved persona to fill the box, or write instructions and press **Save as persona…** to keep them under a name (saving under an existing name replaces its text). **Delete** removes a persona; chats that already use its text keep it. Personas are stored in the controller's settings and can be read and written with the `chat_personas` setting.
+- **Compare** (header, shown when two online nodes have a model loaded): send one prompt to two nodes and read the answers side by side with tokens per second, token count and time, and a *faster* mark. Each node answers when it is free. Nothing is saved to a chat; use **Copy** to keep one answer. **Stop** cancels both.
+
 **OpenAI-compatible API.** Editors and tools that speak the OpenAI API (Continue, aider, Open WebUI and
 others) can use the cluster. Point them at:
 
@@ -325,6 +330,7 @@ cost on the page, marked *deleted*, so the month's total stays right. The first 
 this page starts, it fills the ledger from the tasks on disk, counting each task's whole cost on the day
 it was created (earlier per-call times were never recorded), so days before the update are approximate.
 The ledger keeps 24 months, is part of backups, and is in the controller's time zone.
+The **Local models (free)** tile counts what your own nodes answered this month (answers, tokens in and out, how many prompt tokens were reused from cache, and the average tokens per second). It comes from a separate small file, `local-usage.json`, that keeps per-day totals for 24 months and is also part of backups. It starts empty when you update, so earlier answers are not counted.
 - The key is stored encrypted on the controller and never sent to nodes.
 
 ### Web lookups

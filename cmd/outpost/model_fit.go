@@ -56,8 +56,10 @@ func nodeMemory(h *Hello) (vram, ram int64) {
 
 // loadableMemory is nodeMemory as llama.cpp will actually use it: GPU memory
 // only counts when the node gets a GPU (Vulkan) build, so a Linux node with a
-// card but no Vulkan driver is sized as a CPU machine. ok is false when no
-// llama.cpp build exists for the node's OS and CPU.
+// card but no Vulkan driver is sized as a CPU machine, and not when the node's
+// GPU speed check found the GPU slower than its CPU. Intel Macs count their GPU
+// only once the check has found it faster. ok is false when no llama.cpp build
+// exists for the node's OS and CPU.
 func loadableMemory(h *Hello) (vram, ram int64, ok bool) {
 	if h == nil {
 		return 0, 0, false
@@ -67,14 +69,20 @@ func loadableMemory(h *Hello) (vram, ram int64, ok bool) {
 	if variant == "" {
 		return 0, ram, false
 	}
+	gc := h.GPUCheck
 	switch {
-	case variant == "macos-x64-compat-metal":
-		// llama.cpp's Metal backend drives one GPU, so count the biggest card, not the sum.
+	case gc != nil && gc.Slower:
 		vram = 0
-		for _, g := range h.GPUs {
-			vram = max(vram, int64(g.VRAMBytes))
+	case variant == "macos-x64-compat-metal" || variant == "macos-x64":
+		// llama.cpp's Metal backend drives one GPU (seen on a 2013 Mac Pro with two), so
+		// count the biggest card, and only once the check found it faster than the CPU.
+		vram = 0
+		if gc != nil && gc.GPUTPS > 0 {
+			for _, g := range h.GPUs {
+				vram = max(vram, int64(g.VRAMBytes))
+			}
 		}
-	case !strings.HasSuffix(variant, "-vulkan"):
+	case !strings.HasSuffix(variant, "-vulkan") && !strings.HasSuffix(variant, "-cuda"):
 		vram = 0
 	}
 	return vram, ram, true

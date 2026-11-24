@@ -47,7 +47,7 @@ function renderSpending() {
     <div class="tile"><span class="tile-k">${d.current ? 'This month' : esc(monthLabel(d.month))}</span><span class="tile-v">${usd(d.total)}</span><span class="sub">${capLine}</span>${bar}</div>
     <div class="tile"><span class="tile-k">Tasks that used the cloud</span><span class="tile-v">${d.tasks}</span><span class="sub">${d.calls} call${d.calls === 1 ? '' : 's'}</span></div>
     <div class="tile"><span class="tile-k">Average per cloud task</span><span class="tile-v">${usd(avg)}</span></div>
-    <div class="tile"><span class="tile-k">Claude · OpenRouter</span><span class="tile-v">${usd(d.claude)}</span><span class="sub">OpenRouter ${usd(d.openrouter)}</span></div>`);
+    <div class="tile"><span class="tile-k">Claude · OpenRouter</span><span class="tile-v">${usd(d.claude)}</span><span class="sub">OpenRouter ${usd(d.openrouter)}</span></div>${localTile(d.local)}`);
 
   const paused = $('sp-paused');
   paused.classList.toggle('hidden', !d.paused || !d.current);
@@ -104,3 +104,10 @@ $('sp-cap-save').addEventListener('click', async () => {
   } catch (e) { msg.textContent = e.message; }
 });
 $('sp-cap').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('sp-cap-save').click(); });
+
+// localTile shows what your own nodes answered this month: free, but worth seeing next to the cloud numbers.
+function localTile(l) {
+  if (!l || !l.calls) return `<div class="tile"><span class="tile-k">Local models (free)</span><span class="tile-v">0</span><span class="sub">No answers from your nodes this month yet</span></div>`;
+  const k = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
+  return `<div class="tile"><span class="tile-k">Local models (free)</span><span class="tile-v">${k(l.out + l.in)}</span><span class="sub">tokens in ${k(l.in)} (${k(l.cached)} cached), out ${k(l.out)} · ${l.calls} answer${l.calls === 1 ? '' : 's'}${l.avg_tps ? ' · ' + l.avg_tps.toFixed(1) + ' tok/s' : ''}</span></div>`;
+}

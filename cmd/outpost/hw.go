@@ -19,7 +19,18 @@ type Hardware struct {
 	CPU      CPUInfo
 	RAMBytes uint64
 	GPUs     []GPUInfo
-	Backends []string
+	// Integrated holds Intel iGPUs and AMD APUs, listed only when the machine has no discrete GPU.
+	Integrated []GPUInfo
+	Backends   []string
+}
+
+// checkGPUs are the GPUs the speed check and the llama.cpp build choice work with: the
+// discrete ones, or the integrated ones when there are none.
+func (hw Hardware) checkGPUs() []GPUInfo {
+	if len(hw.GPUs) > 0 {
+		return hw.GPUs
+	}
+	return hw.Integrated
 }
 
 func detectHardware() Hardware {
@@ -30,6 +41,9 @@ func detectHardware() Hardware {
 		mi := readMeminfo()
 		hw.RAMBytes = mi["MemTotal"]
 		hw.GPUs = linuxGPUs()
+		if len(hw.GPUs) == 0 {
+			hw.Integrated = linuxIntegratedGPUs()
+		}
 	case "darwin":
 		hw.CPU.Model = strings.TrimSpace(cmdOut("sysctl", "-n", "machdep.cpu.brand_string"))
 		if v, err := strconv.ParseUint(strings.TrimSpace(cmdOut("sysctl", "-n", "hw.memsize")), 10, 64); err == nil {
@@ -53,6 +67,9 @@ func detectHardware() Hardware {
 		windowsCPU(&hw.CPU)
 		hw.RAMBytes = windowsRAM()
 		hw.GPUs = windowsGPUs()
+		if len(hw.GPUs) == 0 {
+			hw.Integrated = windowsIntegratedGPUs()
+		}
 	}
 	seen := map[string]bool{"cpu": true}
 	for _, g := range hw.GPUs {
@@ -297,6 +314,37 @@ func linuxGPUDevices() []string {
 			continue
 		}
 		out = append(out, d.dir)
+	}
+	return out
+}
+
+// isLinuxIntegrated says whether a sysfs graphics device is an Intel iGPU or AMD APU: an Intel
+// or AMD device with under 1 GB of dedicated memory (Intel reports none). NVIDIA and virtual
+// display adapters (other vendors) are never integrated.
+func isLinuxIntegrated(vendor, vram uint64) bool {
+	return (vendor == 0x1002 || vendor == 0x8086) && vram < 1<<30
+}
+
+// linuxIntegratedGPUs lists integrated graphics from /sys/class/drm. They are only used when
+// the machine has no discrete GPU (see Hardware.checkGPUs).
+func linuxIntegratedGPUs() []GPUInfo {
+	out := []GPUInfo{}
+	cards, _ := filepath.Glob("/sys/class/drm/card[0-9]*")
+	for _, card := range cards {
+		if strings.Contains(filepath.Base(card), "-") {
+			continue // connector entries like card0-DP-1
+		}
+		dev := filepath.Join(card, "device")
+		vendor := readUint(filepath.Join(dev, "vendor"))
+		vram := readUint(filepath.Join(dev, "mem_info_vram_total"))
+		if !isLinuxIntegrated(vendor, vram) {
+			continue
+		}
+		g := GPUInfo{Vendor: "amd", Backend: "vulkan", VRAMBytes: vram, Integrated: true, Name: gpuName(dev)}
+		if vendor == 0x8086 {
+			g.Vendor = "intel"
+		}
+		out = append(out, g)
 	}
 	return out
 }

@@ -47,6 +47,8 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `projectnew.py` | Projects page: "New task in this project" in a card's menu opens the new-task page with that project picked. |
 | `chatthink.py` | Chat thinking behind a fold (closed by default, stays open when opened, kept after reload), the green working bar, and an answer cut at the length limit carried on automatically. |
 | `chatpage.py` | Chat page layout: model cards on a new chat, the docked composer, the chats panel and the phone sheet. |
+| `storagechats.py` | Settings → Storage: chat parts in the bar, Chats by size, clearing a chat's code files, deleting a chat; desktop dark and light and phone. |
+| `chatpolish.py` | Chat export (Markdown, text, print view), personas (save, pick, delete), Compare between two nodes (joins a second real node from the same binary) and the Local models tile on Spending; desktop dark and light and phone. |
 | `chatversions.py` | Chat edit and resend, regenerate, version arrows, branch, per-chat instructions and the Chats search box (desktop light and dark, phone). |
 | `projectreads.py` | Project conversation reads files: chips for list, search and read calls, `path:line` links opening the read-only file viewer (light and dark). |
 | `preview.py` | Live preview: HTML and Mermaid answers become cards; the sandboxed panel runs scripts with network and cookies blocked, Code tab, versions, Save to project, dark and phone. |
@@ -57,6 +59,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `cad.py` | New 3D model page: a scripted model writes OpenSCAD (a typo first, fixed in round 2), the node renders it with the real OpenSCAD (needs `openscad` on PATH), the viewer draws it, a parameter re-renders and "Ask for changes" edits it. |
 | `chat3d.py` | Chat to 3D: a clear 3D request opens the 3D card on Send (mesh note, look-up boxes), Answer in chat instead (and the chat stays in chat), a 3D-printing question answered in chat with Make this in 3D, C++ STL text never routed, and Make it with the measurement look-up shown on the 3D page (needs `openscad`; without it, shoots the Install OpenSCAD card). |
 | `nodetools.py` | Nodes page notices "No node has Chromium/OpenSCAD": recommended node, Install posts the right request, Not now hides it. State is patched in the browser; nothing is downloaded. |
+| `gpucheck.py` | GPU speed check line in a node's details (slower, faster, skipped) and the Re-check request. The node's GPU and check result are patched in the browser. |
 | `chatimages.py` | Chat screenshots: `novision` checks the warning and refusal with the text-only rig model; `vision` (after adding `mmproj-F16.gguf` to `run/ctl/models/tiny-test/model.json` `hf_files` and restarting the controller) sends a pasted image and checks the thumbnail and that the fake server got it. |
 | `groups.py` | Sidebar groups: the single grouped list (status icons, status order), new group, dragging a task and a chat onto a group, Move to group, rename, colour, move, delete, and the phone sheet. Runs first: it expects a controller with no groups yet. |
 | `schedules.py` | Schedule dialog (every few hours, chosen days and refusing none, monthly on the 31st, the preview line) and the Scheduled page: sidebar count, Run now history, open row, Pause/Resume, Pause all banner, ⋯ menu (Edit request, Duplicate, Remove schedule, Escape), phone layout. |
