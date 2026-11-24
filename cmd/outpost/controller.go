@@ -132,6 +132,10 @@ type Controller struct {
 	dataDir     string
 	spend       *spendLedger // cloud spending ledger (spend.go); use spendLedger()
 	spendOnce   sync.Once
+	cmp         *compareStore // side-by-side comparisons (compare.go); use compares()
+	cmpOnce     sync.Once
+	local       *localUsage // local model usage per day (localusage.go); use localUsage()
+	localOnce   sync.Once
 	catShapes   map[string]*ModelShape // GGUF headers of catalog models, read from Hugging Face in the background
 	advertise   string
 	fingerprint string
@@ -366,6 +370,7 @@ func runController(args []string) error {
 	c.projectRoutes(mux)
 	c.projectChatRoutes(mux)
 	c.chatRoutes(mux)
+	c.compareRoutes(mux)
 	c.groupRoutes(mux)
 	c.templateRoutes(mux)
 	c.openAIRoutes(mux)

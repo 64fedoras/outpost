@@ -48,6 +48,7 @@ type Settings struct {
 	MemorySuggestOff  bool           `json:"memory_suggest_off,omitempty"`  // memory.go: no "Remember …?" suggestions under answers   // MCP clients may approve plans; default the owner approves in the web UI
 	APICORSOrigins    []string       `json:"api_cors_origins,omitempty"`    // browser origins allowed to call /v1, /anthropic and /ollama (api_core.go)
 	ChatInstructions  string         `json:"chat_instructions,omitempty"`   // default instructions for new chats (chat_versions.go)
+	ChatPersonas      []ChatPersona  `json:"chat_personas,omitempty"`       // named instruction sets a chat can start from (chat_personas.go)
 	PoolingEnabled    *bool          `json:"pooling_enabled,omitempty"`     // memory pooling (llama.cpp RPC); nil until decided, then off unless a pool already existed
 	PoolingNotice     bool           `json:"pooling_notice,omitempty"`      // pooling was switched on by the upgrade because a pool existed; shown once
 	AutoFreeOff       bool           `json:"auto_free_off,omitempty"`       // default is on: a node short of disk space deletes least recently used models the controller can copy back
@@ -199,7 +200,7 @@ func (c *Controller) settingsView() map[string]any {
 		"sandbox":      effectiveSandbox(c.settings.Sandbox, ""),
 		"health_amber": healthAmberOf(c.settings), "health_red": healthRedOf(c.settings),
 		"idle_unload": c.settings.IdleUnload, "idle_unload_effective": formatIdleDuration(idleUnloadFor(c.settings.IdleUnload, "")),
-		"instructions": c.settings.Instructions, "chat_instructions": c.settings.ChatInstructions, "api_cors_origins": c.settings.APICORSOrigins, "mcp_allow_paid": c.settings.MCPAllowPaid, "mcp_allow_approve": c.settings.MCPAllowApprove, "memory_on": !c.settings.MemoryOff, "memory_suggest": !c.settings.MemorySuggestOff, "backup_enabled": c.settings.BackupEnabled, "last_backup": c.lastBackup, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
+		"instructions": c.settings.Instructions, "chat_instructions": c.settings.ChatInstructions, "chat_personas": personasOrEmpty(c.settings.ChatPersonas), "api_cors_origins": c.settings.APICORSOrigins, "mcp_allow_paid": c.settings.MCPAllowPaid, "mcp_allow_approve": c.settings.MCPAllowApprove, "memory_on": !c.settings.MemoryOff, "memory_suggest": !c.settings.MemorySuggestOff, "backup_enabled": c.settings.BackupEnabled, "last_backup": c.lastBackup, "backup_dir": c.settings.BackupDir, "has_backup_pass": c.settings.BackupPassEnc != "",
 	}
 	for k, x := range c.notifyView() {
 		v[k] = x
@@ -234,29 +235,30 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 			DigestHour *int            `json:"digest_hour"`
 			Events     map[string]bool `json:"events"`
 		} `json:"notify"`
-		AutoResume      *bool     `json:"auto_resume"`
-		BestOfN         *string   `json:"best_of_n"`
-		Instructions    *string   `json:"instructions"`
-		ChatInstr       *string   `json:"chat_instructions"`
-		CORSOrigins     *[]string `json:"api_cors_origins"`
-		MCPAllowPaid    *bool     `json:"mcp_allow_paid"`
-		MCPAllowApprove *bool     `json:"mcp_allow_approve"`
-		MemoryOn        *bool     `json:"memory_on"`
-		MemorySuggest   *bool     `json:"memory_suggest"`
-		WebSearch       *bool     `json:"web_search"`
-		ChatWebSearch   *bool     `json:"chat_web_search"`
-		ChatSearchWith  *string   `json:"chat_search_with"`
-		AgentMode       *bool     `json:"agent_mode"`
-		WebAllowPrivate *bool     `json:"web_allow_private"`
-		PoolingEnabled  *bool     `json:"pooling_enabled"`
-		AutoFree        *bool     `json:"auto_free"`
-		GitHubUpdates   *bool     `json:"github_updates"`
-		GitHubAuto      *bool     `json:"github_auto_install"`
-		GitHubRepo      *string   `json:"github_repo"`
-		UpdateHostKind  *string   `json:"update_host_kind"` // "" = automatic, github | gitlab | gitea
-		GitHubToken     *string   `json:"github_token"`     // "" removes
-		IdleUnload      *string   `json:"idle_unload"`      // "" = default (1 hour)
-		Sandbox         *string   `json:"sandbox"`          // off | basic | strict
+		AutoResume      *bool          `json:"auto_resume"`
+		BestOfN         *string        `json:"best_of_n"`
+		Instructions    *string        `json:"instructions"`
+		ChatInstr       *string        `json:"chat_instructions"`
+		ChatPersonas    *[]ChatPersona `json:"chat_personas"` // the whole list; replaces it
+		CORSOrigins     *[]string      `json:"api_cors_origins"`
+		MCPAllowPaid    *bool          `json:"mcp_allow_paid"`
+		MCPAllowApprove *bool          `json:"mcp_allow_approve"`
+		MemoryOn        *bool          `json:"memory_on"`
+		MemorySuggest   *bool          `json:"memory_suggest"`
+		WebSearch       *bool          `json:"web_search"`
+		ChatWebSearch   *bool          `json:"chat_web_search"`
+		ChatSearchWith  *string        `json:"chat_search_with"`
+		AgentMode       *bool          `json:"agent_mode"`
+		WebAllowPrivate *bool          `json:"web_allow_private"`
+		PoolingEnabled  *bool          `json:"pooling_enabled"`
+		AutoFree        *bool          `json:"auto_free"`
+		GitHubUpdates   *bool          `json:"github_updates"`
+		GitHubAuto      *bool          `json:"github_auto_install"`
+		GitHubRepo      *string        `json:"github_repo"`
+		UpdateHostKind  *string        `json:"update_host_kind"` // "" = automatic, github | gitlab | gitea
+		GitHubToken     *string        `json:"github_token"`     // "" removes
+		IdleUnload      *string        `json:"idle_unload"`      // "" = default (1 hour)
+		Sandbox         *string        `json:"sandbox"`          // off | basic | strict
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad json"})
@@ -433,6 +435,9 @@ func (c *Controller) handleSaveSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.ChatInstr != nil {
 		c.settings.ChatInstructions = clipChatInstructions(*req.ChatInstr)
+	}
+	if req.ChatPersonas != nil {
+		c.settings.ChatPersonas = cleanPersonas(*req.ChatPersonas)
 	}
 	if req.WebSearch != nil {
 		c.settings.WebSearch = *req.WebSearch
