@@ -741,8 +741,7 @@ details.live summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .nd-head .small { min-width: 32px; }
 .nd-body { padding: 14px 16px 24px; }
 .nd-body > .card { margin: 0; } .nd-body > .card > .node-top { display: none; }
-/* Wide screens: the grid reflows beside the panel instead of under it. */
-@media (min-width: 1320px) { body.nd-open section[data-page="nodes"] { margin-right: 540px; } }
+/* The panel overlays the page at every width; the grid underneath does not move. */
 @media (max-width: 1100px) { .nv-row { grid-template-columns: 180px minmax(0, 1fr) 150px 210px; } .nv-row > .r { display: none; } }
 @media (max-width: 860px) {
   .pool { grid-column: auto; }

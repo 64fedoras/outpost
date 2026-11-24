@@ -337,6 +337,13 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || !nodeDrawer || document.querySelector('.overlay:not(.hidden)')) return;
   closeNodeDrawer();
 });
+// A click on empty page space (not the panel, a card, a control or a dialog) closes the panel.
+document.addEventListener('click', (e) => {
+  if (!nodeDrawer || !e.target.closest || !e.target.isConnected) return;
+  if (e.target.closest('#node-drawer, .gc, .off-chip, .overlay, button, a, input, select, textarea, label, summary, [data-act]')) return;
+  if (!e.target.closest('section[data-page="nodes"]')) return;
+  closeNodeDrawer();
+});
 
 const toolName = (k) => ({ go: 'Go', chromium: 'Chromium', openscad: 'OpenSCAD' }[k] || k);
 const recHidden = {};
