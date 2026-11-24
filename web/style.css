@@ -1655,3 +1655,36 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 .bar > i.sweep { width: 35%; animation: sweep 1.4s ease-in-out infinite; }
 @keyframes sweep { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
 @media (prefers-reduced-motion: reduce) { .bar > i.sweep { animation: none; width: 100%; opacity: .6; } }
+
+/* Chat polish: personas, export, compare, print */
+.persona-row { display: flex; gap: 8px; align-items: center; margin: 0 0 8px; flex-wrap: wrap; }
+.persona-row select { flex: 1 1 160px; min-width: 0; }
+.persona-new { display: flex; gap: 8px; margin: 0 0 8px; }
+.persona-new input { flex: 1; min-width: 0; }
+.export-opts { display: grid; gap: 8px; }
+.export-opts button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 10px 12px; white-space: normal; }
+.cmp-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 8px; }
+.cmp-pick label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); min-width: 0; }
+.cmp-pick select { min-width: 0; width: 100%; }
+#cmp-prompt { width: 100%; box-sizing: border-box; }
+.cmp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.cmp-col { border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-width: 0; overflow-wrap: anywhere; }
+.cmp-col.failed { border-color: var(--bad, #c0392b); }
+.cmp-h { margin-bottom: 6px; }
+.cmp-st { margin: 4px 0; }
+.cmp-text { max-height: 46vh; overflow: auto; }
+.cmp-stats { margin-top: 8px; }
+.cmp-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; animation: cmp-pulse 1s ease-in-out infinite; }
+@keyframes cmp-pulse { 50% { opacity: .25; } }
+@media (max-width: 640px) { .cmp-pick, .cmp-cols { grid-template-columns: 1fr; } }
+#chat-print { display: none; }
+@media print {
+  body.printing > *:not(#chat-print) { display: none !important; }
+  body.printing #chat-print { display: block; color: #000; background: #fff; }
+  body.printing { background: #fff; }
+  #chat-print h1 { font-size: 20px; }
+  #chat-print .pr-msg { break-inside: avoid-page; margin: 12px 0; padding-top: 6px; border-top: 1px solid #ccc; }
+  #chat-print h2 { font-size: 13px; margin: 0 0 4px; }
+  #chat-print .pr-note { font-size: 11px; color: #555; margin: 2px 0; }
+  #chat-print pre { white-space: pre-wrap; border: 1px solid #ccc; padding: 6px; }
+}

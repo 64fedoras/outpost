@@ -326,6 +326,7 @@ type spendView struct {
 	CapUSD     float64         `json:"cap_usd"`
 	Paused     int             `json:"paused"` // tasks waiting at the monthly cap
 	Current    bool            `json:"current"`
+	Local      LocalMonth      `json:"local"` // the cluster's own models this month (localusage.go)
 }
 
 func (c *Controller) spendViewFor(month string, now time.Time) spendView {
@@ -402,6 +403,11 @@ func (c *Controller) spendViewFor(month string, now time.Time) spendView {
 	if len(v.Top) > 20 {
 		v.Top = v.Top[:20]
 	}
+	dim := 31
+	if first, err := time.Parse("2006-01", month); err == nil {
+		dim = first.AddDate(0, 1, -1).Day()
+	}
+	v.Local = c.localUsage().month(month, dim)
 	return v
 }
 

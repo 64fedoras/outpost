@@ -293,6 +293,8 @@
             <h2 class="chat-ttl" id="chat-title">New chat</h2>
             <span class="spacer"></span>
             <button class="tb hidden" id="chat-instr-btn" title="Standing instructions for this chat, such as language or answer style">✎ <span class="hide-ph">Instructions</span></button>
+            <button class="tb hidden" id="chat-cmp-btn" title="Ask two nodes the same question and read the answers side by side">⇄ <span class="hide-ph">Compare</span></button>
+            <button class="tb hidden" id="chat-export-btn" title="Save this chat as Markdown or text, or print it as a PDF">⤓ <span class="hide-ph">Export</span></button>
             <button class="tb" id="chat-panel-btn" aria-expanded="true" aria-controls="chat-panel" title="Show or hide the list of chats">☰ <span class="hide-ph">Chats</span> <span class="badge hidden" id="chat-count"></span></button>
             <button class="tb" id="chat-new">＋ <span class="hide-ph">New chat</span></button>
           </div>
@@ -754,9 +756,38 @@
   <div class="modal">
     <h3>Instructions for this chat</h3>
     <p class="hint">Added to every message in this chat, for example "Answer in Go. Short answers, code first." Leave empty for none.</p>
+    <div class="persona-row">
+      <select id="chat-persona" aria-label="Start from a persona"></select>
+      <button type="button" class="small" id="chat-persona-save" title="Keep the text below under a name, to start other chats from">Save as persona…</button>
+      <button type="button" class="small danger hidden" id="chat-persona-del">Delete</button>
+    </div>
+    <div class="persona-new hidden" id="chat-persona-new"><input id="chat-persona-name" maxlength="40" placeholder="Persona name, for example Code reviewer" aria-label="Persona name" autocomplete="off"><button type="button" class="small primary" id="chat-persona-ok">Save</button><button type="button" class="small" id="chat-persona-cancel">Cancel</button></div>
     <textarea id="chat-instr-text" rows="5" maxlength="4000" aria-label="Instructions"></textarea>
     <label class="toggle u4"><input type="checkbox" id="chat-instr-default"> Also use these for new chats</label>
     <div class="modal-foot"><button data-close>Cancel</button><button class="primary" id="chat-instr-save">Save</button></div>
+  </div>
+</div>
+<div id="modal-chat-export" class="overlay hidden">
+  <div class="modal">
+    <h3>Export this chat</h3>
+    <p class="hint">The conversation as it reads now (the current version of each message). Images and documents are listed by name, not included.</p>
+    <div class="export-opts">
+      <button type="button" id="exp-md"><b>Markdown</b><span class="muted">.md, keeps code blocks and headings</span></button>
+      <button type="button" id="exp-txt"><b>Plain text</b><span class="muted">.txt</span></button>
+      <button type="button" id="exp-pdf"><b>Print or save as PDF</b><span class="muted">opens your browser's print dialog</span></button>
+    </div>
+    <div class="modal-foot"><button data-close>Close</button></div>
+  </div>
+</div>
+<div id="modal-compare" class="overlay hidden">
+  <div class="modal wide">
+    <h3>Compare two nodes</h3>
+    <p class="hint">One prompt, two answers side by side, each from the model loaded on that node. Nothing is saved to a chat. Each node answers when it is free, so a busy one may take a while.</p>
+    <div class="cmp-pick"><label>Left <select id="cmp-a"></select></label><label>Right <select id="cmp-b"></select></label></div>
+    <textarea id="cmp-prompt" rows="3" maxlength="8000" placeholder="Ask something both should answer…" aria-label="Prompt"></textarea>
+    <p class="error-msg hidden" id="cmp-err"></p>
+    <div class="cmp-cols hidden" id="cmp-cols"></div>
+    <div class="modal-foot"><button class="danger hidden" id="cmp-stop">Stop</button><button data-close>Close</button><button class="primary" id="cmp-run">Compare</button></div>
   </div>
 </div>
 <div id="modal-add" class="overlay hidden">
@@ -1143,6 +1174,7 @@
   <pre id="pv-code" class="out code hidden"></pre>
   <p class="hint pv-note">Runs in a sandboxed frame: scripts allowed, no network, no cookies, cannot reach Outpost.</p>
 </aside>
+<div id="chat-print" aria-hidden="true"></div>
 <script src="guard.js"></script>
 <script src="app.js"></script>
 <script src="markdown.js"></script>
@@ -1168,6 +1200,7 @@
 <script src="viewer3d.js"></script>
 <script src="cad.js"></script>
 <script src="chatskills.js"></script>
+<script src="chatpolish.js"></script>
 <script src="boot.js"></script>
 </body>
 </html>
