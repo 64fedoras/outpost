@@ -115,6 +115,15 @@ type GPUCheck struct {
 	At      time.Time `json:"at"`
 }
 
+// GPUTrial is one llama.cpp build's timing on this node's GPUs, kept while the node tries
+// the Vulkan and CUDA builds (cuda.go). Failed is set when the build did not run.
+type GPUTrial struct {
+	Variant string  `json:"variant"`
+	GPUTPS  float64 `json:"gpu_tps,omitempty"`
+	CPUTPS  float64 `json:"cpu_tps,omitempty"`
+	Failed  string  `json:"failed,omitempty"`
+}
+
 type ModelInfo struct {
 	Name  string `json:"name"`
 	Bytes int64  `json:"bytes"`
@@ -141,10 +150,13 @@ type Hello struct {
 	Runtime           *RuntimeInfo `json:"runtime,omitempty"`
 	SDRuntime         *RuntimeInfo `json:"sd_runtime,omitempty"` // stable-diffusion.cpp build, when installed (image generation)
 	VulkanAvailable   bool         `json:"vulkan_available"`
-	Glibc             string       `json:"glibc,omitempty"`        // Linux: this machine's glibc version, e.g. "2.35"
-	GPUCheck          *GPUCheck    `json:"gpu_check,omitempty"`    // GPU vs CPU speed on the installed build (node_gpucheck.go)
-	MetalFailed       string       `json:"metal_failed,omitempty"` // the Metal build did not start, so the CPU build is used
-	NoAVX2            bool         `json:"no_avx2,omitempty"`      // x86-64 CPU without AVX2: upstream macOS x64 llama.cpp crashes on it
+	Glibc             string       `json:"glibc,omitempty"`         // Linux: this machine's glibc version, e.g. "2.35"
+	GPUCheck          *GPUCheck    `json:"gpu_check,omitempty"`     // GPU vs CPU speed on the installed build (node_gpucheck.go)
+	NvidiaDriver      string       `json:"nvidia_driver,omitempty"` // installed NVIDIA driver version (Windows), decides whether the CUDA build is tried
+	GPUTrials         []GPUTrial   `json:"gpu_trials,omitempty"`    // Vulkan and CUDA timings on these GPUs (cuda.go)
+	CUDABlocked       bool         `json:"-"`                       // controller only: a CUDA install failed here lately
+	MetalFailed       string       `json:"metal_failed,omitempty"`  // the Metal build did not start, so the CPU build is used
+	NoAVX2            bool         `json:"no_avx2,omitempty"`       // x86-64 CPU without AVX2: upstream macOS x64 llama.cpp crashes on it
 	LoadedModel       string       `json:"loaded_model"`
 	RollbackTo        string       `json:"rollback_to,omitempty"` // previous installed Outpost version
 	Paused            bool         `json:"paused,omitempty"`

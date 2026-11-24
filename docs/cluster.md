@@ -155,6 +155,16 @@ The check is skipped (and says why) when the build has no `llama-bench` or no st
 behaves as before. Apple Silicon is not checked: its GPU shares memory with the CPU and is always the faster one.
 Untested on real GPU nodes so far.
 
+**CUDA on NVIDIA (Windows).** Outpost's GPU build is Vulkan, which runs on any card. A Windows node whose GPUs are all
+NVIDIA, with a driver of 551.61 or newer (read from `nvidia-smi`), also tries llama.cpp's CUDA 12.4 build once: after
+Vulkan has been timed by the speed check, the next load installs the CUDA build (the controller downloads it with its
+`cudart` runtime libraries and sends them as one archive; a few hundred MB, once), times it the same way, and keeps
+whichever generates faster. CUDA has to win by at least 5%; if it does not start, fails its timing or is not faster, the node goes
+back to Vulkan. The timings are kept per GPU set and driver, so this happens once, and again only after a driver or
+GPU change. If the CUDA build cannot be downloaded or installed, the node stays on Vulkan and does not retry for a
+day. There is no setting. Machines with an NVIDIA and another make of card keep Vulkan, which drives every card, and
+Linux keeps Vulkan (upstream publishes no Linux CUDA build). Untested on real NVIDIA hardware and on Windows.
+
 **GPUs on Intel Macs** (for example the AMD FirePro cards in a 2013 Mac Pro) are read with `system_profiler` and
 listed in the node's details. An Intel Mac with a discrete GPU gets a llama.cpp build with Metal (Outpost's AVX-only
 `macos-x64-compat-metal` build on CPUs without AVX2), and the GPU speed check decides whether it is used. llama.cpp's

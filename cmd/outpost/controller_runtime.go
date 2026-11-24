@@ -25,6 +25,7 @@ var runtimeAssets = map[string]string{
 	"linux-arm64-vulkan": "-bin-ubuntu-vulkan-arm64.tar.gz",
 	"win-x64-cpu":        "-bin-win-cpu-x64.zip",
 	"win-x64-vulkan":     "-bin-win-vulkan-x64.zip",
+	"win-x64-cuda":       cudaAssetSuffix, // NVIDIA, tried by the GPU speed check (cuda.go)
 	"win-arm64-cpu":      "-bin-win-cpu-arm64.zip",
 	"macos-arm64":        "-bin-macos-arm64.tar.gz",
 	"macos-x64":          "-bin-macos-x64.tar.gz",
@@ -84,7 +85,7 @@ func nodeVariant(h *Hello) (variant, note string) {
 		return v, note
 	case "windows":
 		if hasGPU && arch == "x64" {
-			return "win-x64-vulkan", ""
+			return pickWinGPUVariant(h), ""
 		}
 		return "win-" + arch + "-cpu", ""
 	case "darwin":
@@ -128,6 +129,7 @@ type runtimeCache struct {
 	releases []ghRelease
 	locks    map[string]*sync.Mutex
 	ceiling  map[string]string       // node|variant -> newest build known to run on that node (older glibc)
+	cudaBad  map[string]time.Time    // node -> when a CUDA install last failed there
 	blocked  map[string]blockedBuild // node|variant|build -> this build needs a newer glibc and no older release can help
 }
 
@@ -401,6 +403,27 @@ func (c *Controller) ensureRuntimeBuild(ctx context.Context, variant, wantBuild 
 	sum, err := downloadResumable(ctx, &http.Client{}, url, "", filepath.Join(dir, name), size, func(int64) {})
 	if err != nil {
 		return nil, fmt.Errorf("download %s: %w", name, err)
+	}
+	if comp := companionFor(variant); comp != "" {
+		// The CUDA build needs its runtime libraries next to it: fold both zips into one archive.
+		curl, csize := findAssetNamed(rels, build, comp)
+		if curl == "" {
+			return nil, fmt.Errorf("llama.cpp %s has no %s", build, comp)
+		}
+		cpath := filepath.Join(dir, comp)
+		if _, err := downloadResumable(ctx, &http.Client{}, curl, "", cpath, csize, func(int64) {}); err != nil {
+			return nil, fmt.Errorf("download %s: %w", comp, err)
+		}
+		merged := filepath.Join(dir, "merged-"+name)
+		var msize int64
+		if sum, msize, err = mergeZips(merged, filepath.Join(dir, name), cpath); err != nil {
+			return nil, fmt.Errorf("combining %s and %s: %w", name, comp, err)
+		}
+		os.Remove(cpath)
+		if err := os.Rename(merged, filepath.Join(dir, name)); err != nil {
+			return nil, err
+		}
+		size = msize
 	}
 	rec := &RuntimeRec{Variant: variant, Build: build, Archive: name, SHA256: sum, Bytes: size, Downloaded: time.Now()}
 	b, _ := json.MarshalIndent(rec, "", "  ")

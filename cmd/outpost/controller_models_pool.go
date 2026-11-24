@@ -50,6 +50,7 @@ func (c *Controller) installRuntimeTry(ctx context.Context, id, build string) er
 	if nc == nil {
 		return fmt.Errorf("%s is offline", c.nodeLabel(id))
 	}
+	hello.CUDABlocked = c.cudaBlocked(id)
 	variant, _ := nodeVariant(&hello)
 	if variant == "" {
 		return fmt.Errorf("no llama.cpp build for %s/%s", hello.OS, hello.Arch)
@@ -68,6 +69,15 @@ func (c *Controller) installRuntimeTry(ctx context.Context, id, build string) er
 			// No Metal build published for this llama.cpp release yet: use the CPU one.
 			log.Printf("%s: no Metal build of llama.cpp available (%v); using the CPU compatible build", c.nodeLabel(id), err)
 			variant = "macos-x64-compat"
+			continue
+		}
+		if err != nil && variant == "win-x64-cuda" {
+			// The CUDA build is only an optimisation: stay on Vulkan and do not retry for a day.
+			log.Printf("%s: the CUDA build of llama.cpp is not available (%v); staying on Vulkan", c.nodeLabel(id), err)
+			c.markCUDABad(id)
+			hello.CUDABlocked = true
+			variant, _ = nodeVariant(&hello)
+			build = ""
 			continue
 		}
 		if err != nil {
@@ -91,6 +101,14 @@ func (c *Controller) installRuntimeTry(ctx context.Context, id, build string) er
 				c.setRuntimeCeiling(id, variant, rt.Build)
 			}
 			return nil
+		}
+		if variant == "win-x64-cuda" && !explicit {
+			log.Printf("%s: the CUDA build of llama.cpp did not install (%v); staying on Vulkan", c.nodeLabel(id), err)
+			c.markCUDABad(id)
+			hello.CUDABlocked = true
+			variant, _ = nodeVariant(&hello)
+			build = ""
+			continue
 		}
 		if explicit || attempt >= 8 || !strings.HasPrefix(err.Error(), glibcTooOldMarker) {
 			return fmt.Errorf("installing llama.cpp on %s: %w", c.nodeLabel(id), err)
