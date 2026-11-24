@@ -30,8 +30,7 @@ try { const v = localStorage.getItem('outpost.nodeSort'); if (['status', 'name',
 const nodesDense = (nodes) => nodes.length >= NODE_FILTER_MIN;
 // One update banner replaces the same note on every card when several nodes can update.
 const updateBannerOn = (nodes) => nodes.filter((n) => n.online && n.update_to).length >= 3;
-let nodeDrawer = null; // node whose details panel is open beside the Grid view
-const nodeOpen = new Set(); // nodes expanded under their List row
+let nodeDrawer = null; // node whose details panel is open over the Grid and List views
 // The Detailed list is optional (Settings → Display and alerts); kept in this browser only.
 let showDetailed = false;
 try { showDetailed = localStorage.getItem('outpost.detailedList') === '1'; } catch (e) { /* storage blocked */ }
@@ -90,33 +89,33 @@ function nodeRow(n, dense, hideUpd) {
   const issues = hideUpd ? f.issues.filter((i) => i.act !== 'node-update') : f.issues;
   const fixIssue = issues.find((i) => i.act);
   const first = issues.find((i) => i.lvl !== 'off');
-  const open = nodeOpen.has(n.id);
+  const open = nodeDrawer === n.id;
   if (dense) {
     const [st] = nodeStatus(n, f);
     const model = n.lending_to ? `<span class="muted">Lending to ${esc(n.lending_to)}</span>` : !n.online ? `<span class="muted">${n.last_seen ? 'Offline · seen ' + ago(n.last_seen) : 'Never connected'}</span>`
       : f.loaded ? `<b>${esc(f.loaded)}</b> <span class="muted">· ${esc(st.toLowerCase())}</span>` : '<span class="muted">No model loaded</span>';
     const chip = first && first.lvl !== 'info' ? ` ${nvChips({ issues: [first] })}` : '';
-    const act = n.online ? (fixIssue && fixIssue.lvl !== 'info' ? `<button class="small primary" data-act="${fixIssue.act}" data-id="${n.id}">${esc(fixIssue.fix)}</button>` : `<button class="small" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}">${open ? 'Hide' : 'Details'}</button>`)
-      : n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}">Wake</button>` : `<button class="small" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}">${open ? 'Hide' : 'Details'}</button>`;
-    return `<div class="nv-row dn nv-s-${f.worst}${open ? ' open' : ''}" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}">
+    const act = n.online ? (fixIssue && fixIssue.lvl !== 'info' ? `<button class="small primary" data-act="${fixIssue.act}" data-id="${n.id}">${esc(fixIssue.fix)}</button>` : `<button class="small" data-act="node-detail" data-id="${n.id}" aria-expanded="${open}" aria-controls="node-drawer">Details</button>`)
+      : n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}">Wake</button>` : `<button class="small" data-act="node-detail" data-id="${n.id}" aria-expanded="${open}" aria-controls="node-drawer">Details</button>`;
+    return `<div class="nv-row dn nv-s-${f.worst}${open ? ' open' : ''}" data-act="node-detail" data-id="${n.id}" aria-expanded="${open}" aria-controls="node-drawer">
       <span class="dot ${f.dot}"></span><b class="nv-ell" title="${esc(nodeName(n))}">${esc(nodeName(n))}</b>
       <span class="nv-ell muted dn-sys">${esc(h.os || '?')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}</span>
       <span class="nv-ell">${model}${chip}</span>
       ${n.online ? `<span class="dn-bars"><span>CPU${bar(f.cpu)}</span><span>RAM${bar(f.ram)}</span><span>${f.vram != null ? 'VRAM' + bar(f.vram) : ''}</span></span>` : '<span class="dn-bars"></span>'}
       <span class="r dn-tps">${f.tps != null ? Math.round(f.tps) + ' tok/s' : '<span class="muted">—</span>'}</span>
-      <span class="nv-acts">${act}</span></div>${open ? `<div class="nv-exp">${nodeCard(n)}</div>` : ''}`;
+      <span class="nv-acts">${act}</span></div>`;
   }
   const sub = first ? `${nvChips({ issues })} ${esc(first.text)}` : opActive(n) ? opView(n).replace(/<[^>]+>/g, ' ').trim() : n.online
     ? `${n.running_jobs}/${n.max_jobs} jobs${n.pool_names && n.pool_names.length ? ' · pooled with ' + n.pool_names.map(esc).join(', ') : ''} · exec ${n.exec_enabled ? (n.sandbox ? 'on, sandbox ' + n.sandbox : 'on') : 'off'}` : '';
   const action = fixIssue ? `<button class="small primary" data-act="${fixIssue.act}" data-id="${n.id}">${esc(fixIssue.fix)}</button>`
     : n.online && !n.lending_to ? `${bestBtn(n)}<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>` : '';
-  return `<div class="nv-row nv-s-${f.worst}${open ? ' open' : ''}" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}">
+  return `<div class="nv-row nv-s-${f.worst}${open ? ' open' : ''}" data-act="node-detail" data-id="${n.id}" aria-expanded="${open}" aria-controls="node-drawer">
     <div class="nv-c1"><span class="dot ${f.dot}"></span><div class="nv-min"><b>${esc(nodeName(n))}</b><div class="sub nv-sub">${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}${n.addr ? ' · ' + esc(n.addr.split(':')[0]) : ''}</div>${labelChips(n)}</div></div>
     <div class="nv-min"><div class="nv-ell">${f.model}</div><div class="sub nv-sub nv-wrap">${sub}</div></div>
     <div>${n.online ? `<div class="nv-bars"><span>CPU</span>${bar(f.cpu)}<span>RAM</span>${bar(f.ram)}${f.vram != null ? `<span>VRAM</span>${bar(f.vram)}` : ''}${f.disk ? `<span title="${esc(f.disk.text)}">DISK</span><span title="${esc(f.disk.text)}">${bar(f.disk.pct, f.disk.full ? 'hot' : '')}</span>` : ''}</div>` : `<span class="sub">${n.last_seen ? 'Last seen ' + ago(n.last_seen) : 'Never connected'}</span>`}</div>
     <div class="r">${nvTps(f, true)}</div>
-    <div class="nv-acts">${action}<button class="small" data-act="node-toggle" data-id="${n.id}" aria-expanded="${open}" title="Show or hide all details and controls for this node">${open ? 'Hide' : 'Details'}</button></div>
-  </div>${open ? `<div class="nv-exp">${nodeCard(n)}</div>` : ''}`;
+    <div class="nv-acts">${action}<button class="small" data-act="node-detail" data-id="${n.id}" aria-expanded="${open}" aria-controls="node-drawer" title="Show or hide all details and controls for this node">Details</button></div>
+  </div>`;
 }
 
 function nodeListView(nodes, dense, hideUpd) {
@@ -289,7 +288,7 @@ function renderNodes() {
   const upd = nodes.filter((n) => n.online && n.update_to), banner = updateBannerOn(nodes);
   const bannerHTML = banner ? `<div class="upd-banner"><span aria-hidden="true">⬆</span><span class="nv-grow"><b>${upd.length} nodes</b> run an older version; <b>v${esc(upd[0].update_to)}</b> is available.</span>
     ${nodeChip === 'update' ? '' : '<button class="small" data-act="node-chip" data-chip="update">Show them</button>'}<a class="small-link" href="#/updates">Updates page</a></div>` : '';
-  if (nodeView !== 'grid' || !nodeById(nodeDrawer)) nodeDrawer = null;
+  if ((nodeView !== 'grid' && nodeView !== 'list') || !nodeById(nodeDrawer)) nodeDrawer = null;
   loadNodeHistory();
   renderNodeFilter(nodes, rows, labels, dense);
   setHTML('node-summary', clusterSummary(nodes));
@@ -299,7 +298,7 @@ function renderNodes() {
   renderNodeDrawer(shown);
 }
 
-// Grid details panel: clicking a card opens its full node card (the same nodeCard the
+// Grid and List details panel: clicking a card opens its full node card (the same nodeCard the
 // List and Detailed list show) in a panel on the right, so the grid stays in view.
 // Not modal: clicking another card switches the panel to that node.
 function openNodeDrawer(id) {
@@ -312,7 +311,7 @@ function closeNodeDrawer() {
   const id = nodeDrawer;
   if (!id) return;
   nodeDrawer = null; renderNodes();
-  const card = document.querySelector(`.gc[data-id="${CSS.escape(id)}"] button[data-act="node-detail"]`);
+  const card = document.querySelector(`#nodes [data-id="${CSS.escape(id)}"] button[data-act="node-detail"]`);
   if (card) card.focus({ preventScroll: true });
 }
 function renderNodeDrawer(shown) {
@@ -323,7 +322,7 @@ function renderNodeDrawer(shown) {
   if (!n) { setHTML(d, ''); return; }
   const f = nodeFacts(n), h = f.h, [st, cls] = nodeStatus(n, f);
   // Previous and next follow the order of the cards in the grid.
-  const order = [...document.querySelectorAll('#nodes .gc[data-id]')].map((c) => c.dataset.id).filter((id, i, a) => a.indexOf(id) === i);
+  const order = [...document.querySelectorAll('#nodes .gc[data-id], #nodes .nv-row[data-id]')].map((c) => c.dataset.id).filter((id, i, a) => a.indexOf(id) === i);
   const at = order.indexOf(n.id), prev = order[at - 1], next = order[at + 1];
   const nav = (id, label, txt) => `<button class="small" data-act="node-drawer-go" data-id="${id || ''}" ${id ? '' : 'disabled'} title="${label}" aria-label="${label}">${txt}</button>`;
   setHTML(d, `<div class="nd-head"><span class="dot ${f.dot}"></span><div class="nv-min nv-grow"><div class="nd-title"><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span><span class="nv-pill nv-p-${cls}"><i></i>${st}</span></div>
@@ -340,7 +339,7 @@ document.addEventListener('keydown', (e) => {
 // A click on empty page space (not the panel, a card, a control or a dialog) closes the panel.
 document.addEventListener('click', (e) => {
   if (!nodeDrawer || !e.target.closest || !e.target.isConnected) return;
-  if (e.target.closest('#node-drawer, .gc, .off-chip, .overlay, button, a, input, select, textarea, label, summary, [data-act]')) return;
+  if (e.target.closest('#node-drawer, .gc, .nv-row, .off-chip, .overlay, button, a, input, select, textarea, label, summary, [data-act]')) return;
   if (!e.target.closest('section[data-page="nodes"]')) return;
   closeNodeDrawer();
 });

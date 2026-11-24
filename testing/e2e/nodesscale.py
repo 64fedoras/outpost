@@ -79,7 +79,7 @@ async def main():
             h = await pg.locator(".nv-row.dn:not(.nv-head)").first.evaluate("e => e.getBoundingClientRect().height")
             assert h <= 40, f"compact list rows are one line: {h}"
             await pg.screenshot(path=S + f"list-{scheme}.png", full_page=True)
-            await pg.locator(".nv-row.dn:not(.nv-head)").first.click(); await pg.wait_for_selector(".nv-exp"); await pg.locator(".nv-row.dn:not(.nv-head)").first.click()
+            await pg.locator(".nv-row.dn:not(.nv-head)").first.click(); await pg.wait_for_selector("#node-drawer:not(.hidden)"); await pg.keyboard.press("Escape")
             await pg.click("[data-node-view=grid]")
             # jobs
             rows = await pg.locator("#jobs tbody tr").count()
