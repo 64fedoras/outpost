@@ -229,7 +229,7 @@ you fill it in (set it if you reach the controller by a name or IP different fro
   file from the controller reports the failure and keeps the partial file, so trying again continues it.
 - **Node health:** a node's card shows *Shaky* (amber) or *Unreliable* (red) when, in the last 7 days, it
   disconnected or could not take or finish work often (1 point per disconnect, 2 per refused or lost call;
-  5 points amber, 15 red; **Settings → Node health colours** changes the two numbers). Red nodes are handed work after all others. The record is `health.json` in the
+  5 points amber, 15 red; **Settings → Node health colours** changes the two numbers). Red nodes are handed work after all others. Planned restarts do not count as disconnects: an Outpost update or rollback, **Restart** from the web UI, and a restart from the controller or the tray icon. A machine that reboots or loses its network still counts. The record is `health.json` in the
   controller's data folder. A node's card has a **Reset health** button that forgets its recent events.
 
 ## Where things live

@@ -109,7 +109,10 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 		// to it and must be started again (the pool keeper does that).
 		c.poolStale[main] = time.Now()
 	}
-	if u := c.updates[n.ID]; u != nil && compareVersions(hello.AgentVersion, u.Version) >= 0 {
+	// Only on the switch to "done": its time marks when the update finished
+	// (the card's "updated" tag and plannedRestartLocked go by it), so a later
+	// ordinary reconnect must not move it.
+	if u := c.updates[n.ID]; u != nil && u.State != "done" && compareVersions(hello.AgentVersion, u.Version) >= 0 {
 		c.updates[n.ID] = &UpdateStatus{Version: hello.AgentVersion, State: "done", Updated: time.Now()}
 	}
 	c.conns[n.ID] = nc
@@ -143,12 +146,18 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 		_ = nc.send("job.cancel", JobCancel{JobID: id, Reason: "controller restarted"})
 	}
 
+	var readErr error
 	defer func() {
 		c.mu.Lock()
 		if c.conns[n.ID] == nc {
 			delete(c.conns, n.ID)
 		}
+		planned := plannedRestartLocked(c.updates[n.ID], c.restarts[n.ID], websocket.CloseStatus(readErr), time.Now())
 		c.mu.Unlock()
+		if planned {
+			log.Printf("node %s disconnected for a planned restart", n.ID)
+			return
+		}
 		log.Printf("node %s disconnected", n.ID)
 		if !controllerClosing.Load() {
 			c.recordHealth(n.ID, "disconnect")
@@ -158,6 +167,7 @@ func (c *Controller) handleNodeWS(w http.ResponseWriter, r *http.Request) {
 	for {
 		_, msg, err := conn.Read(ctx)
 		if err != nil {
+			readErr = err
 			return
 		}
 		if json.Unmarshal(msg, &env) != nil {
