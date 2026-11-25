@@ -85,6 +85,13 @@ func TestProjectOverview(t *testing.T) {
 	c.tasks["task_b"] = &Task{ID: "task_b", Prompt: "second\nmore", ProjectID: p.ID, Status: "running", Created: now, dir: t.TempDir(),
 		Subtasks: []*SubtaskState{{Status: "done"}, {Status: "running"}}}
 	c.tasks["task_other"] = &Task{ID: "task_other", Status: "done", Created: now, dir: t.TempDir()}
+	st, err := c.projectStash(p, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.mu.Lock()
+	st.Resources = append(st.Resources, &Resource{ID: "r1", Name: "spec.pdf", Kind: "pdf", Bytes: 5, Added: now})
+	st.mu.Unlock()
 
 	w = httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/projects/"+p.ID+"/overview", nil)
@@ -110,7 +117,7 @@ func TestProjectOverview(t *testing.T) {
 	for _, a := range ov.Artifacts {
 		kinds[a.Kind] = a.URL
 	}
-	if !strings.Contains(kinds["shot"], "/api/tasks/task_a/shot?name=index-desktop.png") || !strings.Contains(kinds["build"], "path=bin%2Fapp") || kinds["result"] != "/api/tasks/task_a/download" {
+	if !strings.Contains(kinds["shot"], "/api/tasks/task_a/shot?name=index-desktop.png") || !strings.Contains(kinds["build"], "path=bin%2Fapp") || kinds["result"] != "/api/tasks/task_a/download" || kinds["resource"] != "#/stash/"+st.ID {
 		t.Fatalf("artifacts: %+v", ov.Artifacts)
 	}
 	if ov.FilesTotal != 1 || ov.Files[0].Path != "main.go" {

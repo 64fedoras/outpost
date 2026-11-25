@@ -39,7 +39,7 @@ type feedTask struct {
 type projectArtifact struct {
 	TaskID    string    `json:"task_id,omitempty"`
 	TaskTitle string    `json:"task_title,omitempty"`
-	Kind      string    `json:"kind"` // shot | build | result | pr
+	Kind      string    `json:"kind"` // shot | build | result | pr | resource (a document in the project's Stash)
 	Name      string    `json:"name"`
 	URL       string    `json:"url"`
 	Preview   string    `json:"preview,omitempty"` // image URL for a thumbnail
@@ -92,6 +92,14 @@ func (c *Controller) handleProjectOverview(w http.ResponseWriter, r *http.Reques
 	p.mu.Unlock()
 	if strings.HasPrefix(lastPR, "https://") {
 		out.Artifacts = append(out.Artifacts, projectArtifact{Kind: "pr", Name: "Last pull request", URL: lastPR})
+	}
+	// The project's Stash resources show beside the task outputs; the stash is not made here.
+	if s, _ := c.projectStash(p, false); s != nil {
+		s.mu.RLock()
+		for _, x := range s.Resources {
+			out.Artifacts = append(out.Artifacts, projectArtifact{Kind: "resource", Name: x.Name, URL: "#/stash/" + s.ID, Bytes: x.Bytes, Time: x.Added})
+		}
+		s.mu.RUnlock()
 	}
 	sort.SliceStable(out.Artifacts, func(i, j int) bool { return out.Artifacts[i].Time.After(out.Artifacts[j].Time) })
 	if len(out.Artifacts) > overviewMaxArtifacts {

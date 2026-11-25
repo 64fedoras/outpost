@@ -590,3 +590,62 @@ function renderJobs() {
 }
 $('jobs-node').addEventListener('change', () => { jobsNode = $('jobs-node').value; jobsLimit = JOBS_STEP; renderJobs(); });
 $('jobs-status').addEventListener('change', () => { jobsStatus = $('jobs-status').value; jobsLimit = JOBS_STEP; renderJobs(); });
+
+// sideResizer puts a drag handle on the left edge of a right-hand side panel
+// (the project's Threads panel, the chats list). Dragging, or the arrow keys on
+// the focused handle, set the panel width; it is clamped to [min, max] and so the
+// main column keeps at least keepMain pixels, and remembered per browser under
+// key. Double-click or Enter resets to def. The width is the CSS variable cssVar
+// on wrap, so the narrow-screen layouts in style.css (overlay, sheet) ignore it.
+function sideResizer({ wrap, panel, cssVar, key, def, min, max, keepMain = 420, label }) {
+  const h = document.createElement('div');
+  h.className = 'side-resize';
+  h.tabIndex = 0;
+  h.setAttribute('role', 'separator');
+  h.setAttribute('aria-orientation', 'vertical');
+  h.setAttribute('aria-label', label || 'Resize the panel');
+  h.title = 'Drag to resize · double-click to reset';
+  panel.prepend(h);
+  const hi = () => Math.max(min, Math.min(max, wrap.getBoundingClientRect().width - keepMain));
+  const clamp = (w) => Math.round(Math.max(min, Math.min(hi(), w)));
+  let width = def;
+  try { const v = parseInt(localStorage.getItem(key), 10); if (v > 0) width = v; } catch (e) { /* storage optional */ }
+  const apply = (w, save) => {
+    width = w;
+    const shown = wrap.getBoundingClientRect().width ? clamp(w) : w;
+    wrap.style.setProperty(cssVar, shown + 'px');
+    h.setAttribute('aria-valuemin', String(min)); h.setAttribute('aria-valuemax', String(Math.round(hi())));
+    h.setAttribute('aria-valuenow', String(shown));
+    if (save) { try { if (w === def) localStorage.removeItem(key); else localStorage.setItem(key, String(w)); } catch (e) { /* only for this visit */ } }
+  };
+  apply(width, false);
+  h.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    h.setPointerCapture(e.pointerId);
+    document.body.classList.add('side-resizing');
+    const right = wrap.getBoundingClientRect().right;
+    const move = (ev) => apply(clamp(right - ev.clientX), false);
+    const up = () => {
+      h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
+      document.body.classList.remove('side-resizing');
+      apply(width, true);
+    };
+    h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+  });
+  h.addEventListener('dblclick', () => apply(def, true));
+  h.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 64 : 16, cur = clamp(width);
+    let w = null;
+    if (e.key === 'ArrowLeft') w = cur + step; // the panel is on the right: left widens it
+    else if (e.key === 'ArrowRight') w = cur - step;
+    else if (e.key === 'Home') w = min;
+    else if (e.key === 'End') w = hi();
+    else if (e.key === 'Enter') w = def;
+    if (w === null) return;
+    e.preventDefault();
+    apply(e.key === 'Enter' ? def : clamp(w), true);
+  });
+  window.addEventListener('resize', () => apply(width, false));
+  return { reset: () => apply(def, true), refresh: () => apply(width, false) };
+}

@@ -440,12 +440,22 @@ something in them is waiting on you; the pin is stored on the controller, so it 
   default task cap is refused with a note. A node planner waits for a free slot on its node.
   **Stop** cancels an answer in progress; **⚙ → Clear conversation** empties it (tasks are kept).
   The conversation is kept in the project folder on the controller and is deleted with the project.
-- **Threads** (top bar; the amber number is how many tasks wait on you) opens a panel on the right
-  with the project's **Artifacts** (screenshots, build outputs, result zips and the last pull request;
-  **View all** lists them all) and its tasks in four groups: **Waiting on you** (questions, a plan to
-  approve, a cap or a resume), **Working** (including tasks queued behind the one that works),
-  **Idle** (finished, failed or stopped) and **Resolved** (folded; click to open). On a narrow window
-  the panel slides over the page; on a phone it fills the screen. The wide-screen choice is remembered; until you choose, the panel opens once the project has a task, and empty groups show only their heading.
+- **Threads** (top bar; the amber number is how many tasks wait on you) opens a panel on the right.
+  At the top is a scrolling row of **Artifacts**: screenshots, build outputs, result zips, the last pull
+  request and the documents in the project's **Stash** (a Stash card opens the Stash; **View all**
+  lists everything once there are more than four). Below are the tasks in four groups: **Waiting on
+  you** (questions, a plan to approve, a cap or a resume), **Working** (including tasks queued behind
+  the one that works), **Idle** (finished, failed or stopped) and **Resolved**. Each row shows the
+  task's title, one line on what it is doing (or its last result note once it rests) and how long ago
+  it changed; a working task adds its progress strip, a waiting one its Review or Answer button.
+  Click a group's heading to fold it (Resolved starts folded); folded groups and empty groups other
+  than Resolved stay out of the way, and the folds are remembered in this browser.
+  **Resize** the panel by dragging its left edge (280 px up to 760 px, always leaving the
+  conversation at least 420 px), or focus the edge with Tab and use ← and → (Shift for bigger steps),
+  Home and End. Double-click the edge or press Enter on it to go back to the default width. The width
+  is remembered in this browser. On a narrow window the panel slides over the page at a fixed width;
+  on a phone it fills the screen. The wide-screen open or closed choice is remembered; until you
+  choose, the panel opens once the project has a task.
 - **Resolving** a task (✓ on its row, **✓ Resolve** on its card, **Mark resolved** in the sidebar's
   task menu, or **Resolve all** on Idle) only tidies it away: nothing is deleted, the card leaves the
   middle (a link shows the hidden ones) and the task moves to Resolved. A follow-up, a retry or

@@ -49,10 +49,12 @@ function chatPanelSet(open, reset) {
     if (reset) { let v = null; try { v = localStorage.getItem('outpost-chat-panel'); } catch (e) { /* storage optional */ } open = v === 'open'; } // closed until the person opens it: the sidebar already lists the chats
     else { try { localStorage.setItem('outpost-chat-panel', open ? 'open' : 'closed'); } catch (e) { /* storage optional */ } }
     w.classList.toggle('closed', !open);
+    chatResizer.refresh();
   }
   $('chat-panel-btn').classList.toggle('on', open && !chatPhone());
   $('chat-panel-btn').setAttribute('aria-expanded', String(open));
 }
+const chatResizer = sideResizer({ wrap: $('chat-wrap'), panel: $('chat-panel'), cssVar: '--chat-panel-w', key: 'outpost.chatPanelW', def: 300, min: 240, max: 560, label: 'Resize the list of chats' });
 function chatPanelOpen() { return chatPhone() ? $('chat-wrap').classList.contains('sheet') : !$('chat-wrap').classList.contains('closed'); }
 // Model choice: Auto (the strongest free node) or a node with a model ready.
 function chatChoices() {
