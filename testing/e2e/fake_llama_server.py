@@ -236,6 +236,16 @@ def agent_turn(self, body):
             line = next((l for l in out.splitlines() if l.startswith("sum ")), "no output")
             stream_tool_calls(self, [], f"The first try failed, so I fixed it. The program printed `{line}`, and the chart is below.")
         return
+    first_user = next((m["content"] for m in body["messages"] if m["role"] == "user"), "")
+    if "lead for the software project" in system and "hermes" in first_user.lower():
+        # Project research (projresearch.py): look the name up, then hand the big question to research.
+        if done == 0: stream_tool_calls(self, [("web_search", {"query": "hermes ai"})], "")
+        else:
+            urls = re.findall(r"https://example\.org/\S+", body["messages"][-1]["content"])
+            stream_tool_calls(self, [], f"Hermes looks like an open agent framework ({urls[0] if urls else 'no source'}). "
+                "I am starting research on how it works so the tasks have the details.\n"
+                "[start research]\nHow does the Hermes AI agent framework work, and what would a replacement need?\n[/start research]")
+        return
     if "lead for the software project" in system:
         # Project conversation: look at the files, then answer with file:line references.
         if done == 0: stream_tool_calls(self, [("list_files", {}), ("search", {"pattern": "count_words"})], "")

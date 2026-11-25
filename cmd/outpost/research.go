@@ -61,12 +61,13 @@ const researchReportSystem = "You write a research report in Markdown that answe
 
 var researchURLRe = regexp.MustCompile(`https?://[^\s<>()\[\]"']+[^\s<>()\[\]"'.,;:!?]`)
 
-// researchState keeps the run on the chat while it works, so the page can show the lanes.
+// researchState keeps the run where the page can see it while it works (a
+// chat, or a project conversation's message), so the page can show the lanes.
 type researchState struct {
-	c   *Controller
-	ch  *Chat
-	mu  sync.Mutex
-	run ResearchRun
+	mu      sync.Mutex
+	run     ResearchRun
+	liveKey string               // taskLive key the report streams to
+	publish func(r *ResearchRun) // shows a snapshot (called without s.mu)
 }
 
 func (s *researchState) update(f func(r *ResearchRun)) {
@@ -74,10 +75,10 @@ func (s *researchState) update(f func(r *ResearchRun)) {
 	f(&s.run)
 	snap := s.snapshot()
 	s.mu.Unlock()
-	s.ch.mu.Lock()
-	s.ch.Research = snap
-	s.ch.mu.Unlock()
-	taskLive.changed("chat_" + s.ch.ID)
+	if s.publish != nil {
+		s.publish(snap)
+	}
+	taskLive.changed(s.liveKey)
 }
 
 func (s *researchState) snapshot() *ResearchRun {
@@ -88,12 +89,22 @@ func (s *researchState) snapshot() *ResearchRun {
 
 // answerResearch runs research mode for the conversation's last question.
 func (c *Controller) answerResearch(ctx context.Context, ch *Chat, hist []ChatMessage, started func()) ChatMsg {
-	st := &researchState{c: c, ch: ch, run: ResearchRun{Stage: "planning"}}
+	st := &researchState{run: ResearchRun{Stage: "planning"}, liveKey: "chat_" + ch.ID, publish: func(r *ResearchRun) {
+		ch.mu.Lock()
+		ch.Research = r
+		ch.mu.Unlock()
+	}}
 	defer func() {
 		ch.mu.Lock()
 		ch.Research = nil
 		ch.mu.Unlock()
 	}()
+	return c.runResearch(ctx, st, hist, started)
+}
+
+// runResearch plans, runs the lanes and writes the report for the last user
+// message in hist (hist[0] is the system message, skipped as context).
+func (c *Controller) runResearch(ctx context.Context, st *researchState, hist []ChatMessage, started func()) ChatMsg {
 	question := ""
 	for i := len(hist) - 1; i >= 0; i-- {
 		if hist[i].Role == "user" {
@@ -209,7 +220,7 @@ func (c *Controller) answerResearch(ctx context.Context, ch *Chat, hist []ChatMe
 		user := "Question: " + question + "\n\nFindings:\n" + findings + "\nNumbered sources:\n" + sources
 		msgs := []ChatMessage{{Role: "system", Content: researchReportSystem}, {Role: "user", Content: user}}
 		clipForContext(msgs, max((ctxTok-maxOut)*3-len(researchReportSystem)-500, 2000))
-		live := taskLive.begin("chat_"+ch.ID, "", "Research", name, false)
+		live := taskLive.begin(st.liveKey, "", "Research", name, false)
 		defer live.End()
 		out, err := c.runInferenceJobLive(ctx, node, InferenceSpec{Messages: msgs, Params: InferenceParams{MaxTokens: maxOut}}, "Research: report", chatTimeout, live)
 		if err != nil {

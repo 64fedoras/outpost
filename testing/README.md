@@ -53,6 +53,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `storagechats.py` | Settings → Storage: chat parts in the bar, Chats by size, clearing a chat's code files, deleting a chat; desktop dark and light and phone. |
 | `chatpolish.py` | Chat export (Markdown, text, print view), personas (save, pick, delete), Compare between two nodes (joins a second real node from the same binary) and the Local models tile on Spending; desktop dark and light and phone. |
 | `chatversions.py` | Chat edit and resend, regenerate, version arrows, branch, per-chat instructions and the Chats search box (desktop light and dark, phone). |
+| `projresearch.py` | Project research: with chat web search on, the node planner looks an unknown name up ("Searched the web" chip), starts research, lanes run live with Stop, the report lands in the conversation and in the project's Stash, the Stash link opens it (light, dark, phone). |
 | `projectreads.py` | Project conversation reads files: chips for list, search and read calls, `path:line` links opening the read-only file viewer (light and dark). |
 | `preview.py` | Live preview: HTML and Mermaid answers become cards; the sandboxed panel runs scripts with network and cookies blocked, Code tab, versions, Save to project, dark and phone. |
 | `memory.py` | Memory: add a fact in Settings, take a suggestion under a chat answer with Edit first, edit and list (light, dark, phone). |

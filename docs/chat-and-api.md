@@ -127,7 +127,8 @@ node writes a Markdown report with a short answer and numbered sources, streamed
 it works the chat shows the lanes (waiting, working, done, with node and search counts); afterwards the
 **Research** card above the report lists each sub-question with its findings, the note under it counts
 lanes, nodes, searches and pages, and **Open report** opens it in the preview panel to download or save to
-a project. **Stop** cancels every lane. Searches go to DuckDuckGo from the controller, spaced at least
+a project. The project conversation can start the same research and saves the report to the project's
+Stash (using-tasks.md, *Research from the project*). **Stop** cancels every lane. Searches go to DuckDuckGo from the controller, spaced at least
 1.5 seconds apart, and fall back to Brave Search when DuckDuckGo blocks and a Brave key is saved
 (Settings), whatever the chat web-search setting says. Models of about 3B and smaller, or without tool
 calling, get one search per lane instead. Each answer can take a while (up to 45 minutes before it gives

@@ -53,7 +53,7 @@ async function pjFetch(force) {
     if (pageArg === id) {
       pjData = d; pjDataFor = id; pjFetchedAt = Date.now(); renderProjectPage();
       clearTimeout(pjTimer);
-      if (d.chat && d.chat.busy) pjTimer = setTimeout(() => { if (page === 'project' && pageArg === id) pjFetch(true); }, 1200);
+      if (d.chat && (d.chat.busy || d.chat.research)) pjTimer = setTimeout(() => { if (page === 'project' && pageArg === id) pjFetch(true); }, 1200);
     }
   } catch (e) { if (pageArg === id) { pjData = null; pjDataFor = id; pjFetchedAt = Date.now(); renderProjectPage(); } }
   pjFetching = false;
@@ -111,7 +111,7 @@ function renderPjFeed(p) {
     if (m.role === 'user') html = `<div class="pj-ask"><div class="bubble">${esc(m.text)}</div><span class="pj-when">${(m.tasks || []).length ? 'started as a task · ' : ''}${ago(m.time)}</span></div>${cards(m.tasks)}`;
     else {
       const meta = [m.who && esc(m.who), m.cost_usd ? usd(m.cost_usd) : '', ago(m.time)].filter(Boolean).join(' · ');
-      html = `<div class="pj-answer">${pjReads(m.reads)}${m.text ? `<div class="pj-answer-text md">${pjLinkRefs(md(m.text), known)}</div>` : ''}${m.text ? pvCards(pvCollect(m.text)) : ''}${offerCard(m, { project: p.id })}${memSuggestCard(m, { project: p.id })}${m.error ? `<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}${/planner|API key/i.test(m.error) && m.error !== 'stopped' ? `<div class="card-actions"><button class="small" data-act="proj-planner-pick" data-id="${esc(p.id)}">Pick this project's planner</button> <a href="#/settings" data-act="proj-planner-settings">Open Settings → Tasks</a></div>` : ''}</div>` : ''}${cards(m.tasks)}<div class="pj-when">${meta}</div></div>`;
+      html = `<div class="pj-answer">${pjResearch(m)}${pjReads(m.reads)}${m.text ? `<div class="pj-answer-text md">${pjLinkRefs(md(m.text), known)}</div>` : ''}${m.text ? pvCards(pvCollect(m.text)) : ''}${offerCard(m, { project: p.id })}${memSuggestCard(m, { project: p.id })}${m.error ? `<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}${/planner|API key/i.test(m.error) && m.error !== 'stopped' ? `<div class="card-actions"><button class="small" data-act="proj-planner-pick" data-id="${esc(p.id)}">Pick this project's planner</button> <a href="#/settings" data-act="proj-planner-settings">Open Settings → Tasks</a></div>` : ''}</div>` : ''}${cards(m.tasks)}<div class="pj-when">${meta}</div></div>`;
     }
     items.push({ time: new Date(m.time).getTime(), html });
   });
@@ -127,6 +127,18 @@ function renderPjFeed(p) {
   const more = hidden > 0 ? `<button class="link-btn pj-showres" data-act="proj-show-resolved">${pjResolvedOpen ? 'Hide resolved tasks' : `${hidden} resolved task${hidden === 1 ? '' : 's'} hidden. Show them`}</button>` : '';
   if (!items.length) return `${more}<div class="pj-empty"><h3>What should ${esc(p.name)} do next?</h3><p class="hint"><b>Ask</b> talks it over with the planner, which can start tasks for you. <b>Start as task</b> skips the talk and runs your message as a task. Every task starts from the project's current files; one runs at a time.</p></div>`;
   return more + items.map((i) => `<div class="pj-item">${i.html}</div>`).join('');
+}
+
+// pjResearch shows a research answer (projects_research.go): the lanes while
+// it works, then a folded record above the report and where it was saved.
+const RS_LIVE = ['planning', 'lanes', 'writing'];
+function pjResearch(m) {
+  const r = m.research;
+  if (!r) return '';
+  const q = m.question ? `<div class="pj-rs-q">🔎 Research: ${esc(m.question)}</div>` : '';
+  if (RS_LIVE.includes(r.stage)) return `${q}${researchLive(r).replace('</div>', ' <button class="small" data-act="proj-chat-stop">Stop</button></div>')}`;
+  const saved = m.saved ? `<div class="pj-rs-saved muted">Saved to the project's <a href="#" data-act="proj-open-stash">Stash</a> as ${esc(m.saved)}, so tasks can use it.${m.note ? ' ' + esc(m.note) : ''}</div>` : (m.note ? `<div class="pj-rs-saved muted">${esc(m.note)}</div>` : '');
+  return `${q}${researchCard(m)}${saved}`;
 }
 
 // pjReads shows what the planner looked at while answering, one chip per tool call.
@@ -428,6 +440,7 @@ async function projPageAction(act, el) {
       tasksSeq++; renderProjectPage(); toast(`Resolved ${list.length} task${list.length === 1 ? '' : 's'}`); return;
     }
     case 'proj-file': await openPjFile(el.dataset.path, el.dataset.line); return;
+    case 'proj-open-stash': $('pj-stash-btn').click(); return;
     case 'proj-chat-stop': await post(`/api/projects/${encodeURIComponent(pageArg)}/chat/stop`); pjFetch(true); return;
     case 'proj-chat-clear':
       if (!await askConfirm('Clear this project\'s conversation? The tasks it started are kept.')) return;
