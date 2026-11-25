@@ -55,6 +55,8 @@ type ChatMsg struct {
 	Runs []CodeRun `json:"runs,omitempty"`
 	// Research is the record of a research-mode answer: its sub-questions and findings (research.go).
 	Research *ResearchRun `json:"research,omitempty"`
+	// Offer is a setting that blocked this answer, shown as a card until answered (setting_offers.go).
+	Offer *SettingOffer `json:"offer,omitempty"`
 }
 
 type Chat struct {
@@ -72,6 +74,8 @@ type Chat struct {
 	RunCode      bool     `json:"run_code,omitempty"`  // the model may run code on an exec node (chat_run.go)
 	RunOn        string   `json:"run_on,omitempty"`    // while Busy is "running": the node running it
 	Stashes      []string `json:"stashes,omitempty"`   // stashes searched before each answer (stash_chat.go)
+	// OffersDeclined are setting offers the owner said Not now to here (setting_offers.go).
+	OffersDeclined []string `json:"offers_declined,omitempty"`
 	// Research is the live state of a research answer while it works (research.go).
 	Research *ResearchRun `json:"research,omitempty"`
 	// Prompt is the question or progress line while Auto gets a model (chat_switch.go); not saved.
@@ -144,6 +148,7 @@ func (c *Controller) chatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/chats/{id}/image", c.auth(c.handleChatImage))
 	mux.HandleFunc("GET /api/chats/{id}/doc", c.auth(c.handleChatDoc))
 	mux.HandleFunc("POST /api/chats/{id}/runcode", c.auth(c.handleChatRunCode))
+	mux.HandleFunc("POST /api/setting-offer", c.auth(c.handleSettingOffer))
 	mux.HandleFunc("POST /api/chats/{id}/stash", c.auth(c.handleChatStash))
 	mux.HandleFunc("GET /api/chats/{id}/run-file", c.auth(c.handleChatRunFile))
 	mux.HandleFunc("GET /api/chats/{id}/events", c.authSession(c.handleChatEvents))
@@ -421,6 +426,10 @@ func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
 	}
 	ch.saveLocked()
 	ch.mu.Unlock()
+	scope := offerScope{chat: ch}
+	if pref != chatResearch {
+		hist[0].Content += c.offerPrompt(scope)
+	}
 	taskLive.changed("chat_" + ch.ID)
 	run := c.newCodeRunner(ch, func(node string) {
 		ch.mu.Lock()
@@ -449,6 +458,9 @@ func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
 			msg = c.answerChatRun(sctx, ch.ID, pref, hist, askMem, run, started)
 		}
 		found.apply(&msg)
+		if pref != chatResearch && msg.Error == "" {
+			msg.Text, msg.Offer = c.takeOffer(msg.Text, scope)
+		}
 		ch.mu.Lock()
 		msg.ID, msg.At, msg.Alts, msg.Ver = newID("m"), time.Now(), alts, ver
 		ch.Messages = append(ch.Messages, msg)

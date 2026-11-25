@@ -34,7 +34,7 @@ func TestProjectChatStartsResearch(t *testing.T) {
 	// With web search off the block is refused with a note.
 	c2, p2, pc2, bodies2 := projectWebRig(t, false, reply)
 	msg = c2.answerProjectChat(context.Background(), p2, pc2)
-	if msg.research != "" || !strings.Contains(msg.Error, "research needs web search") {
+	if msg.research != "" || msg.Offer == nil || msg.Offer.Key != "web_search" {
 		t.Fatalf("web off: %+v", msg)
 	}
 	if strings.Contains(systemText(bodies2()[0]), "[start research]") {

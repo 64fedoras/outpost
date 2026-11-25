@@ -428,8 +428,8 @@ something in them is waiting on you; the pin is stored on the controller, so it 
   found, with the source links, into any task it starts, because task planners with a local model
   cannot search. Searches show as chips ("Searched the web for …", "Opened web page example.org"; file chips open the file viewer, web chips do not).
   A planner that cannot call tools gets one search on your message, with the results put in front
-  of it. With web search off it says it does not know the name and points to the setting instead of
-  asking you to explain it. **Untested:** how reliably real local models decide to search (tested with
+  of it. With web search off it says it does not know the name and offers a **Turn on web search and try
+  again** button instead of asking you to explain it (see chat-and-api.md, *When a setting is in the way*). **Untested:** how reliably real local models decide to search (tested with
   a stub model); small models may still ask.
   **Research from the project.** With web search on, the planner can also start a research run for a
   question that needs many sources (it writes a `[start research]` block, at most one per answer). It is

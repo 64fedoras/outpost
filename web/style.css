@@ -1437,6 +1437,10 @@ pre.code .pj-hl { background: var(--tint); display: inline-block; min-width: 100
 .mem-add select { width: auto; max-width: 220px; }
 .mem-sug { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; max-width: 620px; margin-top: 6px; }
 .mem-sug-t { font-size: 13.5px; overflow-wrap: anywhere; }
+.offer-card { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--panel); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; max-width: 620px; margin-top: 6px; }
+.offer-t { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.offer-h { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.offer-card .mem-sug-acts { flex-wrap: wrap; margin-top: 2px; }
 @media (max-width: 600px) { .mem-row { flex-direction: column; } }
 
 /* Nodes page at scale: summary strip, filter bar, update banner, compact cards and rows, offline strip */
