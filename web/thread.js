@@ -22,6 +22,7 @@ async function pollTask() {
   if (id !== curTask()) return;
   if (!ACTIVE.includes(taskDetail.status)) liveLast = {};   // nothing more to show once the task has ended
   renderTask(taskDetail);
+  filesPendingOpen(taskDetail);
   // With the live stream open, "changed" events trigger refreshes; polling is only the fallback.
   const live = liveES && liveES.readyState === 1;
   taskTimer = setTimeout(pollTask, live ? 15000 : WORKING.includes(taskDetail.status) ? 1500 : 4000);
@@ -514,12 +515,12 @@ function tickElapsed() {
 }
 setInterval(tickElapsed, 1000);
 
-// Build outputs: one link each, plus zips. Sizes use the same bytes() as the file browser.
+// Build outputs: one link each (opens in the file browser), plus zips. Sizes use the same bytes() as the file browser.
 function artifactsBlock(t) {
   const arts = t.artifacts || [];
   if (t.build_status === 'failed') return `<details class="testout"><summary>The build failed</summary><pre class="out">${esc(t.build_output || '')}</pre></details>`;
   if (!arts.length) return '';
-  const links = arts.map((a) => `<a href="/api/tasks/${t.id}/artifact?path=${encodeURIComponent(a.path)}">${esc(a.path)} <span class="muted">(${bytes(a.bytes)})</span></a>`).join('');
+  const links = arts.map((a) => `<a href="/api/tasks/${t.id}/artifact?path=${encodeURIComponent(a.path)}" data-act="view-file" data-path="${esc(a.path)}" data-art="1">${esc(a.path)} <span class="muted">(${bytes(a.bytes)})</span></a>`).join('');
   const publish = arts.some((a) => /^(.*\/)?outpost-(linux|darwin|windows)-(amd64|arm64)(\.exe)?$/.test(a.path))
     ? '<button class="small" data-act="task-publish" title="Upload the outpost-&lt;platform&gt; binaries as releases. Updating the controller and nodes stays a click on the Nodes page.">Publish to Updates</button>' : '';
   return `<div class="changed"><span class="hint">Build outputs</span>${links}</div>
@@ -739,17 +740,28 @@ function renderActivity(t) {
   setHTML(ev, (t.events || []).map((e) => `<div class="${e.level}"><span class="time">${clock(e.time)}</span><span class="msg">${esc(e.text)}</span></div>`).join(''));
   ev.scrollTop = ev.scrollHeight;
 }
+// The file browser: the task's files as folders, then its build outputs under their own
+// heading (they live apart from the source on the controller, so they get no tick box).
 function renderFiles(t) {
   const files = (t.files || []).slice().sort((x, y) => x.path.localeCompare(y.path));
-  setHTML('files-hint', `${files.length} file${files.length === 1 ? '' : 's'} in the project so far. Click one to read it.`);
-  const seen = new Set();
-  setHTML('tv-files', files.map((f) => {
-    const parts = f.path.split('/'), out = [];
-    parts.slice(0, -1).forEach((d, i) => { const k = parts.slice(0, i + 1).join('/'); if (!seen.has(k)) { seen.add(k); out.push(`<div class="fb-dir pl${Math.min(i, 20)}">${esc(d)}/</div>`); } });
-    out.push(`<div class="fb-row pl${Math.min(parts.length - 1, 20)}"><input type="checkbox" class="fb-tick" value="${esc(f.path)}" aria-label="Tick ${esc(f.path)}"><a href="#" data-act="view-file" data-path="${esc(f.path)}">${esc(parts[parts.length - 1])} <span class="muted">(${bytes(f.bytes)})</span></a></div>`);
-    return out.join('');
-  }).join(''));
+  const arts = (t.artifacts || []).slice().sort((x, y) => x.path.localeCompare(y.path));
+  setHTML('files-hint', `${files.length} file${files.length === 1 ? '' : 's'} in the project so far${arts.length ? ` and ${arts.length} build output${arts.length === 1 ? '' : 's'}` : ''}. Click one to read it.`);
+  const idle = ['done', 'failed', 'cancelled', 'interrupted'].includes(t.status);
+  fbCtx = { kind: 'task' }; fbModeTask(true);
+  setHTML('tv-files', fbTree(files, { src: 'file' }) + (arts.length ? `<div class="fb-dir fb-sec">Build outputs</div>${fbTree(arts, { src: 'art', depth0: 1, del: idle })}` : ''));
   $('files-dl').href = `/api/tasks/${t.id}/download`;
+}
+// A card elsewhere (the project's Artifacts row) can ask for the file browser of a task
+// that is still loading: it opens once that task's details arrive.
+let filesPending = null;
+function filesOpenFor(task, path, art) {
+  if (taskDetail && taskDetail.id === task && curTask() === task) { filesPending = null; if (path) viewFile(path, art); else { renderFiles(taskDetail); open('modal-files'); } return; }
+  filesPending = { task, path, art };
+}
+function filesPendingOpen(t) {
+  if (!filesPending || filesPending.task !== t.id) return;
+  const p = filesPending; filesPending = null;
+  if (p.path) viewFile(p.path, p.art); else { renderFiles(t); open('modal-files'); }
 }
 
 let taskRounds = [];
@@ -949,30 +961,19 @@ $('files-zip').onclick = () => {
   f.appendChild(i); document.body.appendChild(f); f.submit(); f.remove();
 };
 
-let fbPath = null, fbText = '';
-async function viewFile(path) {
+// art: a build output (served by /artifact) instead of a project file. The viewer
+// (fbShow, files.js) picks a fitting view for the file's type.
+async function viewFile(path, art) {
   if (taskDetail) renderFiles(taskDetail);
   open('modal-files');
-  fbPath = path; fbText = '';
   fbEditing(false);
-  $('fb-title').textContent = path; $('fb-body').textContent = 'Loading…';
-  $('fb-dl').classList.remove('hidden');
-  $('fb-dl').href = `/api/tasks/${curTask()}/file?path=${encodeURIComponent(path)}&download=1`;
-  $('fb-edit').classList.add('hidden');
-  $('fb-preview').classList.add('hidden');
-  try {
-    const r = await fetch(`/api/tasks/${curTask()}/file?path=${encodeURIComponent(path)}`, { credentials: 'same-origin' });
-    fbText = await r.text();
-    setHTML('fb-body', numbered(fbText, path));
-    $('fb-preview').classList.toggle('hidden', !(r.ok && pvKindOf(path)));
-    const idle = taskDetail && ['done', 'failed', 'cancelled'].includes(taskDetail.status);
-    // Text only: a NUL byte means a binary file.
-    $('fb-edit').classList.toggle('hidden', !(r.ok && idle && !fbText.includes('\u0000') && fbText.length < 1e6));
-  } catch (e) { $('fb-body').textContent = e.message; }
+  const base = `/api/tasks/${curTask()}/${art ? 'artifact' : 'file'}?path=${encodeURIComponent(path)}`;
+  const idle = taskDetail && ['done', 'failed', 'cancelled'].includes(taskDetail.status);
+  await fbShow(path, { base, dl: art ? base : base + '&download=1', title: (art ? 'Build output · ' : '') + path, edit: !art && idle, del: art && idle ? 'art' : '' });
 }
 // Hand edits (tasks_handedit.go): the viewer turns into a text box.
 function fbEditing(on) {
-  $('fb-body').classList.toggle('hidden', on); $('fb-editor').classList.toggle('hidden', !on);
+  $('fb-body').classList.toggle('hidden', on || !$('fb-media').classList.contains('hidden')); $('fb-editor').classList.toggle('hidden', !on);
   $('fb-save').classList.toggle('hidden', !on); $('fb-cancel').classList.toggle('hidden', !on);
   $('fb-edit').classList.toggle('hidden', on); $('fb-dl').classList.toggle('hidden', on);
   if (on) { $('fb-editor').value = fbText; $('fb-editor').focus(); }

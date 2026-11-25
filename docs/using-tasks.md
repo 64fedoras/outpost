@@ -131,13 +131,20 @@ Each task is a conversation:
 5. **The result card** lists the files, the test outcome, and a **Download .zip** button. If the
    plan has a **build command** (for example `sh build.sh`) and **artifact patterns** (for example
    `dist/*`), the build runs on an exec node after the tests pass and its outputs appear on the card.
-   Download them one by one, as `artifacts.zip`, or together with the source. A failed build does not
+   Click one to open it in the file browser (under **Build outputs**), or download them one by one, as
+   `artifacts.zip`, or together with the source. When the task has finished, a build output, or a whole
+   folder of them, can be deleted there (✕ beside it, or **Delete** above an open file). A failed build does not
    fail the task; the card shows the build output and the source stays available. If the outputs
    include `outpost-<platform>` binaries (the names `build.sh` produces), the card offers **Publish to
    Updates**: each binary is checked (same hash as the build, a real Outpost binary whose platform matches
    its name) and uploaded as the release for that platform, like the upload in the Nodes page's update Details.
-   Updating the controller and nodes stays your click there; a task never updates anything by itself. The Project files
+   Updating the controller and nodes stays your click there; a task never updates anything by itself. The **Files**
    view has checkboxes and **Zip ticked files**.
+   The file browser opens each file in a viewer that fits it: pictures as pictures, sound and video with
+   a player, PDF, DOCX, XLSX and ODT as their text (a PDF also opens in a new tab), CSV and TSV as a
+   table (the first 1000 rows), STL as a 3D model you can turn, HTML, SVG, Mermaid and Markdown as text
+   with **Preview**, other text with line numbers, and other binary files by name only. Pages are never
+   opened on the controller's own address; they show only in the sandboxed preview.
    A line under **Finished** sums the request up: how long it took, which nodes wrote it, how many
    subtasks needed another try, the fix rounds, the cloud cost and roughly how many lines changed.
    **.patch** next to **Changes** downloads that request's changes as a git diff (`git apply` takes it),
@@ -457,9 +464,17 @@ something in them is waiting on you; the pin is stored on the controller, so it 
   **Stop** cancels an answer in progress; **⚙ → Clear conversation** empties it (tasks are kept).
   The conversation is kept in the project folder on the controller and is deleted with the project.
 - **Threads** (top bar; the amber number is how many tasks wait on you) opens a panel on the right.
-  At the top is a scrolling row of **Artifacts**: screenshots, build outputs, result zips, the last pull
-  request and the documents in the project's **Stash** (a Stash card opens the Stash; **View all**
-  lists everything once there are more than four). Below are the tasks in four groups: **Waiting on
+  At the top is a scrolling row of **Artifacts**: screenshots, build outputs, each finished task's
+  **Result files**, files and folders you uploaded, the last pull request and the documents in the
+  project's **Stash** (a Stash card opens the Stash; **View all** lists everything once there are more
+  than four). Result files and build outputs open the task's file browser in the panel, as folders and
+  files, instead of downloading a zip (the zip stays a button there). **Upload…** opens the project's
+  own Artifacts: **Upload files** or **Upload folder** (a folder keeps its subfolders), click a file to
+  open it, and ✕ beside a file or folder (or **Delete** above an open file) deletes it after you confirm.
+  Uploads are kept on the controller in the project's folder (`artifacts/`, beside `repo/`), never on a
+  node; they are not given to tasks (put files tasks should read in the project's Stash or its files),
+  and they are deleted with the project. One upload can be up to 4 GB and must leave 512 MB free on the
+  controller's disk. Below are the tasks in four groups: **Waiting on
   you** (questions, a plan to approve, a cap or a resume), **Working** (including tasks queued behind
   the one that works), **Idle** (finished, failed or stopped) and **Resolved**. Each row shows the
   task's title, one line on what it is doing (or its last result note once it rests) and how long ago
