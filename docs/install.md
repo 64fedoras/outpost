@@ -304,27 +304,24 @@ Until a node has a model ready, the New task page shows a short checklist: **Add
    would replace). A built-in model that is not in the library yet has **Add and load on…**, which adds it
    (nodes download it) and loads it in one step. A **Recommended** tag shows which node a model is the pick for.
 2. **Nodes** (sidebar): a one-line summary on top (online, models loaded, jobs, total speed, free VRAM,
-   nodes that need attention), then three views, picked top right and remembered in this browser:
-   **Grid** shows a card per node with CPU, RAM and VRAM gauges, speed, problems with a fix button
-   (failed load, model error, paused, no Vulkan, low disk under 10 GB, update available) and the model with
-   Change/Unload; nodes that need attention come first, and a memory pool (a node and the helpers lending
-   it memory) sits in one dashed frame with **Unload pool**. **List** shows two-line rows grouped into
-   Needs attention, Healthy and Offline; click a row (or **Details**) and the node's full card opens in the details panel
-   described below (every control: idle unload, benchmark, stored models, tools, exec and sandbox, Pause, Restart,
-   Logs, Rename, Remove, Run). An optional **Detailed list** view (a short list on the left, the full card
-   and recent jobs on the right) is off by default; turn it on in **Settings → Display and alerts → Appearance**
-   (kept in this browser only). Click a Grid card or List row (or its **Details**) and a details panel opens on the
-   right with the same full card and the node's recent jobs, while the page stays in view: click another
-   card or row to switch, use the arrows in the panel header to step through the nodes, and close it with the
+   nodes that need attention), then one row per node, grouped into Needs attention, Healthy and Offline:
+   name with an update chip when a newer version is available, OS and version, the loaded model, CPU, RAM,
+   VRAM and disk bars, speed, a fix button for the first problem (failed load, model error, paused, no Vulkan,
+   low disk under 10 GB) and **Details**. Click a row (or **Details**) and a details panel opens on the
+   right with the node's full card (every control: idle unload, benchmark, stored models, tools, exec and
+   sandbox, Pause, Restart, Logs, Rename, Remove, Run) and its recent jobs, while the list stays in view: click
+   another row to switch, use the arrows in the panel header to step through the nodes, and close it with the
    cross, Esc, or a click on empty space. The panel floats over the page and the page underneath does not move; on a phone it fills the screen.
+   An optional **Detailed list** view (a short list on the left, the full card and recent jobs on the right) is
+   off by default; turn it on in **Settings → Display and alerts → Appearance** (kept in this browser only), and a
+   **List / Detailed list** switch appears top right. (The card Grid view was removed; a browser that had it
+   saved opens on the List.)
    **Many nodes.** From 8 nodes on, the page switches to a compact layout: a **filter bar** (search by name,
    host, OS, GPU, loaded model or label; quick filters All, Online, Offline, Needs attention, Has GPU, No model
    and Can update, each with a count; one chip per label; **Sort** by status, name or speed, remembered in this
-   browser), smaller Grid cards four across (**⋯** opens the details panel, where Unload and the rest are),
-   one-line List rows, and offline nodes folded into one strip of chips (with **Wake** where it works). When
-   three or more nodes can update, one banner says so (with **Show them**) instead of the same note on every
-   card. **Recent jobs** shows the latest 8 with a node filter, a status filter and **Show more**.
-   **Pick best** (on every Grid card, List row and the full card, next to **Load model…**) opens a short
+   browser) and one-line rows with a column header (offline rows keep **Wake** where it works). The update bar
+   above the list says how many nodes can update. **Recent jobs** shows the latest 8 with a node filter, a status filter and **Show more**.
+   **Pick best** (on every List row and the full card, next to **Load model…**) opens a short
    list of the three best coding models for that node, best first, each with how it fits, the expected
    speed on CPU machines, the reason and how much would be downloaded. Choose one and press **Load this
    model** (the model loaded now is unloaded first), or **See all models…** for the full Load dialog. If

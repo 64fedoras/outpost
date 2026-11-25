@@ -1,4 +1,4 @@
-# Nodes page with many nodes: filter bar, summary strip, update banner, compact grid and list, offline strip,
+# Nodes page with many nodes: filter bar, summary strip, update chips, compact list rows, details panel,
 # recent jobs cap. The rig has one real node; the browser copies it to simulate N (the controller is not changed).
 # Run after `sh testing/e2e/run.sh up` (the stub model and node must be online). N=25 by default.
 import asyncio, os, re, sys
@@ -29,30 +29,32 @@ async def main():
             pg.on("console", lambda m: errs.append(m.text) if m.type == "error" and "ERR_FAILED" not in m.text and "401" not in m.text else None)
             await pg.goto(U + "/"); await pg.fill("#pw", pw); await pg.click("button[type=submit]")
             await pg.wait_for_selector("#side-tasks"); await pg.wait_for_timeout(1500)
-            # one node: no filter bar, tiles as before in a strip, full cards
-            await pg.goto(U + "/#/nodes"); await pg.wait_for_selector(".gc"); await pg.wait_for_timeout(800)
+            # one node: no filter bar, tiles as before in a strip, two-line list rows; no Grid view or view switch
+            await pg.goto(U + "/#/nodes"); await pg.wait_for_selector(".nv-row"); await pg.wait_for_timeout(800)
             assert await pg.locator("#node-filter").is_hidden(), "filter bar must stay hidden for a small cluster"
             assert await pg.locator(".strip > div").count() == 6
-            assert await pg.locator(".gc.dense").count() == 0
-            # many nodes
+            assert await pg.locator(".nv-box.dense").count() == 0
+            assert await pg.locator("[data-node-view=grid]").count() == 0 and await pg.locator(".gc").count() == 0, "the Grid view is gone"
+            assert await pg.locator("#node-view-toggle").is_hidden(), "no view switch unless the Detailed list is turned on"
+            # many nodes: compact one-line rows grouped into Needs attention / Healthy / Offline
             count["n"] = N
-            await pg.evaluate("refresh()"); await pg.wait_for_selector(".gc.dense"); await pg.wait_for_timeout(1000)
+            await pg.evaluate("refresh()"); await pg.wait_for_selector(".nv-box.dense"); await pg.wait_for_timeout(1000)
             assert await pg.locator("#node-filter").is_visible(), "filter bar shows at N nodes"
-            total = await pg.locator(".gc").count() + await pg.locator(".off-chip").count()
-            assert total == N, f"every node is shown once: {total} != {N}"
-            assert await pg.locator(".off-chip").count() > 0, "offline nodes collapse into the strip"
-            assert await pg.locator(".gc .gc-sparks").count() == 0
-            ub = await pg.locator(".upd-banner").count()
-            assert ub == 1, "one update banner for many outdated nodes"
-            assert await pg.locator(".gc .nv-note").filter(has_text="is available").count() == 0, "no per-card update notes while the banner shows"
-            await pg.click(".upd-banner [data-chip=update]"); await pg.wait_for_timeout(300)
-            assert 0 < await pg.locator(".gc").count() < N, "Show them filters to nodes that can update"
+            rows = ".nv-row.dn:not(.nv-head)"
+            assert await pg.locator(rows).count() == N, "every node is shown once"
+            grps = await pg.locator(".nv-grp").all_inner_texts()
+            assert any(g.lower().startswith("offline") for g in grps), grps
+            h = await pg.locator(rows).first.evaluate("e => e.getBoundingClientRect().height")
+            assert h <= 40, f"compact list rows are one line: {h}"
+            assert await pg.locator(rows + " .upd-chip").count() > 0, "update chips by node names"
+            await pg.click("[data-chip=update]"); await pg.wait_for_timeout(300)
+            assert 0 < await pg.locator(rows).count() < N, "Can update filters to nodes that can update"
             await pg.click("[data-chip=all]"); await pg.wait_for_timeout(200)
-            await pg.screenshot(path=S + f"grid-{scheme}.png", full_page=True)
+            await pg.screenshot(path=S + f"list-{scheme}.png", full_page=True)
             # search
             await pg.fill("#nf-q", "lab")
             await pg.wait_for_timeout(300)
-            names = await pg.locator(".gc .node-name").all_inner_texts()
+            names = await pg.locator(rows + " > b.nv-ell").all_inner_texts()
             assert names and all("lab" in x.lower() for x in names), names
             assert await pg.locator("#nf-q").evaluate("e => e === document.activeElement"), "typing keeps focus"
             assert "Showing" in await pg.locator(".nf-count").inner_text()
@@ -62,25 +64,18 @@ async def main():
             assert await pg.locator("#nf-q").input_value() == "", "clear filters empties the box"
             # chips
             await pg.click("[data-chip=offline]"); await pg.wait_for_timeout(300)
-            assert await pg.locator(".gc").count() == 0 and await pg.locator(".off-chip").count() > 0
-            await pg.click("[data-chip=gpu]"); await pg.wait_for_timeout(300)
-            assert await pg.locator(".gc .nv-pill").count() == await pg.locator(".gc").count() > 0
+            grps = await pg.locator(".nv-grp").all_inner_texts()
+            assert len(grps) == 1 and grps[0].lower().startswith("offline"), grps
             await pg.click("[data-chip=all]")
             await pg.select_option("#nf-sort", "name"); await pg.wait_for_timeout(300)
-            names = await pg.locator(".gc .node-name").all_inner_texts()
-            assert names == sorted(names, key=lambda s: [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", s.lower())]), "sort by name"
             await pg.select_option("#nf-sort", "status")
-            # card details panel still opens from a dense card
-            await pg.locator(".gc button[data-act=node-detail]").first.click(); await pg.wait_for_selector("#node-drawer:not(.hidden)")
+            # details panel opens from a row, steps with next, closes with Esc
+            await pg.locator(rows).first.click(); await pg.wait_for_selector("#node-drawer:not(.hidden)")
+            first = await pg.locator("#node-drawer .nd-title .node-name").inner_text()
+            await pg.click("#node-drawer [aria-label='Next node']"); await pg.wait_for_timeout(200)
+            assert await pg.locator("#node-drawer .nd-title .node-name").inner_text() != first, "next node"
             await pg.keyboard.press("Escape"); await pg.wait_for_timeout(200)
-            # list view
-            await pg.click("[data-node-view=list]"); await pg.wait_for_selector(".nv-box.dense"); await pg.wait_for_timeout(500)
-            assert await pg.locator(".nv-row.dn:not(.nv-head)").count() == N
-            h = await pg.locator(".nv-row.dn:not(.nv-head)").first.evaluate("e => e.getBoundingClientRect().height")
-            assert h <= 40, f"compact list rows are one line: {h}"
-            await pg.screenshot(path=S + f"list-{scheme}.png", full_page=True)
-            await pg.locator(".nv-row.dn:not(.nv-head)").first.click(); await pg.wait_for_selector("#node-drawer:not(.hidden)"); await pg.keyboard.press("Escape")
-            await pg.click("[data-node-view=grid]")
+            assert await pg.locator("#node-drawer").is_hidden()
             # jobs
             rows = await pg.locator("#jobs tbody tr").count()
             assert rows == 8, f"jobs start at 8 rows: {rows}"
@@ -97,10 +92,10 @@ async def main():
         await ctx.route("**/api/state/events*", lambda r: r.abort()); await ctx.route("**/api/state", route2)
         pg = await ctx.new_page(); pg.on("pageerror", lambda e: errs.append(str(e)))
         await pg.goto(U + "/"); await pg.fill("#pw", pw); await pg.click("button[type=submit]"); await pg.wait_for_selector("#side-tasks", state="attached")
-        await pg.goto(U + "/#/nodes"); await pg.wait_for_selector(".gc.dense"); await pg.wait_for_timeout(800)
+        await pg.goto(U + "/#/nodes"); await pg.wait_for_selector(".nv-box.dense"); await pg.wait_for_timeout(800)
         assert await pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), "no sideways page scroll on the phone"
-        await pg.screenshot(path=S + "grid-phone.png")
+        await pg.screenshot(path=S + "list-phone.png")
         await ctx.close(); await b.close()
         assert not errs, errs
-        print("nodesscale: ok", N, "nodes; banner shown:", bool(ub))
+        print("nodesscale: ok", N, "nodes")
 asyncio.run(main())

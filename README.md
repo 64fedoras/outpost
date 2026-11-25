@@ -27,9 +27,9 @@ It is a single self-contained binary with two modes, and no other software to in
 
 *A task in progress, with live model output for each subtask. Outpost also follows your system's dark mode.*
 
-![The Nodes page: cluster summary tiles and a node card with CPU, RAM and GPU gauges, plus recent jobs](docs/images/nodes-dark.png)
+![The Nodes page: cluster summary tiles, then one row per node grouped into Healthy and Offline, with load bars and speed](docs/images/nodes-dark.png)
 
-*Nodes: what each machine is doing, its loaded model and speed. Grid, list and detailed views.*
+*Nodes: what each machine is doing, its loaded model and speed. One row per node, details in a side panel.*
 
 ![The Models page: the model library and a Discover list with fit estimates per node](docs/images/models-dark.png)
 

@@ -318,7 +318,7 @@ document.addEventListener('click', async (e) => {
         await post(`/api/nodes/${id}/restart`); toast('Restarting'); break;
       }
       case 'remove': removeNode(id); break;
-      case 'node-detail': openNodeDrawer(id); return; // Grid card or its Details button: the details panel
+      case 'node-detail': openNodeDrawer(id); return; // List row or its Details button: the details panel
       case 'node-drawer-go': if (id) openNodeDrawer(id); return;
       case 'node-drawer-close': closeNodeDrawer(); return;
       case 'node-select': nodeSel = id; renderNodes(); return;

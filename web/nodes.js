@@ -20,15 +20,15 @@ function benchLine(n, loaded, ready) {
   return `<div class="sub wrap u15" title="Benchmark when the model loaded, then a rolling average of real subtasks">${txt}${rerun}${serve ? ` <span class="muted">· ${serve}</span>` : ''}</div>`;
 }
 
-// Nodes page views: Grid (cards), List (grouped two-line rows) and Detailed list
-// (short list on the left, the selected node's full card on the right).
-const NODE_VIEWS = ['grid', 'list', 'detail'];
-let nodeView = 'grid', nodeSel = null, nodeLabel = '';
+// Nodes page views: List (grouped rows, details panel on the right) and the optional Detailed list
+// (short list on the left, the selected node's full card on the right). The old Grid view is gone.
+const NODE_VIEWS = ['list', 'detail'];
+let nodeView = 'list', nodeSel = null, nodeLabel = '';
 let nodeQuery = '', nodeChip = 'all', nodeSort = 'status';
 try { const v = localStorage.getItem('outpost.nodeSort'); if (['status', 'name', 'speed'].includes(v)) nodeSort = v; } catch (e) { /* storage blocked */ }
 // Clusters of NODE_FILTER_MIN nodes or more get the filter bar and the compact cards and rows.
 const nodesDense = (nodes) => nodes.length >= NODE_FILTER_MIN;
-// A node that can update (or is updating) shows a small chip by its name; the update bar above the grid
+// A node that can update (or is updating) shows a small chip by its name; the update bar above the list
 // holds the buttons. The chip and the thin progress bar read the same node.update state the Updates table used.
 function nodeUpdChip(n) {
   const u = n.update, recent = u && (Date.now() - new Date(u.updated)) < 600000;
@@ -44,11 +44,12 @@ function nodeUpdChip(n) {
   if (!t) return { chip: '', bar: '' };
   return { chip: `<span class="upd-chip${cls}" title="${u && u.state === 'failed' ? esc(u.error || '') : n.update_to ? 'Update to v' + esc(n.update_to) + ' available' : ''}">${esc(t)}</span>`, bar: pct == null ? '' : `<div class="upd-cardprog">${bar(pct, 'good')}</div>` };
 }
-let nodeDrawer = null; // node whose details panel is open over the Grid and List views
+let nodeDrawer = null; // node whose details panel is open over the List view
 // The Detailed list is optional (Settings → Display and alerts); kept in this browser only.
 let showDetailed = false;
 try { showDetailed = localStorage.getItem('outpost.detailedList') === '1'; } catch (e) { /* storage blocked */ }
-try { const v = localStorage.getItem('outpost.nodeView'); if (NODE_VIEWS.includes(v)) nodeView = v; } catch (e) { /* storage blocked */ }
+// A saved view that no longer exists (the removed Grid) is dropped, so everyone lands on the List.
+try { const v = localStorage.getItem('outpost.nodeView'); if (NODE_VIEWS.includes(v)) nodeView = v; else if (v) localStorage.removeItem('outpost.nodeView'); } catch (e) { /* storage blocked */ }
 if (nodeView === 'detail' && !showDetailed) nodeView = 'list';
 function setNodeView(v) {
   if (!NODE_VIEWS.includes(v)) return;
@@ -158,22 +159,14 @@ function nodeDetailView(nodes) {
   return `<div class="nv-split"><div class="nv-list">${list}</div>
     <div class="nv-pane">${nodeCard(sel)}${nodeJobs(sel)}</div></div>`;
 }
-// nodeJobs lists a node's latest jobs, under its full card (Detailed list and the Grid details panel).
+// nodeJobs lists a node's latest jobs, under its full card (Detailed list and the details panel).
 function nodeJobs(n) {
   const jobs = (state.jobs || []).filter((j) => j.node_id === n.id || (!j.node_id && j.node_name === nodeName(n))).slice(0, 6);
   return `<div class="section-head"><h2>Recent jobs on ${esc(nodeName(n))}</h2></div>
       ${jobs.length ? `<div class="table-wrap"><table><tbody>${jobs.map((j) => `<tr class="click" data-act="open-job" data-id="${j.id}"><td>${pill(j.status)}</td><td class="cmd">${esc(j.command)}</td><td>${ago(j.created)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No recent jobs on this node.</div>'}`;
 }
 
-// Grid view: cluster summary strip, then gauge cards. Nodes that share memory
-// (a pool: the main node and its helpers) sit together in one frame.
-function ring(pct, label, sub) {
-  const p = Math.max(0, Math.min(100, Math.round(pct || 0))), r = 22, c = 2 * Math.PI * r;
-  return `<div class="ring"><svg width="58" height="58" viewBox="0 0 58 58" aria-hidden="true"><circle class="ring-bg" cx="29" cy="29" r="${r}"/>
-    ${p ? `<circle class="ring-fg${p > 85 ? ' hot' : ''}" cx="29" cy="29" r="${r}" stroke-dasharray="${(c * p / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 29 29)"/>` : ''}
-    <text x="29" y="33" text-anchor="middle">${p}%</text></svg><div class="sub">${label}</div><div class="sub ring-s">${sub}</div></div>`;
-}
-const ringNone = (label) => `<div class="ring ring-off"><svg width="58" height="58" viewBox="0 0 58 58" aria-hidden="true"><circle class="ring-bg dashed" cx="29" cy="29" r="22"/></svg><div class="sub">${label}</div></div>`;
+// nodeStatus is the short status word and colour shown in the details panel and compact rows.
 function nodeStatus(n, f) {
   if (!n.online) return ['Offline', 'off'];
   if (f.worst === 'bad') return ['Failed', 'bad'];
@@ -186,36 +179,6 @@ function nodeStatus(n, f) {
   if (f.hb.idle_unloaded) return ['Idle, unloaded', 'idle'];
   if (!f.ready) return ['Starting', 'busy'];
   return f.hb.inference_busy ? ['Working', 'on'] : ['Ready', 'on'];
-}
-function gaugeCard(n, o = {}) {
-  const dense = !!o.dense;
-  const f = nodeFacts(n), h = f.h, hb = f.hb, cpu = h.cpu || {};
-  const [st, cls] = nodeStatus(n, f);
-  const uc = nodeUpdChip(n);
-  const gpus = h.gpus || [];
-  const g = gpus[0];
-  const ramTot = hb && hb.ram_total_bytes;
-  const notes = f.issues.filter((i) => i.lvl !== 'off' && i.act !== 'node-update').map((i) => `<div class="note ${i.lvl === 'info' ? '' : i.lvl} nv-note"><span class="nv-grow">${esc(i.text)}</span>${i.act ? `<button class="small" data-act="${i.act}" data-id="${n.id}">${esc(i.fix)}</button>` : ''}</div>`).join('');
-  const btns = n.online && !n.lending_to ? (dense ? (f.loaded ? `<button class="small" data-act="load" data-id="${n.id}">Change…</button>` : bestBtn(n)) : `${bestBtn(n)}<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>${f.loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}`) : n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}" title="Send a Wake-on-LAN packet">Wake</button>` : '';
-  const on = nodeDrawer === n.id;
-  const gname = g ? String(g.name || '').replace(/^(AMD|NVIDIA|Intel)\s+(Radeon|GeForce)?\s*/i, '') : '';
-  const hw = dense ? `${cpu.cores || '?'}C/${cpu.threads || '?'}T${ramTot ? ' · ' + bytes(ramTot) : ''}${gname ? ' · ' + esc(gname) : ''} · ${esc(h.os || '?')}`
-    : `${esc(cpu.model || 'CPU')} · ${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}`;
-  return `<div class="card gc${dense ? ' dense' : ''} nv-s-${f.worst}${on ? ' on' : ''}" data-act="node-detail" data-id="${n.id}">
-    <div class="node-top"><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span>${uc.chip}<span class="nv-pill nv-p-${cls}"><i></i>${st}</span>
-      <button class="small" data-act="node-detail" data-id="${n.id}" aria-expanded="${on}" aria-controls="node-drawer" title="All details and controls for this node (Unload, benchmark, logs and more)">${dense ? '⋯' : 'Details'}</button></div>
-    <div class="sub nv-ell">${hw}</div>
-    ${dense ? '' : labelChips(n)}
-    <div class="gc-rings">
-      ${ring(f.cpu, 'CPU', `${cpu.cores || '?'}C/${cpu.threads || '?'}T`)}
-      ${ring(f.ram, 'RAM', ramTot ? bytes(ramTot) : '—')}
-      ${g && (!g.backend || (h.gpu_check && h.gpu_check.slower)) ? ringNone('GPU not used') : g ? ring(f.vram || 0, g.vendor === 'apple' ? 'GPU' : 'VRAM', bytes(g.vram_bytes) + (hb && hb.gpu_temp_c && hb.gpu_temp_c[0] > 0 ? ` · ${hb.gpu_temp_c[0]} °C` : '')) : ringNone('no GPU')}
-      <div class="ring gc-speed"><div>${nvTps(f, true)}</div><div class="sub">${n.online ? `${n.running_jobs}/${n.max_jobs} jobs` : n.last_seen ? 'seen ' + ago(n.last_seen) : 'never connected'}</div></div>
-    </div>
-    ${dense ? '' : gaugeSparks(n)}
-    ${uc.bar}${notes}${opActive(n) ? opView(n) : ''}
-    <div class="gc-model"><span class="nv-grow nv-ell">${f.model}</span>${btns}</div>
-  </div>`;
 }
 function clusterSummary(nodes) {
   const on = nodes.filter((n) => n.online);
@@ -239,37 +202,6 @@ function clusterSummary(nodes) {
     ${cell(att.length, 'need attention', att.map(([n, f]) => `${nodeName(n)}: ${f.issues.find((i) => i.lvl === 'bad' || i.lvl === 'warn').short.toLowerCase()}`).join(' · '), att.length ? 'w' : '')}
   </div>`;
 }
-function offlineStrip(nodes) {
-  if (!nodes.length) return '';
-  return `<div class="off-strip"><span class="off-h">Offline · ${nodes.length}</span>${nodes.map((n) => `<span class="off-chip" data-act="node-detail" data-id="${n.id}" title="Open details"><b>${esc(nodeName(n))}</b><span class="muted">${n.last_seen ? ago(n.last_seen) : 'never connected'}</span>${n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}" title="Send a Wake-on-LAN packet">Wake</button>` : ''}</span>`).join('')}</div>`;
-}
-function nodeGridView(nodes, o = {}) {
-  const dense = !!o.dense;
-  const byName = (nm) => nodes.find((x) => nodeName(x) === nm);
-  const inPool = new Set(), pools = [];
-  nodes.forEach((n) => {
-    if (!n.pool_names || !n.pool_names.length) return;
-    const helpers = n.pool_names.map(byName).filter(Boolean);
-    [n, ...helpers].forEach((x) => inPool.add(x.id));
-    pools.push([n, helpers]);
-  });
-  const card = (n) => gaugeCard(n, o);
-  const pool = ([n, helpers]) => {
-    const f = nodeFacts(n);
-    return `<div class="pool"><div class="pool-h"><span class="pool-ic">⇄</span><b>Memory pool</b>
-      <span class="sub nv-grow">${f.loaded ? esc(f.loaded) + ' · ' : ''}runs on <b class="nv-ink">${esc(nodeName(n))}</b>, ${helpers.map((x) => `<b class="nv-ink">${esc(nodeName(x))}</b>`).join(', ')} lend${helpers.length === 1 ? 's' : ''} memory</span>
-      ${nvTps(f)}${f.loaded ? `<button class="small" data-act="unload" data-id="${n.id}" title="Unload the model; the helpers get their memory back">Unload pool</button>` : ''}</div>
-      <div class="pool-cards">${[n, ...helpers].map(card).join('')}</div></div>`;
-  };
-  // The caller sorts; with "Sort: status" nodes that need attention come first (the sort puts them there), then pools.
-  const free = nodes.filter((n) => !inPool.has(n.id));
-  const off = dense ? free.filter((n) => !n.online) : [];
-  const shown = dense ? free.filter((n) => n.online) : free;
-  const att = o.attentionFirst ? shown.filter((n) => ['bad', 'warn'].includes(nodeFacts(n).worst)) : [];
-  const rest = shown.filter((n) => !att.includes(n));
-  return `<div class="gc-grid${dense ? ' dense' : ''}">${att.map(card).join('')}${pools.map(pool).join('')}${rest.map(card).join('')}</div>${offlineStrip(off)}`;
-}
-
 // The filter bar sits above #nodes (outside what renderNodes redraws), so typing in it keeps focus.
 function renderNodeFilter(nodes, rows, labels, dense) {
   const bar = $('node-filter');
@@ -290,7 +222,9 @@ function renderNodes() {
   const online = nodes.filter((n) => n.online).length;
   setHTML('node-count', nodes.length ? `${online} of ${nodes.length} online` : '');
   if (nodeView === 'detail' && !showDetailed) nodeView = 'list';
-  document.querySelectorAll('[data-node-view]').forEach((b) => { b.classList.toggle('on', b.dataset.nodeView === nodeView); if (b.dataset.nodeView === 'detail') b.hidden = !showDetailed; });
+  // The List / Detailed list switch only shows when the Detailed list is turned on in Settings.
+  const tog = $('node-view-toggle'); if (tog) tog.hidden = !showDetailed;
+  document.querySelectorAll('[data-node-view]').forEach((b) => b.classList.toggle('on', b.dataset.nodeView === nodeView));
   if (!nodes.length) { setHTML('node-summary', ''); $('node-filter').classList.add('hidden'); setHTML('nodes', `<div class="empty u16">No nodes yet. Click <b>Add node</b> to get the install command.</div>`); return; }
   const labels = state.labels || [];
   if (nodeLabel && !labels.includes(nodeLabel)) nodeLabel = '';
@@ -302,19 +236,19 @@ function renderNodes() {
   const filtering = !!(nodeQuery || nodeChip !== 'all' || nodeLabel);
   // Below the filter bar's size, labels keep their old chip row.
   const chips = !dense && labels.length ? `<div class="label-filter" role="group" aria-label="Show nodes with label">${['', ...labels].map((l) => `<button class="small${l === nodeLabel ? ' on' : ''}" data-act="label-filter" data-label="${esc(l)}" aria-pressed="${l === nodeLabel}">${l ? esc(l) + ' · ' + nodes.filter((n) => (n.labels || []).includes(l)).length : 'All nodes'}</button>`).join('')}</div>` : '';
-  if ((nodeView !== 'grid' && nodeView !== 'list') || !nodeById(nodeDrawer)) nodeDrawer = null;
+  if (nodeView !== 'list' || !nodeById(nodeDrawer)) nodeDrawer = null;
   loadNodeHistory();
   renderNodeFilter(nodes, rows, labels, dense);
   setHTML('node-summary', clusterSummary(nodes));
   const body = !shown.length ? `<div class="empty u16">No nodes match. <button class="small" data-act="node-clear">Clear filters</button></div>`
-    : nodeView === 'list' ? nodeListView(shown, dense) : nodeView === 'detail' ? nodeDetailView(shown) : nodeGridView(shown, { dense, attentionFirst: nodeSort === 'status' });
+    : nodeView === 'detail' ? nodeDetailView(shown) : nodeListView(shown, dense);
   setHTML('nodes', chips + toolRecBanners() + (filtering && shown.length ? `<div class="sub nf-count">Showing ${shown.length} of ${nodes.length} nodes · <a href="#" data-act="node-clear">Clear filters</a></div>` : '') + body);
   renderNodeDrawer(shown);
 }
 
-// Grid and List details panel: clicking a card opens its full node card (the same nodeCard the
-// List and Detailed list show) in a panel on the right, so the grid stays in view.
-// Not modal: clicking another card switches the panel to that node.
+// List details panel: clicking a row opens its full node card (the same nodeCard the Detailed list
+// shows) in a panel on the right, so the list stays in view.
+// Not modal: clicking another row switches the panel to that node.
 function openNodeDrawer(id) {
   const was = nodeDrawer;
   nodeDrawer = nodeDrawer === id ? null : id;
@@ -335,8 +269,8 @@ function renderNodeDrawer(shown) {
   document.body.classList.toggle('nd-open', !!n);
   if (!n) { setHTML(d, ''); return; }
   const f = nodeFacts(n), h = f.h, [st, cls] = nodeStatus(n, f), uc = nodeUpdChip(n);
-  // Previous and next follow the order of the cards in the grid.
-  const order = [...document.querySelectorAll('#nodes .gc[data-id], #nodes .nv-row[data-id]')].map((c) => c.dataset.id).filter((id, i, a) => a.indexOf(id) === i);
+  // Previous and next follow the order of the rows in the list.
+  const order = [...document.querySelectorAll('#nodes .nv-row[data-id]')].map((c) => c.dataset.id).filter((id, i, a) => a.indexOf(id) === i);
   const at = order.indexOf(n.id), prev = order[at - 1], next = order[at + 1];
   const nav = (id, label, txt) => `<button class="small" data-act="node-drawer-go" data-id="${id || ''}" ${id ? '' : 'disabled'} title="${label}" aria-label="${label}">${txt}</button>`;
   setHTML(d, `<div class="nd-head"><span class="dot ${f.dot}"></span><div class="nv-min nv-grow"><div class="nd-title"><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span>${uc.chip}<span class="nv-pill nv-p-${cls}"><i></i>${st}</span></div>
@@ -350,10 +284,10 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || !nodeDrawer || document.querySelector('.overlay:not(.hidden)')) return;
   closeNodeDrawer();
 });
-// A click on empty page space (not the panel, a card, a control or a dialog) closes the panel.
+// A click on empty page space (not the panel, a row, a control or a dialog) closes the panel.
 document.addEventListener('click', (e) => {
   if (!nodeDrawer || !e.target.closest || !e.target.isConnected) return;
-  if (e.target.closest('#node-drawer, .gc, .nv-row, .off-chip, .overlay, button, a, input, select, textarea, label, summary, [data-act]')) return;
+  if (e.target.closest('#node-drawer, .nv-row, .overlay, button, a, input, select, textarea, label, summary, [data-act]')) return;
   if (!e.target.closest('section[data-page="nodes"]')) return;
   closeNodeDrawer();
 });
@@ -514,7 +448,7 @@ function nodeCard(n) {
 // ---------- last hour (nodehist.go) ----------
 // The controller keeps 30 s averages of each node's CPU, RAM, GPU, VRAM, GPU
 // temperature and measured speed for an hour, in memory. The Nodes page fetches
-// them every 30 s and draws sparklines on the Grid cards and in the full card.
+// them every 30 s and draws sparklines in the full card.
 let nodeHist = {}, nodeHistAt = 0, nodeHistBusy = false;
 function loadNodeHistory(force) {
   if (nodeHistBusy || (!force && Date.now() - nodeHistAt < 30000)) return;
@@ -555,13 +489,6 @@ function spark(pts, key, h) {
 }
 function histLast(pts, key) { for (let i = pts.length - 1; i >= 0; i--) if (pts[i][key] >= 0) return pts[i][key]; return -1; }
 const histFmt = (key, v) => v < 0 ? '—' : key === 'tps' ? v.toFixed(1) + HIST_SERIES[key].unit : Math.round(v) + HIST_SERIES[key].unit;
-// Grid card: a strip of small sparklines (CPU, GPU or RAM, VRAM, speed).
-function gaugeSparks(n) {
-  const pts = nodeHist[n.id] || [];
-  if (pts.length < 2 || !n.online) return '';
-  const keys = ['cpu', histHas(pts, 'gpu') ? 'gpu' : 'ram', histHas(pts, 'vram') ? 'vram' : null, histHas(pts, 'tps') ? 'tps' : null].filter(Boolean);
-  return `<div class="gc-sparks" title="Last hour, 30-second averages">${keys.map((k) => `<div class="gc-spark"><div class="gc-spark-k"><span>${HIST_SERIES[k].label}</span><b>${histFmt(k, histLast(pts, k))}</b></div>${spark(pts, k, 22)}</div>`).join('')}</div>`;
-}
 // Full node card: every series the node reports, with its range over the hour.
 function histBox(n) {
   const pts = nodeHist[n.id] || [];
