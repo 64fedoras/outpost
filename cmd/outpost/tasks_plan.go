@@ -225,6 +225,7 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 	}
 	t.Status = "awaiting_approval"
 	cp := *plan
+	shownBefore := t.planShownLocked() // checked before this plan joins the messages
 	t.addMsgLocked(TaskMessage{Role: "assistant", Kind: "plan", Plan: &cp, Text: strings.TrimSpace(plan.Note)})
 	if t.Unattended && t.Round == 1 {
 		now := time.Now()
@@ -236,9 +237,49 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 		c.startTask(t, c.execTask)
 		return
 	}
+	if t.FromChat && t.Round == 1 && !shownBefore {
+		if hold := autoApproveHold(t, plan); hold == "" {
+			now := time.Now()
+			t.Approved = &now
+			t.Status = "running"
+			t.addMsgLocked(TaskMessage{Role: "event", Kind: "event", Text: "Started on its own: the project conversation asked for this work. Stop it any time."})
+			t.mu.Unlock()
+			t.logf("info", "Plan ready: %d subtasks; started on its own (from the project conversation).", len(plan.Subtasks))
+			c.startTask(t, c.execTask)
+			return
+		} else {
+			t.addMsgLocked(TaskMessage{Role: "event", Kind: "event", Text: "Waiting for you: " + hold + "."})
+		}
+	}
 	t.mu.Unlock()
 	c.notifyTask(t, "plan", fmt.Sprintf("Plan ready with %d subtasks. Review it and approve to start.", len(plan.Subtasks)))
 	t.logf("info", "Plan ready: %d subtasks. Review it and approve to start.", len(plan.Subtasks))
+}
+
+// autoApproveHold says why a plan the project conversation asked for still
+// waits for the owner, or "" when it may start on its own. Writing files into
+// the project is the work the owner asked for; spending money and removing
+// files are not, so those keep the approval step.
+func autoApproveHold(t *Task, p *Plan) string {
+	switch {
+	case isCloudPlanner(t.Planner):
+		return "this plan uses a paid cloud planner, so it starts only when you approve the cost"
+	case len(p.Delete) > 0 || len(p.Rename) > 0:
+		return "this plan deletes or renames files in the project"
+	}
+	return ""
+}
+
+// planShownLocked reports whether a plan was already shown in the current
+// round (also one an edit superseded): the owner has seen one and changed
+// something, so the next plan waits for them again. t.mu must be held.
+func (t *Task) planShownLocked() bool {
+	for _, m := range t.Messages {
+		if m.Round == t.Round && m.Kind == "plan" {
+			return true
+		}
+	}
+	return false
 }
 
 // cleanAssumptions trims the planner's assumptions to what the plan card can show: at most 6, blanks dropped,

@@ -163,6 +163,10 @@ type Task struct {
 	// plan is approved on its own (templates.go). Template is the saved task.
 	Unattended bool   `json:"unattended,omitempty"`
 	Template   string `json:"template,omitempty"`
+	// FromChat: the project conversation started it on the owner's behalf, so
+	// its first plan starts on its own unless something needs the owner
+	// (autoApproveHold in tasks_plan.go).
+	FromChat bool `json:"from_chat,omitempty"`
 	// Per-node models (tasks_models.go): load a best-fit model on each opted-in
 	// node before work starts, and put the previous ones back afterwards unless
 	// KeepModels. ModelSwaps is what was done, saved so a resume does not redo it.

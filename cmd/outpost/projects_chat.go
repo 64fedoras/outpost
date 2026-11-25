@@ -464,7 +464,8 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 	}
 	var failed []string
 	for _, prompt := range asks {
-		t, _, terr := c.createTask(createReq{Prompt: prompt, Project: p.ID}, nil, createOpts{})
+		// The conversation already settled what to do, so the plan starts on its own (autoApproveHold).
+		t, _, terr := c.createTask(createReq{Prompt: prompt, Project: p.ID}, nil, createOpts{FromChat: true})
 		if terr != nil {
 			failed = append(failed, terr.Error())
 			continue
