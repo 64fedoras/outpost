@@ -130,6 +130,18 @@ async def main():
             ow = await p2.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
             assert ow <= 1, f"horizontal scroll {ow}px at {vp}"
             await c2.close()
+        # a project's own stash: the Stash button on the project page, hidden from the main list, removed with the project
+        pr = call("/api/projects", {"name": "Dice app"})
+        await pg.goto(U + "/#/projects/" + pr["id"]); await pg.wait_for_selector("#pj-stash-btn")
+        await pg.click("#pj-stash-btn"); await pg.wait_for_selector("#sh-drop")
+        await pg.set_input_files("#sh-file", [{"name": "spec.md", "mimeType": "text/markdown", "buffer": REFUND.encode()}])
+        await pg.wait_for_selector("text=spec.md"); await wait_ready(pg)
+        assert await pg.locator("#sh-back").inner_text() == "‹ Project"
+        await pg.goto(U + "/#/stash"); await pg.wait_for_selector(".sh-row")
+        assert "Dice app" not in await pg.locator("#sh-root").inner_text(), "a project's stash is managed on its project page"
+        assert len(call("/api/stash?all=1")["stashes"]) == 2
+        call("/api/projects/" + pr["id"], method="DELETE")
+        assert len(call("/api/stash?all=1")["stashes"]) == 1, "the project's stash goes with the project"
         # deleting the stash
         await pg.goto(U + "/#/stash/" + sid); await pg.wait_for_selector("[data-sh=delete]")
         await pg.click("[data-sh=delete]"); await pg.click("#ask-yes")

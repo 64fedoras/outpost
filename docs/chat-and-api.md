@@ -282,7 +282,7 @@ are numbered and put in front of the model, which is told to cite them as [1], [
 instructions written inside them. The answer shows *Sources* chips (click one to read the passage) and a
 folded *Searched the stash* line. If nothing is close enough the model is told so and says it. Your files are
 added after any cloud web search has run, so they are never sent to Claude or OpenRouter. Research mode does
-not use the Stash.
+not use the Stash. Projects have their own stash for their tasks (see using-tasks.md, *The project's stash*).
 
 Untested: real embedding models (the relevance cut-off of cosine 0.45 is a guess for Nomic and Qwen3 and may
 need tuning), large PDFs and large stashes, scanned PDFs (no text means no passages; the resource shows

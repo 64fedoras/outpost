@@ -319,6 +319,18 @@ not add testify"). The rule appears under the project's instructions (**Edit** i
 **Dismiss**; nothing changes until you choose. The last 5 suggestions are kept. With Claude or OpenRouter
 this is one small call counted in the task's cost, and it is skipped if it would pass the cap.
 
+### The project's stash
+
+**Stash** at the top of a project page opens the project's own stash (made the first time you press it).
+Drop the documents the project's tasks should know about: specs, manuals, notes. When a task in the project
+is planned by a node, the passages that best match the request (up to 5, about 5,000 characters) are added to
+the planner's prompt with the file names, marked as reference material whose instructions are ignored; the
+task log says how many were given. A task that plans with Claude or OpenRouter does not get them, so the
+documents never leave your machines; the log says so. A project's stash is not listed on the Stash page
+(it is reached from the project) and is deleted with the project. See [The Stash](chat-and-api.md#the-stash-documents-your-chats-can-search)
+for how files are stored and searched. Untested: real embedding models and how much the passages help real
+local planners. Agent-mode tasks do not search the stash themselves yet.
+
 ### Tests first, context warnings and the model scorecard
 
 - **Tests first** (an option chip on the new-task form, first round of a new project only): the planner is told to

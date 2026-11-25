@@ -80,7 +80,7 @@ function shRenderDetail() {
   if (shBuilt !== s.id) {
     shBuilt = s.id;
     $('sh-root')._h = null;
-    $('sh-root').innerHTML = `<div class="sh-top"><a class="sh-back" href="#/stash">‹ Stash</a></div>
+    $('sh-root').innerHTML = `<div class="sh-top"><a class="sh-back" id="sh-back" href="#/stash">‹ Stash</a></div>
       <div id="sh-d-head"></div><div id="sh-d-banner"></div>
       <div class="sh-grid">
         <div class="card"><h3>Resources</h3>
@@ -100,6 +100,9 @@ function shRenderDetail() {
       </div>`;
     shWire();
   }
+  const back = $('sh-back');
+  back.href = s.project_id ? '#/projects/' + s.project_id : '#/stash';
+  back.textContent = s.project_id ? '‹ Project' : '‹ Stash';
   const resLine = `${s.resources} resource${s.resources === 1 ? '' : 's'} · ${s.passages} passage${s.passages === 1 ? '' : 's'}${s.model ? ' · indexed with ' + shModelLabel(s.model) : ''}`;
   setHTML('sh-d-head', `<div class="sh-top"><h1>${esc(s.name)}</h1>${shPill(s)}<span class="spacer"></span>
       ${s.status === 'needs_reindex' || s.failed ? '<button class="small primary" data-sh="reindex" data-id="' + esc(s.id) + '">Re-index</button>' : ''}
@@ -315,3 +318,8 @@ function shSources(m) {
   if (!m.sources || !m.sources.length) return '';
   return `<div class="sh-src"><span>Sources</span>${m.sources.map((s) => `<button type="button" data-sh="passage" data-stash="${esc(s.stash)}" data-index="${s.index}" title="${esc(s.snippet)}">[${s.n}] ${esc(s.resource)}${s.page ? ' · p. ' + s.page : ''}</button>`).join('')}</div>`;
 }
+
+// Project page: the project's own stash, made the first time.
+$('pj-stash-btn').onclick = async () => {
+  try { const r = await post(`/api/projects/${encodeURIComponent(pageArg)}/stash`); location.hash = '#/stash/' + r.id; } catch (e) { toast(e.message, 5000); }
+};

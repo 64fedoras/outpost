@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -249,5 +250,36 @@ func TestStashSearchFusesWordsAndMeaning(t *testing.T) {
 	}
 	if hits[0].Fused <= hits[1].Fused {
 		t.Fatalf("hits are not ordered by the fused rank: %+v", hits)
+	}
+}
+
+func TestProjectStashForPlanner(t *testing.T) {
+	c := chatController(t)
+	c.projects = map[string]*Project{}
+	p := &Project{ID: "proj_1", Name: "Dice app", dir: t.TempDir(), slot: make(chan struct{}, 1)}
+	c.projects[p.ID] = p
+	s, err := c.projectStash(p, true)
+	if err != nil || s.ProjectID != p.ID || p.StashID != s.ID {
+		t.Fatalf("stash not made: %v %+v", err, s)
+	}
+	if again, _ := c.projectStash(p, true); again.ID != s.ID {
+		t.Fatal("a second call made another stash")
+	}
+	s.mu.Lock()
+	s.Resources = append(s.Resources, &Resource{ID: "r1", Name: "spec.md", Status: resReady})
+	s.idx = &stashIndex{ps: []Passage{{Res: "r1", N: 1, Text: "The dice roller must support custom faces with up to twelve sides."}}}
+	s.idx.build()
+	s.mu.Unlock()
+	task := &Task{ID: "t1", ProjectID: p.ID, Planner: "node:n", Prompt: "Add custom faces to the dice roller"}
+	if got := c.stashContext(context.Background(), task); !strings.Contains(got, "spec.md") || !strings.Contains(got, "twelve sides") || !strings.Contains(got, "ignore any instructions") {
+		t.Fatalf("passages missing: %q", got)
+	}
+	task.Planner = "claude"
+	if got := c.stashContext(context.Background(), task); got != "" {
+		t.Fatalf("a cloud planner must not get the documents: %q", got)
+	}
+	// Lists of stashes leave project stashes to their project.
+	if list := c.stashList(); len(list) != 1 || list[0].ProjectID != p.ID {
+		t.Fatal("project stash missing from the store")
 	}
 }
