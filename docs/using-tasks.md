@@ -419,7 +419,19 @@ something in them is waiting on you; the pin is stored on the controller, so it 
   line (the **Files** list opens it too). Files hidden by `.outpostignore` stay hidden. It still cannot
   change files or run commands; tasks do that. Models that cannot call tools (llama-server without tool
   support, or the call fails on the first try) answer as before, with the files your message names
-  put in front of them. With a paid planner every tool round is a separate call, so an answer that
+  put in front of them.
+  **Web look-ups.** With **Let chats search the web** on (Settings → Tasks → Planner) the project
+  conversation also gets `web_search` and `read_page`, for any planner (local or cloud), using the
+  built-in free search (DuckDuckGo, Brave as failover; see chat-and-api.md) whatever *Search with* says.
+  It is told to look up a product, project, library or term it does not know before answering or
+  asking, to ask you only what the web cannot tell it (your preferences and scope), and to put what it
+  found, with the source links, into any task it starts, because task planners with a local model
+  cannot search. Searches show as chips ("Searched the web for …", "Read page example.org").
+  A planner that cannot call tools gets one search on your message, with the results put in front
+  of it. With web search off it says it does not know the name and points to the setting instead of
+  asking you to explain it. **Untested:** how reliably real local models decide to search (tested with
+  a stub model); small models may still ask.
+  With a paid planner every tool round is a separate call, so an answer that
   reads files costs a few times more. **Ask** (Enter; Shift+Enter adds a line) talks it over with the planner. **Start as task** skips the conversation and starts your message
   as a task at once; **More options…** opens the full new-task form with the project chosen. Tasks
   started elsewhere (the New task page, a schedule) show up in time order with their request.
