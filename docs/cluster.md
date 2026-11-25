@@ -142,6 +142,10 @@ controller restart or update starts the charts empty again.
 GPU on the card and as a chart, and turns red at 85 °C. On Linux NVIDIA cards are read with `nvidia-smi` (installed with the driver). Windows and
 macOS report no temperature, and the row is left out. Untested on real GPUs so far.
 
+**Apple Silicon GPU use.** Macs with Apple Silicon report how busy the GPU is and how much unified memory it
+holds (from `ioreg`'s accelerator statistics, no sudo), so the GPU meter and chart work there as on other
+nodes. If the figures are missing, nothing is shown rather than a false 0%. Intel Macs still report no GPU use.
+
 **GPU speed check.** Some GPUs are slower than the CPU next to them (old or small cards, or a backend that lacks
 the features llama.cpp's fast kernels need). Before the first model load on a new llama.cpp build, or after the GPUs
 change, a node with a discrete GPU times the smallest model it has (one that fits in 60% of its biggest GPU) with
@@ -215,4 +219,4 @@ for games, the model is unloaded when the node is not answering anything and the
 for 30 seconds, and loaded again after five minutes below 10%. While unloaded the card says *GPU in use* and the
 controller sends the node no work. It uses the utilisation the node already reports, so it cannot tell a game
 from any other program, and image generation on the same node counts as another program. The reading comes
-from the hardware sample (amdgpu sysfs on Linux, performance counters on Windows). On Linux, NVIDIA cards are read with `nvidia-smi`, so it works there only when that tool is installed. Neither reading has been tried with a real game.
+from the hardware sample (amdgpu sysfs on Linux, performance counters on Windows, `ioreg` on Apple Silicon Macs, which needs no sudo). On Linux, NVIDIA cards are read with `nvidia-smi`, so it works there only when that tool is installed. Neither reading has been tried with a real game.
