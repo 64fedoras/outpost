@@ -201,6 +201,26 @@ in Spending and the monthly cap. It needs that provider's API key. If there is n
 the cap would be passed or the search fails, the chat is still answered and the answer notes why the web
 was not used. When it did search, the answer notes how many searches and what it cost.
 
+**When a setting is in the way.** If a chat or the project conversation cannot do what you asked only
+because a setting is off, the answer ends with a small card: what was blocked, what turning it on does
+(and costs), and two buttons. **Turn on … and try again** changes that one setting and writes the answer
+again (in a chat the first answer is kept as another version; in a project the answer is replaced unless
+it started a task). **Not now** closes the card, and that conversation does not offer the same setting
+again. Nothing changes until you click. The model is told which features are off and marks the answer;
+plain phrases such as "I can't browse the internet" also count, for small models that skip the mark.
+Offered today:
+
+| Card | Changes | Where to change it back |
+| --- | --- | --- |
+| Turn on web search | *Let chats search the web*, for every chat and project. With no Claude key saved, *Search with* becomes the free built-in search | Settings → Tasks → Planner |
+| Turn on Run code | This chat only. Offered only when some node allows commands | The Run code switch above the message box |
+| Turn on memory | *Use memory*, everywhere | Settings → Memory |
+
+Missing API keys, a node's *Allow commands* switch and memory pooling are not offered: each needs a
+choice the card cannot make for you. Picking another model already has its own prompt (*Let chat switch
+models*). The cards are web UI only; API answers never carry them. **Untested:** how often real local
+models add the mark (tested with a stub model).
+
 **Export, personas and Compare.**
 - **Export** (header of an open chat): *Markdown* (`.md`, with headings and code blocks), *Plain text* (`.txt`), or *Print or save as PDF*, which opens your browser's print dialog with a clean copy of the chat (choose "Save as PDF" as the printer). Images and documents are listed by name, not embedded. Nothing is sent anywhere; the file is made in your browser.
 - **Personas**: in **Instructions**, pick a saved persona to fill the box, or write instructions and press **Save as persona…** to keep them under a name (saving under an existing name replaces its text). **Delete** removes a persona; chats that already use its text keep it. Personas are stored in the controller's settings and can be read and written with the `chat_personas` setting.

@@ -42,7 +42,7 @@ You can also look things up on the internet with web_search (find pages) and rea
 // projectNoWebHelp is added when web search is off.
 const projectNoWebHelp = `
 
-You cannot search the web here (web search is off). If the owner names a product or project you do not know, say so in one line, say that turning on "Let chats search the web" in Settings → Tasks lets you look it up, and ask only what you need.`
+You cannot search the web here (web search is off). If the owner names a product or project you do not know, say so in one line, ask only what you need, and end your answer with the line [[offer: web_search]]: the owner then gets a button that turns web search on and asks you again (setting_offers.go).`
 
 // projectReads runs the tools for one answer and keeps what was looked at.
 type projectReads struct {
