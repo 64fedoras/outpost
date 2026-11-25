@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 const (
@@ -90,6 +92,29 @@ func (c *Controller) recordHealth(node, kind string) {
 			}
 		}
 	}
+}
+
+// plannedRestartWindow is how long after an update, rollback or restart
+// request a dropped connection still counts as planned.
+const plannedRestartWindow = 10 * time.Minute
+
+// plannedRestartLocked reports whether a node's dropped connection was a
+// restart someone asked for, which must not lower its health score: an
+// Outpost update or rollback (the node sends "restarting" just before it goes,
+// or has already come back on the new version), a restart from the web UI,
+// or the node closing with "service restart" (restart from the controller or
+// the tray icon).
+func plannedRestartLocked(u *UpdateStatus, restartAsked time.Time, code websocket.StatusCode, now time.Time) bool {
+	if code == websocket.StatusServiceRestart {
+		return true
+	}
+	if !restartAsked.IsZero() && now.Sub(restartAsked) < plannedRestartWindow {
+		return true
+	}
+	if u != nil && (u.State == "restarting" || u.State == "done") && now.Sub(u.Updated) < plannedRestartWindow {
+		return true
+	}
+	return false
 }
 
 func trimHealth(ev []healthEvent, now time.Time) []healthEvent {

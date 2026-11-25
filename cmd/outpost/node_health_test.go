@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 func TestScoreHealth(t *testing.T) {
@@ -70,5 +72,32 @@ func TestHealthThresholdsFromSettings(t *testing.T) {
 	}
 	if _, col, _ := scoreHealth(ev, now, 2, 4); col != "red" {
 		t.Fatalf("4 points with red at 4 should be red, got %s", col)
+	}
+}
+
+func TestPlannedRestart(t *testing.T) {
+	now := time.Now()
+	recent, old := now.Add(-time.Minute), now.Add(-time.Hour)
+	cases := []struct {
+		name    string
+		u       *UpdateStatus
+		asked   time.Time
+		code    websocket.StatusCode
+		planned bool
+	}{
+		{"plain drop", nil, time.Time{}, -1, false},
+		{"node said service restart", nil, time.Time{}, websocket.StatusServiceRestart, true},
+		{"restart asked from the UI", nil, recent, -1, true},
+		{"restart asked long ago", nil, old, -1, false},
+		{"update restarting", &UpdateStatus{State: "restarting", Updated: recent}, time.Time{}, -1, true},
+		{"just came back from update", &UpdateStatus{State: "done", Updated: recent}, time.Time{}, -1, true},
+		{"update done long ago", &UpdateStatus{State: "done", Updated: old}, time.Time{}, -1, false},
+		{"update failed", &UpdateStatus{State: "failed", Updated: recent}, time.Time{}, -1, false},
+		{"still downloading", &UpdateStatus{State: "downloading", Updated: recent}, time.Time{}, -1, false},
+	}
+	for _, c := range cases {
+		if got := plannedRestartLocked(c.u, c.asked, c.code, now); got != c.planned {
+			t.Errorf("%s: planned = %v, want %v", c.name, got, c.planned)
+		}
 	}
 }
