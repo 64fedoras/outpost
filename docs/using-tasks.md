@@ -89,7 +89,8 @@ Each task is a conversation:
    **Looks right, plan it**. A request that settles everything shows no Assumed row. Unattended and
    scheduled runs never ask and record their assumptions the same way.
 3. **The plan appears as a card.** Approve it, adjust the cap, or reply with changes ("use SQLite
-   instead", "drop the web UI") and it revises the plan. Nothing runs until you approve.
+   instead", "drop the web UI") and it revises the plan. Nothing runs until you approve, except
+   for a task the project conversation started for you (see Projects below) and scheduled runs.
    The card also says roughly how long the first pass will take, for example "about 9 min on 4
    nodes (writing 8 min, tests 1 min)", and each subtask shows "~3 min on gpu-desktop". The estimate
    assumes each subtask goes to the node where it would finish first (hard ones only to the strongest
@@ -412,6 +413,11 @@ something in them is waiting on you; the pin is stored on the controller, so it 
   starts tasks for work you ask for, at most 3 per answer. Each task it starts appears under its answer
   as a live card (status, the subtask progress strip, the result note, **Answer** / **Review plan** /
   **✓ Resolve**), so questions and results come back into the conversation.
+  A task the conversation starts **begins on its own** once its plan is ready (the thread says
+  "Started on its own"; **Stop** ends it), because the conversation already settled what to do. It
+  still stops at the plan card for you when the planner asks questions, when the plan deletes or
+  renames files, when the planner is Claude or OpenRouter (it costs money), and when you have
+  already seen a plan and asked for changes. **Start as task** keeps the usual plan review.
   Before answering it can **read the project's files** with read-only tools: list files, read a file
   or a range of lines, search (plain text or a regular expression) and outline (declarations only),
   at most 12 calls per answer. Each call shows as a chip above the answer ("Read src/app.go 1-80");
