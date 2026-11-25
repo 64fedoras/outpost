@@ -172,8 +172,17 @@ small model on it the same way, using a model up to a quarter of the node's RAM,
 iGPU is used only when it generates at least as fast as 90% of the CPU: otherwise, and until it has been measured,
 models run on the CPU, as before. Its shared memory is never counted as VRAM; when it wins, Pick best multiplies the
 CPU speed estimate by the measured gain (capped at 3x, since it shares the CPU's memory bandwidth). A machine that also
-has a discrete GPU ignores its integrated one. A node that moves to the Vulkan build downloads it once. Untested on real
+has a discrete GPU does not use its integrated one (llama.cpp's Vulkan backend skips integrated GPUs when a discrete
+one is present), but the node card still lists it as "Integrated GPU: ... not used". This includes a desktop Ryzen's
+iGPU with a 2 GB carve-out next to a bigger card, which earlier versions did not list at all. A node that moves to the Vulkan build downloads it once. Untested on real
 Intel or AMD integrated graphics and on Windows.
+
+**Missing GPU drivers (Linux).** If a node has a GPU, discrete or integrated, that llama.cpp would use through Vulkan
+but its maker has no Vulkan driver installed (no matching file in `/usr/share/vulkan/icd.d`), the card shows a "GPU
+driver" warning and the details say which GPU is affected and what to install (`mesa-vulkan-drivers` for AMD and Intel,
+the vendor driver for NVIDIA). An integrated GPU is named even when a discrete card exists, since Outpost ignores it
+then but you may want it working. The check only reads the driver files: it does not prove Vulkan can use the GPU once
+they are installed. Windows is not checked (its graphics drivers include Vulkan). Untested on real hardware.
 
 **GPUs on Intel Macs** (for example the AMD FirePro cards in a 2013 Mac Pro) are read with `system_profiler` and
 listed in the node's details. An Intel Mac with a discrete GPU gets a llama.cpp build with Metal (Outpost's AVX-only

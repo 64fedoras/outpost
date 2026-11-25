@@ -4,19 +4,37 @@ import "testing"
 
 func TestIsLinuxIntegrated(t *testing.T) {
 	for _, c := range []struct {
-		vendor, vram uint64
-		want         bool
+		vendor   uint64
+		discrete bool
+		want     bool
 	}{
-		{0x8086, 0, true},         // Intel iGPU reports no dedicated memory
-		{0x1002, 512 << 20, true}, // AMD APU with a small carve-out
-		{0x1002, 8 << 30, false},  // discrete Radeon
-		{0x10de, 0, false},        // NVIDIA is never integrated
-		{0x1af4, 0, false},        // virtio display adapter
-		{0x8086, 12 << 30, false}, // Intel Arc
+		{0x8086, false, true},  // Intel iGPU
+		{0x1002, false, true},  // AMD APU
+		{0x1002, true, false},  // discrete Radeon
+		{0x10de, false, false}, // NVIDIA is never integrated
+		{0x1af4, false, false}, // virtio display adapter
+		{0x8086, true, false},  // Intel Arc
 	} {
-		if got := isLinuxIntegrated(c.vendor, c.vram); got != c.want {
-			t.Errorf("%#x/%d: got %v", c.vendor, c.vram, got)
+		if got := isLinuxIntegrated(c.vendor, c.discrete); got != c.want {
+			t.Errorf("%#x/%v: got %v", c.vendor, c.discrete, got)
 		}
+	}
+}
+
+// A desktop Ryzen's iGPU (2 GB carve-out) next to a 16 GB Radeon: the Radeon is the discrete
+// GPU and the iGPU is left for linuxIntegratedGPUs, so it is listed (found on a real node).
+func TestPickDiscreteDesktopRyzen(t *testing.T) {
+	all := []sysGPU{{"igpu", 0x1002, 2 << 30}, {"dgpu", 0x1002, 16 << 30}, {"virt", 0x1af4, 0}}
+	got := pickDiscrete(all)
+	if len(got) != 1 || got[0] != "dgpu" {
+		t.Fatalf("discrete = %v", got)
+	}
+	if !isLinuxIntegrated(0x1002, false) {
+		t.Error("the left-over AMD device must count as integrated")
+	}
+	// Without the big card, a 2 GB AMD device stays a small discrete GPU (known gap) and a 512 MB one is integrated.
+	if got := pickDiscrete([]sysGPU{{"a", 0x1002, 2 << 30}, {"b", 0x8086, 0}}); len(got) != 1 || got[0] != "a" {
+		t.Errorf("no big card: %v", got)
 	}
 }
 
