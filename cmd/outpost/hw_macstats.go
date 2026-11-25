@@ -1,6 +1,8 @@
 package main
 
 import (
+	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -89,7 +91,7 @@ func parsePSCPU(out string, cpus int) float64 {
 	return float64(int(pct*10)) / 10
 }
 
-// sampleDarwin fills CPU %, RAM and swap for a macOS host. Failures leave the
+// sampleDarwin fills CPU %, RAM and swap for a macOS host, and GPU use on Apple Silicon. Failures leave the
 // field at zero, as on the other platforms.
 func (s *statSampler) sampleDarwin(hb *Heartbeat, cpus int) {
 	if v, err := strconv.ParseUint(strings.TrimSpace(cmdOut("/usr/sbin/sysctl", "-n", "hw.memsize")), 10, 64); err == nil {
@@ -101,4 +103,40 @@ func (s *statSampler) sampleDarwin(hb *Heartbeat, cpus int) {
 	}
 	hb.SwapUsedBytes = parseSwapUsage(cmdOut("/usr/sbin/sysctl", "-n", "vm.swapusage"))
 	hb.CPUPct = parsePSCPU(cmdOut("/bin/ps", "-A", "-o", "%cpu"), cpus)
+	if runtime.GOARCH == "arm64" {
+		// Apple Silicon: one GPU (the "apple" entry hw.go adds), so one value each.
+		if util, used, ok := parseIORegGPU(cmdOut("/usr/sbin/ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator")); ok {
+			hb.GPUUtilPct = append(hb.GPUUtilPct, util)
+			hb.VRAMUsedBytes = append(hb.VRAMUsedBytes, used)
+		}
+	}
+}
+
+var (
+	ioregUtilRe = regexp.MustCompile(`"Device Utilization %"=(\d+)`)
+	ioregUsedRe = regexp.MustCompile(`"In use system memory"=(\d+)`)
+)
+
+// parseIORegGPU reads the GPU's busy percent and the memory it holds from the
+// PerformanceStatistics of the first accelerator in
+// `ioreg -r -d 1 -w 0 -c IOAccelerator` (no sudo needed). On Apple Silicon the
+// memory is unified RAM the GPU has in use. ok is false when the output has no
+// utilisation figure, so nothing is reported rather than a false 0%.
+func parseIORegGPU(out string) (util int, used uint64, ok bool) {
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, `"PerformanceStatistics"`) {
+			continue
+		}
+		m := ioregUtilRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		util, _ = strconv.Atoi(m[1])
+		util = min(max(util, 0), 100)
+		if u := ioregUsedRe.FindStringSubmatch(line); u != nil {
+			used, _ = strconv.ParseUint(u[1], 10, 64)
+		}
+		return util, used, true
+	}
+	return 0, 0, false
 }
