@@ -19,7 +19,8 @@ type Hardware struct {
 	CPU      CPUInfo
 	RAMBytes uint64
 	GPUs     []GPUInfo
-	// Integrated holds Intel iGPUs and AMD APUs, listed only when the machine has no discrete GPU.
+	// Integrated holds Intel iGPUs and AMD APUs. They are listed even next to a discrete GPU so the
+	// node can show them, but only used (checkGPUs) when there is no discrete one.
 	Integrated []GPUInfo
 	Backends   []string
 }
@@ -40,10 +41,9 @@ func detectHardware() Hardware {
 		linuxCPU(&hw.CPU)
 		mi := readMeminfo()
 		hw.RAMBytes = mi["MemTotal"]
-		hw.GPUs = linuxGPUs()
-		if len(hw.GPUs) == 0 {
-			hw.Integrated = linuxIntegratedGPUs()
-		}
+		discrete := linuxGPUDevices()
+		hw.GPUs = linuxGPUs(discrete)
+		hw.Integrated = linuxIntegratedGPUs(discrete)
 	case "darwin":
 		hw.CPU.Model = strings.TrimSpace(cmdOut("sysctl", "-n", "machdep.cpu.brand_string"))
 		if v, err := strconv.ParseUint(strings.TrimSpace(cmdOut("sysctl", "-n", "hw.memsize")), 10, 64); err == nil {
@@ -67,9 +67,7 @@ func detectHardware() Hardware {
 		windowsCPU(&hw.CPU)
 		hw.RAMBytes = windowsRAM()
 		hw.GPUs = windowsGPUs()
-		if len(hw.GPUs) == 0 {
-			hw.Integrated = windowsIntegratedGPUs()
-		}
+		hw.Integrated = windowsIntegratedGPUs()
 	}
 	seen := map[string]bool{"cpu": true}
 	for _, g := range hw.GPUs {
@@ -274,11 +272,7 @@ func readUint(p string) uint64 {
 // example the 2 GB carve-out on a Ryzen desktop CPU) is card0. When a GPU with
 // 4 GB or more exists, smaller ones are dropped as integrated.
 func linuxGPUDevices() []string {
-	type dv struct {
-		dir  string
-		vram uint64
-	}
-	var all []dv
+	var all []sysGPU
 	smi := nvidiaSMI()
 	nv := 0
 	cards, _ := filepath.Glob("/sys/class/drm/card[0-9]*")
@@ -292,24 +286,42 @@ func linuxGPUDevices() []string {
 			continue // connector entries like card0-DP-1
 		}
 		dev := filepath.Join(card, "device")
-		switch readUint(filepath.Join(dev, "vendor")) {
+		vendor := readUint(filepath.Join(dev, "vendor"))
+		vram := readUint(filepath.Join(dev, "mem_info_vram_total"))
+		if vram == 0 && vendor == 0x10de {
+			vram = nvidiaVRAMTotal(devSlot(dev), smi, nv == 1)
+		}
+		all = append(all, sysGPU{dev, vendor, vram})
+	}
+	return pickDiscrete(all)
+}
+
+// sysGPU is one /sys/class/drm graphics device.
+type sysGPU struct {
+	dir    string
+	vendor uint64
+	vram   uint64
+}
+
+// pickDiscrete chooses the discrete GPUs, biggest VRAM first: AMD, NVIDIA and Intel devices, minus
+// AMD/Intel ones under 1 GB, minus everything under 4 GB when a card with 4 GB or more exists.
+func pickDiscrete(all []sysGPU) []string {
+	var keep []sysGPU
+	for _, d := range all {
+		switch d.vendor {
 		case 0x1002, 0x10de, 0x8086:
 		default:
 			continue
 		}
-		vram := readUint(filepath.Join(dev, "mem_info_vram_total"))
-		if vram == 0 && readUint(filepath.Join(dev, "vendor")) == 0x10de {
-			vram = nvidiaVRAMTotal(devSlot(dev), smi, nv == 1)
-		}
-		if readUint(filepath.Join(dev, "vendor")) != 0x10de && vram < 1<<30 {
+		if d.vendor != 0x10de && d.vram < 1<<30 {
 			continue // integrated or virtual display adapter
 		}
-		all = append(all, dv{dev, vram})
+		keep = append(keep, d)
 	}
-	sort.SliceStable(all, func(i, j int) bool { return all[i].vram > all[j].vram })
-	big := len(all) > 0 && all[0].vram >= 4<<30
+	sort.SliceStable(keep, func(i, j int) bool { return keep[i].vram > keep[j].vram })
+	big := len(keep) > 0 && keep[0].vram >= 4<<30
 	out := []string{}
-	for _, d := range all {
+	for _, d := range keep {
 		if big && d.vram < 4<<30 {
 			continue
 		}
@@ -319,16 +331,23 @@ func linuxGPUDevices() []string {
 }
 
 // isLinuxIntegrated says whether a sysfs graphics device is an Intel iGPU or AMD APU: an Intel
-// or AMD device with under 1 GB of dedicated memory (Intel reports none). NVIDIA and virtual
-// display adapters (other vendors) are never integrated.
-func isLinuxIntegrated(vendor, vram uint64) bool {
-	return (vendor == 0x1002 || vendor == 0x8086) && vram < 1<<30
+// or AMD device that is not one of the discrete GPUs, either because it has under 1 GB of
+// dedicated memory (Intel reports none) or because a card with 4 GB or more outranks it (a
+// desktop Ryzen's 2 GB carve-out next to a discrete card). NVIDIA and virtual display adapters
+// (other vendors) are never integrated.
+func isLinuxIntegrated(vendor uint64, discrete bool) bool {
+	return (vendor == 0x1002 || vendor == 0x8086) && !discrete
 }
 
-// linuxIntegratedGPUs lists integrated graphics from /sys/class/drm. They are only used when
-// the machine has no discrete GPU (see Hardware.checkGPUs).
-func linuxIntegratedGPUs() []GPUInfo {
+// linuxIntegratedGPUs lists integrated graphics from /sys/class/drm: the Intel and AMD devices
+// that linuxGPUDevices did not take as discrete. They are only used when the machine has no
+// discrete GPU (see Hardware.checkGPUs), but always listed so the node can show them.
+func linuxIntegratedGPUs(discrete []string) []GPUInfo {
 	out := []GPUInfo{}
+	isDiscrete := map[string]bool{}
+	for _, d := range discrete {
+		isDiscrete[d] = true
+	}
 	cards, _ := filepath.Glob("/sys/class/drm/card[0-9]*")
 	for _, card := range cards {
 		if strings.Contains(filepath.Base(card), "-") {
@@ -336,10 +355,10 @@ func linuxIntegratedGPUs() []GPUInfo {
 		}
 		dev := filepath.Join(card, "device")
 		vendor := readUint(filepath.Join(dev, "vendor"))
-		vram := readUint(filepath.Join(dev, "mem_info_vram_total"))
-		if !isLinuxIntegrated(vendor, vram) {
+		if !isLinuxIntegrated(vendor, isDiscrete[dev]) {
 			continue
 		}
+		vram := readUint(filepath.Join(dev, "mem_info_vram_total"))
 		g := GPUInfo{Vendor: "amd", Backend: "vulkan", VRAMBytes: vram, Integrated: true, Name: gpuName(dev)}
 		if vendor == 0x8086 {
 			g.Vendor = "intel"
@@ -351,9 +370,8 @@ func linuxIntegratedGPUs() []GPUInfo {
 
 // linuxGPUs finds discrete GPUs through /sys/class/drm. AMD exposes VRAM and
 // busy % there, which is all v0 needs; names come from lspci when present.
-func linuxGPUs() []GPUInfo {
+func linuxGPUs(devs []string) []GPUInfo {
 	out := []GPUInfo{}
-	devs := linuxGPUDevices()
 	smi := nvidiaSMI()
 	for _, dev := range devs {
 		g := GPUInfo{}

@@ -76,6 +76,7 @@ function nodeFacts(n) {
     else if (hb && hb.llama_error && !ready) issues.push({ lvl: 'bad', short: 'Model error', text: hb.llama_error, act: 'load', fix: 'Load model…' });
     if (hb && hb.paused) issues.push({ lvl: 'warn', short: 'Paused', text: pauseText(n), ...(canPause(n) ? { act: 'node-resume', fix: 'Resume' } : {}) });
     if (h.os === 'linux' && ((h.gpus || []).some((x) => x.vendor !== 'apple') || (h.integrated_gpus || []).length) && !h.vulkan_available) issues.push({ lvl: 'warn', short: 'No Vulkan', text: 'GPU found, but no Vulkan driver, so models run on CPU.' });
+    if ((h.missing_drivers || []).length) issues.push({ lvl: 'warn', short: 'GPU driver', text: `${h.missing_drivers.map((g) => g.name || 'A GPU').join(', ')} found, but no Vulkan driver for it, so it is not used.` });
     if (h.models_free_bytes && h.models_free_bytes < 10 * 1024 ** 3) issues.push({ lvl: 'warn', short: 'Low disk', text: `${bytes(h.models_free_bytes)} free for models. The next model copy may need a cleanup.`, act: 'clean', fix: 'Clean up…' });
     const sf = storageFacts(n);
     if (sf && sf.full) issues.push({ lvl: 'warn', short: 'At limit', text: `Outpost uses ${bytes(sf.u.total)} of its ${bytes(sf.lim)} storage limit. New models are ${n.storage_full === 'refuse' ? 'refused' : 'only copied after old ones are removed'}.`, act: 'clean', fix: 'Clean up…' });
@@ -477,6 +478,7 @@ function nodeCard(n) {
       ${n.pool_names && n.pool_names.length ? `<div class="sub wrap u15">Pooled with <b>${n.pool_names.map(esc).join(', ')}</b></div>` : ''}
       <div class="sub u15">${h.runtime ? `llama.cpp ${esc(h.runtime.build)} · ${esc(h.runtime.variant)}` : 'llama.cpp installs on first load'}${stored.length ? ' · stored: ' + stored.map((m) => `${esc(m.name)}${inUse.has(m.name) ? '' : ` <a href="#" data-act="rm-node-model" data-id="${n.id}" data-name="${esc(m.name)}" title="Delete from this node">×</a>`}`).join(', ') + (n.online ? ` · <a href="#" data-act="clean" data-id="${n.id}">clean up…</a>` : '') : ''}</div>
       ${hb && hb.llama_error && !ready ? `<div class="note bad u15">${esc(hb.llama_error)}</div>` : ''}
+      ${(h.missing_drivers || []).length ? `<div class="note warn u15">${h.missing_drivers.map((g) => esc(g.name || 'A GPU')).join(', ')}: found, but no Vulkan driver for ${h.missing_drivers.length > 1 ? 'them' : 'it'}, so ${h.missing_drivers.length > 1 ? 'they are' : 'it is'} not used. On the node: <code>${h.missing_drivers.some((g) => g.vendor === 'nvidia') ? 'install the NVIDIA driver from your distribution' : 'sudo apt install mesa-vulkan-drivers'}</code>${h.missing_drivers.some((g) => g.vendor === 'nvidia') && h.missing_drivers.some((g) => g.vendor !== 'nvidia') ? ' and <code>sudo apt install mesa-vulkan-drivers</code>' : ''}, then load the model again. Other distributions: the package that provides Vulkan drivers (for example <code>mesa-vulkan-drivers</code> or <code>vulkan-radeon</code>).</div>` : ''}
       ${needsVulkan ? `<div class="note warn u15">GPU found, but no Vulkan driver, so models run on CPU. On the node: <code>sudo apt install libvulkan1 mesa-vulkan-drivers</code>, then load the model again.</div>` : ''}
       ${opView(n)}
     </div>`;
@@ -486,6 +488,7 @@ function nodeCard(n) {
     <div class="metric"><span class="k">CPU</span>${bar(hb ? hb.cpu_pct : 0)}<span class="v">${hb ? hb.cpu_pct.toFixed(1) + '%' : '—'}</span></div>
     <div class="metric"><span class="k">RAM</span>${bar(ramPct)}<span class="v">${hb ? bytes(hb.ram_used_bytes) + '/' + bytes(hb.ram_total_bytes) : '—'}</span></div>
     ${gpus}
+    ${igpuLines(h)}
     ${histBox(n)}
     ${paused ? `<div class="note warn u17 nv-note"><span class="nv-grow">${esc(pauseText(n))}</span>${canPause(n) ? `<button class="small" data-act="node-resume" data-id="${n.id}">Resume</button>` : ''}</div>` : ''}
     <div class="sub u17">${status}${hb && hb.swap_used_bytes ? ` · swap ${bytes(hb.swap_used_bytes)}` : ''}${n.addr ? ` · ${esc(n.addr.split(':')[0])}` : ''}${!n.online && n.can_wake ? ` · <a href="#" data-act="wake" data-id="${n.id}">Wake</a>` : ''}</div>
@@ -702,6 +705,12 @@ async function toggleYield(id) {
   const n = nodeById(id);
   try { await post(`/api/nodes/${id}/settings`, { yield_gpu: n.yield_gpu === false }); toast((n.yield_gpu !== false) ? 'Off' : 'On: the model unloads while another program keeps the GPU busy'); } catch (e) { toast(e.message); }
   refresh();
+}
+// igpuLines names the node's integrated GPUs and whether they run models: never next to a discrete
+// GPU (llama.cpp's Vulkan backend skips them then), otherwise when the speed check says they win.
+function igpuLines(h) {
+  const dgpu = (h.gpus || []).length > 0;
+  return (h.integrated_gpus || []).map((g) => `<div class="sub u19">Integrated GPU: ${esc(g.name || 'GPU')} · ${dgpu ? 'not used: the discrete GPU runs models' : h.gpu_check && h.gpu_check.slower ? 'not used: slower than the CPU' : h.gpu_check && !h.gpu_check.skipped ? 'used' : 'used if faster than the CPU'}</div>`).join('');
 }
 // gpuCheckLine shows the node's GPU vs CPU speed check (node_gpucheck.go) for nodes with a discrete or integrated GPU.
 function gpuCheckLine(n, h) {

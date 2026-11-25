@@ -156,7 +156,8 @@ type Hello struct {
 	Glibc             string       `json:"glibc,omitempty"`           // Linux: this machine's glibc version, e.g. "2.35"
 	GPUCheck          *GPUCheck    `json:"gpu_check,omitempty"`       // GPU vs CPU speed on the installed build (node_gpucheck.go)
 	NvidiaDriver      string       `json:"nvidia_driver,omitempty"`   // installed NVIDIA driver version (Windows), decides whether the CUDA build is tried
-	IntegratedGPUs    []GPUInfo    `json:"integrated_gpus,omitempty"` // iGPUs on a node with no discrete GPU; kept apart from GPUs so they never count as VRAM
+	IntegratedGPUs    []GPUInfo    `json:"integrated_gpus,omitempty"` // Intel iGPUs and AMD APUs, also listed next to a discrete GPU (then unused); kept apart from GPUs so they never count as VRAM
+	MissingDrivers    []GPUInfo    `json:"missing_drivers,omitempty"` // Linux: GPUs (discrete or integrated) with no Vulkan driver installed, so they sit unused
 	GPUTrials         []GPUTrial   `json:"gpu_trials,omitempty"`      // Vulkan and CUDA timings on these GPUs (cuda.go)
 	CUDABlocked       bool         `json:"-"`                         // controller only: a CUDA install failed here lately
 	MetalFailed       string       `json:"metal_failed,omitempty"`    // the Metal build did not start, so the CPU build is used
