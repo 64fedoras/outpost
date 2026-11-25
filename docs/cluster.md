@@ -131,8 +131,7 @@ does not cross routers.
 
 ## Last-hour charts and GPU temperature
 
-Each node card in the Grid view shows small charts under its gauges: CPU, GPU (or RAM when the node has no
-GPU), VRAM and speed. The node's details (click the card, or *Details*) show a *Last hour* box with one row per
+The node's details (click its row on the Nodes page, or *Details*) show a *Last hour* box with one row per
 value: the chart, the latest value and the range. Points are 30-second averages of the heartbeats; speed is the
 measured benchmark speed of the loaded model, so it shows a gap while no model is loaded.
 

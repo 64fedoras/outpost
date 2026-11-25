@@ -30,5 +30,19 @@ node.update_to = '0.19.6';
 try { A.renderNodeDrawer([node]); ok('panel shows the update chip', drawer.html.includes('upd-chip'), drawer.html.slice(0, 300)); } catch (e) { ok('panel shows the update chip', false, e.stack); }
 A.open(null);
 try { A.renderNodeDrawer([node]); ok('closed panel is empty', drawer.html === ''); } catch (e) { ok('closed panel is empty', false, e.stack); }
+
+// The Grid view is gone: a saved "grid" preference is dropped and the page opens on the List.
+{
+  const removed = [];
+  const b2 = Object.assign({}, box, { localStorage: { getItem: (k) => (k === 'outpost.nodeView' ? 'grid' : null), setItem() {}, removeItem: (k) => removed.push(k) } });
+  vm.createContext(b2);
+  vm.runInContext(src + '\nthis.api2 = { view: () => nodeView, views: NODE_VIEWS, set: setNodeView, grid: typeof nodeGridView };', b2);
+  const B = b2.api2;
+  ok('saved grid view falls back to the list', B.view() === 'list', B.view());
+  ok('saved grid preference is removed', removed.includes('outpost.nodeView'), JSON.stringify(removed));
+  ok('grid is not a view any more', !B.views.includes('grid') && B.grid === 'undefined');
+  B.set('grid');
+  ok('asking for the grid keeps the list', B.view() === 'list', B.view());
+}
 if (failed) { console.error(`${failed} of ${n} failed`); process.exit(1); }
 console.log(`nodedrawer: ${n} checks passed`);
