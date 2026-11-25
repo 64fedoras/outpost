@@ -38,6 +38,8 @@ type ProjectChatMsg struct {
 	Reads []string  `json:"reads,omitempty"` // assistant: files it listed, read, searched or outlined
 	// Suggest is a fact for this project's memory offered by a node planner (memory.go).
 	Suggest string `json:"suggest,omitempty"`
+	// Offer is a setting that blocked this answer, shown as a card until answered (setting_offers.go).
+	Offer *SettingOffer `json:"offer,omitempty"`
 }
 
 type projectChat struct {
@@ -45,9 +47,11 @@ type projectChat struct {
 	path     string
 	Messages []ProjectChatMsg `json:"messages"`
 	MemTries int              `json:"mem_tries,omitempty"` // answers that asked for a memory suggestion
-	busy     bool
-	cancel   context.CancelFunc
-	reading  []string // chips of the answer being written
+	// OffersDeclined are setting offers the owner said Not now to here (setting_offers.go).
+	OffersDeclined []string `json:"offers_declined,omitempty"`
+	busy           bool
+	cancel         context.CancelFunc
+	reading        []string // chips of the answer being written
 }
 
 type projectChatView struct {
@@ -193,11 +197,18 @@ func (c *Controller) handleProjectChat(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 409, map[string]string{"error": "still answering the last message; wait or press Stop"})
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), chatWait+projectChatMax)
-	pc.busy, pc.cancel = true, cancel
 	pc.Messages = append(pc.Messages, ProjectChatMsg{ID: newID("m"), Role: "user", Text: text, Time: time.Now()})
 	pc.saveLocked()
+	c.startProjectAnswerLocked(p, pc)
 	pc.mu.Unlock()
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// startProjectAnswerLocked answers the conversation's last message in the
+// background; pc.mu must be held and pc.busy false.
+func (c *Controller) startProjectAnswerLocked(p *Project, pc *projectChat) {
+	ctx, cancel := context.WithTimeout(context.Background(), chatWait+projectChatMax)
+	pc.busy, pc.cancel = true, cancel
 	go func() {
 		defer cancel()
 		msg := c.answerProjectChat(ctx, p, pc)
@@ -208,7 +219,6 @@ func (c *Controller) handleProjectChat(w http.ResponseWriter, r *http.Request) {
 		pc.saveLocked()
 		pc.mu.Unlock()
 	}()
-	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
 func (c *Controller) handleProjectChatStop(w http.ResponseWriter, r *http.Request) {
@@ -292,7 +302,8 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 	p.mu.Lock()
 	repo, name := p.repoDir(), p.Name
 	p.mu.Unlock()
-	system := c.projectChatSystem(p)
+	scope := offerScope{project: p}
+	system := c.projectChatSystem(p) + c.offerPrompt(scope)
 	user := projectChatTranscript(hist, projectChatHistory)
 	last := ""
 	for i := len(hist) - 1; i >= 0; i-- {
@@ -429,7 +440,8 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 		pr.note(clip(ws.problemNote(), 120))
 	}
 	reply, asks := splitTaskBlocks(text)
-	msg := ProjectChatMsg{Text: reply, Who: who, Cost: cost, Reads: pr.Notes}
+	reply, offer := c.takeOffer(reply, scope)
+	msg := ProjectChatMsg{Text: reply, Who: who, Cost: cost, Reads: pr.Notes, Offer: offer}
 	if memInfer != nil && c.memorySuggestOn() {
 		pc.mu.Lock()
 		ask := pc.MemTries < maxMemoryTries

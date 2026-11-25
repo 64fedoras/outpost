@@ -225,7 +225,7 @@ function chatBubble(m, i, last) {
   const meta = [m.model && `${esc(m.model)}`, m.node && `on ${esc(m.node)}`, m.tok_s && `${m.tok_s} tok/s`, chatCacheTag(m), m.note && esc(m.note), chatNeedTag(m)].filter(Boolean).join(' · ');
   const acts = `<div class="chat-acts">${chatVer(m, busy)}<button data-regen="${esc(m.id)}" ${busy ? 'disabled' : ''} title="Answer again; this answer stays as an earlier version">↻ Regenerate</button>${chatTryOn(m, busy)}${m.cut && i === chatCur.messages.length - 1 ? `<button data-continue ${busy ? 'disabled' : ''} title="The answer stopped at the length limit: ask the model to carry on">▶ Continue</button>` : ''}${m.text ? `<button data-copy-msg="${i}" title="Copy the answer">⧉ Copy</button>` : ''}${m.research && m.text ? `<button data-rs-open="${esc(m.id)}" title="Open the report in the side panel to download it or save it to a project">¶ Open report</button>` : ''}<button data-branch="${esc(m.id)}" title="Start a new chat with the conversation up to here">⑂ Branch</button>${m.text && typeof skillAnswerAct === 'function' ? skillAnswerAct(chatCur.messages, i) : ''}</div>`;
   if (m.error) return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}<div class="error-msg">${m.error === 'stopped' ? 'Stopped.' : esc(m.error)}</div>${m.note ? `<div class="sub">${esc(m.note)}</div>` : ''}${acts}</div>`;
-  return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}${chatThinkFold(m.id, m.think_s ? `Thought for ${m.think_s} s` : 'Thinking', m.think)}${shSearched(m)}<div class="chat-text md">${md(m.text)}</div>${shSources(m)}${pvCards(pvCollect(m.text))}${meta ? `<div class="sub">${meta}</div>` : ''}${acts}${memSuggestCard(m, { chat: chatCur.id })}</div>`;
+  return `<div class="chat-answer">${chatRuns(m)}${researchCard(m)}${chatThinkFold(m.id, m.think_s ? `Thought for ${m.think_s} s` : 'Thinking', m.think)}${shSearched(m)}<div class="chat-text md">${md(m.text)}</div>${shSources(m)}${pvCards(pvCollect(m.text))}${meta ? `<div class="sub">${meta}</div>` : ''}${acts}${offerCard(m, { chat: chatCur.id })}${memSuggestCard(m, { chat: chatCur.id })}</div>`;
 }
 function chatRender() {
   if (!chatCur) return;
@@ -313,7 +313,7 @@ function chatRenderLive() {
   else if (c.total && c.read < c.total) bw = chatWorking('Reading your message', `${Math.round(100 * c.read / c.total)}%${c.left > 0 ? ', about ' + c.left + ' s left' : ''}`, 100 * c.read / c.total);
   else bw = chatWorking('Working', '');
   if (c.think) label = c.text ? `Thought for ${secs(c.tThink, c.tWrite)} s` : `Thinking… ${secs(c.tThink)} s`;
-  setHTML('chat-live', `${rs}<div class="chat-answer">${chatThinkFold('live', label, c.think)}${c.text ? `<div class="chat-text md">${md(c.text)}</div>` : ''}${bw}<div class="sub">${esc(c.node || '')}${rate ? ' · ' + esc(rate) : ''}</div></div>`);
+  setHTML('chat-live', `${rs}<div class="chat-answer">${chatThinkFold('live', label, c.think)}${c.text ? `<div class="chat-text md">${md(offerStrip(c.text))}</div>` : ''}${bw}<div class="sub">${esc(c.node || '')}${rate ? ' · ' + esc(rate) : ''}</div></div>`);
   const tb = el.querySelector('.think[open] .think-body'); if (tb) tb.scrollTop = tb.scrollHeight;
   const box = $('chat-msgs');
   if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) box.scrollTop = box.scrollHeight;

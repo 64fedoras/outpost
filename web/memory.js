@@ -1,7 +1,9 @@
 'use strict';
 // Memory (memory.go): Settings → Memory lists the facts every chat and project
 // conversation starts with; a suggestion under an answer ("Remember …?") can be
-// remembered, edited first or dismissed. Plain script, shares globals with app.js.
+// remembered, edited first or dismissed. Setting offers (setting_offers.go) are
+// the other card under an answer: a setting that blocked it, with one button to
+// turn it on and answer again. Plain script, shares globals with app.js.
 
 let memData = { memories: [], tokens: 0 };
 let memEditing = null; // id of the fact being edited in Settings
@@ -102,4 +104,41 @@ document.addEventListener('click', async (e) => {
     if (!m || !await askConfirm(`Forget “${m.text}”?`)) return;
     try { await api('/api/memory/' + encodeURIComponent(m.id), { method: 'DELETE' }); toast('Forgotten'); loadMemory(); } catch (err) { toast(err.message); }
   }
+});
+
+// ---------- setting offers ----------
+// offerStrip hides an [[offer: …]] line while an answer is still streaming in.
+function offerStrip(text) { return String(text || '').replace(/\[\[\s*offer\s*:\s*[a-z_]*\s*\]\]/gi, '').replace(/\[\[\s*o[a-z]*\s*:?[a-z_\s]*$/i, ''); }
+
+function offerCard(m, where) {
+  const o = m.offer;
+  if (!o) return '';
+  const key = where.chat ? `chat:${where.chat}` : `project:${where.project}`;
+  const scope = o.admin ? 'Changes Settings for the whole cluster' : 'Changes this chat only';
+  const hint = [o.hint, o.where ? `${scope}; change it back in ${o.where}.` : scope + '.'].filter(Boolean).join(' ');
+  return `<div class="offer-card" data-offer-where="${esc(key)}" data-offer-msg="${esc(m.id)}" data-offer-key="${esc(o.key)}">
+    <div class="offer-t">⚙️ ${esc(o.why)}</div><div class="offer-h">${esc(hint)}</div>
+    <div class="mem-sug-acts"><button class="small primary" data-offer-apply>${esc(o.label)} and try again</button><button class="small" data-offer-dismiss>Not now</button></div></div>`;
+}
+
+async function offerAnswer(card, act) {
+  const [kind, id] = card.dataset.offerWhere.split(':');
+  const body = { msg: card.dataset.offerMsg, key: card.dataset.offerKey, act };
+  body[kind] = id;
+  card.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+  try {
+    const r = await post('/api/setting-offer', body);
+    card.remove();
+    if (act === 'apply') toast(r.retried ? 'Turned on. Answering again…' : 'Turned on');
+    if (kind === 'chat' && typeof chatLoad === 'function' && page === 'chat') { await chatLoad(id); }
+    if (kind === 'project' && typeof pjFetch === 'function' && page === 'project') pjFetch(true);
+  } catch (e) { toast(e.message); card.querySelectorAll('button').forEach((b) => { b.disabled = false; }); }
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button');
+  const card = t && t.closest('.offer-card');
+  if (!card) return;
+  if (t.hasAttribute('data-offer-apply')) offerAnswer(card, 'apply');
+  else if (t.hasAttribute('data-offer-dismiss')) offerAnswer(card, 'dismiss');
 });
