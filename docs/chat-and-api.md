@@ -148,6 +148,8 @@ with them (the setting is `chat_instructions`, kept with the other settings and 
 
 **Search chats** at the top of the Chats panel filters by title as you type and finds chats whose
 messages contain every word (the same search as the sidebar's "Search tasks and chats").
+Drag the panel's left edge to make it wider or narrower (240 to 560 px; arrow keys work on the focused
+edge, double-click resets); the width is remembered in this browser.
 
 **Live preview.** When an answer (in Chat or the project conversation) contains a whole HTML page, an SVG
 image, a Mermaid diagram (a code block marked `mermaid`) or a long Markdown document (marked `md`), a

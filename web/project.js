@@ -59,7 +59,7 @@ async function pjFetch(force) {
   pjFetching = false;
 }
 function projectRoute() {
-  if (pjDataFor !== pageArg) { pjData = null; pjResolvedOpen = false; }
+  if (pjDataFor !== pageArg) { pjData = null; pjResolvedOpen = !pjFolded.has('resolved'); }
   $('pj-text').value = pjNewDraft = '';
   autoGrow($('pj-text'));
   pjPanelOpen = pjPanelPref() ?? pjPanelDefault(pageArg);
@@ -184,44 +184,81 @@ async function openPjFile(path, line) {
   } catch (e) { $('pjf-body').textContent = e.message; }
 }
 
+// One task in the Threads pane: status icon, title (up to two lines), a one-line
+// subtitle (the last result note once it rests, else what it is doing), the time on the
+// right, and a third line with the progress strip or the button that answers it.
 function pjRow(t, f) {
   const g = projectGroup(t);
-  let right = '';
-  if (g === 'waiting') right = `<a href="#/tasks/${esc(t.id)}" tabindex="-1"><button class="small primary">${t.status === 'awaiting_approval' ? 'Review' : t.status === 'awaiting_answers' ? 'Answer' : 'Open'}</button></a>`;
-  else if (g === 'working') right = `${f && f.subtasks.length ? `<span class="pj-cnt">${t.done}/${t.total}</span>${pjStrip(f.subtasks, 'strip pj-mini')}` : ''}<span>${ago(t.updated).replace(' ago', '')}</span>`;
-  else right = `<span>${ago(t.updated).replace(' ago', '')}</span>${canResolve(t) ? `<button class="pj-rb" data-act="proj-resolve" data-id="${esc(t.id)}" data-on="${t.resolved ? '' : '1'}" title="${t.resolved ? 'Reopen (move back to Idle)' : 'Mark resolved'}" aria-label="${t.resolved ? 'Reopen' : 'Mark resolved'}: ${esc(t.title)}">${t.resolved ? '↺' : '✓'}</button>` : ''}`;
   const tone = taskTone(t);
-  return `<div class="pj-row">${statusIcon(g === 'resolved' ? 'done' : taskIconKey(t))}
-    <a class="pj-row-main" href="#/tasks/${esc(t.id)}"><span class="pj-row-t">${esc(t.title)}</span><span class="pj-row-m ${tone === 'needs' ? 'needs' : tone === 'bad' && g !== 'resolved' ? 'bad' : ''}">${esc(statusWord(t))}${t.round > 1 ? ' · request ' + t.round : ''}</span></a>
-    <span class="pj-row-r">${right}</span></div>`;
+  const note = f && f.result && g !== 'working' && g !== 'waiting' ? f.result.split('\n').find((l) => l.trim()) : '';
+  const sub = (note || statusWord(t)) + (t.round > 1 && !note ? ' · request ' + t.round : '');
+  let extra = '';
+  if (g === 'waiting') extra = `<a href="#/tasks/${esc(t.id)}" tabindex="-1"><button class="small primary">${t.status === 'awaiting_approval' ? 'Review' : t.status === 'awaiting_answers' ? 'Answer' : 'Open'}</button></a>`;
+  else if (g === 'working' && f && f.subtasks.length) extra = `${pjStrip(f.subtasks, 'strip pj-mini')}<span class="pj-cnt">${t.done}/${t.total}</span>`;
+  const rb = canResolve(t) ? `<button class="pj-rb" data-act="proj-resolve" data-id="${esc(t.id)}" data-on="${t.resolved ? '' : '1'}" title="${t.resolved ? 'Reopen (move back to Idle)' : 'Mark resolved'}" aria-label="${t.resolved ? 'Reopen' : 'Mark resolved'}: ${esc(t.title)}">${t.resolved ? '↺' : '✓'}</button>` : '';
+  return `<div class="pj-row g-${g}">${statusIcon(g === 'resolved' ? 'done' : taskIconKey(t))}
+    <a class="pj-row-main" href="#/tasks/${esc(t.id)}"><span class="pj-row-t">${esc(t.title)}</span><span class="pj-row-m ${tone === 'needs' ? 'needs' : tone === 'bad' && g !== 'resolved' ? 'bad' : ''}" title="${esc(sub)}">${esc(sub)}</span></a>
+    <span class="pj-row-r">${rb}<span>${ago(t.updated).replace(' ago', '')}</span></span>
+    ${extra ? `<div class="pj-row-x">${extra}</div>` : ''}</div>`;
 }
-const ART_ICON = { shot: '▭', build: '⚙', result: '⇩', pr: '⇄' };
+const ART_ICON = { shot: '▭', build: '⚙', result: '⇩', pr: '⇄', resource: '▤' };
+const ART_KIND = { shot: 'Screenshot', build: 'Build', result: 'Result', pr: 'GitHub', resource: 'Stash' };
 function pjArtCard(a) {
-  const pv = a.preview ? `<img src="${esc(a.preview)}" alt="" loading="lazy">` : `<span>${ART_ICON[a.kind] || '▤'}</span>`;
-  return `<a class="pj-acard" href="${esc(a.url)}" ${a.kind === 'shot' || a.kind === 'pr' ? 'target="_blank" rel="noopener"' : ''} title="${esc(a.name)}${a.task_title ? ' · ' + esc(a.task_title) : ''}">
-    <span class="pj-apv k-${esc(a.kind)}">${pv}</span><span class="pj-aname">${esc(a.name)}</span><span class="pj-asub">${esc(a.task_title || (a.kind === 'pr' ? 'GitHub' : ''))}</span></a>`;
+  const ext = a.kind === 'resource' ? (a.name.split('.').pop() || '').slice(0, 5).toUpperCase() : '';
+  const pv = a.preview ? `<img src="${esc(a.preview)}" alt="" loading="lazy">` : `<span>${ART_ICON[a.kind] || '▤'}${ext && ext !== a.name.toUpperCase() ? `<small>${esc(ext)}</small>` : ''}</span>`;
+  const ext2 = a.kind === 'shot' || a.kind === 'pr' ? 'target="_blank" rel="noopener"' : '';
+  const sub = a.kind === 'resource' ? 'Stash' : a.task_title || ART_KIND[a.kind] || '';
+  return `<a class="pj-acard k-${esc(a.kind)}" href="${esc(a.url)}" ${ext2} title="${esc(a.name)}${sub ? ' · ' + esc(sub) : ''}">
+    <span class="pj-apv k-${esc(a.kind)}">${pv}</span><span class="pj-acap"><span class="pj-aname">${esc(a.name)}</span>${a.time && +new Date(a.time) > 0 ? `<span class="pj-awhen">${esc(ago(a.time).replace(' ago', ''))}</span>` : ''}</span></a>`;
 }
+// Which Threads sections are folded, kept per browser (Resolved starts folded).
+const pjFolded = new Set((() => { try { const v = JSON.parse(localStorage.getItem('outpost.pjFolded') || 'null'); return Array.isArray(v) ? v : ['resolved']; } catch (e) { return ['resolved']; } })());
+function pjFold(key) {
+  if (pjFolded.has(key)) pjFolded.delete(key); else pjFolded.add(key);
+  try { localStorage.setItem('outpost.pjFolded', JSON.stringify([...pjFolded])); } catch (e) { /* only for this visit */ }
+  pjResolvedOpen = !pjFolded.has('resolved');
+}
+const PJ_ARTS_ROW = 12; // cards in the scrolling row before "View all"
 function renderPjPanel(p) {
   const list = projectTasks(p.id);
   const feed = {}; ((pjData && pjDataFor === p.id && pjData.feed) || []).forEach((f) => { feed[f.id] = f; });
   const groups = { waiting: [], working: [], idle: [], resolved: [] };
   list.forEach((t) => groups[projectGroup(t)].push(t));
+  Object.values(groups).forEach((g) => g.sort((x, y) => new Date(y.updated) - new Date(x.updated)));
   const arts = (pjData && pjDataFor === p.id && pjData.artifacts) || [];
-  const sec = (key, name, inner, extra = '') => `<section class="pj-sec ${key}"><div class="pj-sec-h"><b>${name} · ${groups[key].length}</b>${extra}</div>${inner}</section>`;
-  const rows = (key) => groups[key].map((t) => pjRow(t, feed[t.id])).join(''); // an empty section is its heading and a 0 only
-  return `<section class="pj-sec"><div class="pj-sec-h"><b>Artifacts</b><span class="spacer"></span>${arts.length > 3 ? `<button class="link-btn" data-act="proj-arts">View all ${arts.length}</button>` : ''}</div>
-      ${arts.length ? `<div class="pj-arts">${arts.slice(0, 3).map(pjArtCard).join('')}</div>` : ''}</section>
-    ${sec('waiting', 'Waiting on you', rows('waiting'))}
-    ${sec('working', 'Working', rows('working'), groups.working.length > 1 ? '<span class="spacer"></span><span class="pj-note">one task works at a time; the rest are queued</span>' : '')}
-    ${sec('idle', 'Idle', rows('idle'), groups.idle.some(canResolve) ? '<span class="spacer"></span><button class="link-btn" data-act="proj-resolve-all">Resolve all</button>' : '')}
-    <section class="pj-sec resolved"><button class="pj-sec-h pj-toggle" data-act="proj-show-resolved" aria-expanded="${pjResolvedOpen}"><b>Resolved · ${groups.resolved.length}</b> <span aria-hidden="true">${pjResolvedOpen ? '▾' : '›'}</span></button>
-      ${pjResolvedOpen ? rows('resolved', 'Nothing resolved yet. Resolve a finished task to tidy it away; a follow-up brings it back.') : ''}</section>`;
+  const head = (key, name, n, extra = '') => `<div class="pj-sec-h"><button class="pj-toggle" data-act="proj-fold" data-key="${key}" aria-expanded="${!pjFolded.has(key)}"><b>${name}</b><span class="pj-n">· ${n}</span><span class="pj-chev" aria-hidden="true">${pjFolded.has(key) ? '›' : '⌄'}</span></button>${extra}</div>`;
+  const sec = (key, name, extra = '') => {
+    const g = groups[key];
+    if (!g.length && key !== 'resolved') return '';
+    return `<section class="pj-sec ${key}">${head(key, name, g.length, extra)}${pjFolded.has(key) ? '' : g.map((t) => pjRow(t, feed[t.id])).join('')}</section>`;
+  };
+  const shown = arts.slice(0, PJ_ARTS_ROW);
+  const artsSec = arts.length ? `<section class="pj-sec arts">${head('arts', 'Artifacts', arts.length)}
+      ${pjFolded.has('arts') ? '' : `<div class="pj-arts-wrap"><div class="pj-arts" id="pj-arts-row">${shown.map(pjArtCard).join('')}${arts.length > 4 ? `<button class="pj-acard pj-aall" data-act="proj-arts">View all ${arts.length}</button>` : ''}</div>
+        <button class="pj-ascroll prev" data-act="proj-arts-scroll" data-dir="-1" aria-label="Scroll artifacts left" tabindex="-1">‹</button><button class="pj-ascroll next" data-act="proj-arts-scroll" data-dir="1" aria-label="Scroll artifacts right" tabindex="-1">›</button></div>`}</section>`
+    : `<section class="pj-sec arts"><div class="pj-sec-h"><b>Artifacts</b><span class="pj-n">· 0</span></div><p class="pj-none">Screenshots, builds, pull requests and the project's <button class="link-btn" data-act="proj-stash">Stash</button> documents show here.</p></section>`;
+  const none = list.length ? '' : '<p class="pj-none">No tasks yet. Ask something below, or start it as a task.</p>';
+  return `${artsSec}
+    ${sec('waiting', 'Waiting on you')}
+    ${sec('working', 'Working', groups.working.length > 1 ? '<span class="pj-note" title="One task works at a time; the rest are queued">one at a time</span>' : '')}
+    ${sec('idle', 'Idle', groups.idle.some(canResolve) && !pjFolded.has('idle') ? '<span class="spacer"></span><button class="link-btn" data-act="proj-resolve-all">Resolve all</button>' : '')}
+    ${none}${list.length ? sec('resolved', 'Resolved') : ''}`;
+}
+// The scroll arrows on the artifacts row show only while there is more to that side.
+function pjArtsArrows() {
+  const r = $('pj-arts-row');
+  if (!r) return;
+  const w = r.parentElement;
+  w.classList.toggle('can-prev', r.scrollLeft > 2);
+  w.classList.toggle('can-next', r.scrollLeft + r.clientWidth < r.scrollWidth - 2);
+  if (!r._arrows) { r._arrows = true; r.addEventListener('scroll', pjArtsArrows, { passive: true }); }
 }
 
 function renderProjectPage() {
   if (page !== 'project') return;
   const p = projectById(pageArg);
   $('pj-wrap').classList.toggle('panel-open', pjPanelOpen);
+  pjResizer.refresh();
   if (!p) {
     $('pj-name').textContent = projects ? 'Project not found' : 'Loading…';
     setHTML('pj-feed', projects ? `<div class="pj-empty"><h3>This project does not exist any more.</h3><p><a href="#/projects">All projects</a></p></div>` : '');
@@ -243,6 +280,7 @@ function renderProjectPage() {
   setHTML(feedEl, renderPjFeed(p));
   if (before !== feedEl._h && (atEnd || !before)) feedEl.scrollTop = feedEl.scrollHeight;
   setHTML('pj-threads', renderPjPanel(p));
+  pjArtsArrows();
   if ($('modal-pj-files') && !$('modal-pj-files').classList.contains('hidden')) renderPjFiles(p);
   if (!pjData || pjDataFor !== p.id || Date.now() - pjFetchedAt > 3000) pjFetch();
 }
@@ -253,6 +291,7 @@ function setPjPanel(open) {
   renderProjectPage();
   if (open && !pjWide()) $('pj-panel-close').focus();
 }
+const pjResizer = sideResizer({ wrap: $('pj-wrap'), panel: $('pj-panel'), cssVar: '--pj-panel-w', key: 'outpost.pjPanelW', def: 380, min: 280, max: 760, label: 'Resize the Threads panel' });
 $('pj-threads-btn').onclick = () => setPjPanel(!pjPanelOpen);
 $('pj-panel-close').onclick = () => { setPjPanel(false); $('pj-threads-btn').focus(); };
 $('pj-menu').onclick = openSide;
@@ -371,7 +410,10 @@ async function projPageAction(act, el) {
       setTimeout(() => { const a = document.querySelector('#set-nav a[href="#set-tasks"]'); if (a) a.click(); }, 150);
       return;
     case 'proj-arts': openPjArts(); return;
-    case 'proj-show-resolved': pjResolvedOpen = !pjResolvedOpen; renderProjectPage(); return;
+    case 'proj-show-resolved': pjResolvedOpen = !pjResolvedOpen; if (pjResolvedOpen) pjFolded.delete('resolved'); else pjFolded.add('resolved'); renderProjectPage(); return;
+    case 'proj-fold': pjFold(el.dataset.key); renderProjectPage(); return;
+    case 'proj-arts-scroll': { const r = $('pj-arts-row'); if (r) r.scrollBy({ left: +el.dataset.dir * Math.max(160, r.clientWidth - 80), behavior: 'smooth' }); return; }
+    case 'proj-stash': $('pj-stash-btn').click(); return;
     case 'proj-resolve': {
       const on = !!el.dataset.on;
       const t = taskById(id);
