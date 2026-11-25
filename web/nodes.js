@@ -28,8 +28,22 @@ let nodeQuery = '', nodeChip = 'all', nodeSort = 'status';
 try { const v = localStorage.getItem('outpost.nodeSort'); if (['status', 'name', 'speed'].includes(v)) nodeSort = v; } catch (e) { /* storage blocked */ }
 // Clusters of NODE_FILTER_MIN nodes or more get the filter bar and the compact cards and rows.
 const nodesDense = (nodes) => nodes.length >= NODE_FILTER_MIN;
-// One update banner replaces the same note on every card when several nodes can update.
-const updateBannerOn = (nodes) => nodes.filter((n) => n.online && n.update_to).length >= 3;
+// A node that can update (or is updating) shows a small chip by its name; the update bar above the grid
+// holds the buttons. The chip and the thin progress bar read the same node.update state the Updates table used.
+function nodeUpdChip(n) {
+  const u = n.update, recent = u && (Date.now() - new Date(u.updated)) < 600000;
+  const ro = state.rollout, ue = state.update_everything;
+  const running = (ro && !ro.ended) || (ue && !ue.ended);
+  let t = '', cls = '', pct = null;
+  if (u && UPD_BUSY.includes(u.state) && recent) {
+    t = 'updating…'; cls = ' run';
+    pct = u.state === 'downloading' && u.bytes_total ? 100 * u.bytes_done / u.bytes_total : u.state === 'sent' ? 2 : u.state === 'downloading' ? 5 : u.state === 'installing' ? 85 : 95;
+  } else if (u && u.state === 'failed' && recent) { t = 'update failed'; cls = ' bad'; }
+  else if (u && u.state === 'done' && recent) { t = '✓ updated'; cls = ' run'; }
+  else if (n.update_to) { t = running ? 'waits' : '↑ v' + n.update_to; }
+  if (!t) return { chip: '', bar: '' };
+  return { chip: `<span class="upd-chip${cls}" title="${u && u.state === 'failed' ? esc(u.error || '') : n.update_to ? 'Update to v' + esc(n.update_to) + ' available' : ''}">${esc(t)}</span>`, bar: pct == null ? '' : `<div class="upd-cardprog">${bar(pct, 'good')}</div>` };
+}
 let nodeDrawer = null; // node whose details panel is open over the Grid and List views
 // The Detailed list is optional (Settings → Display and alerts); kept in this browser only.
 let showDetailed = false;
@@ -84,9 +98,10 @@ function nodeFacts(n) {
 const nvTps = (f, big) => f.tps == null ? '<span class="muted">—</span>' : big ? `<span class="nv-tps">${f.tps.toFixed(1)}</span><span class="nv-tpsu">tok/s</span>` : `<span class="nv-spd">${f.tps.toFixed(1)} tok/s</span>`;
 const nvChips = (f) => f.issues.map((i) => `<span class="nv-chip nv-${i.lvl}" title="${esc(i.text)}">${esc(i.short)}</span>`).join(' ');
 
-function nodeRow(n, dense, hideUpd) {
+function nodeRow(n, dense) {
   const f = nodeFacts(n), h = f.h;
-  const issues = hideUpd ? f.issues.filter((i) => i.act !== 'node-update') : f.issues;
+  const issues = f.issues.filter((i) => i.act !== 'node-update');
+  const uc = nodeUpdChip(n);
   const fixIssue = issues.find((i) => i.act);
   const first = issues.find((i) => i.lvl !== 'off');
   const open = nodeDrawer === n.id;
@@ -98,7 +113,7 @@ function nodeRow(n, dense, hideUpd) {
     const act = n.online ? (fixIssue && fixIssue.lvl !== 'info' ? `<button class="small primary" data-act="${fixIssue.act}" data-id="${n.id}">${esc(fixIssue.fix)}</button>` : `<button class="small" data-act="node-detail" data-id="${n.id}" aria-expanded="${open}" aria-controls="node-drawer">Details</button>`)
       : n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}">Wake</button>` : `<button class="small" data-act="node-detail" data-id="${n.id}" aria-expanded="${open}" aria-controls="node-drawer">Details</button>`;
     return `<div class="nv-row dn nv-s-${f.worst}${open ? ' open' : ''}" data-act="node-detail" data-id="${n.id}" aria-expanded="${open}" aria-controls="node-drawer">
-      <span class="dot ${f.dot}"></span><b class="nv-ell" title="${esc(nodeName(n))}">${esc(nodeName(n))}</b>
+      <span class="dot ${f.dot}"></span><b class="nv-ell" title="${esc(nodeName(n))}">${esc(nodeName(n))}${uc.chip}</b>
       <span class="nv-ell muted dn-sys">${esc(h.os || '?')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}</span>
       <span class="nv-ell">${model}${chip}</span>
       ${n.online ? `<span class="dn-bars"><span>CPU${bar(f.cpu)}</span><span>RAM${bar(f.ram)}</span><span>${f.vram != null ? 'VRAM' + bar(f.vram) : ''}</span></span>` : '<span class="dn-bars"></span>'}
@@ -110,7 +125,7 @@ function nodeRow(n, dense, hideUpd) {
   const action = fixIssue ? `<button class="small primary" data-act="${fixIssue.act}" data-id="${n.id}">${esc(fixIssue.fix)}</button>`
     : n.online && !n.lending_to ? `${bestBtn(n)}<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>` : '';
   return `<div class="nv-row nv-s-${f.worst}${open ? ' open' : ''}" data-act="node-detail" data-id="${n.id}" aria-expanded="${open}" aria-controls="node-drawer">
-    <div class="nv-c1"><span class="dot ${f.dot}"></span><div class="nv-min"><b>${esc(nodeName(n))}</b><div class="sub nv-sub">${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}${n.addr ? ' · ' + esc(n.addr.split(':')[0]) : ''}</div>${labelChips(n)}</div></div>
+    <div class="nv-c1"><span class="dot ${f.dot}"></span><div class="nv-min"><b>${esc(nodeName(n))}</b>${uc.chip}<div class="sub nv-sub">${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}${n.addr ? ' · ' + esc(n.addr.split(':')[0]) : ''}</div>${labelChips(n)}</div></div>
     <div class="nv-min"><div class="nv-ell">${f.model}</div><div class="sub nv-sub nv-wrap">${sub}</div></div>
     <div>${n.online ? `<div class="nv-bars"><span>CPU</span>${bar(f.cpu)}<span>RAM</span>${bar(f.ram)}${f.vram != null ? `<span>VRAM</span>${bar(f.vram)}` : ''}${f.disk ? `<span title="${esc(f.disk.text)}">DISK</span><span title="${esc(f.disk.text)}">${bar(f.disk.pct, f.disk.full ? 'hot' : '')}</span>` : ''}</div>` : `<span class="sub">${n.last_seen ? 'Last seen ' + ago(n.last_seen) : 'Never connected'}</span>`}</div>
     <div class="r">${nvTps(f, true)}</div>
@@ -118,14 +133,14 @@ function nodeRow(n, dense, hideUpd) {
   </div>`;
 }
 
-function nodeListView(nodes, dense, hideUpd) {
+function nodeListView(nodes, dense) {
   const groups = [
     ['Needs attention', nodes.filter((n) => { const w = nodeFacts(n).worst; return w === 'bad' || w === 'warn'; })],
     ['Healthy', nodes.filter((n) => { const w = nodeFacts(n).worst; return n.online && w !== 'bad' && w !== 'warn'; })],
     ['Offline', nodes.filter((n) => !n.online)],
   ];
   const head = '<div class="nv-row dn nv-head" aria-hidden="true"><span></span><span>Node</span><span>System</span><span>Model</span><span>Load</span><span class="r">Speed</span><span></span></div>';
-  return groups.filter((g) => g[1].length).map(([t, ns]) => `<div class="nv-grp">${t} · ${ns.length}</div><div class="nv-box${dense ? ' dense' : ''}">${dense ? head : ''}${ns.map((n) => nodeRow(n, dense, hideUpd)).join('')}</div>`).join('');
+  return groups.filter((g) => g[1].length).map(([t, ns]) => `<div class="nv-grp">${t} · ${ns.length}</div><div class="nv-box${dense ? ' dense' : ''}">${dense ? head : ''}${ns.map((n) => nodeRow(n, dense)).join('')}</div>`).join('');
 }
 
 function nodeDetailView(nodes) {
@@ -175,17 +190,18 @@ function gaugeCard(n, o = {}) {
   const dense = !!o.dense;
   const f = nodeFacts(n), h = f.h, hb = f.hb, cpu = h.cpu || {};
   const [st, cls] = nodeStatus(n, f);
+  const uc = nodeUpdChip(n);
   const gpus = h.gpus || [];
   const g = gpus[0];
   const ramTot = hb && hb.ram_total_bytes;
-  const notes = f.issues.filter((i) => i.lvl !== 'off' && !(o.hideUpd && i.act === 'node-update')).map((i) => `<div class="note ${i.lvl === 'info' ? '' : i.lvl} nv-note"><span class="nv-grow">${esc(i.text)}</span>${i.act ? `<button class="small" data-act="${i.act}" data-id="${n.id}">${esc(i.fix)}</button>` : ''}</div>`).join('');
+  const notes = f.issues.filter((i) => i.lvl !== 'off' && i.act !== 'node-update').map((i) => `<div class="note ${i.lvl === 'info' ? '' : i.lvl} nv-note"><span class="nv-grow">${esc(i.text)}</span>${i.act ? `<button class="small" data-act="${i.act}" data-id="${n.id}">${esc(i.fix)}</button>` : ''}</div>`).join('');
   const btns = n.online && !n.lending_to ? (dense ? (f.loaded ? `<button class="small" data-act="load" data-id="${n.id}">Change…</button>` : bestBtn(n)) : `${bestBtn(n)}<button class="small" data-act="load" data-id="${n.id}">${f.loaded ? 'Change…' : 'Load model…'}</button>${f.loaded ? `<button class="small" data-act="unload" data-id="${n.id}">Unload</button>` : ''}`) : n.can_wake ? `<button class="small" data-act="wake" data-id="${n.id}" title="Send a Wake-on-LAN packet">Wake</button>` : '';
   const on = nodeDrawer === n.id;
   const gname = g ? String(g.name || '').replace(/^(AMD|NVIDIA|Intel)\s+(Radeon|GeForce)?\s*/i, '') : '';
   const hw = dense ? `${cpu.cores || '?'}C/${cpu.threads || '?'}T${ramTot ? ' · ' + bytes(ramTot) : ''}${gname ? ' · ' + esc(gname) : ''} · ${esc(h.os || '?')}`
     : `${esc(cpu.model || 'CPU')} · ${esc(h.os ? h.os + ' ' + h.arch : 'unknown')}${h.agent_version ? ' · v' + esc(h.agent_version) : ''}`;
   return `<div class="card gc${dense ? ' dense' : ''} nv-s-${f.worst}${on ? ' on' : ''}" data-act="node-detail" data-id="${n.id}">
-    <div class="node-top"><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span><span class="nv-pill nv-p-${cls}"><i></i>${st}</span>
+    <div class="node-top"><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span>${uc.chip}<span class="nv-pill nv-p-${cls}"><i></i>${st}</span>
       <button class="small" data-act="node-detail" data-id="${n.id}" aria-expanded="${on}" aria-controls="node-drawer" title="All details and controls for this node (Unload, benchmark, logs and more)">${dense ? '⋯' : 'Details'}</button></div>
     <div class="sub nv-ell">${hw}</div>
     ${dense ? '' : labelChips(n)}
@@ -196,7 +212,7 @@ function gaugeCard(n, o = {}) {
       <div class="ring gc-speed"><div>${nvTps(f, true)}</div><div class="sub">${n.online ? `${n.running_jobs}/${n.max_jobs} jobs` : n.last_seen ? 'seen ' + ago(n.last_seen) : 'never connected'}</div></div>
     </div>
     ${dense ? '' : gaugeSparks(n)}
-    ${notes}${opActive(n) ? opView(n) : ''}
+    ${uc.bar}${notes}${opActive(n) ? opView(n) : ''}
     <div class="gc-model"><span class="nv-grow nv-ell">${f.model}</span>${btns}</div>
   </div>`;
 }
@@ -285,16 +301,13 @@ function renderNodes() {
   const filtering = !!(nodeQuery || nodeChip !== 'all' || nodeLabel);
   // Below the filter bar's size, labels keep their old chip row.
   const chips = !dense && labels.length ? `<div class="label-filter" role="group" aria-label="Show nodes with label">${['', ...labels].map((l) => `<button class="small${l === nodeLabel ? ' on' : ''}" data-act="label-filter" data-label="${esc(l)}" aria-pressed="${l === nodeLabel}">${l ? esc(l) + ' · ' + nodes.filter((n) => (n.labels || []).includes(l)).length : 'All nodes'}</button>`).join('')}</div>` : '';
-  const upd = nodes.filter((n) => n.online && n.update_to), banner = updateBannerOn(nodes);
-  const bannerHTML = banner ? `<div class="upd-banner"><span aria-hidden="true">⬆</span><span class="nv-grow"><b>${upd.length} nodes</b> run an older version; <b>v${esc(upd[0].update_to)}</b> is available.</span>
-    ${nodeChip === 'update' ? '' : '<button class="small" data-act="node-chip" data-chip="update">Show them</button>'}<a class="small-link" href="#/updates">Updates page</a></div>` : '';
   if ((nodeView !== 'grid' && nodeView !== 'list') || !nodeById(nodeDrawer)) nodeDrawer = null;
   loadNodeHistory();
   renderNodeFilter(nodes, rows, labels, dense);
   setHTML('node-summary', clusterSummary(nodes));
   const body = !shown.length ? `<div class="empty u16">No nodes match. <button class="small" data-act="node-clear">Clear filters</button></div>`
-    : nodeView === 'list' ? nodeListView(shown, dense, banner) : nodeView === 'detail' ? nodeDetailView(shown) : nodeGridView(shown, { dense, hideUpd: banner, attentionFirst: nodeSort === 'status' });
-  setHTML('nodes', chips + toolRecBanners() + bannerHTML + (filtering && shown.length ? `<div class="sub nf-count">Showing ${shown.length} of ${nodes.length} nodes · <a href="#" data-act="node-clear">Clear filters</a></div>` : '') + body);
+    : nodeView === 'list' ? nodeListView(shown, dense) : nodeView === 'detail' ? nodeDetailView(shown) : nodeGridView(shown, { dense, attentionFirst: nodeSort === 'status' });
+  setHTML('nodes', chips + toolRecBanners() + (filtering && shown.length ? `<div class="sub nf-count">Showing ${shown.length} of ${nodes.length} nodes · <a href="#" data-act="node-clear">Clear filters</a></div>` : '') + body);
   renderNodeDrawer(shown);
 }
 
@@ -325,7 +338,7 @@ function renderNodeDrawer(shown) {
   const order = [...document.querySelectorAll('#nodes .gc[data-id], #nodes .nv-row[data-id]')].map((c) => c.dataset.id).filter((id, i, a) => a.indexOf(id) === i);
   const at = order.indexOf(n.id), prev = order[at - 1], next = order[at + 1];
   const nav = (id, label, txt) => `<button class="small" data-act="node-drawer-go" data-id="${id || ''}" ${id ? '' : 'disabled'} title="${label}" aria-label="${label}">${txt}</button>`;
-  setHTML(d, `<div class="nd-head"><span class="dot ${f.dot}"></span><div class="nv-min nv-grow"><div class="nd-title"><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span><span class="nv-pill nv-p-${cls}"><i></i>${st}</span></div>
+  setHTML(d, `<div class="nd-head"><span class="dot ${f.dot}"></span><div class="nv-min nv-grow"><div class="nd-title"><span class="node-name" title="${esc(n.id)}">${esc(nodeName(n))}</span>${uc.chip}<span class="nv-pill nv-p-${cls}"><i></i>${st}</span></div>
       <div class="sub nv-ell">${h.agent_version ? 'v' + esc(h.agent_version) + ' · ' : ''}${esc(h.os ? h.os + '/' + h.arch : 'unknown')}${shown.length > 1 && at >= 0 ? ` · ${at + 1} of ${order.length}` : ''}</div></div>
       ${order.length > 1 ? nav(prev, 'Previous node', '‹') + nav(next, 'Next node', '›') : ''}
       <button class="small nd-x" data-act="node-drawer-close" title="Close (Esc)" aria-label="Close node details">✕</button></div>

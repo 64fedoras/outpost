@@ -134,7 +134,7 @@ Each task is a conversation:
    fail the task; the card shows the build output and the source stays available. If the outputs
    include `outpost-<platform>` binaries (the names `build.sh` produces), the card offers **Publish to
    Updates**: each binary is checked (same hash as the build, a real Outpost binary whose platform matches
-   its name) and uploaded as the release for that platform, like the Updates tab's upload.
+   its name) and uploaded as the release for that platform, like the upload in the Nodes page's update Details.
    Updating the controller and nodes stays your click there; a task never updates anything by itself. The Project files
    view has checkboxes and **Zip ticked files**.
    A line under **Finished** sums the request up: how long it took, which nodes wrote it, how many

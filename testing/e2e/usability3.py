@@ -19,16 +19,16 @@ async def main():
             await pg.wait_for_selector("#side", state="attached")
             await pg.goto(U + "/#/updates"); await pg.wait_for_selector("#upd-table tbody tr")
             await pg.wait_for_timeout(500)
-            assert (await pg.inner_text("#btn-upd-all")).strip() == "Everything is up to date"
+            assert await pg.locator(".upd-bar.ok").count() == 1 and await pg.locator("#btn-upd-all").count() == 0, "quiet one-line bar when current"
             assert await pg.locator("#btn-gh-install").count() == 0, "one check button"
-            assert (await pg.inner_text("#btn-gh-check")).strip() == "Check for updates"
+            assert (await pg.inner_text("#btn-gh-check")).strip() == "Check now"
             assert await pg.locator("#upl").evaluate("e => !e.open"), "uploads folded"
             await pg.evaluate(FAKE)
             assert (await pg.inner_text("#btn-upd-all")).strip() == "Update everything"
             assert await pg.locator("#upd-table [data-act=node-update], #upd-table [data-act=ctl-update], #upd-table [data-act=upd-group-go]").count() == 0, "no per-machine buttons yet"
             n = int(await pg.evaluate("() => updatesAvailable()"))
             badge = (await pg.inner_text("#badge-updates")).strip()
-            assert badge == str(n), (badge, n)
+            assert badge == f"⬆ {n}", (badge, n)
             await pg.screenshot(path=S + f"everything-{scheme}.png")
             await pg.click("#btn-upd-indiv")
             await pg.evaluate(FAKE)

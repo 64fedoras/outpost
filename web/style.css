@@ -1655,6 +1655,26 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 @keyframes sweep { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
 @media (prefers-reduced-motion: reduce) { .bar > i.sweep { animation: none; width: 100%; opacity: .6; } }
 
+/* Update bar and Details panel on the Nodes page (the old Updates tab) */
+.upd-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); padding: 8px 12px; margin: 0 0 10px; font-size: 13px; }
+.upd-bar.avail { background: var(--tint); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.upd-bar.bad { background: color-mix(in srgb, var(--bad) 12%, var(--panel)); }
+.upd-bar.ok { color: var(--muted); }
+.upd-bar .g { flex: 1; min-width: 200px; }
+.upd-bar .g .sub { display: block; margin: 1px 0 0; font-size: 12px; }
+.upd-bar .ic { flex: none; }
+.upd-bar .upd-prog { margin-top: 5px; max-width: 420px; }
+.upd-panel { border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); margin: -4px 0 12px; padding: 4px 14px 12px; }
+.upd-h { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; }
+.upd-h h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); font-weight: 650; margin: 0; }
+.upd-chip { font-size: 11px; border-radius: 999px; padding: 1px 8px; background: color-mix(in srgb, var(--accent) 14%, var(--panel)); color: var(--accent); white-space: nowrap; margin-left: 6px; font-weight: 500; }
+.upd-chip.run { background: color-mix(in srgb, var(--good) 16%, var(--panel)); color: var(--good); }
+.upd-chip.bad { background: color-mix(in srgb, var(--bad) 14%, var(--panel)); color: var(--bad); }
+.upd-cardprog { margin-top: 6px; }
+.badge.upd { background: var(--accent-fill); color: var(--accent-ink); }
+@media (max-width: 700px) { .upd-bar .g { flex-basis: calc(100% - 30px); } .upd-panel { padding: 4px 10px 10px; } .upd-panel .hide-ph { display: none; } }
+.upd-bar.ok .ic { color: var(--good); }
+
 /* Chat polish: personas, export, compare, print */
 .persona-row { display: flex; gap: 8px; align-items: center; margin: 0 0 8px; flex-wrap: wrap; }
 .persona-row select { flex: 1 1 160px; min-width: 0; }

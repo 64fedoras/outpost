@@ -125,16 +125,17 @@ function refreshIcons() {
     l.replaceWith(c);
   });
 }
-const PAGES = ['new', 'image', 'cad', 'task', 'chat', 'scheduled', 'projects', 'project', 'stash', 'nodes', 'models', 'updates', 'spending', 'settings'];
+const PAGES = ['new', 'image', 'cad', 'task', 'chat', 'scheduled', 'projects', 'project', 'stash', 'nodes', 'models', 'spending', 'settings'];
 let page = 'new', pageArg = null;
 function route() {
   ntDraft.flush(); tmDraft.flush();
   const m = location.hash.match(/^#\/(\w+)(?:\/([\w-]+))?/) || [];
+  if (m[1] === 'updates') { updPanel = true; history.replaceState(null, '', '#/nodes'); m[1] = 'nodes'; } // the Updates tab moved into Nodes
   page = m[1] === 'tasks' && m[2] ? 'task' : m[1] === 'projects' && m[2] ? 'project' : m[1] === 'project' ? 'projects' : PAGES.includes(m[1]) ? m[1] : 'new';
   pageArg = page === 'task' || page === 'chat' || page === 'project' || page === 'stash' ? m[2] || null : null;
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
   document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === (page === 'project' ? 'projects' : page)));
-  document.querySelector('.page-plain').classList.toggle('hidden', !['scheduled', 'projects', 'stash', 'nodes', 'models', 'updates', 'spending', 'settings'].includes(page));
+  document.querySelector('.page-plain').classList.toggle('hidden', !['scheduled', 'projects', 'stash', 'nodes', 'models', 'spending', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image', cad: 'New 3D model' }[page] || page[0].toUpperCase() + page.slice(1));
   refreshIcons();
   clampHints();
@@ -261,9 +262,8 @@ function renderAll() {
   if (page === 'scheduled') renderScheduled();
   if (page === 'stash') stashTick();
   if (page === 'chat' && document.activeElement !== $('chat-node')) fillChatNodes();
-  if (page === 'nodes') { renderNodes(); renderJobs(); }
+  if (page === 'nodes') { renderNodes(); renderUpdates(); renderJobs(); }
   if (page === 'models') renderModels();
-  if (page === 'updates') renderUpdates();
   if (page === 'spending' && Date.now() - spendAt > 10000) loadSpending();
 }
 
@@ -288,7 +288,7 @@ function renderBadges() {
   const sc = (state.templates || []).filter((t) => t.schedule && !t.paused).length;
   const bs = $('badge-sched'); bs.textContent = state.schedules_paused ? '⏸' : sc; bs.className = 'badge side-badge' + (state.schedules_paused ? ' warn' : '') + (sc || state.schedules_paused ? '' : ' hidden');
   bs.title = state.schedules_paused ? 'All schedules are paused' : `${sc} active schedule${sc === 1 ? '' : 's'}`;
-  const bu = $('badge-updates'); bu.textContent = up; bu.className = 'badge' + (up ? '' : ' hidden');
+  const bu = $('badge-updates'); bu.textContent = '⬆ ' + up; bu.title = `${up} update${up === 1 ? '' : 's'} available`; bu.className = 'badge upd' + (up ? '' : ' hidden');
 }
 
 // What a task's status means to the person, in a few words.
