@@ -1808,3 +1808,19 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 .chat-chips .chat-pill[data-sk-chip="stash"] { flex: 0 1 auto; min-width: 0; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sh-docs td:first-child { overflow-wrap: anywhere; }
 .sh-opt b { display: block; }
+/* File browser: build outputs heading, delete buttons, and the viewers by file type */
+.fb-tree .fb-sec { margin-top: 8px; color: var(--ink); font-weight: 600; }
+.fb-tree .fb-dir span { flex: 1; min-width: 0; word-break: break-all; }
+.fb-row a { flex: 1; min-width: 0; }
+.fb-x { flex: none; padding: 0 6px; min-height: 0; line-height: 1.6; font-size: 11px; border: 0; background: none; color: var(--muted); opacity: 0; }
+.fb-row:hover .fb-x, .fb-x:focus-visible { opacity: 1; }
+.fb-x:hover { color: var(--bad); }
+@media (hover: none) { .fb-x { opacity: 1; } }
+.fb-media { margin-top: 8px; max-height: 62vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.fb-media .fb-img, .fb-media video { display: block; max-width: 100%; max-height: 58vh; height: auto; margin: 0 auto; }
+.fb-media audio { display: block; width: 100%; }
+.fb-media .fb-3d { display: block; width: 100%; height: 56vh; cursor: grab; }
+.fb-table { overflow: auto; }
+.fb-table table { border-collapse: collapse; font-size: 12.5px; }
+.fb-table th, .fb-table td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.fb-table th { position: sticky; top: 0; background: var(--panel); }

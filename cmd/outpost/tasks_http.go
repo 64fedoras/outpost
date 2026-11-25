@@ -425,6 +425,26 @@ func (c *Controller) handleTaskFile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "bad path"})
 		return
 	}
+	if q := r.URL.Query(); (q.Get("view") != "" || q.Get("text") != "") && q.Get("download") == "" { // the in-app viewer: media, document text
+
+		f, err := os.Open(p)
+		if err != nil {
+			writeJSON(w, 404, map[string]string{"error": "no such file"})
+			return
+		}
+		defer f.Close()
+		st, err := f.Stat()
+		if err != nil || st.IsDir() {
+			writeJSON(w, 404, map[string]string{"error": "no such file"})
+			return
+		}
+		if q.Get("text") != "" {
+			serveDocText(w, p, f, st.Size())
+		} else {
+			serveViewable(w, r, p, f, st)
+		}
+		return
+	}
 	b, err := os.ReadFile(p)
 	if err != nil {
 		writeJSON(w, 404, map[string]string{"error": "no such file"})

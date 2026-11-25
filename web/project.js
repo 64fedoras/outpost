@@ -218,14 +218,17 @@ function pjRow(t, f) {
     <span class="pj-row-r">${rb}<span>${ago(t.updated).replace(' ago', '')}</span></span>
     ${extra ? `<div class="pj-row-x">${extra}</div>` : ''}</div>`;
 }
-const ART_ICON = { shot: '▭', build: '⚙', result: '⇩', pr: '⇄', resource: '▤' };
-const ART_KIND = { shot: 'Screenshot', build: 'Build', result: 'Result', pr: 'GitHub', resource: 'Stash' };
+const ART_ICON = { shot: '▭', build: '⚙', result: '▣', pr: '⇄', resource: '▤', upload: '▤', folder: '▱' };
+const ART_KIND = { shot: 'Screenshot', build: 'Build', result: 'Result', pr: 'GitHub', resource: 'Stash', upload: 'Uploaded', folder: 'Uploaded folder' };
 function pjArtCard(a) {
-  const ext = a.kind === 'resource' ? (a.name.split('.').pop() || '').slice(0, 5).toUpperCase() : '';
+  const ext = a.kind === 'resource' || a.kind === 'upload' ? (a.name.split('.').pop() || '').slice(0, 5).toUpperCase() : '';
   const pv = a.preview ? `<img src="${esc(a.preview)}" alt="" loading="lazy">` : `<span>${ART_ICON[a.kind] || '▤'}${ext && ext !== a.name.toUpperCase() ? `<small>${esc(ext)}</small>` : ''}</span>`;
   const ext2 = a.kind === 'shot' || a.kind === 'pr' ? 'target="_blank" rel="noopener"' : '';
-  const sub = a.kind === 'resource' ? 'Stash' : a.task_title || ART_KIND[a.kind] || '';
-  return `<a class="pj-acard k-${esc(a.kind)}" href="${esc(a.url)}" ${ext2} title="${esc(a.name)}${sub ? ' · ' + esc(sub) : ''}">
+  const sub = a.kind === 'resource' ? 'Stash' : a.kind === 'folder' ? `${a.files} file${a.files === 1 ? '' : 's'} · ${bytes(a.bytes)}` : a.task_title || ART_KIND[a.kind] || '';
+  // Result files and build outputs open in the task's file browser, as folders and files.
+  const fb = (a.kind === 'result' || a.kind === 'build') && a.task_id ? `data-act="proj-art-files" data-task="${esc(a.task_id)}"${a.kind === 'build' ? ` data-path="${esc(a.path || '')}"` : ''}`
+    : a.kind === 'upload' || a.kind === 'folder' ? `data-act="proj-art-up" data-path="${esc(a.path || '')}"${a.kind === 'folder' ? ' data-dir="1"' : ''}` : '';
+  return `<a class="pj-acard k-${esc(a.kind)}" href="${esc(a.url)}" ${ext2} ${fb} title="${esc(a.name)}${sub ? ' · ' + esc(sub) : ''}">
     <span class="pj-apv k-${esc(a.kind)}">${pv}</span><span class="pj-acap"><span class="pj-aname">${esc(a.name)}</span>${a.time && +new Date(a.time) > 0 ? `<span class="pj-awhen">${esc(ago(a.time).replace(' ago', ''))}</span>` : ''}</span></a>`;
 }
 // Which Threads sections are folded, kept per browser (Resolved starts folded).
@@ -250,10 +253,11 @@ function renderPjPanel(p) {
     return `<section class="pj-sec ${key}">${head(key, name, g.length, extra)}${pjFolded.has(key) ? '' : g.map((t) => pjRow(t, feed[t.id])).join('')}</section>`;
   };
   const shown = arts.slice(0, PJ_ARTS_ROW);
-  const artsSec = arts.length ? `<section class="pj-sec arts">${head('arts', 'Artifacts', arts.length)}
+  const up = '<span class="spacer"></span><button class="link-btn" data-act="proj-art-up" title="Upload files or folders to this project, or open the ones already uploaded">Upload…</button>';
+  const artsSec = arts.length ? `<section class="pj-sec arts">${head('arts', 'Artifacts', arts.length, up)}
       ${pjFolded.has('arts') ? '' : `<div class="pj-arts-wrap"><div class="pj-arts" id="pj-arts-row">${shown.map(pjArtCard).join('')}${arts.length > 4 ? `<button class="pj-acard pj-aall" data-act="proj-arts">View all ${arts.length}</button>` : ''}</div>
         <button class="pj-ascroll prev" data-act="proj-arts-scroll" data-dir="-1" aria-label="Scroll artifacts left" tabindex="-1">‹</button><button class="pj-ascroll next" data-act="proj-arts-scroll" data-dir="1" aria-label="Scroll artifacts right" tabindex="-1">›</button></div>`}</section>`
-    : `<section class="pj-sec arts"><div class="pj-sec-h"><b>Artifacts</b><span class="pj-n">· 0</span></div><p class="pj-none">Screenshots, builds, pull requests and the project's <button class="link-btn" data-act="proj-stash">Stash</button> documents show here.</p></section>`;
+    : `<section class="pj-sec arts"><div class="pj-sec-h"><b>Artifacts</b><span class="pj-n">· 0</span>${up}</div><p class="pj-none">Screenshots, builds, result files, files you upload, pull requests and the project's <button class="link-btn" data-act="proj-stash">Stash</button> documents show here.</p></section>`;
   const none = list.length ? '' : '<p class="pj-none">No tasks yet. Ask something below, or start it as a task.</p>';
   return `${artsSec}
     ${sec('waiting', 'Waiting on you')}
@@ -580,6 +584,14 @@ async function projPageAction(act, el) {
       setTimeout(() => { const a = document.querySelector('#set-nav a[href="#set-tasks"]'); if (a) a.click(); }, 150);
       return;
     case 'proj-arts': openPjArts(); return;
+    case 'proj-art-up': close('modal-pj-arts'); await openProjArts(pageArg, el.dataset.path || '', !!el.dataset.dir); return;
+    case 'proj-art-files': {
+      close('modal-pj-arts');
+      filesOpenFor(el.dataset.task, el.dataset.path || '', !!el.dataset.path);
+      const want = '#/projects/' + pageArg + '/tasks/' + el.dataset.task;
+      if (curTask() !== el.dataset.task) location.hash = matchMedia('(min-width: 1100px)').matches ? want : '#/tasks/' + el.dataset.task;
+      return;
+    }
     case 'proj-show-resolved': pjResolvedOpen = !pjResolvedOpen; if (pjResolvedOpen) pjFolded.delete('resolved'); else pjFolded.add('resolved'); renderProjectPage(); return;
     case 'proj-fold': pjFold(el.dataset.key); renderProjectPage(); return;
     case 'proj-arts-scroll': { const r = $('pj-arts-row'); if (r) r.scrollBy({ left: +el.dataset.dir * Math.max(160, r.clientWidth - 80), behavior: 'smooth' }); return; }

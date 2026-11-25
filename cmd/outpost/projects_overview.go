@@ -39,11 +39,13 @@ type feedTask struct {
 type projectArtifact struct {
 	TaskID    string    `json:"task_id,omitempty"`
 	TaskTitle string    `json:"task_title,omitempty"`
-	Kind      string    `json:"kind"` // shot | build | result | pr | resource (a document in the project's Stash)
+	Kind      string    `json:"kind"` // shot | build | result | pr | resource (a document in the project's Stash) | upload | folder (uploaded by the owner, project_artifacts.go)
 	Name      string    `json:"name"`
+	Path      string    `json:"path,omitempty"` // build: the output's path, opened in the task's file browser
 	URL       string    `json:"url"`
 	Preview   string    `json:"preview,omitempty"` // image URL for a thumbnail
 	Bytes     int64     `json:"bytes,omitempty"`
+	Files     int       `json:"files,omitempty"` // folder: how many files are in it
 	Time      time.Time `json:"time"`
 }
 
@@ -91,6 +93,14 @@ func (c *Controller) handleProjectOverview(w http.ResponseWriter, r *http.Reques
 	p.mu.Lock()
 	lastPR, repo := p.LastPR, p.repoDir()
 	p.mu.Unlock()
+	uploads, _, _ := listUploads(p.artifactsDir())
+	for _, a := range uploadsArtifacts(uploads) {
+		a.URL = "/api/projects/" + url.PathEscape(p.ID) + "/artifacts/file?download=1&path=" + url.QueryEscape(a.Path)
+		if a.Kind == "folder" {
+			a.URL = "#/projects/" + url.PathEscape(p.ID)
+		}
+		out.Artifacts = append(out.Artifacts, a)
+	}
 	if strings.HasPrefix(lastPR, "https://") {
 		out.Artifacts = append(out.Artifacts, projectArtifact{Kind: "pr", Name: "Last pull request", URL: lastPR})
 	}
@@ -142,7 +152,9 @@ func (t *Task) feedLocked() feedTask {
 }
 
 // artifactsLocked lists what the task produced, newest last: screenshots, build
-// outputs and, once it is done, its result zip.
+// outputs and, once it is done, its result files. Build outputs and the result
+// open in the task's file browser as folders and files (the UI uses Path and
+// TaskID); URL stays a plain download for anything that cannot run the page script.
 func (t *Task) artifactsLocked() []projectArtifact {
 	title := t.Title
 	if title == "" {
@@ -174,11 +186,11 @@ func (t *Task) artifactsLocked() []projectArtifact {
 		when = *t.Ended
 	}
 	for _, a := range t.Artifacts {
-		out = append(out, projectArtifact{TaskID: t.ID, TaskTitle: title, Kind: "build", Name: path.Base(a.Path), Bytes: a.Bytes, Time: when,
+		out = append(out, projectArtifact{TaskID: t.ID, TaskTitle: title, Kind: "build", Name: path.Base(a.Path), Path: a.Path, Bytes: a.Bytes, Time: when,
 			URL: base + "/artifact?path=" + url.QueryEscape(a.Path)})
 	}
 	if t.Status == "done" && t.ResultBytes > 0 {
-		out = append(out, projectArtifact{TaskID: t.ID, TaskTitle: title, Kind: "result", Name: "Result .zip", Bytes: t.ResultBytes, Time: when,
+		out = append(out, projectArtifact{TaskID: t.ID, TaskTitle: title, Kind: "result", Name: "Result files", Bytes: t.ResultBytes, Time: when,
 			URL: base + "/download"})
 	}
 	return out

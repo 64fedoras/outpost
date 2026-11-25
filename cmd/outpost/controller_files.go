@@ -389,9 +389,43 @@ func (c *Controller) handleTaskArtifact(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, 404, map[string]string{"error": "no such artifact"})
 		return
 	}
+	if q := r.URL.Query(); q.Get("view") != "" || q.Get("text") != "" { // shown in the file browser
+		if q.Get("text") != "" {
+			serveDocText(w, p, f, st.Size())
+		} else {
+			serveViewable(w, r, p, f, st)
+		}
+		return
+	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+strings.ReplaceAll(filepath.Base(p), "\"", "")+"\"")
 	http.ServeContent(w, r, "", st.ModTime(), f)
+}
+
+// viewTypes are the formats the file browser shows as themselves: pictures,
+// sound, video and PDF (in a new tab). SVG is left out on purpose: it is a
+// document that can carry script, so it is shown as text (and through the
+// sandboxed preview panel). Anything else is served as plain text.
+var viewTypes = map[string]string{
+	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp", ".avif": "image/avif", ".ico": "image/x-icon",
+	".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".oga": "audio/ogg", ".m4a": "audio/mp4", ".flac": "audio/flac", ".opus": "audio/ogg",
+	".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime", ".ogv": "video/ogg",
+	".pdf": "application/pdf",
+}
+
+// serveViewable writes a file for the in-app viewer: a known media format with its
+// own type (ranges work, so video can seek), anything else as plain text cut at
+// maxRepoFileSize. Never HTML, so nothing in it runs on the controller's origin.
+func serveViewable(w http.ResponseWriter, r *http.Request, name string, f *os.File, st os.FileInfo) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if ct, ok := viewTypes[strings.ToLower(filepath.Ext(name))]; ok {
+		w.Header().Set("Content-Type", ct)
+		w.Header().Set("Content-Disposition", "inline")
+		http.ServeContent(w, r, "", st.ModTime(), f)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.Copy(w, io.LimitReader(f, maxRepoFileSize))
 }
 
 // zipItem is one file for a streamed zip.

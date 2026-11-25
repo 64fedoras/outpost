@@ -1139,17 +1139,18 @@
 
 <div id="modal-files" class="overlay hidden">
   <div class="modal wide">
-    <h3>Project files</h3>
+    <h3 id="files-title">Files</h3>
     <p class="hint" id="files-hint"></p>
     <div class="fb">
       <div class="fb-tree" id="tv-files"></div>
       <div class="fb-view">
-        <div class="fb-bar"><span class="mono" id="fb-title"></span><button class="small hidden" id="fb-edit" title="Change this file by hand; saved as your own round, so Changes and Undo work">Edit</button><button class="small hidden" id="fb-cancel">Cancel</button><button class="small primary hidden" id="fb-save">Save</button><button class="small hidden" id="fb-preview" title="Show this page, image, diagram or document in the preview panel">Preview</button><a id="fb-dl" class="hidden"><button class="small">Download file</button></a></div>
+        <div class="fb-bar"><span class="mono" id="fb-title"></span><button class="small hidden" id="fb-edit" title="Change this file by hand; saved as your own round, so Changes and Undo work">Edit</button><button class="small hidden" id="fb-cancel">Cancel</button><button class="small primary hidden" id="fb-save">Save</button><button class="small hidden" id="fb-preview" title="Show this page, image, diagram or document in the preview panel">Preview</button><a id="fb-open" class="hidden" target="_blank" rel="noopener"><button class="small">Open in a new tab</button></a><a id="fb-dl" class="hidden"><button class="small">Download file</button></a><button class="small danger hidden" id="fb-del" data-act="fb-del">Delete</button></div>
         <pre class="out code" id="fb-body">Pick a file.</pre>
+        <div class="fb-media hidden" id="fb-media"></div>
         <textarea class="out code fb-editor hidden" id="fb-editor" spellcheck="false" aria-label="File contents"></textarea>
       </div>
     </div>
-    <div class="modal-foot"><a id="files-dl"><button class="primary">Download .zip</button></a><button id="files-zip" title="Tick files in the list first">Zip ticked files</button><button data-close>Close</button></div>
+    <div class="modal-foot"><a id="files-dl"><button class="primary">Download .zip</button></a><button id="files-zip" title="Tick files in the list first">Zip ticked files</button><button class="primary hidden" id="fb-up-f">Upload files</button><button class="hidden" id="fb-up-d">Upload folder</button><input type="file" id="fb-up-files" class="hidden" multiple><input type="file" id="fb-up-dir" class="hidden" multiple webkitdirectory><button data-close>Close</button></div>
   </div>
 </div>
 
@@ -1209,6 +1210,7 @@
 <script src="project.js"></script>
 <script src="chat.js"></script>
 <script src="thread.js"></script>
+<script src="files.js"></script>
 <script src="nodefilter.js"></script>
 <script src="nodes.js"></script>
 <script src="models.js"></script>

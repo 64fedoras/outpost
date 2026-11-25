@@ -371,6 +371,7 @@ func runController(args []string) error {
 	mux.HandleFunc("DELETE /api/nodes/{id}/models/{name}", c.auth(c.handleRemoveNodeModel))
 	mux.HandleFunc("POST /api/nodes/{id}/models/cleanup", c.auth(c.handleCleanupNodeModels))
 	c.projectRoutes(mux)
+	c.projectArtifactRoutes(mux, c.auth) // project_artifacts.go: uploads, viewing and deleting artifacts
 	c.projectChatRoutes(mux)
 	c.chatRoutes(mux)
 	c.stashRoutes(mux)

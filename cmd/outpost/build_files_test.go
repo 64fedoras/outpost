@@ -241,6 +241,47 @@ func TestTaskZipsAndArtifacts(t *testing.T) {
 	}
 }
 
+// The file browser opens build outputs and pictures in place: text comes back as plain
+// text (never HTML, never an attachment), pictures with their own type.
+func TestTaskFilesViewInApp(t *testing.T) {
+	dir := t.TempDir()
+	png := "\x89PNG\r\n\x1a\nrest"
+	for p, body := range map[string]string{"repo/logo.png": png, "repo/page.svg": "<svg/>", "artifacts/dist/report.html": "<script>x</script>", "artifacts/dist/shot.png": png} {
+		os.MkdirAll(filepath.Dir(filepath.Join(dir, p)), 0o755)
+		os.WriteFile(filepath.Join(dir, p), []byte(body), 0o644)
+	}
+	c := &Controller{tasks: map[string]*Task{"t1": {ID: "t1", dir: dir}}}
+	get := func(target string, h http.HandlerFunc) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", target, nil)
+		r.SetPathValue("id", "t1")
+		w := httptest.NewRecorder()
+		h(w, r)
+		return w
+	}
+	cases := []struct {
+		target, ctype, body string
+		h                   http.HandlerFunc
+	}{
+		{"/api/tasks/t1/artifact?path=dist/report.html&view=1", "text/plain; charset=utf-8", "<script>x</script>", c.handleTaskArtifact},
+		{"/api/tasks/t1/artifact?path=dist/shot.png&view=1", "image/png", png, c.handleTaskArtifact},
+		{"/api/tasks/t1/file?path=logo.png&view=1", "image/png", png, c.handleTaskFile},
+		{"/api/tasks/t1/file?path=page.svg&view=1", "text/plain; charset=utf-8", "<svg/>", c.handleTaskFile},
+		{"/api/tasks/t1/file?path=logo.png", "text/plain; charset=utf-8", png, c.handleTaskFile},
+	}
+	for _, tc := range cases {
+		w := get(tc.target, tc.h)
+		if w.Code != 200 || w.Header().Get("Content-Type") != tc.ctype || w.Body.String() != tc.body || strings.HasPrefix(w.Header().Get("Content-Disposition"), "attachment") {
+			t.Errorf("%s: %d %q %q %q", tc.target, w.Code, w.Header().Get("Content-Type"), w.Header().Get("Content-Disposition"), w.Body.String())
+		}
+	}
+	if w := get("/api/tasks/t1/artifact?path=dist&view=1", c.handleTaskArtifact); w.Code != 404 {
+		t.Errorf("folder as artifact: %d", w.Code)
+	}
+	if w := get("/api/tasks/t1/file?path=../artifacts/dist/shot.png&view=1", c.handleTaskFile); w.Code == 200 {
+		t.Error("file route escaped its folder")
+	}
+}
+
 func TestFetchJobFilesInline(t *testing.T) {
 	c := &Controller{}
 	ok := inlineFile("dist/x.txt", []byte("hello"))
