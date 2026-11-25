@@ -39,6 +39,8 @@ type CatalogEntry struct {
 	MinRAMGB int      `json:"min_ram_gb"`
 	Coding   bool     `json:"coding"`           // a good local coding model; ranked in Suggested
 	MMProj   string   `json:"mmproj,omitempty"` // vision projector file in the same repo; its size is included in Bytes
+	// Embedding marks a model that turns text into vectors (embed.go). It is never offered as a chat or task model.
+	Embedding bool `json:"embedding,omitempty"`
 }
 
 // isMMProj reports whether a model file is a vision projector (loaded with
@@ -74,6 +76,23 @@ var modelCatalog = []CatalogEntry{
 	{ID: "gemma-4-26b-a4b-q4km", Label: "Gemma 4 26B-A4B (Q4_K_M)", Repo: "unsloth/gemma-4-26B-A4B-it-GGUF",
 		Files: []string{"gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"}, MMProj: "mmproj-F16.gguf", Bytes: 18100000000, For: "a large-RAM CPU node, or 16 GB GPUs with RAM offload",
 		Notes: "Google MoE, ~4B active per token, Apache 2.0. Strong general model; worth a second opinion in review. Reads images (Vision): the projector file is downloaded with it. Needs a current llama.cpp build.", Ctx: 16384, MinRAMGB: 24},
+	// Embedding models: small, run on the CPU of any node with llama.cpp, used by /v1/embeddings and knowledge bases.
+	// File names and sizes are from the Hugging Face listings but not checked from the build box (it cannot reach Hugging Face).
+	{ID: "nomic-embed-text-v1.5-q8", Embedding: true, Label: "Nomic Embed Text v1.5 (Q8_0)", Repo: "nomic-ai/nomic-embed-text-v1.5-GGUF",
+		Files: []string{"nomic-embed-text-v1.5.Q8_0.gguf"}, Bytes: 146146432, For: "embeddings and search (default)",
+		Notes: "Small and fast on any CPU, English, 768 dimensions. The default for /v1/embeddings and knowledge bases.", Ctx: 2048, MinRAMGB: 2},
+	{ID: "qwen3-embedding-0.6b-q8", Embedding: true, Label: "Qwen3 Embedding 0.6B (Q8_0)", Repo: "Qwen/Qwen3-Embedding-0.6B-GGUF",
+		Files: []string{"Qwen3-Embedding-0.6B-Q8_0.gguf"}, Bytes: 639153152, For: "embeddings and search, many languages",
+		Notes: "Better on other languages and code than Nomic, about four times the size. 1024 dimensions.", Ctx: 2048, MinRAMGB: 4},
+}
+
+// isEmbeddingName says whether a library model is an embedding model: the catalog says so, or its name does.
+func isEmbeddingName(name string) bool {
+	if ce := catalogEntry(name); ce != nil {
+		return ce.Embedding
+	}
+	l := strings.ToLower(name)
+	return strings.Contains(l, "embed") || strings.HasPrefix(l, "bge-") || strings.HasPrefix(l, "gte-") || strings.HasPrefix(l, "e5-")
 }
 
 type ModelRec struct {
@@ -88,7 +107,8 @@ type ModelRec struct {
 	BytesDone  int64       `json:"bytes_done"`
 	BytesTotal int64       `json:"bytes_total"`
 	Error      string      `json:"error,omitempty"`
-	Vision     bool        `json:"vision"` // has a vision projector (mmproj) file, so it can read images
+	Vision     bool        `json:"vision"`              // has a vision projector (mmproj) file, so it can read images
+	Embedding  bool        `json:"embedding,omitempty"` // an embedding model (embed.go): kept out of chat and task model choices
 	Added      time.Time   `json:"added"`
 	Tier       string      `json:"tier,omitempty"`       // small | medium | large; empty = guessed from the name
 	TierGuess  string      `json:"tier_guess,omitempty"` // filled in for the UI
@@ -127,6 +147,7 @@ func (c *Controller) loadModels() {
 			m.Status, m.Error = "failed", "interrupted by a controller restart; click Retry to resume"
 		}
 		m.Vision = m.hasVision()
+		m.Embedding = isEmbeddingName(m.Name)
 		c.models[m.Name] = &m
 		if m.Status == "ready" && m.Shape.NeedsHeaderRefresh() {
 			go c.fillModelShape(&m) // models added before the header was read
@@ -136,6 +157,7 @@ func (c *Controller) loadModels() {
 
 func (c *Controller) saveModelLocked(m *ModelRec) {
 	m.Vision = m.hasVision()
+	m.Embedding = isEmbeddingName(m.Name)
 	dir := filepath.Join(c.modelsStoreDir(), m.Name)
 	_ = os.MkdirAll(dir, 0o755)
 	b, _ := json.MarshalIndent(m, "", "  ")

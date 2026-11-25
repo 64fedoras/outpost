@@ -214,7 +214,7 @@ func (c *Controller) handleChatBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	nc := &Chat{ID: newID("chat"), Title: chatTitle("Branch: " + ch.Title), Node: ch.Node, Instructions: ch.Instructions, RunCode: ch.RunCode, GroupID: ch.GroupID, Created: now, Updated: now, dir: c.chatsDir()}
+	nc := &Chat{ID: newID("chat"), Title: chatTitle("Branch: " + ch.Title), Node: ch.Node, Instructions: ch.Instructions, RunCode: ch.RunCode, Stashes: append([]string(nil), ch.Stashes...), GroupID: ch.GroupID, Created: now, Updated: now, dir: c.chatsDir()}
 	for _, m := range ch.Messages[:i+1] {
 		m.Alts, m.Ver = nil, 0
 		nc.Messages = append(nc.Messages, m)

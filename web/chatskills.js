@@ -48,6 +48,7 @@ function skillMenuRender() {
   const run = $('chat-run').classList.contains('on');
   setHTML('chat-plus-menu', `<button type="button" role="menuitem" data-sk-menu="attach"><span aria-hidden="true">📎</span> Attach images or documents</button>
     <button type="button" role="menuitem" data-sk-menu="run" aria-pressed="${run}"><span aria-hidden="true">▶</span> Run code${run ? ' <span class="muted">· on</span>' : ''}</button>
+    <button type="button" role="menuitem" data-sk-menu="stash"><span aria-hidden="true">▦</span> Search a stash${shChatIds().length ? ` <span class="muted">· ${shChatIds().length} on</span>` : ''}</button>
     <hr><div class="menu-h">Skills</div>
     <button type="button" role="menuitem" data-sk-menu="image"><span aria-hidden="true">✦</span> Make an image</button>
     <button type="button" role="menuitem" data-sk-menu="cad"><span aria-hidden="true">◇</span> Make a 3D model</button>`);
@@ -64,6 +65,7 @@ $('chat-plus-menu').addEventListener('click', (e) => {
   const k = b.dataset.skMenu;
   if (k === 'attach') $('chat-attach').click();
   else if (k === 'run') $('chat-run').click();
+  else if (k === 'stash') shPickOpen();
   else skillSet(k);
 });
 document.addEventListener('click', (e) => { if (!e.target.closest('.plus-wrap')) skillMenuClose(); });
@@ -73,7 +75,8 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') skillMenuC
 function skillRender() {
   const run = $('chat-run').classList.contains('on');
   setHTML('chat-chips', (chatSkill ? `<button type="button" class="chat-pill on" data-sk-chip="skill" title="Remove" aria-label="${SKILLS[chatSkill].name} skill on. Remove">${SKILLS[chatSkill].icon} ${SKILLS[chatSkill].name} ✕</button>` : '')
-    + (run ? '<button type="button" class="chat-pill on" data-sk-chip="run" title="Turn off" aria-label="Run code on. Turn off">▶ Run code ✕</button>' : ''));
+    + (run ? '<button type="button" class="chat-pill on" data-sk-chip="run" title="Turn off" aria-label="Run code on. Turn off">▶ Run code ✕</button>' : '')
+    + shChatChips());
   const g = !chatSkill && !skillCardState ? skillGuess($('chat-text').value) : null;
   const show = g && skillDismissed !== $('chat-text').value;
   $('chat-suggest').classList.toggle('hidden', !show);
@@ -191,7 +194,7 @@ $('chat-text').addEventListener('keydown', (e) => {
 $('chat-text').addEventListener('input', skillRender);
 document.querySelector('.chat-compose').addEventListener('click', (e) => {
   const chip = e.target.closest('[data-sk-chip]');
-  if (chip) { if (chip.dataset.skChip === 'run') $('chat-run').click(); else skillSet(null); return; }
+  if (chip) { if (chip.dataset.skChip === 'run') $('chat-run').click(); else if (chip.dataset.skChip === 'stash') shChatSet(shChatIds().filter((x) => x !== chip.dataset.id)); else skillSet(null); return; }
   const sug = e.target.closest('[data-sk-sug]');
   if (sug) {
     if (sug.dataset.skSug === 'no') { skillDismissed = $('chat-text').value; skillRender(); return; }

@@ -1717,3 +1717,64 @@ details.menu > summary { border: 1px solid var(--line); border-radius: 8px; padd
 .st-chat-s { grid-column: 1; }
 .st-chat-b { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 6px; }
 @media (max-width: 640px) { .st-chat-row { grid-template-columns: 1fr; } .st-chat-b { grid-column: 1; grid-row: auto; } }
+
+/* Stash page and chat sources (stash.js) */
+.sh-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 6px; }
+.sh-top h1 { font-size: 20px; margin: 0; }
+.sh-top .spacer { flex: 1; }
+.sh-lead { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; max-width: 70ch; }
+.sh-banner { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); border-radius: var(--radius); font-size: 13px; margin-bottom: 12px; flex-wrap: wrap; }
+.sh-banner .spacer { flex: 1; }
+.sh-list { padding: 0; overflow: hidden; }
+.sh-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 14px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.sh-row:last-child { border-bottom: 0; }
+.sh-name { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sh-sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.sh-sub.warn { color: var(--warn); }
+.sh-nums { text-align: right; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.sh-nums b { color: var(--ink); font-weight: 600; display: block; font-size: 13px; }
+.sh-prog { max-width: 320px; margin-top: 7px; }
+.sh-back { font-size: 12.5px; color: var(--muted); text-decoration: none; }
+.sh-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.sh-grid > .card { min-width: 0; }
+@media (max-width: 900px) { .sh-grid { grid-template-columns: minmax(0, 1fr); } .sh-row { grid-template-columns: minmax(0, 1fr) auto; } .sh-nums { display: none; } }
+.sh-drop { border: 1.5px dashed var(--line); border-radius: var(--radius); padding: 14px; text-align: center; color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+.sh-drop.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.sh-drop b { color: var(--ink); }
+.sh-paste { margin: -4px 0 12px; font-size: 12.5px; }
+.sh-paste summary { cursor: pointer; color: var(--muted); }
+.sh-paste textarea { width: 100%; min-height: 110px; margin: 8px 0 6px; box-sizing: border-box; }
+.sh-docs { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sh-docs td { padding: 7px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.sh-docs tr:last-child td { border-bottom: 0; }
+.sh-docs .n { color: var(--muted); text-align: right; white-space: nowrap; }
+.sh-docs .bad { color: var(--bad); white-space: normal; text-align: right; }
+.sh-docs a { color: inherit; }
+.sh-q { display: flex; gap: 8px; margin-bottom: 10px; }
+.sh-q input { flex: 1; min-width: 0; }
+.sh-hit { display: block; width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; margin-bottom: 8px; font-size: 13px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.sh-hit:hover { background: var(--tint); }
+.sh-hit .h { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.sh-hit .h b { color: var(--ink); }
+.sh-hit mark, .sh-pass mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+.sh-score { margin-left: auto; display: inline-block; width: 60px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--muted) 25%, var(--panel)); overflow: hidden; flex: none; }
+.sh-score i { display: block; height: 100%; background: var(--accent); }
+.sh-adv { margin-top: 12px; }
+.sh-adv summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.sh-adv .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; font-size: 12.5px; }
+.sh-pass { white-space: pre-wrap; font-size: 13px; max-height: 55vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+.sh-pass .ctx { color: var(--muted); }
+.sh-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, transparent); font-size: 12.5px; }
+.sh-chip .x { cursor: pointer; background: none; border: 0; color: inherit; padding: 0 2px; font-size: 13px; }
+.sh-src { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; font-size: 12px; color: var(--muted); align-items: center; }
+.sh-src button { padding: 2px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); background: transparent; font: inherit; cursor: pointer; }
+.sh-src button:hover { background: var(--tint); }
+.sh-fold { font-size: 12.5px; color: var(--muted); margin: 6px 0; }
+.sh-fold summary { cursor: pointer; }
+.sh-pop { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 30; width: 290px; max-width: calc(100vw - 24px); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); padding: 10px 12px; font-size: 13px; }
+.sh-opt { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; }
+.sh-opt input { margin-top: 3px; flex: none; width: auto; }
+.sh-opt .sub { margin: 0; white-space: normal; }
+.chat-chips .chat-pill[data-sk-chip="stash"] { flex: 0 1 auto; min-width: 0; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-docs td:first-child { overflow-wrap: anywhere; }
+.sh-opt b { display: block; }

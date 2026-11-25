@@ -77,6 +77,9 @@ func validNeed(s string) bool { return s == needGeneral || s == needCoding || s 
 // upload) is trusted for coding and general work, never for vision.
 // c.mu must be held.
 func (c *Controller) modelSuitsLocked(need, name string) bool {
+	if isEmbeddingName(name) {
+		return false
+	}
 	vision := false
 	if m := c.models[name]; m != nil && m.hasVision() {
 		vision = true

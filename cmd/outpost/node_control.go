@@ -341,6 +341,7 @@ func (n *Node) quit() {
 		time.Sleep(2 * time.Second)
 	}
 	n.llama.stop()
+	n.embed.stop()
 	n.rpc.stop(false)
 	n.connMu.Lock()
 	if n.conn != nil {

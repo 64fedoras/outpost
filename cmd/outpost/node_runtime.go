@@ -87,6 +87,7 @@ func (n *Node) installRuntime(ri RuntimeInstall) {
 	// The new build works: only now stop the old server (the controller loads the model
 	// again afterwards) and switch over.
 	n.llama.stop()
+	n.embed.stop()
 	rec := runtimeRecord{RuntimeInfo: RuntimeInfo{Build: ri.Build, Variant: ri.Variant}, ServerPath: server}
 	b, _ := json.MarshalIndent(rec, "", "  ")
 	if err := writeFileAtomic(filepath.Join(n.llamaDir(), "current.json"), b, 0o644); err != nil {

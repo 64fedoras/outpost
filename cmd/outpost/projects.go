@@ -61,6 +61,8 @@ type Project struct {
 	Suggestions []ProjectSuggestion `json:"suggestions,omitempty"`
 	// Pinned projects are listed in the sidebar under Projects.
 	Pinned bool `json:"pinned,omitempty"`
+	// StashID is the project's own stash (stash_project.go), made when first opened.
+	StashID string `json:"stash_id,omitempty"`
 
 	// Git. GitURL empty = a plain folder project.
 	GitURL      string `json:"git_url,omitempty"`
@@ -248,6 +250,7 @@ func (c *Controller) projectRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/projects", c.auth(c.handleCreateProject))
 	mux.HandleFunc("POST /api/projects/{id}", c.auth(c.handleUpdateProject))
 	mux.HandleFunc("DELETE /api/projects/{id}", c.auth(c.handleDeleteProject))
+	mux.HandleFunc("POST /api/projects/{id}/stash", c.auth(c.handleProjectStash))
 	mux.HandleFunc("POST /api/projects/{id}/duplicate", c.auth(c.handleDuplicateProject))
 	mux.HandleFunc("POST /api/projects/{id}/suggestions/{sid}/{act}", c.auth(c.handleProjectSuggestion))
 	mux.HandleFunc("GET /api/projects/{id}/download", c.auth(c.handleDownloadProject))
@@ -428,6 +431,12 @@ func (c *Controller) handleDeleteProject(w http.ResponseWriter, r *http.Request)
 	}
 	delete(c.projects, p.ID)
 	c.mu.Unlock()
+	p.mu.Lock()
+	stashID := p.StashID
+	p.mu.Unlock()
+	if stashID != "" {
+		c.stashDelete(stashID)
+	}
 	pc := p.chatLog()
 	pc.mu.Lock()
 	if pc.cancel != nil {

@@ -51,12 +51,31 @@ for i, o in enumerate(onions):
 <script>window.mdTestHacked = 1</script> <img src=x onerror="window.mdTestHacked = 1"> [bad link](javascript:window.mdTestHacked=1)
 """
 
+def embed_text(text, dim=64):
+    """Bag of words hashed into dim buckets: texts that share words get similar vectors, so search tests are meaningful."""
+    import hashlib
+    v = [0.0] * dim
+    stop = {"the", "a", "an", "is", "are", "of", "to", "in", "on", "and", "or", "what", "how", "do", "does", "have", "has", "for", "it", "i", "was", "if", "not", "with", "ask", "search", "query", "document"}
+    for w in re.findall(r"[a-z0-9]+", text.lower()):
+        if w in stop: continue
+        v[int(hashlib.md5(w.encode()).hexdigest(), 16) % dim] += 1.0
+    return v
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
+    def embeddings(self, body):
+        inp = body.get("input", [])
+        inp = [inp] if isinstance(inp, str) else inp
+        data = [{"object": "embedding", "index": i, "embedding": embed_text(t)} for i, t in enumerate(inp)]
+        toks = sum(len(re.findall(r"[a-z0-9]+", t.lower())) for t in inp)
+        out = json.dumps({"object": "list", "data": data, "model": body.get("model", "fake"), "usage": {"prompt_tokens": toks, "total_tokens": toks}}).encode()
+        self.send_response(200); self.send_header("content-type", "application/json"); self.send_header("content-length", str(len(out))); self.end_headers(); self.wfile.write(out)
     def do_GET(self):
         self.send_response(200); self.send_header("content-type","application/json"); self.end_headers(); self.wfile.write(b'{"status":"ok"}')
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+        if self.path.endswith("/embeddings"):
+            return self.embeddings(body)
         user = body["messages"][-1]["content"]
         imgs = 0
         if isinstance(user, list):  # a message with images (vision models): text part plus image_url parts
@@ -100,6 +119,12 @@ class H(BaseHTTPRequestHandler):
                                {"name": "10-inch rack panel width", "value": "254 mm, 1U = 44.5 mm", "source": "example.org"}])
         elif "You write OpenSCAD files" in system:
             text = scad_reply(user)  # the New 3D model page (cad.py)
+        elif "Passages from the user's stash" in user:
+            # Chats that search a Stash (stash.py): answer from passage [1] and cite it.
+            first = re.search(r"^\[1\] [^\n]*\n(.*)", user, re.M)
+            text = "From your stash: " + (first.group(1).strip()[:120] if first else "?") + " [1]"
+        elif "nothing relevant was found" in user:
+            text = "Your stash has nothing on that."
         elif imgs:
             text = f"I can see {imgs} image(s). The screenshot shows a terminal with an error message."  # chat screenshots (chatimages.py)
         elif "<<<DOCUMENT>>>" in user:

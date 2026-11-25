@@ -57,7 +57,8 @@ type Node struct {
 	updating    bool
 	args        []string
 	llama       *llamaMgr
-	sd          *sdMgr // stable-diffusion.cpp server for image generation (node_sd.go)
+	sd          *sdMgr    // stable-diffusion.cpp server for image generation (node_sd.go)
+	embed       *embedMgr // embedding server, on demand (node_embed.go)
 	rpc         *rpcMgr
 	paused      bool            // no new work (tray icon or web UI); kept in <data>/paused
 	pausedBy    string          // tray | web
@@ -106,6 +107,7 @@ func runNode(args []string) error {
 		args: stripJoin(os.Args[1:])}
 	n.llama = newLlamaMgr(n)
 	n.sd = newSDMgr(n)
+	n.embed = newEmbedMgr(n)
 	n.rpc = newRPCMgr(n)
 	for _, d := range []string{*data, n.workRoot, filepath.Join(*data, "models"), n.agentDir()} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
@@ -175,6 +177,7 @@ func runNode(args []string) error {
 			log.Printf("this node was removed in the controller UI; wiping work root and config")
 			n.cancelAll()
 			n.llama.stop()
+			n.embed.stop()
 			n.rpc.stop(true)
 			time.Sleep(time.Second)
 			n.sweepWorkRoot()
@@ -792,6 +795,12 @@ func (n *Node) runJob(jd JobDispatch) {
 	log.Printf("job %s (%s) received", jd.JobID, jd.Kind)
 	if n.isPaused() {
 		fail(errf("busy", true, "node is paused (resume it on its card in the web UI, or with Accept new work in its tray icon)"))
+		return
+	}
+	if jd.Kind == "embed" {
+		private = false // embedding uses no workspace
+		n.runEmbed(ctx, jd, &res)
+		finish()
 		return
 	}
 	if jd.Kind == "inference" {

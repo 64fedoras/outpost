@@ -234,9 +234,59 @@ Agents that call tools work when the model's own chat template supports tools (n
 with `--jinja`; `tool_choice`, `top_p`, `seed`, penalties, `response_format` and
 `stream_options.include_usage` are passed through). Requests share free model slots with chat, so a busy
 cluster makes an agent wait up to 2 minutes and then answer 503; agents should retry. Not offered yet:
-embeddings and per-token rate or spend limits. The API is plain HTTPS
+per-token rate or spend limits. The API is plain HTTPS
 with a self-signed certificate by default; keep it on your LAN, or put a trusted certificate in front
 before exposing it. Not tested against Hermes or the real cluster.
+
+### Embeddings
+
+`POST /v1/embeddings` works like OpenAI's: `{"model": "auto", "input": "text" or ["text", ...]}` returns one
+vector per input, scaled to length 1, with `usage`. `encoding_format` may be `float` (default) or `base64`
+(what the OpenAI Python client asks for). Up to 512 inputs per call and 32,000 characters each; token
+arrays and `dimensions` are refused. A **Chat only** token works here. `GET /v1/models` lists the ready
+embedding models with `"capabilities": ["embedding"]`.
+
+Embedding models are small models that turn text into vectors for search. Add one on the **Models** page
+(*Add to library* on Nomic Embed Text, the default, or Qwen3 Embedding 0.6B for other languages; any
+Hugging Face GGUF whose name says "embed" works too). They get an *Embedding* tag, have no *Load* button
+and are never offered as chat or task models. When a request arrives, Outpost picks an online node that has
+llama.cpp (preferring one that already has the model, then the one with the most CPU threads), copies the
+model there if needed, and starts a second llama-server on the CPU just for embeddings, so the chat model
+keeps the GPU. That server stops after 5 minutes without a request; nothing is kept on the node but the
+model file. With no embedding model in the library the API answers 404 and says what to add. The catalog
+file names and sizes for the two models were typed from the Hugging Face listings and could not be checked
+from the build machine; if a download fails, use *Add a model from Hugging Face* instead.
+
+### The Stash: documents your chats can search
+
+The **Stash** page (sidebar) holds *stashes*: named collections of *resources* (PDF, Word, Excel, OpenDocument,
+text, Markdown, CSV and code files up to 50 MB each, or text you paste). Drop files on a stash or use *choose
+files*; each resource is cut into passages of about 800 characters (a page number is kept for PDFs), embedded
+with the embedding model above and indexed. A stash holds up to 500 resources and 200,000 passages in all
+(6,000 per resource); there can be 50 stashes.
+
+Where things live: the original files, the passages and the vectors are all on the **controller**
+(`data/stash/<id>/`). A node is only sent the passage text to embed, in memory, and sends vectors back; it
+keeps nothing, and nothing goes to the cloud. The Stash is part of the encrypted backup and shows as its own
+part in Settings → Storage.
+
+Search combines meaning (vectors) with exact words (BM25) and merges the two rankings. *Try a search* on a
+stash page shows what a chat would find, with the matching words marked; a hit opens the passage with its
+neighbours. If the embedding model changes, the stash shows *Needs re-index* and answers by words only until
+you press *Re-index*. *Advanced* sets passage size and overlap (changing them re-indexes). Without any
+embedding model in the library the page offers *Add Nomic Embed Text*.
+
+**In a chat:** ＋ → *Search a stash* and tick one or more stashes (up to 5; a chip shows them next to ＋, and
+the choice is kept with the chat). Before each answer the question is searched; passages that are close enough
+are numbered and put in front of the model, which is told to cite them as [1], [2] and to ignore any
+instructions written inside them. The answer shows *Sources* chips (click one to read the passage) and a
+folded *Searched the stash* line. If nothing is close enough the model is told so and says it. Your files are
+added after any cloud web search has run, so they are never sent to Claude or OpenRouter. Research mode does
+not use the Stash. Projects have their own stash for their tasks (see using-tasks.md, *The project's stash*).
+
+Untested: real embedding models (the relevance cut-off of cosine 0.45 is a guess for Nomic and Qwen3 and may
+need tuning), large PDFs and large stashes, scanned PDFs (no text means no passages; the resource shows
+*failed*), and Safari, Firefox and real phones.
 
 ### The Anthropic and Ollama APIs
 

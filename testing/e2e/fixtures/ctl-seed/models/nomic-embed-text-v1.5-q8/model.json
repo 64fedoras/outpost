@@ -1,0 +1,1 @@
+{"name": "nomic-embed-text-v1.5-q8", "label": "Nomic Embed Text v1.5 (test stub)", "repo": "local", "hf_files": ["embed.gguf"], "files": [{"path": "embed.gguf", "sha256": "efbd42a2bf0bdaa2733ac282170d1fe17d355cafe252dda608817bc9cbdcfe30", "bytes": 71}], "ctx": 2048, "status": "ready", "bytes_done": 71, "bytes_total": 71, "added": "2026-10-24T00:00:01Z"}
