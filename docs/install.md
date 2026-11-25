@@ -187,6 +187,10 @@ keeps the data. Because the node runs as root, commands run on it (when **Exec**
 run as root. *Untested on a real Mac*, including whether llama.cpp can use the GPU through Metal from a
 system service. Running `outpost node --join <token>` in a terminal still works.
 
+While the node runs it keeps the Mac from idle-sleeping (it runs `caffeinate -i` tied to the node's own
+process, so it stops when the node stops). A sleeping Mac misses heartbeats and drops off the controller.
+The display can still sleep, and a MacBook still sleeps when its lid is closed. *Untested on a real Mac.*
+
 If a Mac node still reports `no route to host` (for example one started by hand from a login item), the
 menu bar item says "blocked by macOS Local Network setting", the log says what to do, and the node asks
 macOS to show its "find devices on local networks" prompt; click **Allow**, or turn on `outpost` under
