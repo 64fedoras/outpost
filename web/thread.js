@@ -4,12 +4,12 @@
 // ---------- task thread ----------
 async function pollTask() {
   clearTimeout(taskTimer);
-  if (page !== 'task') return;
-  const id = pageArg;
+  if (!onTask()) return;
+  const id = curTask();
   let t;
   try { t = await api('/api/tasks/' + id); }
   catch (e) {
-    if (id !== pageArg || e.message === 'login required') return;
+    if (id !== curTask() || e.message === 'login required') return;
     // The controller is restarting (or the network blipped): keep showing the
     // task as it was and try again shortly, so it comes back on its own.
     if (!taskDetail || /no such task/.test(e.message)) setHTML('tv-title', esc(e.message));
@@ -17,9 +17,9 @@ async function pollTask() {
     return;
   }
   taskDetail = t;
-  if (id !== pageArg) return;
+  if (id !== curTask()) return;
   await loadRounds();
-  if (id !== pageArg) return;
+  if (id !== curTask()) return;
   if (!ACTIVE.includes(taskDetail.status)) liveLast = {};   // nothing more to show once the task has ended
   renderTask(taskDetail);
   // With the live stream open, "changed" events trigger refreshes; polling is only the fallback.
@@ -40,12 +40,12 @@ function liveOpen(id) {
   const es = liveES = new EventSource(`/api/tasks/${id}/events`);
   // After the controller restarts the stream reconnects: reload the task at
   // once instead of waiting for the slow fallback poll.
-  es.onopen = () => { if (page === 'task' && pageArg === id) { liveCalls = {}; liveLast = {}; clearTimeout(liveKick); liveKick = setTimeout(pollTask, 50); } };
+  es.onopen = () => { if (onTask() && curTask() === id) { liveCalls = {}; liveLast = {}; clearTimeout(liveKick); liveKick = setTimeout(pollTask, 50); } };
   // A stream the browser gave up on (an error status while the controller
   // was starting) is opened again.
   es.onerror = () => {
     if (es.readyState !== 2) return;
-    setTimeout(() => { if (liveES === es && page === 'task' && pageArg === id) { liveCalls = {}; liveLast = {}; liveOpen(id); } }, 2000);
+    setTimeout(() => { if (liveES === es && onTask() && curTask() === id) { liveCalls = {}; liveLast = {}; liveOpen(id); } }, 2000);
   };
   liveES.onmessage = (e) => {
     let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
@@ -67,7 +67,7 @@ function liveOpen(id) {
     }
     // Anything but a delta for an already visible pane changes the layout: re-render soon.
     clearTimeout(liveKick);
-    liveKick = setTimeout(() => { if (page === 'task') pollTask(); }, ev.t === 'changed' ? 250 : 50);
+    liveKick = setTimeout(() => { if (onTask()) pollTask(); }, ev.t === 'changed' ? 250 : 50);
   };
 }
 const LIVE_MAX = 8000;   // characters shown per call; the controller keeps 64 KB
@@ -137,9 +137,9 @@ function renderThreadItems(items) {
 // Answer boxes ("Something else…" and an agent's question) keep what was typed, per task and question.
 function answerKey(el) {
   const card = el.closest('.card-msg'), btn = card && card.querySelector('button[data-msg]');
-  if (!btn || !pageArg) return '';
+  if (!btn || !curTask()) return '';
   const q = el.closest('fieldset.q');
-  return `ans:${pageArg}:${btn.dataset.msg}:${q ? q.dataset.q : 'aq'}`;
+  return `ans:${curTask()}:${btn.dataset.msg}:${q ? q.dataset.q : 'aq'}`;
 }
 function restoreAnswerDrafts() {
   document.querySelectorAll('#thread .opt-other, #thread input[id^="aq-"]').forEach((el) => {
@@ -695,27 +695,27 @@ function renderComposer(t) {
 }
 $('tm-queue').addEventListener('click', async (e) => {
   const b = e.target.closest('button[data-q]');
-  if (!b || !pageArg) return;
+  if (!b || !curTask()) return;
   try {
-    if (b.dataset.q === 'now') await post(`/api/tasks/${pageArg}/send-now`);
-    else await api(`/api/tasks/${pageArg}/queued/${encodeURIComponent(b.dataset.id)}`, { method: 'DELETE' });
+    if (b.dataset.q === 'now') await post(`/api/tasks/${curTask()}/send-now`);
+    else await api(`/api/tasks/${curTask()}/queued/${encodeURIComponent(b.dataset.id)}`, { method: 'DELETE' });
   } catch (err) { toast(err.message, 4000); }
   pollTask(); refresh();
 });
 
 async function sendTaskMessage() {
   const box = $('tm-text'), text = box.value.trim();
-  if (!text || !pageArg) return;
+  if (!text || !curTask()) return;
   $('tm-send').disabled = true;
-  try { await post(`/api/tasks/${pageArg}/messages`, { text, images: tmImg.payload() }); box.value = ''; tmDraft.done(); tmImg.clear(); autoGrow(box); $('thread')._scrolled = false; }
+  try { await post(`/api/tasks/${curTask()}/messages`, { text, images: tmImg.payload() }); box.value = ''; tmDraft.done(); tmImg.clear(); autoGrow(box); $('thread')._scrolled = false; }
   catch (e) { toast(e.message, 4000); }
   $('tm-send').disabled = false;
   pollTask(); refresh();
 }
 $('tm-send').onclick = sendTaskMessage;
 $('tm-stop').onclick = async () => {
-  if (!pageArg || !await askConfirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return;
-  try { await post(`/api/tasks/${pageArg}/cancel`); toast('Stopped'); } catch (e) { toast(e.message, 4000); }
+  if (!curTask() || !await askConfirm('Stop this task? Files written so far are kept, and you can send a message later to continue.')) return;
+  try { await post(`/api/tasks/${curTask()}/cancel`); toast('Stopped'); } catch (e) { toast(e.message, 4000); }
   pollTask(); refresh();
 };
 $('tm-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendTaskMessage(); } });
@@ -754,8 +754,8 @@ function renderFiles(t) {
 
 let taskRounds = [];
 async function loadRounds() {
-  if (!pageArg) return;
-  try { taskRounds = (await api(`/api/tasks/${pageArg}/rounds`)).rounds || []; } catch (e) { taskRounds = []; }
+  if (!curTask()) return;
+  try { taskRounds = (await api(`/api/tasks/${curTask()}/rounds`)).rounds || []; } catch (e) { taskRounds = []; }
 }
 
 // A small keyword highlighter; it only colours, never changes the text.
@@ -820,7 +820,7 @@ async function showChanges(round) {
   setHTML('ch-body', '<span class="muted">Loading…</span>'); $('ch-undo').classList.add('hidden');
   $('ch-title').textContent = `Changes in request ${round}`; open('modal-changes');
   try {
-    const r = await api(`/api/tasks/${pageArg}/changes?round=${round}`);
+    const r = await api(`/api/tasks/${curTask()}/changes?round=${round}`);
     setHTML('ch-hint', `${r.files.length} file${r.files.length === 1 ? '' : 's'} changed. Shown against the files as they are now.`);
     setHTML('ch-body', r.files.map((f) => `<details open><summary class="mono">${esc(f.path)} <span class="muted">${f.status === 'added' ? 'new file' : f.status === 'deleted' ? 'deleted' : 'changed'}${f.gone && f.status !== 'deleted' ? ', since deleted' : ''}</span></summary><pre class="out code diff">${unified(f.before, f.after)}</pre></details>`).join(''));
     $('ch-undo').classList.toggle('hidden', !r.undoable);
@@ -828,7 +828,7 @@ async function showChanges(round) {
 }
 
 async function taskAction(act, el) {
-  const id = pageArg;
+  const id = curTask();
   try {
     switch (act) {
       case 'task-redo': openRedo(taskDetail, el.dataset.sub); return;
@@ -943,7 +943,7 @@ $('files-zip').onclick = () => {
   const paths = [...document.querySelectorAll('.fb-tick:checked')].map((c) => c.value);
   if (!paths.length) { toast('Tick the files to zip first'); return; }
   const f = document.createElement('form');
-  f.method = 'POST'; f.action = `/api/tasks/${pageArg}/zip`;
+  f.method = 'POST'; f.action = `/api/tasks/${curTask()}/zip`;
   const i = document.createElement('input');
   i.type = 'hidden'; i.name = 'paths'; i.value = paths.join('\n');
   f.appendChild(i); document.body.appendChild(f); f.submit(); f.remove();
@@ -957,11 +957,11 @@ async function viewFile(path) {
   fbEditing(false);
   $('fb-title').textContent = path; $('fb-body').textContent = 'Loading…';
   $('fb-dl').classList.remove('hidden');
-  $('fb-dl').href = `/api/tasks/${pageArg}/file?path=${encodeURIComponent(path)}&download=1`;
+  $('fb-dl').href = `/api/tasks/${curTask()}/file?path=${encodeURIComponent(path)}&download=1`;
   $('fb-edit').classList.add('hidden');
   $('fb-preview').classList.add('hidden');
   try {
-    const r = await fetch(`/api/tasks/${pageArg}/file?path=${encodeURIComponent(path)}`, { credentials: 'same-origin' });
+    const r = await fetch(`/api/tasks/${curTask()}/file?path=${encodeURIComponent(path)}`, { credentials: 'same-origin' });
     fbText = await r.text();
     setHTML('fb-body', numbered(fbText, path));
     $('fb-preview').classList.toggle('hidden', !(r.ok && pvKindOf(path)));
@@ -984,7 +984,7 @@ $('fb-save').onclick = async () => {
   const content = $('fb-editor').value;
   if (content === fbText) { $('fb-cancel').click(); return; }
   try {
-    await post(`/api/tasks/${pageArg}/file`, { path: fbPath, content });
+    await post(`/api/tasks/${curTask()}/file`, { path: fbPath, content });
     toast('Saved as your edit; Changes and Undo work on it');
     await loadRounds(); viewFile(fbPath); pollTask();
   } catch (e) { toast(e.message); }

@@ -55,6 +55,7 @@ func (c *Controller) planTask(ctx context.Context, t *Task) {
 	user := c.plannerPrompt(t, budget, nil)
 	user += c.webContext(ctx, c.roundURLs(t))
 	user += c.stashContext(ctx, t)
+	user += c.taskMemory(t)
 	c.mu.Lock()
 	webSearch := c.settings.WebSearch
 	c.mu.Unlock()

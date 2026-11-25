@@ -53,6 +53,7 @@ type projectOverview struct {
 	Files      []repoFile        `json:"files"`
 	FilesTotal int               `json:"files_total"`
 	Chat       projectChatView   `json:"chat"`
+	StashID    string            `json:"stash_id,omitempty"` // the project's own stash, once made
 }
 
 func clip(s string, n int) string {
@@ -95,6 +96,7 @@ func (c *Controller) handleProjectOverview(w http.ResponseWriter, r *http.Reques
 	}
 	// The project's Stash resources show beside the task outputs; the stash is not made here.
 	if s, _ := c.projectStash(p, false); s != nil {
+		out.StashID = s.ID
 		s.mu.RLock()
 		for _, x := range s.Resources {
 			out.Artifacts = append(out.Artifacts, projectArtifact{Kind: "resource", Name: x.Name, URL: "#/stash/" + s.ID, Bytes: x.Bytes, Time: x.Added})

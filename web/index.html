@@ -280,8 +280,16 @@
           </div>
         </div>
         <aside class="pj-panel" id="pj-panel" aria-label="Threads">
-          <div class="pj-panel-h"><b>Threads</b><span class="spacer"></span><button class="icon-btn" id="pj-panel-close" aria-label="Close the Threads panel">✕</button></div>
-          <div class="pj-panel-b" id="pj-threads"></div>
+          <div class="pj-panel-h">
+            <div class="pj-tabs" role="tablist" aria-label="Project pane" id="pj-tabs"><button role="tab" class="pj-tab" id="pj-tab-threads" data-tab="threads" aria-controls="pj-threads" aria-selected="true">Threads</button><button role="tab" class="pj-tab" id="pj-tab-context" data-tab="context" aria-controls="pj-context" aria-selected="false" tabindex="-1">Context</button></div>
+            <button class="small pj-back hidden" id="pj-pane-back" title="Back to the list of threads">‹ Threads</button>
+            <span class="spacer"></span>
+            <a class="icon-btn pj-full hidden" id="pj-pane-full" title="Open this task as a full page" aria-label="Open this task as a full page">↗</a>
+            <button class="icon-btn" id="pj-panel-close" aria-label="Close the project pane">✕</button>
+          </div>
+          <div class="pj-panel-b" id="pj-threads" role="tabpanel" aria-labelledby="pj-tab-threads"></div>
+          <div class="pj-panel-b hidden" id="pj-context" role="tabpanel" aria-labelledby="pj-tab-context"></div>
+          <input type="file" id="pj-ctx-file" multiple hidden accept=".pdf,.docx,.xlsx,.odt,.ods,.csv,.txt,.md,.json,.html,.xml,.yaml,.yml,text/*">
         </aside>
       </div>
     </section>
@@ -494,7 +502,7 @@
           <h2 class="set-sec-title">Memory</h2>
         <div class="card">
           <p class="hint">Short facts added to the start of every chat and project conversation. Outpost suggests them under answers; nothing is saved without your OK. Kept on the controller and in backups. When Claude or OpenRouter answers a project conversation, the facts for it are sent along. Suggestions come only from local models.</p>
-          <label class="check"><input type="checkbox" id="set-mem-on"> Use memory in chats and project conversations</label>
+          <label class="check"><input type="checkbox" id="set-mem-on"> Use memory in chats, project conversations and project tasks</label>
           <label class="check"><input type="checkbox" id="set-mem-suggest"> Suggest new memories after an answer (one small extra call on the same node)</label>
           <div id="mem-list" class="mem-list"></div>
           <div class="mem-add">

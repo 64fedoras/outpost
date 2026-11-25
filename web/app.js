@@ -127,13 +127,22 @@ function refreshIcons() {
 }
 const PAGES = ['new', 'image', 'cad', 'task', 'chat', 'scheduled', 'projects', 'project', 'stash', 'nodes', 'models', 'spending', 'settings'];
 let page = 'new', pageArg = null;
+// paneTask is a task shown inside the project's Threads pane (#/projects/<id>/tasks/<task>,
+// wide screens only). The task view code asks onTask() and curTask() instead of page/pageArg.
+let paneTask = null;
+const onTask = () => page === 'task' || (page === 'project' && !!paneTask);
+const curTask = () => (page === 'task' ? pageArg : page === 'project' ? paneTask : null);
 function route() {
   ntDraft.flush(); tmDraft.flush();
   const m = location.hash.match(/^#\/(\w+)(?:\/([\w-]+))?/) || [];
   if (m[1] === 'updates') { updPanel = true; history.replaceState(null, '', '#/nodes'); m[1] = 'nodes'; } // the Updates tab moved into Nodes
   page = m[1] === 'tasks' && m[2] ? 'task' : m[1] === 'projects' && m[2] ? 'project' : m[1] === 'project' ? 'projects' : PAGES.includes(m[1]) ? m[1] : 'new';
   pageArg = page === 'task' || page === 'chat' || page === 'project' || page === 'stash' ? m[2] || null : null;
+  const pm = page === 'project' && location.hash.match(/^#\/projects\/[\w-]+\/tasks\/([\w-]+)/);
+  if (pm && !matchMedia('(min-width: 1100px)').matches) { location.replace('#/tasks/' + pm[1]); return; } // too narrow for a pane: the task's own page
+  paneTask = pm ? pm[1] : null;
   document.querySelectorAll('[data-page]').forEach((el) => el.classList.toggle('hidden', el.dataset.page !== page));
+  if (typeof pjPlaceTask === 'function') pjPlaceTask();
   document.querySelectorAll('.side-nav a, .side-projects').forEach((a) => a.classList.toggle('active', a.dataset.tab === (page === 'project' ? 'projects' : page)));
   document.querySelector('.page-plain').classList.toggle('hidden', !['scheduled', 'projects', 'stash', 'nodes', 'models', 'spending', 'settings'].includes(page));
   document.title = page === 'task' ? 'Outpost' : 'Outpost · ' + ({ new: 'New task', image: 'New image', cad: 'New 3D model' }[page] || page[0].toUpperCase() + page.slice(1));
@@ -143,7 +152,7 @@ function route() {
   closeSide();
   clearTimeout(taskTimer);
   liveClose();
-  if (page === 'task') { taskDetail = null; threadReset(); tmDraft.restore('task:' + pageArg); autoGrow($('tm-text')); liveOpen(pageArg); pollTask(); }
+  if (onTask()) { taskDetail = null; threadReset(); tmDraft.restore('task:' + curTask()); autoGrow($('tm-text')); liveOpen(curTask()); pollTask(); }
   if (page === 'new') { ntDraft.restore('new'); setTimeout(() => $('nt-prompt').focus(), 0); }
   if (page === 'settings') loadSettings();
   if (page === 'spending') loadSpending();
@@ -336,7 +345,7 @@ const ICON_RANK = { needs: 0, work: 1, chatbusy: 1, queued: 2, paused: 3, failed
 const statusRank = (key) => ICON_RANK[key] ?? 7;
 
 function sideTaskHTML(t, projectName, tagGroup, snip) {
-  const cls = [page === 'task' && pageArg === t.id ? 'active' : '', ctxTaskId === t.id ? 'menu-open' : ''].join(' ');
+  const cls = [curTask() === t.id ? 'active' : '', ctxTaskId === t.id ? 'menu-open' : ''].join(' ');
   const title = renamingId === t.id
     ? `<input class="side-rename" id="side-rename" value="${esc(t.title)}" maxlength="120" aria-label="New name for this task">`
     : `<span class="side-task-title">${t.pinned ? '<span class="pin-mark" aria-label="Pinned">📌</span>' : ''}${esc(t.title)}</span>`;
@@ -443,6 +452,7 @@ async function deleteTask(id) {
     await api(`/api/tasks/${id}`, { method: 'DELETE' }); Drafts.clear('task:' + id); Drafts.clearPrefix('ans:' + id + ':');
     tasksSeq++; tasks = tasks.filter((t) => t.id !== id); renderSideTasks();
     if (page === 'task' && pageArg === id) location.hash = '#/new';
+    else if (paneTask === id && page === 'project') location.hash = '#/projects/' + pageArg;
     toast('Task deleted'); refresh();
   } catch (e) { toast('Delete failed: ' + e.message); }
 }
@@ -597,7 +607,9 @@ $('jobs-status').addEventListener('change', () => { jobsStatus = $('jobs-status'
 // main column keeps at least keepMain pixels, and remembered per browser under
 // key. Double-click or Enter resets to def. The width is the CSS variable cssVar
 // on wrap, so the narrow-screen layouts in style.css (overlay, sheet) ignore it.
-function sideResizer({ wrap, panel, cssVar, key, def, min, max, keepMain = 420, label }) {
+function sideResizer(opts) {
+  const { wrap, panel, cssVar, keepMain = 420, label } = opts;
+  let { key, def, min, max } = opts;
   const h = document.createElement('div');
   h.className = 'side-resize';
   h.tabIndex = 0;
@@ -606,10 +618,10 @@ function sideResizer({ wrap, panel, cssVar, key, def, min, max, keepMain = 420, 
   h.setAttribute('aria-label', label || 'Resize the panel');
   h.title = 'Drag to resize · double-click to reset';
   panel.prepend(h);
+  const load = () => { let v = def; try { const n = parseInt(localStorage.getItem(key), 10); if (n > 0) v = n; } catch (e) { /* storage optional */ } return v; };
   const hi = () => Math.max(min, Math.min(max, wrap.getBoundingClientRect().width - keepMain));
   const clamp = (w) => Math.round(Math.max(min, Math.min(hi(), w)));
-  let width = def;
-  try { const v = parseInt(localStorage.getItem(key), 10); if (v > 0) width = v; } catch (e) { /* storage optional */ }
+  let width = load();
   const apply = (w, save) => {
     width = w;
     const shown = wrap.getBoundingClientRect().width ? clamp(w) : w;
@@ -647,5 +659,7 @@ function sideResizer({ wrap, panel, cssVar, key, def, min, max, keepMain = 420, 
     apply(e.key === 'Enter' ? def : clamp(w), true);
   });
   window.addEventListener('resize', () => apply(width, false));
-  return { reset: () => apply(def, true), refresh: () => apply(width, false) };
+  // use switches to another remembered width (the Threads pane is wider while it shows a task).
+  const use = (o) => { if (o.key === key) return; ({ key, def, min, max } = { key, def, min, max, ...o }); apply(load(), false); };
+  return { reset: () => apply(def, true), refresh: () => apply(width, false), use };
 }

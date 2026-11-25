@@ -120,6 +120,9 @@ func TestProjectOverview(t *testing.T) {
 	if !strings.Contains(kinds["shot"], "/api/tasks/task_a/shot?name=index-desktop.png") || !strings.Contains(kinds["build"], "path=bin%2Fapp") || kinds["result"] != "/api/tasks/task_a/download" || kinds["resource"] != "#/stash/"+st.ID {
 		t.Fatalf("artifacts: %+v", ov.Artifacts)
 	}
+	if ov.StashID != st.ID {
+		t.Fatalf("stash id: %q", ov.StashID)
+	}
 	if ov.FilesTotal != 1 || ov.Files[0].Path != "main.go" {
 		t.Fatalf("files: %+v", ov.Files)
 	}

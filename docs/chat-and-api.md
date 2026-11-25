@@ -172,7 +172,9 @@ and stops asking after 3 answers, and paid planners never make suggestions. Fact
 moved between everywhere and a project, or forgotten; the list shows about how many tokens it adds
 to each message. Up to 100 facts of 300 characters, kept in `memory.json` on the controller and in
 backups. When Claude or OpenRouter answers a project conversation, that project's facts and the
-everywhere facts go with the request. Task planning does not use memory (use project instructions).
+everywhere facts go with the request. A task in a project is planned with the same facts (the project's and
+the everywhere ones; with Claude or OpenRouter they go with the planning request); tasks outside a project
+do not use memory. A project's facts are also listed, added and forgotten in the project's **Context** tab.
 Two switches: **Use memory** (`memory_on`) and **Suggest new memories** (`memory_suggest`), both on by
 default. **Untested:** how good real models' suggestions are; tested with a stub model.
 

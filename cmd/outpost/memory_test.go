@@ -112,3 +112,20 @@ func TestMemoryOnChatKeepsChatPrefix(t *testing.T) {
 		t.Fatal("unrelated call changed")
 	}
 }
+
+// A task in a project is planned with the project's memory (and the facts for
+// everywhere); a task outside a project gets none.
+func TestTaskMemory(t *testing.T) {
+	c := chatController(t)
+	m := c.mem()
+	m.mu.Lock()
+	m.list = []Memory{{ID: "a", Text: "Uses Go 1.26."}, {ID: "b", Text: "The dice app rolls d20.", Project: "proj_x"}, {ID: "c", Text: "Other project fact.", Project: "proj_y"}}
+	m.mu.Unlock()
+	got := c.taskMemory(&Task{ProjectID: "proj_x"})
+	if !strings.Contains(got, "Uses Go 1.26.") || !strings.Contains(got, "rolls d20") || strings.Contains(got, "Other project") {
+		t.Fatalf("project task memory: %q", got)
+	}
+	if got := c.taskMemory(&Task{}); got != "" {
+		t.Fatalf("no project: %q", got)
+	}
+}

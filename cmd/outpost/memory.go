@@ -117,6 +117,20 @@ func (c *Controller) memoryPrompt(project string) string {
 	return "\n\nThings the owner asked you to remember (use them when they matter; do not repeat them back):\n- " + strings.Join(facts, "\n- ")
 }
 
+// taskMemory is the memory block for a task's planner: only tasks in a project
+// get it (the facts for everywhere plus the project's own), the same block the
+// project conversation starts with, so the project's Context tab is what its
+// tasks are planned with.
+func (c *Controller) taskMemory(t *Task) string {
+	t.mu.Lock()
+	project := t.ProjectID
+	t.mu.Unlock()
+	if project == "" {
+		return ""
+	}
+	return c.memoryPrompt(project)
+}
+
 const memorySuggestSystem = `You help an assistant remember durable facts about its owner across conversations. Read the owner's messages below. If they state one lasting fact about themselves, their setup, their projects or how they want answers (for example "I use Go 1.26", "the home lab runs Gitea", "answer briefly"), reply with that fact as one short sentence in the third person ("Uses Go 1.26."). Do not suggest anything about this one question, temporary details, secrets, passwords, keys, or anything already in the list of known facts. If there is nothing worth remembering, reply with exactly NONE.`
 
 // memoryOnChat turns the memory question into a continuation of the chat just
