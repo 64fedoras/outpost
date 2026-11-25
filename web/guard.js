@@ -104,18 +104,18 @@ const Guard = (() => {
       const s = settingsDirty();
       if (s.length) return { what: 'Settings (' + s.join(', ') + ')', drop: settingsReset };
     }
-    if (page === 'task' && planEdit && $('plan-edit')) {
+    if (onTask() && planEdit && $('plan-edit')) {
       readPlanEditor();
       if (JSON.stringify(planEdit.plan) !== planEdit.orig) {
-        const id = pageArg, plan = planEdit.plan;
+        const id = curTask(), plan = planEdit.plan;
         return { what: 'your edits to the plan', drop: () => { planEdit = null; },
           save: async () => { await post(`/api/tasks/${id}/plan/edit`, { plan, run: false, cap_usd: 0 }); planEdit = null; } };
       }
     }
-    if (page === 'task' && editing && $('msg-edit-text')) {
+    if (onTask() && editing && $('msg-edit-text')) {
       const text = $('msg-edit-text').value;
       if (text !== editing.text) {
-        const id = pageArg, mid = editing.id;
+        const id = curTask(), mid = editing.id;
         return { what: 'your edit to this message', drop: () => { editing = null; },
           save: async () => {
             if (!text.trim()) throw new Error('Write a message first');

@@ -58,12 +58,17 @@ async function pjFetch(force) {
   } catch (e) { if (pageArg === id) { pjData = null; pjDataFor = id; pjFetchedAt = Date.now(); renderProjectPage(); } }
   pjFetching = false;
 }
+let pjRouteFor = ''; // the project the page was last routed to; '' after leaving the page
 function projectRoute() {
-  if (pjDataFor !== pageArg) { pjData = null; pjResolvedOpen = !pjFolded.has('resolved'); }
-  $('pj-text').value = pjNewDraft = '';
-  autoGrow($('pj-text'));
-  pjPanelOpen = pjPanelPref() ?? pjPanelDefault(pageArg);
-  if (!pjWide()) pjPanelOpen = false; // the phone opens the panel by hand, as a sheet
+  if (pjDataFor !== pageArg) { pjData = null; pjResolvedOpen = !pjFolded.has('resolved'); pjCtx.mem = pjCtx.stash = null; }
+  if (pjRouteFor !== pageArg) { // a fresh visit; opening or closing a task in the pane keeps the composer and the panel
+    $('pj-text').value = pjNewDraft = '';
+    autoGrow($('pj-text'));
+    pjPanelOpen = pjPanelPref() ?? pjPanelDefault(pageArg);
+    if (!pjWide()) pjPanelOpen = false; // the phone opens the panel by hand, as a sheet
+  }
+  pjRouteFor = pageArg;
+  if (paneTask) pjPanelOpen = true;
   renderProjectPage();
   pjFetch(true);
 }
@@ -270,7 +275,7 @@ function renderProjectPage() {
   if (page !== 'project') return;
   const p = projectById(pageArg);
   $('pj-wrap').classList.toggle('panel-open', pjPanelOpen);
-  pjResizer.refresh();
+  pjPaneChrome();
   if (!p) {
     $('pj-name').textContent = projects ? 'Project not found' : 'Loading…';
     setHTML('pj-feed', projects ? `<div class="pj-empty"><h3>This project does not exist any more.</h3><p><a href="#/projects">All projects</a></p></div>` : '');
@@ -291,20 +296,173 @@ function renderProjectPage() {
   const before = feedEl._h;
   setHTML(feedEl, renderPjFeed(p));
   if (before !== feedEl._h && (atEnd || !before)) feedEl.scrollTop = feedEl.scrollHeight;
-  setHTML('pj-threads', renderPjPanel(p));
-  pjArtsArrows();
+  if (!paneTask && pjTab === 'threads') { setHTML('pj-threads', renderPjPanel(p)); pjArtsArrows(); }
+  if (!paneTask && pjTab === 'context' && pjPanelOpen) { setHTML('pj-context', renderPjContext(p)); pjCtxLoad(p.id); }
   if ($('modal-pj-files') && !$('modal-pj-files').classList.contains('hidden')) renderPjFiles(p);
   if (!pjData || pjDataFor !== p.id || Date.now() - pjFetchedAt > 3000) pjFetch();
 }
 
 function setPjPanel(open) {
+  if (!open && paneTask) { pjPanelOpen = false; location.hash = '#/projects/' + pageArg; return; } // closing the pane closes the task in it
   pjPanelOpen = open;
   if (pjWide()) { try { localStorage.setItem('pj-panel', open ? '1' : '0'); } catch (e) {} }
   renderProjectPage();
   if (open && !pjWide()) $('pj-panel-close').focus();
 }
-const pjResizer = sideResizer({ wrap: $('pj-wrap'), panel: $('pj-panel'), cssVar: '--pj-panel-w', key: 'outpost.pjPanelW', def: 380, min: 280, max: 760, label: 'Resize the Threads panel' });
-$('pj-threads-btn').onclick = () => setPjPanel(!pjPanelOpen);
+const PJ_W_LIST = { key: 'outpost.pjPanelW', def: 380, min: 280, max: 760 };
+const PJ_W_TASK = { key: 'outpost.pjTaskW', def: 640, min: 380, max: 1200 }; // a task in the pane has its own, wider width
+const pjResizer = sideResizer({ wrap: $('pj-wrap'), panel: $('pj-panel'), cssVar: '--pj-panel-w', ...PJ_W_LIST, label: 'Resize the project pane' });
+
+// ---------- the pane's tabs and a task inside it ----------
+let pjTab = (() => { try { return localStorage.getItem('outpost.pjTab') === 'context' ? 'context' : 'threads'; } catch (e) { return 'threads'; } })();
+function pjSetTab(tab) {
+  pjTab = tab;
+  try { localStorage.setItem('outpost.pjTab', tab); } catch (e) { /* only for this visit */ }
+  renderProjectPage();
+}
+// The task page's section moves into the pane while a task is open there and back afterwards,
+// so the one task view (thread.js) serves both; route() calls this after it shows and hides pages.
+const pjTaskSec = document.querySelector('section[data-page="task"]');
+const pjTaskHome = { parent: pjTaskSec.parentElement, next: pjTaskSec.nextElementSibling };
+function pjPlaceTask() {
+  const inPane = pjTaskSec.parentElement === $('pj-panel');
+  if (page === 'project' && paneTask) {
+    if (!inPane) $('pj-panel').append(pjTaskSec);
+    pjTaskSec.classList.remove('hidden');
+    pjTaskSec.classList.add('in-pane');
+  } else if (inPane) {
+    pjTaskHome.parent.insertBefore(pjTaskSec, pjTaskHome.next);
+    pjTaskSec.classList.remove('in-pane');
+  }
+  if (page !== 'project') pjRouteFor = '';
+}
+function pjPaneChrome() {
+  const inTask = !!paneTask;
+  $('pj-wrap').classList.toggle('pane-task', inTask);
+  $('pj-tabs').classList.toggle('hidden', inTask);
+  $('pj-pane-back').classList.toggle('hidden', !inTask);
+  $('pj-pane-full').classList.toggle('hidden', !inTask);
+  if (inTask) $('pj-pane-full').href = '#/tasks/' + paneTask;
+  $('pj-threads').classList.toggle('hidden', inTask || pjTab !== 'threads');
+  $('pj-context').classList.toggle('hidden', inTask || pjTab !== 'context');
+  ['threads', 'context'].forEach((k) => { const b = $('pj-tab-' + k); b.setAttribute('aria-selected', String(pjTab === k)); b.tabIndex = pjTab === k ? 0 : -1; b.classList.toggle('on', pjTab === k); });
+  $('pj-panel').setAttribute('aria-label', inTask ? 'Task' : pjTab === 'context' ? 'Context' : 'Threads');
+  pjResizer.use(inTask ? PJ_W_TASK : PJ_W_LIST);
+  pjResizer.refresh();
+}
+
+// ---------- the Context tab ----------
+// What the project's work reads from, in one place: its instructions, its memory (Settings →
+// Memory facts for this project; the project conversation and its tasks' planners start with
+// them), its files and its Stash. Each section folds; "Add context" adds to any of them.
+const pjCtx = { mem: null, memAt: 0, stash: null, stashFor: '', stashAt: 0, loading: false, openDirs: new Set() };
+const pjCtxFolded = new Set((() => { try { const v = JSON.parse(localStorage.getItem('outpost.pjCtxFolded') || 'null'); return Array.isArray(v) ? v : []; } catch (e) { return []; } })());
+async function pjCtxLoad(id, force) {
+  if (pjCtx.loading) return;
+  const sid = pjData && pjDataFor === id ? pjData.stash_id || '' : '';
+  const now = Date.now();
+  const wantMem = force || !pjCtx.mem || now - pjCtx.memAt > 10000;
+  const indexing = pjCtx.stash && (pjCtx.stash.resources || []).some((r) => r.status && r.status !== 'ready');
+  const wantStash = sid && (force || pjCtx.stashFor !== sid || now - pjCtx.stashAt > (indexing ? 2000 : 10000));
+  if (!wantMem && !wantStash) return;
+  pjCtx.loading = true;
+  try {
+    const [mem, st] = await Promise.all([wantMem ? api('/api/memory').catch(() => null) : null, wantStash ? api('/api/stash/' + encodeURIComponent(sid)).catch(() => null) : null]);
+    if (mem) { pjCtx.mem = mem.memories || []; pjCtx.memAt = Date.now(); }
+    if (st) { pjCtx.stash = st; pjCtx.stashFor = sid; pjCtx.stashAt = Date.now(); }
+  } finally { pjCtx.loading = false; }
+  if (page === 'project' && pageArg === id && pjTab === 'context' && !paneTask) setHTML('pj-context', renderPjContext(projectById(id)));
+  if (indexing || (pjCtx.stash && (pjCtx.stash.resources || []).some((r) => r.status && r.status !== 'ready'))) setTimeout(() => { if (page === 'project' && pageArg === id && pjTab === 'context') pjCtxLoad(id); }, 2000);
+}
+function pjCtxHead(key, name, n, extra = '') {
+  const f = pjCtxFolded.has(key);
+  return `<div class="pj-sec-h"><button class="pj-toggle" data-act="proj-ctx-fold" data-key="${key}" aria-expanded="${!f}"><span class="pj-chev" aria-hidden="true">${f ? '›' : '⌄'}</span><b>${name}</b><span class="pj-n">${n}</span></button><span class="spacer"></span>${extra}</div>`;
+}
+const PJ_FILE_ICON = '<svg class="pj-ci" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5l3 3v10H4z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M9 1.5v3h3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
+const PJ_DIR_ICON = '<svg class="pj-ci" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 3.5h4l1.5 1.5h7.5v8h-13z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
+// pjTree turns the flat file list into rows: folders (folded unless opened) then files.
+function pjTree(files) {
+  const root = { dirs: {}, files: [] };
+  files.forEach((f) => {
+    const parts = f.path.split('/'); let n = root;
+    parts.slice(0, -1).forEach((d) => { n = n.dirs[d] = n.dirs[d] || { dirs: {}, files: [] }; });
+    n.files.push(f);
+  });
+  const count = (n) => n.files.length + Object.values(n.dirs).reduce((a, d) => a + count(d), 0);
+  const rows = (n, base, depth) => Object.keys(n.dirs).sort().map((d) => {
+    const path = base + d + '/', open = pjCtx.openDirs.has(path), kid = n.dirs[d];
+    return `<button class="pj-crow dir pj-d${Math.min(depth, 6)}" data-act="proj-ctx-dir" data-path="${esc(path)}" aria-expanded="${open}"><span class="pj-chev" aria-hidden="true">${open ? '⌄' : '›'}</span>${PJ_DIR_ICON}<span class="pj-cn">${esc(d)}</span><span class="pj-cm">${count(kid)}</span></button>${open ? rows(kid, path, depth + 1) : ''}`;
+  }).join('') + n.files.slice().sort((a, b) => a.path.localeCompare(b.path)).map((f) => `<button class="pj-crow pj-d${Math.min(depth, 6)}" data-act="proj-file" data-path="${esc(f.path)}" title="${esc(f.path)}"><span class="pj-chev"></span>${PJ_FILE_ICON}<span class="pj-cn">${esc(f.path.split('/').pop())}</span><span class="pj-cm">${bytes(f.bytes)}</span></button>`).join('');
+  return rows(root, '', 0);
+}
+function renderPjContext(p) {
+  if (!p) return '';
+  const ov = pjData && pjDataFor === p.id ? pjData : null;
+  const instr = (p.instructions || '').trim();
+  const mem = (pjCtx.mem || []).filter((m) => m.project === p.id);
+  const shared = (pjCtx.mem || []).filter((m) => !m.project).length;
+  const memOff = typeof settings !== 'undefined' && settings && settings.memory_on === false;
+  const files = ov ? ov.files || [] : [], total = ov ? ov.files_total || 0 : 0;
+  const st = ov && ov.stash_id && pjCtx.stashFor === ov.stash_id ? pjCtx.stash : null;
+  const res = st ? st.resources || [] : [];
+  const sec = (key, name, n, body, extra) => `<section class="pj-sec ctx ${key}">${pjCtxHead(key, name, n, extra)}${pjCtxFolded.has(key) ? '' : body}</section>`;
+  const add = (act, label) => `<button class="pj-cadd" data-act="${act}" title="${label}" aria-label="${label}">＋</button>`;
+  const instrBody = instr
+    ? `<button class="pj-crow" data-act="proj-ctx-instr"><span class="pj-chev"></span><svg class="pj-ci" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h10v11H3zM5.5 5.5h5M5.5 8h5M5.5 10.5h3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span class="pj-cn">Project instructions</span><span class="pj-cp">${esc(instr.replace(/\s+/g, ' ').slice(0, 160))}</span></button>`
+    : '<p class="pj-cnote">No instructions yet. They are standing rules every task and the project conversation follow, such as the language, test style or what never to touch. <button class="link-btn" data-act="proj-ctx-instr">Add instructions</button></p>';
+  const memBody = (pjCtx.mem === null ? '<p class="pj-cnote">Loading…</p>' : mem.map((m) => `<div class="pj-crow mem"><span class="pj-chev"></span><svg class="pj-ci" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v3.2l2 1.3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span class="pj-cn wrap">${esc(m.text)}</span><span class="pj-cm">${esc(ago(m.created).replace(' ago', ''))}</span><button class="pj-rb" data-act="proj-ctx-forget" data-id="${esc(m.id)}" title="Forget" aria-label="Forget: ${esc(m.text)}">✕</button></div>`).join('')
+    + `<p class="pj-cnote">${memOff ? '<b>Memory is off</b> in Settings, so none of this is used now. ' : ''}${mem.length ? '' : 'Nothing remembered for this project yet. '}The project conversation and the planner of each task here start with these${shared ? `, plus ${shared} fact${shared === 1 ? '' : 's'} kept for everywhere` : ''}. <a href="#/settings">Settings → Memory</a></p>`);
+  const filesBody = files.length ? `<div class="pj-tree">${pjTree(files)}</div>${total > files.length ? `<p class="pj-cnote">Showing ${files.length} of ${total} files. Download the .zip for all of them.</p>` : ''}`
+    : '<p class="pj-cnote">No files yet. Tasks write the project\'s files here; each task starts from them.</p>';
+  const resBody = (ov && ov.stash_id && !st ? '<p class="pj-cnote">Loading…</p>' : res.map((r) => {
+    const stTxt = r.status === 'ready' ? `${r.passages} passage${r.passages === 1 ? '' : 's'}` : r.status === 'error' || r.error ? 'could not read' : r.total ? `indexing ${r.done || 0}/${r.total}` : esc(r.status || '');
+    return `<div class="pj-crow res"><span class="pj-chev"></span><span class="pj-kind">${esc((r.kind || 'text').toUpperCase().slice(0, 4))}</span><a class="pj-cn" href="#/stash/${esc(ov.stash_id)}" title="${esc(r.name)}${r.error ? ' · ' + esc(r.error) : ''}">${esc(r.name)}</a><span class="pj-cm ${r.error ? 'bad' : ''}">${stTxt}</span><button class="pj-rb" data-act="proj-ctx-unstash" data-id="${esc(r.id)}" title="Remove from the Stash" aria-label="Remove ${esc(r.name)} from the Stash">✕</button></div>`;
+  }).join(''))
+    + `<p class="pj-cnote">${res.length ? '' : 'No documents yet. '}PDF, Word, Excel, OpenDocument, CSV or text. A task's planner on a node is given the passages that match its request; they are never sent to Claude or OpenRouter, and nodes never keep them.${ov && ov.stash_id ? ` <a href="#/stash/${esc(ov.stash_id)}">Open the Stash</a>` : ''}</p>`;
+  return `<div class="pj-ctx-top"><span class="muted">What this project's work reads from</span><span class="spacer"></span>
+      <details class="menu pj-addctx"><summary class="small">＋ Add context</summary><div class="menu-list" role="menu">
+        <button role="menuitem" data-act="proj-ctx-instr">Instructions…</button>
+        <button role="menuitem" data-act="proj-ctx-remember">Memory note…</button>
+        <button role="menuitem" data-act="proj-ctx-upload">Stash documents…</button></div></details></div>
+    ${sec('instr', 'Instructions', instr ? 1 : 0, instrBody)}
+    ${sec('mem', 'Memory', pjCtx.mem === null ? '' : mem.length, memBody, add('proj-ctx-remember', 'Remember something for this project'))}
+    ${sec('files', 'Files', total, filesBody)}
+    ${sec('stash', 'Stash', res.length, resBody, add('proj-ctx-upload', 'Add documents to the Stash'))}`;
+}
+// Upload chosen files into the project's Stash (made on first use) one by one.
+async function pjStashUpload(fileList) {
+  const id = pageArg, files = [...fileList];
+  if (!files.length) return;
+  const { id: sid } = await post(`/api/projects/${encodeURIComponent(id)}/stash`);
+  let ok = 0;
+  for (const f of files) {
+    try {
+      const r = await fetch(`/api/stash/${encodeURIComponent(sid)}/resources?name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f, credentials: 'same-origin' });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+      ok++;
+    } catch (e) { toast(`${f.name}: ${e.message}`, 5000); }
+  }
+  if (ok) toast(`Added ${ok} document${ok === 1 ? '' : 's'} to the Stash`);
+  await pjFetch(true); pjCtxLoad(id, true);
+}
+$('pj-threads-btn').onclick = () => { if (pjPanelOpen && pjTab !== 'threads' && !paneTask) { pjSetTab('threads'); return; } setPjPanel(!pjPanelOpen); };
+$('pj-pane-back').onclick = () => { location.hash = '#/projects/' + pageArg; };
+$('pj-tabs').onclick = (e) => { const b = e.target.closest('[data-tab]'); if (b) pjSetTab(b.dataset.tab); };
+$('pj-tabs').onkeydown = (e) => { // arrow keys move between the two tabs
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  e.preventDefault(); pjSetTab(pjTab === 'threads' ? 'context' : 'threads'); $('pj-tab-' + pjTab).focus();
+};
+// On a wide screen a task link anywhere on the project page (the Threads pane, a card in the
+// conversation) opens the task inside the pane; a modified click or a phone opens its page.
+$('pj-wrap').addEventListener('click', (e) => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !pjWide() || page !== 'project') return;
+  const a = e.target.closest('a[href^="#/tasks/"]');
+  if (!a || a.target === '_blank' || a.id === 'pj-pane-full') return;
+  const id = a.getAttribute('href').slice(8).split(/[/?#]/)[0];
+  if (!id) return;
+  e.preventDefault();
+  location.hash = `#/projects/${pageArg}/tasks/${id}`;
+});
 $('pj-panel-close').onclick = () => { setPjPanel(false); $('pj-threads-btn').focus(); };
 $('pj-menu').onclick = openSide;
 $('pj-switch').onchange = (e) => { location.hash = e.target.value ? '#/projects/' + e.target.value : '#/projects'; };
@@ -426,6 +584,26 @@ async function projPageAction(act, el) {
     case 'proj-fold': pjFold(el.dataset.key); renderProjectPage(); return;
     case 'proj-arts-scroll': { const r = $('pj-arts-row'); if (r) r.scrollBy({ left: +el.dataset.dir * Math.max(160, r.clientWidth - 80), behavior: 'smooth' }); return; }
     case 'proj-stash': $('pj-stash-btn').click(); return;
+    case 'proj-ctx-fold': { const k = el.dataset.key; if (pjCtxFolded.has(k)) pjCtxFolded.delete(k); else pjCtxFolded.add(k); try { localStorage.setItem('outpost.pjCtxFolded', JSON.stringify([...pjCtxFolded])); } catch (e) { /* only for this visit */ } renderProjectPage(); return; }
+    case 'proj-ctx-dir': { const d = el.dataset.path; if (pjCtx.openDirs.has(d)) pjCtx.openDirs.delete(d); else pjCtx.openDirs.add(d); renderProjectPage(); return; }
+    case 'proj-ctx-instr': pjCloseAddMenu(); openPjEdit(pageArg); setTimeout(() => $('pj-edit-instr') && $('pj-edit-instr').focus(), 0); return;
+    case 'proj-ctx-remember': {
+      pjCloseAddMenu();
+      const text = await askText('Remember for this project', '', { ok: 'Remember', body: 'One short fact the project conversation and the planner of each task here should know, such as "The dice app must stay Python 3.9 compatible." Up to 300 characters.' });
+      if (text === null || !String(text).trim()) return;
+      await post('/api/memory', { text: String(text).trim(), project: pageArg, source: 'added by hand' });
+      toast('Remembered'); pjCtxLoad(pageArg, true); return;
+    }
+    case 'proj-ctx-forget':
+      if (!await askConfirm('Forget this? The project stops using it from the next message or task.')) return;
+      await api('/api/memory/' + encodeURIComponent(el.dataset.id), { method: 'DELETE' }); pjCtxLoad(pageArg, true); return;
+    case 'proj-ctx-upload': pjCloseAddMenu(); $('pj-ctx-file').click(); return;
+    case 'proj-ctx-unstash': {
+      const sid = pjData && pjData.stash_id;
+      if (!sid || !await askConfirm('Remove this document from the project\'s Stash? Tasks stop using it.')) return;
+      await api(`/api/stash/${encodeURIComponent(sid)}/resources/${encodeURIComponent(el.dataset.id)}`, { method: 'DELETE' });
+      await pjFetch(true); pjCtxLoad(pageArg, true); return;
+    }
     case 'proj-resolve': {
       const on = !!el.dataset.on;
       const t = taskById(id);
@@ -658,3 +836,6 @@ function openPjDup(p) {
   window.addEventListener('resize', () => closeProjMenu(false));
   window.addEventListener('hashchange', () => closeProjMenu(false));
 })();
+
+function pjCloseAddMenu() { const d = document.querySelector('.pj-addctx'); if (d) d.open = false; }
+$('pj-ctx-file').onchange = async (e) => { const f = e.target.files; try { await pjStashUpload(f); } catch (x) { toast(x.message, 5000); } e.target.value = ''; };

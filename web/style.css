@@ -1042,6 +1042,44 @@ body.side-resizing iframe { pointer-events: none; }
 .pj-panel-h { display: flex; align-items: center; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .pj-panel-h b { font-size: 14px; }
 .pj-panel-b { flex: 1; overflow-y: auto; padding: 4px 10px 20px; }
+/* Pane header: Threads | Context tabs, or ‹ Threads and ↗ while a task is open in the pane */
+.pj-tabs { display: flex; gap: 2px; }
+.pj-tab { border: 0; background: none; color: var(--muted); font: inherit; font-size: 13.5px; padding: 4px 11px; border-radius: 8px; cursor: pointer; }
+.pj-tab:hover { color: var(--ink); }
+.pj-tab.on { background: var(--side-hover); color: var(--ink); font-weight: 550; }
+.pj-back { margin-left: -4px; }
+.pj-full { text-decoration: none; font-size: 15px; }
+.pane-task .pj-panel-h { padding: 6px 8px 6px 12px; }
+.page-task.in-pane { height: auto; flex: 1; min-height: 0; }
+.page-task.in-pane .task-menu { display: none; }
+.page-task.in-pane .task-bar { padding-left: 14px; }
+/* Context tab */
+.pj-ctx-top { display: flex; align-items: center; gap: 8px; padding: 10px 4px 0; font-size: 12.5px; }
+.pj-addctx .menu-list { right: 0; display: flex; flex-direction: column; align-items: stretch; padding: 4px; }
+.pj-addctx .menu-list button { border: 0; background: none; text-align: left; padding: 6px 10px; border-radius: 6px; font: inherit; color: var(--ink); cursor: pointer; }
+.pj-addctx .menu-list button:hover, .pj-addctx .menu-list button:focus-visible { background: var(--side-hover); }
+.pj-sec.ctx .pj-sec-h b { color: var(--ink); }
+.pj-sec.ctx .pj-n { color: var(--muted); font-size: 12px; margin-left: 2px; }
+.pj-cadd { border: 0; background: none; color: var(--muted); font-size: 15px; padding: 0 6px; border-radius: 6px; cursor: pointer; }
+.pj-cadd:hover { color: var(--ink); background: var(--side-hover); }
+.pj-crow { display: flex; align-items: center; gap: 7px; width: 100%; padding: 4px 6px; border: 0; background: none; border-radius: 7px; text-align: left; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; min-width: 0; }
+div.pj-crow { cursor: default; }
+.pj-crow:hover { background: var(--side-hover); }
+.pj-crow .pj-chev { color: var(--muted); flex: none; }
+.pj-ci { width: 15px; height: 15px; flex: none; color: var(--muted); }
+.pj-cn { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); text-decoration: none; min-width: 0; }
+a.pj-cn:hover { text-decoration: underline; }
+.pj-crow.res .pj-cn, .pj-crow.dir .pj-cn, .pj-crow:not(.mem) .pj-cn { flex: 0 1 auto; }
+.pj-cn.wrap { white-space: normal; flex: 1 1 auto; line-height: 1.35; }
+.pj-cp { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-cm { margin-left: auto; flex: none; color: var(--muted); font-size: 11.5px; white-space: nowrap; padding-left: 8px; font-variant-numeric: tabular-nums; }
+.pj-cm.bad { color: var(--bad); }
+.pj-crow .pj-rb { flex: none; }
+.pj-crow:hover .pj-rb { visibility: visible; }
+.pj-kind { flex: none; font-size: 9.5px; font-weight: 650; letter-spacing: .03em; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 4px; padding: 0 3px; min-width: 26px; text-align: center; }
+.pj-cnote { margin: 4px 6px 2px 23px; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.pj-tree { max-height: 46vh; overflow-y: auto; }
+.pj-crow.pj-d1 { padding-left: 22px; } .pj-crow.pj-d2 { padding-left: 38px; } .pj-crow.pj-d3 { padding-left: 54px; } .pj-crow.pj-d4 { padding-left: 70px; } .pj-crow.pj-d5 { padding-left: 86px; } .pj-crow.pj-d6 { padding-left: 102px; }
 .pj-sec { margin-top: 14px; }
 .pj-sec-h { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin: 0 0 6px; padding: 0 4px; min-height: 22px; }
 .pj-sec-h b { color: var(--muted); font-weight: 550; }

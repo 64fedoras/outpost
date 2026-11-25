@@ -255,7 +255,7 @@ document.addEventListener('change', async (e) => {
   }
   const diff = e.target.closest('[data-diff]');
   if (diff) {
-    try { await post(`/api/tasks/${pageArg}/difficulty`, { subtask: diff.dataset.diff, difficulty: diff.value }); } catch (err) { toast(err.message); }
+    try { await post(`/api/tasks/${curTask()}/difficulty`, { subtask: diff.dataset.diff, difficulty: diff.value }); } catch (err) { toast(err.message); }
     return;
   }
   const tier = e.target.closest('[data-tier]');

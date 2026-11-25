@@ -472,6 +472,19 @@ something in them is waiting on you; the pin is stored on the controller, so it 
   is remembered in this browser. On a narrow window the panel slides over the page at a fixed width;
   on a phone it fills the screen. The wide-screen open or closed choice is remembered; until you
   choose, the panel opens once the project has a task.
+- **Open a task in the pane.** On a wide window (1100 px and up) clicking a task in the Threads pane, or
+  a task card in the conversation, opens the whole task inside the pane: its thread, plan, answers and
+  composer, as on its own page. **‹ Threads** goes back to the list, **↗** opens it as a full page, ✕
+  closes the pane. The address is `#/projects/<project>/tasks/<task>`, so Back and links work. The pane
+  keeps a separate, wider width while it shows a task (640 px by default, 380 to 1,200 px; drag the edge).
+  Ctrl- or middle-click opens the task's own page; on a narrower window or a phone a click always does.
+- **Context** (the tab beside Threads) lists what the project's work reads from, each in a section that
+  folds (remembered in this browser): **Instructions** (the project's standing rules; click to edit),
+  **Memory** (the facts kept for this project; ＋ adds one, ✕ forgets it; the project conversation and
+  each task's planner start with them and with the facts for everywhere, see Memory in
+  [Chat and API](chat-and-api.md)), **Files** (the project's files as a folder tree; click a file to read
+  it) and **Stash** (the project's documents with their indexing state; ＋ uploads, ✕ removes).
+  **＋ Add context** at the top adds instructions, a memory note or Stash documents.
 - **Resolving** a task (✓ on its row, **✓ Resolve** on its card, **Mark resolved** in the sidebar's
   task menu, or **Resolve all** on Idle) only tidies it away: nothing is deleted, the card leaves the
   middle (a link shows the hidden ones) and the task moves to Resolved. A follow-up, a retry or
