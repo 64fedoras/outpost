@@ -94,6 +94,13 @@ func TestProjectChatSearchesTheWebFirst(t *testing.T) {
 	if strings.Join(msg.Reads, ",") != `Searched the web for "hermes ai"` {
 		t.Fatalf("reads %q", msg.Reads)
 	}
+	// A read_page chip must not start with "Read ", which the page turns into a file link.
+	pr := newProjectReads(t.TempDir())
+	pr.web = func(toolCall) string { return "text" }
+	pr.run(toolCall{ID: "2", Name: "read_page", Args: `{"url":"https://example.org/a"}`}, 1000)
+	if len(pr.Notes) != 1 || pr.Notes[0] != "Opened web page example.org" {
+		t.Fatalf("page chip %q", pr.Notes)
+	}
 }
 
 func TestProjectChatWebOff(t *testing.T) {

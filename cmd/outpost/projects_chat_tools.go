@@ -93,7 +93,7 @@ func (pr *projectReads) run(call toolCall, resCap int) string {
 		case "web_search":
 			pr.note(fmt.Sprintf("Searched the web for %q", clip(s("query"), 60)))
 		default:
-			pr.note("Read page " + clip(webHost(s("url")), 60))
+			pr.note("Opened web page " + clip(webHost(s("url")), 60))
 		}
 		return pr.web(call)
 	}

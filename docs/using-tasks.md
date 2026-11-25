@@ -426,7 +426,7 @@ something in them is waiting on you; the pin is stored on the controller, so it 
   It is told to look up a product, project, library or term it does not know before answering or
   asking, to ask you only what the web cannot tell it (your preferences and scope), and to put what it
   found, with the source links, into any task it starts, because task planners with a local model
-  cannot search. Searches show as chips ("Searched the web for …", "Read page example.org").
+  cannot search. Searches show as chips ("Searched the web for …", "Opened web page example.org"; file chips open the file viewer, web chips do not).
   A planner that cannot call tools gets one search on your message, with the results put in front
   of it. With web search off it says it does not know the name and points to the setting instead of
   asking you to explain it. **Untested:** how reliably real local models decide to search (tested with
