@@ -34,9 +34,10 @@ fast() {
 		echo "check $f"
 		node --check "$f"
 	done
-	step "JavaScript unit tests (markdown)"
+	step "JavaScript unit tests"
 	node testing/js/markdown_test.js
 	node testing/js/nodefilter_test.js
+	node testing/js/nodedrawer_test.js
 	step "cross-build all platforms"
 	# All five at once (they share the build cache); any failure fails the step.
 	pids=""

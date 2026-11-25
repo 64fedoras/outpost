@@ -334,7 +334,7 @@ function renderNodeDrawer(shown) {
   d.classList.toggle('hidden', !n);
   document.body.classList.toggle('nd-open', !!n);
   if (!n) { setHTML(d, ''); return; }
-  const f = nodeFacts(n), h = f.h, [st, cls] = nodeStatus(n, f);
+  const f = nodeFacts(n), h = f.h, [st, cls] = nodeStatus(n, f), uc = nodeUpdChip(n);
   // Previous and next follow the order of the cards in the grid.
   const order = [...document.querySelectorAll('#nodes .gc[data-id], #nodes .nv-row[data-id]')].map((c) => c.dataset.id).filter((id, i, a) => a.indexOf(id) === i);
   const at = order.indexOf(n.id), prev = order[at - 1], next = order[at + 1];
