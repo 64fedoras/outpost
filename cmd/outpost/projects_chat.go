@@ -38,22 +38,30 @@ type ProjectChatMsg struct {
 	Reads []string  `json:"reads,omitempty"` // assistant: files it listed, read, searched or outlined
 	// Suggest is a fact for this project's memory offered by a node planner (memory.go).
 	Suggest string `json:"suggest,omitempty"`
+	// A research answer (projects_research.go): the question, the lanes, and the Stash resource the report went to.
+	Question string       `json:"question,omitempty"`
+	Research *ResearchRun `json:"research,omitempty"`
+	Saved    string       `json:"saved,omitempty"`
+	Note     string       `json:"note,omitempty"` // research: what the run did (lanes, nodes, searches)
+	research string       // the research question this answer asked for, started after it is saved
 }
 
 type projectChat struct {
-	mu       sync.Mutex
-	path     string
-	Messages []ProjectChatMsg `json:"messages"`
-	MemTries int              `json:"mem_tries,omitempty"` // answers that asked for a memory suggestion
-	busy     bool
-	cancel   context.CancelFunc
-	reading  []string // chips of the answer being written
+	mu        sync.Mutex
+	path      string
+	Messages  []ProjectChatMsg `json:"messages"`
+	MemTries  int              `json:"mem_tries,omitempty"` // answers that asked for a memory suggestion
+	busy      bool
+	cancel    context.CancelFunc
+	reading   []string           // chips of the answer being written
+	resCancel context.CancelFunc // a research run in progress (projects_research.go)
 }
 
 type projectChatView struct {
 	Messages []ProjectChatMsg `json:"messages"`
 	Busy     bool             `json:"busy"`
 	Reading  []string         `json:"reading,omitempty"`
+	Research bool             `json:"research,omitempty"` // a research run is working
 }
 
 const (
@@ -84,6 +92,20 @@ func (p *Project) chatLog() *projectChat {
 			pc.Messages = []ProjectChatMsg{}
 		}
 	}
+	// A research run cut off by a controller restart cannot resume.
+	for i := range pc.Messages {
+		if r := pc.Messages[i].Research; r != nil && r.Stage != "done" && r.Stage != "failed" && r.Stage != "stopped" {
+			r.Stage = "stopped"
+			for j := range r.Lanes {
+				if l := &r.Lanes[j]; l.Status == "waiting" || l.Status == "working" {
+					l.Status = "stopped"
+				}
+			}
+			if pc.Messages[i].Error == "" {
+				pc.Messages[i].Error = "stopped: the controller restarted while this research was running"
+			}
+		}
+	}
 	v, _ := projectChats.LoadOrStore(path, pc)
 	return v.(*projectChat)
 }
@@ -101,7 +123,7 @@ func (pc *projectChat) saveLocked() {
 func (pc *projectChat) view() projectChatView {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
-	return projectChatView{Messages: append([]ProjectChatMsg{}, pc.Messages...), Busy: pc.busy, Reading: pc.reading}
+	return projectChatView{Messages: append([]ProjectChatMsg{}, pc.Messages...), Busy: pc.busy, Reading: pc.reading, Research: pc.resCancel != nil}
 }
 
 func (pc *projectChat) add(m ProjectChatMsg) {
@@ -207,6 +229,19 @@ func (c *Controller) handleProjectChat(w http.ResponseWriter, r *http.Request) {
 		pc.busy, pc.cancel = false, nil
 		pc.saveLocked()
 		pc.mu.Unlock()
+		if msg.research == "" {
+			return
+		}
+		if err := c.startProjectResearch(p, pc, msg.research); err != nil {
+			pc.mu.Lock()
+			for i := range pc.Messages {
+				if pc.Messages[i].ID == msg.ID {
+					pc.Messages[i].Error = strings.TrimPrefix(pc.Messages[i].Error+"; ", "; ") + "could not start research: " + err.Error()
+				}
+			}
+			pc.saveLocked()
+			pc.mu.Unlock()
+		}
 	}()
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
@@ -222,6 +257,9 @@ func (c *Controller) handleProjectChatStop(w http.ResponseWriter, r *http.Reques
 	if pc.cancel != nil {
 		pc.cancel()
 	}
+	if pc.resCancel != nil {
+		pc.resCancel()
+	}
 	pc.mu.Unlock()
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
@@ -235,7 +273,7 @@ func (c *Controller) handleProjectChatClear(w http.ResponseWriter, r *http.Reque
 	}
 	pc := p.chatLog()
 	pc.mu.Lock()
-	if pc.busy {
+	if pc.busy || pc.researchRunningLocked() {
 		pc.mu.Unlock()
 		writeJSON(w, 409, map[string]string{"error": "still answering; press Stop first"})
 		return
@@ -310,7 +348,7 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 	webOn := c.projectWebOn()
 	webHelp := projectNoWebHelp
 	if webOn {
-		webHelp = projectWebHelp
+		webHelp = projectWebHelp + projectResearchHelp
 	}
 	if isCloudPlanner(planner) {
 		if planner == "openrouter" {
@@ -405,6 +443,7 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 		}
 		sys := system
 		if webOn {
+			sys += projectResearchHelp
 			// No tools: one search on the owner's last message, results in front of the model.
 			if found := c.projectSearchOnce(ctx, last, ws); found != "" {
 				u += "\n\n" + found
@@ -429,7 +468,15 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 		pr.note(clip(ws.problemNote(), 120))
 	}
 	reply, asks := splitTaskBlocks(text)
+	reply, rq := splitResearchBlocks(reply)
 	msg := ProjectChatMsg{Text: reply, Who: who, Cost: cost, Reads: pr.Notes}
+	if rq != "" {
+		if webOn {
+			msg.research = rq
+		} else {
+			msg.Error = "research needs web search: turn on \"Let chats search the web\" in Settings → Tasks"
+		}
+	}
 	if memInfer != nil && c.memorySuggestOn() {
 		pc.mu.Lock()
 		ask := pc.MemTries < maxMemoryTries
@@ -464,6 +511,9 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 	}
 	if msg.Text == "" && len(msg.Tasks) > 0 {
 		msg.Text = "Started:"
+	}
+	if msg.Text == "" && msg.research != "" {
+		msg.Text = "Starting research on: " + msg.research
 	}
 	return msg
 }
@@ -526,7 +576,15 @@ func projectChatTranscript(msgs []ProjectChatMsg, budget int) string {
 		if m.Role == "assistant" {
 			who = "You"
 		}
-		line := who + ": " + m.Text
+		text := m.Text
+		if m.Research != nil {
+			who = "Research report"
+			text = "(question: " + m.Question + ")\n" + clip(m.Text, 3000)
+			if m.Saved != "" {
+				text += "\n(the full report is in the project's Stash as " + m.Saved + ")"
+			}
+		}
+		line := who + ": " + text
 		if len(m.Tasks) > 0 {
 			line += "\n(started task " + strings.Join(m.Tasks, ", ") + ")"
 		}

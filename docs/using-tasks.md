@@ -431,6 +431,16 @@ something in them is waiting on you; the pin is stored on the controller, so it 
   of it. With web search off it says it does not know the name and points to the setting instead of
   asking you to explain it. **Untested:** how reliably real local models decide to search (tested with
   a stub model); small models may still ask.
+  **Research from the project.** With web search on, the planner can also start a research run for a
+  question that needs many sources (it writes a `[start research]` block, at most one per answer). It is
+  the chat's Research mode (see chat-and-api.md): the question is split into 3 to 6 sub-questions that run
+  on whichever nodes are free, then a free node writes a report with numbered sources. The lanes show live
+  as their own answer in the conversation, with **Stop** (which also stops an answer in progress); the
+  report appears there when it is done and is saved to the project's **Stash** as
+  `Research - <question>.md`, so the project's tasks find it like any Stash document. One run per project
+  at a time; a run cut off by a controller restart is marked stopped. **Clear conversation** waits until
+  it finishes. **Untested:** real local models choosing when to research, and research on the real
+  cluster (tested on the e2e rig with a stub model).
   With a paid planner every tool round is a separate call, so an answer that
   reads files costs a few times more. **Ask** (Enter; Shift+Enter adds a line) talks it over with the planner. **Start as task** skips the conversation and starts your message
   as a task at once; **More options…** opens the full new-task form with the project chosen. Tasks

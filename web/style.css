@@ -826,6 +826,8 @@ textarea.fb-editor { font-family: var(--mono); font-size: 12.5px; width: 100%; m
 .rs-t { min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .rs-s { font-size: 12px; }
 .rs-lane summary { cursor: pointer; }
+.pj-rs-q { font-weight: 600; margin-bottom: 6px; overflow-wrap: anywhere; }
+.pj-rs-saved { font-size: 12px; margin: -2px 0 8px; }
 .rs-find { margin: 4px 0 2px; font-size: 13px; }
 .run-pill { cursor: pointer; white-space: nowrap; }
 .run-pill.on { background: var(--tint); border-color: var(--accent); color: var(--accent); }
