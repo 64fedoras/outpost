@@ -17,12 +17,12 @@
   "subtasks": null,
   "events": [
     {
-      "time": "2026-11-25T02:06:41.346626318Z",
+      "time": "2026-11-25T00:41:07.080680038Z",
       "level": "info",
       "text": "Gave the planner 1 passage(s) from the project's stash."
     },
     {
-      "time": "2026-11-25T02:06:41.346639541Z",
+      "time": "2026-11-25T00:41:07.080685132Z",
       "level": "info",
       "text": "The project has a stash, but this task plans in the cloud, so its documents are not sent. Use a node planner to include them."
     }
