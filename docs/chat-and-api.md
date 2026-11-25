@@ -174,8 +174,10 @@ everywhere facts go with the request. Task planning does not use memory (use pro
 Two switches: **Use memory** (`memory_on`) and **Suggest new memories** (`memory_suggest`), both on by
 default. **Untested:** how good real models' suggestions are; tested with a stub model.
 
-**Web search in chats** (Settings, Tasks, Planner: "Let chats search the web", off by default). Local
-models cannot search by themselves, so a **Search with** menu picks how they get the web:
+**Web search in chats** (Settings, Tasks, Planner: "Let chats search the web", off by default). The same
+switch lets the project conversation look things up (always with the built-in free search; see
+using-tasks.md, *Web look-ups*). Local models cannot search by themselves, so a **Search with** menu
+picks how chats get the web:
 
 - **The local model itself** (free, no cloud key). The model gets two tools, `web_search` and `read_page`,
   and the controller runs them while it answers, for up to 4 rounds, then the model writes the answer
