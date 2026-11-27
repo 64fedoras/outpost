@@ -57,7 +57,29 @@ function bar(pct, cls = '') {
 const label = (s) => String(s || '').replace(/_/g, ' ');
 const pill = (s, text) => `<span class="pill st-${esc(s)}">${esc(text || label(s))}</span>`;
 // setHTML only touches the DOM when content changed, so typing and focus survive polling.
-function setHTML(el, html) { if (typeof el === 'string') el = $(el); if (el._h !== html) { el.innerHTML = html; el._h = html; } }
+// Replace el's HTML only when it changed. While the owner has text selected inside el the
+// replacement waits (timestamps like "19s ago" change on every refresh and would clear the
+// selection); it is applied as soon as the selection goes away, or at once when they press
+// a button, link or field.
+let selForce = 0;
+document.addEventListener('pointerdown', (e) => { if (e.target.closest && e.target.closest('button, a, summary, select, textarea, input, [data-act]')) selForce = Date.now(); }, true);
+document.addEventListener('keydown', () => { selForce = Date.now(); }, true);
+function selectionIn(el) {
+  const s = window.getSelection && getSelection();
+  if (!s || s.isCollapsed || !s.rangeCount) return false;
+  return el.contains(s.anchorNode) || el.contains(s.focusNode);
+}
+const selWaiting = new Set();
+document.addEventListener('selectionchange', () => {
+  if (!selWaiting.size) return;
+  for (const el of [...selWaiting]) if (!selectionIn(el)) { selWaiting.delete(el); if (el._pend !== undefined && el._h !== el._pend) { el.innerHTML = el._pend; el._h = el._pend; } el._pend = undefined; }
+});
+function setHTML(el, html) {
+  if (typeof el === 'string') el = $(el);
+  if (el._h === html) { el._pend = undefined; return; }
+  if (Date.now() - selForce > 1500 && selectionIn(el)) { el._pend = html; selWaiting.add(el); return; }
+  el.innerHTML = html; el._h = html; el._pend = undefined; selWaiting.delete(el);
+}
 const nodeName = (n) => n.name || (n.hello && n.hello.hostname) || n.id;
 const nodeById = (id) => state && state.nodes.find((n) => n.id === id);
 
