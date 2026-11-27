@@ -719,7 +719,7 @@ $('tm-stop').onclick = async () => {
   try { await post(`/api/tasks/${curTask()}/cancel`); toast('Stopped'); } catch (e) { toast(e.message, 4000); }
   pollTask(); refresh();
 };
-$('tm-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendTaskMessage(); } });
+$('tm-text').addEventListener('keydown', (e) => { if (composerEnterSends(e)) { e.preventDefault(); sendTaskMessage(); } });
 function autoGrow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 220) + 'px'; }
 $('tm-text').addEventListener('input', (e) => autoGrow(e.target));
 

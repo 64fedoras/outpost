@@ -344,16 +344,24 @@ async function chatSend() {
 $('chat-send').onclick = chatSend;
 // Desktop: Enter sends by default; Settings → Appearance (or the key badge by Send) switches to Ctrl+Enter. Shift+Enter is always a new line.
 const chatCtrlSend = () => { try { return localStorage.getItem('outpost.chatSendKey') === 'ctrl'; } catch (e) { return false; } };
+// Does this Enter keypress send? Shared by every composer (Chat, projects, task follow-ups) so the setting applies everywhere.
+function composerEnterSends(e) {
+  if (e.key !== 'Enter' || e.isComposing || e.shiftKey || chatTouch()) return false;
+  return !chatCtrlSend() || e.ctrlKey || e.metaKey;
+}
+// Placeholder / hint wording for the current setting.
+const composerKeyHint = (verb) => (chatTouch() ? '' : chatCtrlSend() ? `Ctrl+Enter ${verb} · Enter adds a line` : `Enter ${verb} · Shift+Enter adds a line`);
 function chatSendKeySet(ctrl) {
   try { if (ctrl) localStorage.setItem('outpost.chatSendKey', 'ctrl'); else localStorage.removeItem('outpost.chatSendKey'); } catch (e) { /* storage optional */ }
   chatPlaceholder();
+  const k = document.querySelector('.pj-keys'); if (k) k.textContent = composerKeyHint('asks');
   const c = document.getElementById('set-chatkey'); if (c) c.checked = ctrl;
 }
 $('chat-text').addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter' || e.isComposing || e.shiftKey || chatTouch()) return;
-  if (!chatCtrlSend() || e.ctrlKey || e.metaKey) { e.preventDefault(); chatSend(); }
+  if (composerEnterSends(e)) { e.preventDefault(); chatSend(); }
 });
 $('chat-key').onclick = () => chatSendKeySet(!chatCtrlSend());
+{ const k = document.querySelector('.pj-keys'); if (k) k.textContent = composerKeyHint('asks'); }
 const chatNew = () => { if (location.hash === '#/chat') chatOpen(null); else location.hash = '#/chat'; };
 $('chat-new').onclick = chatNew; $('chat-new2').onclick = chatNew;
 $('chat-panel-btn').onclick = () => chatPanelSet(!chatPanelOpen());
