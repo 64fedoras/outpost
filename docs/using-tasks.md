@@ -392,8 +392,8 @@ is on and *Resume all*; Run now still works. Saved tasks with no schedule are li
 composer and the task starts from the project's current files and writes into them, the way a
 follow-up round does. Only one task works in a project at a time; later ones show *Waiting for
 project* and start when the first finishes. A project can store defaults (test command, peer review, fix rounds, test time limit) and its own instructions.
-Tasks without a project work as before, and existing tasks stay as they were. Delete a
-project's tasks before deleting the project.
+Tasks without a project work as before, and existing tasks stay as they were. Deleting a
+project deletes its tasks too (see the project menu below).
 
 **The Projects page** shows one card per project with its counts (waiting on you, working, idle,
 resolved); **＋ New project** opens a dialog that asks for a name; **Start from a git repository instead…** adds the URL, branch, token or key, test command and push options. Click a card to open the **project page**
@@ -404,8 +404,8 @@ top of the project page), press its **⋯** button, hold a finger on it for half
 press Shift+F10 / the menu key on a focused one. It has **Open in new tab**, **Edit** (F2; the
 project's name, its instructions box and any suggested rules),
 **Pin to sidebar** / **Unpin from sidebar**, **New task in this project**, **Duplicate** (a new project named "… (copy)" with the same files, git history, settings and instructions; tasks, the conversation, suggested rules and the pin are not copied, pushing and pull requests start off, and it is refused while a task is working in the project; for a project with a git repository a dialog first warns that the copy would share the repository and its branch, and offers **Keep the repository attached** or **Disconnect the copy**, which makes it a plain folder with the same files but no git history or git settings), **Copy link**, **Download
-files (.zip)**, **Settings**, **Clear conversation** and **Delete** (Del; only for a project with no
-tasks left). Pinned projects are listed under **Projects** in the sidebar, with an amber count when
+files (.zip)**, **Settings**, **Clear conversation** and **Delete** (Del). Delete asks whether you are sure you want to delete
+the project and all its tasks and threads. If the project has artifacts (task outputs, uploads, Stash documents) a second question asks whether to delete them or **Keep in archive**: the uploads and task outputs move to `archive/projects/<name>-<id>/` in the controller's data folder (included in backups; there is no screen for browsing it yet) and the project's Stash stays as an ordinary Stash named "Archived: …". Escape in that question keeps them. A project with a task that is still working cannot be deleted; stop the task first. Pinned projects are listed under **Projects** in the sidebar, with an amber count when
 something in them is waiting on you; the pin is stored on the controller, so it shows on every device.
 
 - **Auto planners.** *Auto (local)* only ever uses a ready node's model. *Auto (local + API)* tries a ready node,
@@ -473,7 +473,7 @@ something in them is waiting on you; the pin is stored on the controller, so it 
   open it, and ✕ beside a file or folder (or **Delete** above an open file) deletes it after you confirm.
   Uploads are kept on the controller in the project's folder (`artifacts/`, beside `repo/`), never on a
   node; they are not given to tasks (put files tasks should read in the project's Stash or its files),
-  and they are deleted with the project. One upload can be up to 4 GB and must leave 512 MB free on the
+  and they are deleted with the project unless you choose to archive them. One upload can be up to 4 GB and must leave 512 MB free on the
   controller's disk. Below are the tasks in four groups: **Waiting on
   you** (questions, a plan to approve, a cap or a resume), **Working** (including tasks queued behind
   the one that works), **Idle** (finished, failed or stopped) and **Resolved**. Each row shows the

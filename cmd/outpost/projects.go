@@ -16,8 +16,8 @@ package main
 // (see projects_git.go).
 //
 // Existing tasks need no migration: Task.ProjectID is empty ("unfiled") and they keep their own
-// <task>/repo. A task whose project was deleted becomes unfiled on load. A project with tasks
-// cannot be deleted.
+// <task>/repo. A task whose project was deleted becomes unfiled on load. Deleting a project
+// deletes its tasks too (handleDeleteProject).
 //
 // Schema version 1. Later rows build on this: project instructions (1.1) will add an
 // Instructions field next to the defaults, and the large codebase index will live under
@@ -415,27 +415,75 @@ func (c *Controller) handleUpdateProject(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
+// handleDeleteProject removes a project together with its tasks. A task that is
+// still working blocks it (stop it first). ?artifacts=archive moves the owner's
+// uploads and the tasks' outputs into <data>/archive/projects/ and keeps the
+// project's Stash as an ordinary Stash; ?artifacts=delete (the default) removes
+// them. The project's files (repo/) go either way; a git remote is not touched.
 func (c *Controller) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	p := c.getProject(r.PathValue("id"))
 	if p == nil {
 		writeJSON(w, 404, map[string]string{"error": "no such project"})
 		return
 	}
+	archive := r.URL.Query().Get("artifacts") == "archive"
 	c.mu.Lock()
+	var tasks []*Task
 	for _, t := range c.tasks {
 		if t.ProjectID == p.ID {
-			c.mu.Unlock()
-			writeJSON(w, 409, map[string]string{"error": "this project still has tasks; delete them first"})
+			tasks = append(tasks, t)
+		}
+	}
+	c.mu.Unlock()
+	for _, t := range tasks {
+		if taskActive(t) {
+			writeJSON(w, 409, map[string]string{"error": "a task in this project is still working; stop it first, then delete the project"})
 			return
 		}
 	}
+	var arch string
+	if archive {
+		arch = filepath.Join(c.dataDir, "archive", "projects", archiveName(p.Name, p.ID))
+		if err := os.MkdirAll(arch, 0o700); err != nil {
+			writeJSON(w, 500, map[string]string{"error": "could not make the archive folder: " + err.Error()})
+			return
+		}
+		if _, err := os.Stat(p.artifactsDir()); err == nil {
+			if err := os.Rename(p.artifactsDir(), filepath.Join(arch, "uploads")); err != nil {
+				writeJSON(w, 500, map[string]string{"error": "could not archive the uploads: " + err.Error()})
+				return
+			}
+		}
+	}
+	for _, t := range tasks {
+		t.mu.Lock()
+		if t.cancel != nil {
+			t.cancel()
+		}
+		t.mu.Unlock()
+		if archive {
+			if _, err := os.Stat(t.artifactsDir()); err == nil {
+				os.Rename(t.artifactsDir(), filepath.Join(arch, "task-"+t.ID))
+			}
+		}
+		c.mu.Lock()
+		delete(c.tasks, t.ID)
+		c.mu.Unlock()
+		os.RemoveAll(t.dir)
+		c.spendDeleted(t.ID)
+	}
+	c.mu.Lock()
 	delete(c.projects, p.ID)
 	c.mu.Unlock()
 	p.mu.Lock()
 	stashID := p.StashID
 	p.mu.Unlock()
 	if stashID != "" {
-		c.stashDelete(stashID)
+		if archive {
+			c.stashDetach(stashID, p.Name)
+		} else {
+			c.stashDelete(stashID)
+		}
 	}
 	pc := p.chatLog()
 	pc.mu.Lock()
@@ -446,7 +494,27 @@ func (c *Controller) handleDeleteProject(w http.ResponseWriter, r *http.Request)
 	projectChats.Delete(pc.path)
 	os.RemoveAll(p.dir)
 	c.spendDeleted("projchat_" + p.ID)
-	writeJSON(w, 200, map[string]bool{"ok": true})
+	writeJSON(w, 200, map[string]any{"ok": true, "tasks": len(tasks), "archive": arch != ""})
+}
+
+// archiveName is a safe folder name for an archived project.
+func archiveName(name, id string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if r < 128 && (r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+			b.WriteRune(r)
+		} else if b.Len() > 0 && !strings.HasSuffix(b.String(), "-") {
+			b.WriteByte('-')
+		}
+	}
+	n := strings.Trim(b.String(), "-")
+	if len(n) > 40 {
+		n = n[:40]
+	}
+	if n == "" {
+		return id
+	}
+	return n + "-" + id
 }
 
 // handleDuplicateProject makes a new project with a copy of p's files (with

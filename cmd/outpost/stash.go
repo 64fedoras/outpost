@@ -193,6 +193,20 @@ func (c *Controller) stashDelete(id string) bool {
 	return true
 }
 
+// stashDetach turns a project's own stash into an ordinary one (kept when the
+// project is deleted and the owner chose to keep its artifacts).
+func (c *Controller) stashDetach(id, projectName string) {
+	s := c.stashGet(id)
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.ProjectID = ""
+	s.Name = clip("Archived: "+projectName, stashNameMax)
+	s.saveLocked()
+	s.mu.Unlock()
+}
+
 // saveLocked writes stash.json (s.mu held).
 func (s *Stash) saveLocked() error {
 	b, _ := json.MarshalIndent(s, "", "  ")

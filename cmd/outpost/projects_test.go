@@ -382,3 +382,67 @@ func TestProjectDuplicate(t *testing.T) {
 		}
 	}
 }
+
+// Deleting a project removes its tasks too; a working task blocks it; ?artifacts=archive
+// moves uploads and task outputs aside instead of deleting them.
+func TestDeleteProjectWithTasks(t *testing.T) {
+	c := testController(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("DELETE /api/projects/{id}", c.handleDeleteProject)
+	mk := func(name string) (*Project, *Task) {
+		w := httptest.NewRecorder()
+		c.handleCreateProject(w, httptest.NewRequest("POST", "/api/projects", strings.NewReader(`{"name":"`+name+`"}`)))
+		var id string
+		for _, v := range c.projectViews() {
+			if v.Name == name {
+				id = v.ID
+			}
+		}
+		p := c.getProject(id)
+		os.MkdirAll(p.artifactsDir(), 0o755)
+		os.WriteFile(filepath.Join(p.artifactsDir(), "notes.txt"), []byte("hi"), 0o644)
+		tdir := filepath.Join(c.tasksDir(), "t_"+id)
+		os.MkdirAll(filepath.Join(tdir, "artifacts"), 0o755)
+		os.WriteFile(filepath.Join(tdir, "artifacts", "out.txt"), []byte("out"), 0o644)
+		tk := &Task{ID: "t_" + id, ProjectID: id, Status: "done", dir: tdir}
+		c.mu.Lock()
+		c.tasks[tk.ID] = tk
+		c.mu.Unlock()
+		return p, tk
+	}
+	del := func(id, q string) int {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("DELETE", "/api/projects/"+id+q, nil))
+		return w.Code
+	}
+
+	p, tk := mk("busy")
+	tk.Status = "running"
+	if code := del(p.ID, ""); code != 409 || c.getProject(p.ID) == nil {
+		t.Fatalf("running task should block: %d", code)
+	}
+	tk.Status = "done"
+	if code := del(p.ID, ""); code != 200 {
+		t.Fatalf("delete: %d", code)
+	}
+	if c.getProject(p.ID) != nil || c.getTask(tk.ID) != nil {
+		t.Fatal("project and task should be gone")
+	}
+	if _, err := os.Stat(filepath.Join(c.dataDir, "archive")); err == nil {
+		t.Fatal("plain delete must not archive")
+	}
+
+	p, tk = mk("keep me")
+	if code := del(p.ID, "?artifacts=archive"); code != 200 {
+		t.Fatalf("archive delete: %d", code)
+	}
+	arch := filepath.Join(c.dataDir, "archive", "projects", archiveName("keep me", p.ID))
+	for _, f := range []string{"uploads/notes.txt", "task-" + tk.ID + "/out.txt"} {
+		if _, err := os.Stat(filepath.Join(arch, f)); err != nil {
+			t.Fatalf("archived %s: %v", f, err)
+		}
+	}
+	if c.getProject(p.ID) != nil || c.getTask(tk.ID) != nil {
+		t.Fatal("archived project and task should be gone")
+	}
+}
