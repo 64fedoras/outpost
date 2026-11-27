@@ -282,89 +282,102 @@ can check detection without joining.
 
 Until a node has a model ready, the New task page shows a short checklist: **Add a node** (opens the join command), **Pick a model for <node>** (the same best-fit picker as on the Nodes page) and an optional cloud key (not needed, a node plans for free). Done steps are ticked and the card disappears once a node has a model ready.
 
-   16 GB GPU, *Qwen3-Coder 30B-A3B*, or *Qwen2.5-Coder 14B* for a tighter fit. Newer options to compare on your own
-   16 GB GPU, *Qwen3-Coder 30B-A3B* (or *Qwen2.5-Coder 14B* if it is tight), *Qwen2.5-Coder 14B*. Newer options to compare on your own
-   tasks (not yet tested on the cluster, and they need a current llama.cpp build): *Qwen3.6 35B-A3B* for the
-   CPU node or a 16 GB GPU with RAM offload, *Qwen3.6 27B* for 16 GB GPUs, and *Gemma 4 26B-A4B* as a second
-   opinion for review. These three can also read images (marked **Vision**): their vision projector file
-   (`mmproj`) is downloaded with them and passed to llama-server automatically. Choose where it lives:
-   - **Add · nodes download** (default): each node downloads it from Hugging Face when you load it.
-     Uses no space on the controller; nodes need internet access.
-   - **Store on controller:** downloaded once to the controller and copied to nodes over your
-     network. Uses controller space; nodes need no internet.
-   You can switch later: **Free controller space** or **Store on controller** on the library row.
-   Library rows and Hugging Face file lists show a badge per node: **fits in VRAM**,
-   **split VRAM + RAM (slower)**, **runs on CPU** (node without a GPU) or **does not fit**. It is an
-   estimate: the weights plus a rough KV cache at the suggested context size, not read from the file.
-   With more than 6 nodes the badges become one per kind ("fits in VRAM on 5"; hover for the names), a model
-   held by more than 3 nodes shows "N nodes ▾" with the list, and a library row keeps **Load on…** and folds
-   the other buttons into **⋯**. Long help paragraphs show two lines with a **More** link.
-   **Discover models** lists the built-in models as compact rows, the ones suggested for your nodes first,
-   with a search box and filters (**Fits my nodes**, **Fits in VRAM**, **Vision**). Each row says how many
-   online nodes it fits (hover for each node); the per-node detail is in the **Add and load on…** picker,
-   and the **▾** next to it has **Add · nodes download** and **Store on controller**. On a ready model,
-   **Load on N nodes it fits** loads it on every online node where it fits fully in VRAM (this replaces
-   whatever those nodes had loaded). **Load on…** opens a node picker (fit per node, and which model it
-   would replace). A built-in model that is not in the library yet has **Add and load on…**, which adds it
-   (nodes download it) and loads it in one step. A **Recommended** tag shows which node a model is the pick for.
+**Which model to pick.** The **Models** page sizes every built-in model against your nodes and lists the ones
+that fit first, so you rarely need this list. Roughly, by the memory a model can use (VRAM on a GPU, RAM on a
+CPU node, unified memory on an Apple Silicon Mac):
+
+- **4 GB:** *Qwen2.5-Coder 3B* (code), *Qwen3.5 2B* (chat).
+- **6 to 8 GB:** *Qwen3.5 4B*, *Gemma 4 E2B*, *Gemma 4 E4B*.
+- **8 to 12 GB:** *Qwen3.5 9B* (the default small worker; it fits an 8 GB card), *Gemma 4 12B*, *Qwen2.5-Coder 7B*.
+- **12 to 16 GB:** *gpt-oss 20B* (fast, a good local planner), *Qwen3.5 9B Q8_0*, *Devstral Small 2 24B*, *Qwen2.5-Coder 14B*.
+- **16 GB GPU with RAM offload, or 24 to 32 GB:** *Qwen3-Coder 30B-A3B*, *Qwen3.6 35B-A3B*, *Gemma 4 26B-A4B*,
+  *Qwen3.6 27B*, *Qwen3.8 27B*, *Gemma 4 31B*.
+- **64 GB and more** (large-RAM CPU servers): *Qwen3-Coder-Next 80B-A3B*, *gpt-oss 120B* (80 GB),
+  *Qwen3.5 122B-A10B* (96 GB).
+
+Mixture-of-experts models (names with A3B, A4B or A10B, and gpt-oss) read only a few billion weights per token,
+so they run much faster on a CPU than their size suggests. Models marked **Vision** read images: their vision
+projector file (`mmproj`) is downloaded with them and passed to llama-server automatically. Most of the newer
+models (Qwen3.5, Qwen3.6, Qwen3.8, Gemma 4, gpt-oss) need a current llama.cpp build. When you add a model, choose where it lives:
+- **Add · nodes download** (default): each node downloads it from Hugging Face when you load it.
+  Uses no space on the controller; nodes need internet access.
+- **Store on controller:** downloaded once to the controller and copied to nodes over your
+  network. Uses controller space; nodes need no internet.
+
+You can switch later: **Free controller space** or **Store on controller** on the library row.
+Library rows and Hugging Face file lists show a badge per node: **fits in VRAM**,
+**split VRAM + RAM (slower)**, **runs on CPU** (node without a GPU) or **does not fit**. It is an
+estimate: the weights plus a rough KV cache at the suggested context size, not read from the file.
+With more than 6 nodes the badges become one per kind ("fits in VRAM on 5"; hover for the names), a model
+held by more than 3 nodes shows "N nodes ▾" with the list, and a library row keeps **Load on…** and folds
+the other buttons into **⋯**. Long help paragraphs show two lines with a **More** link.
+
+**Discover models** lists the built-in models as compact rows, the ones suggested for your nodes first,
+with a search box and filters (**Fits my nodes**, **Fits in VRAM**, **Vision**). Each row says how many
+online nodes it fits (hover for each node); the per-node detail is in the **Add and load on…** picker,
+and the **▾** next to it has **Add · nodes download** and **Store on controller**. On a ready model,
+**Load on N nodes it fits** loads it on every online node where it fits fully in VRAM (this replaces
+whatever those nodes had loaded). **Load on…** opens a node picker (fit per node, and which model it
+would replace). A built-in model that is not in the library yet has **Add and load on…**, which adds it
+(nodes download it) and loads it in one step. A **Recommended** tag shows which node a model is the pick for.
 2. **Nodes** (sidebar): a one-line summary on top (online, models loaded, jobs, total speed, free VRAM,
-   nodes that need attention), then one row per node, grouped into Needs attention, Healthy and Offline:
-   name with an update chip when a newer version is available, OS and version, the loaded model, CPU, RAM,
-   VRAM and disk bars, speed, a fix button for the first problem (failed load, model error, paused, no Vulkan,
-   low disk under 10 GB) and **Details**. Click a row (or **Details**) and a details panel opens on the
-   right with the node's full card (every control: idle unload, benchmark, stored models, tools, exec and
-   sandbox, Pause, Restart, Logs, Rename, Remove, Run) and its recent jobs, while the list stays in view: click
-   another row to switch, use the arrows in the panel header to step through the nodes, and close it with the
-   cross, Esc, or a click on empty space. The panel floats over the page and the page underneath does not move; on a phone it fills the screen.
-   An optional **Detailed list** view (a short list on the left, the full card and recent jobs on the right) is
-   off by default; turn it on in **Settings → Display and alerts → Appearance** (kept in this browser only), and a
-   **List / Detailed list** switch appears top right. (The card Grid view was removed; a browser that had it
-   saved opens on the List.)
-   **Many nodes.** From 8 nodes on, the page switches to a compact layout: a **filter bar** (search by name,
-   host, OS, GPU, loaded model or label; quick filters All, Online, Offline, Needs attention, Has GPU, No model
-   and Can update, each with a count; one chip per label; **Sort** by status, name or speed, remembered in this
-   browser) and one-line rows with a column header (offline rows keep **Wake** where it works). The update bar
-   above the list says how many nodes can update. **Recent jobs** shows the latest 8 with a node filter, a status filter and **Show more**.
-   **Pick best** (on every List row and the full card, next to **Load model…**) opens a short
-   list of the three best coding models for that node, best first, each with how it fits, the expected
-   speed on CPU machines, the reason and how much would be downloaded. Choose one and press **Load this
-   model** (the model loaded now is unloaded first), or **See all models…** for the full Load dialog. If
-   nothing fits, it says why. It uses the same ranking as **Recommended**.
-   The full card shows **Recommended**: the biggest coding model that should still run fast on that
-   node, with the reason and a one-click **Load**. How it is chosen:
-   - A model that fits fully in GPU memory counts as fast.
-   - A model split between GPU memory and system RAM gets a speed estimate from the share that stays
-     in VRAM. A mixture-of-experts model reads only a few percent of its weights per token, so a big
-     one split this way can beat a smaller model that fits in VRAM; a dense model that would crawl
-     cannot. This estimate is rough and has not been compared with real hardware.
-   - A CPU machine (including a Linux node with a GPU but no Vulkan driver, which runs the CPU build)
-     is ranked by speed: the node times its own memory (about a second, at start-up) and the controller
-     reads each model's GGUF header to see how many weights one token reads.
-   - An Apple Silicon Mac runs the model on its GPU from unified memory. Its estimate is the CPU one
-     times 1.5, which is a guess until that Mac has a benchmark.
-   - **Speed floor.** A model expected to run slower than about 5 tok/s on that node (CPU, Apple Silicon
-     or split) is not recommended while a faster one fits. If nothing reaches 5, the fastest model at
-     3.5 tok/s or more is still recommended, with a note that it is under your target. Under 3.5 there is
-     no pick; the models stay in the Load dialog with a slow warning. A target below 5 lowers both limits.
-   - **Target speed.** A slider beside *Context size* in the Load dialog (and one at the top of the Pick
-     best dialog) sets the tok/s you want from this node, 2 to 32 or any number from 1 to 100. The
-     default is 8. The pick is the biggest coding model estimated at or above the target; if none
-     reaches it, the biggest at half the target or better, then the fastest. It is saved per node and
-     applies to CPU machines, split GPU + RAM picks and Macs. A model that fits fully in VRAM has no speed
-     estimate, so the target never rules it out. The estimates behind it (memory speed x 0.6 on CPU,
-     x 0.7 more for mixture-of-experts, VRAM part 8x faster when split, x 1.5 on Apple Silicon) are
-     untuned guesses until compared with real hardware.
-   - The pick shows **~N tok/s** where there is an estimate; under half the target (4 tok/s by default)
-     it is marked slow in orange. At or above the target (8 by default) counts as fast. A benchmark of a model on the node replaces the estimate for that
-     model (and, on CPU machines and Macs, rescales the others).
-   - Sizes are checked against the memory that is free now: what other programs hold (a game, a
-     browser) is left alone and the reason says so. The node's own loaded model does not count,
-     because loading another one frees it. On CPU machines this is cautious only when the system
-     reports the memory as used.
-   - A model that is not on the node yet is skipped when the disk is too small, or when it would pass
-     the node's storage limit. If the limit is set to remove old models, their space counts as room
-     and the reason says older models will be removed.
-   - Nothing is picked when no llama.cpp build exists for the node.
+nodes that need attention), then one row per node, grouped into Needs attention, Healthy and Offline:
+name with an update chip when a newer version is available, OS and version, the loaded model, CPU, RAM,
+VRAM and disk bars, speed, a fix button for the first problem (failed load, model error, paused, no Vulkan,
+low disk under 10 GB) and **Details**. Click a row (or **Details**) and a details panel opens on the
+right with the node's full card (every control: idle unload, benchmark, stored models, tools, exec and
+sandbox, Pause, Restart, Logs, Rename, Remove, Run) and its recent jobs, while the list stays in view: click
+another row to switch, use the arrows in the panel header to step through the nodes, and close it with the
+cross, Esc, or a click on empty space. The panel floats over the page and the page underneath does not move; on a phone it fills the screen.
+An optional **Detailed list** view (a short list on the left, the full card and recent jobs on the right) is
+off by default; turn it on in **Settings → Display and alerts → Appearance** (kept in this browser only), and a
+**List / Detailed list** switch appears top right. (The card Grid view was removed; a browser that had it
+saved opens on the List.)
+**Many nodes.** From 8 nodes on, the page switches to a compact layout: a **filter bar** (search by name,
+host, OS, GPU, loaded model or label; quick filters All, Online, Offline, Needs attention, Has GPU, No model
+and Can update, each with a count; one chip per label; **Sort** by status, name or speed, remembered in this
+browser) and one-line rows with a column header (offline rows keep **Wake** where it works). The update bar
+above the list says how many nodes can update. **Recent jobs** shows the latest 8 with a node filter, a status filter and **Show more**.
+**Pick best** (on every List row and the full card, next to **Load model…**) opens a short
+list of the three best coding models for that node, best first, each with how it fits, the expected
+speed on CPU machines, the reason and how much would be downloaded. Choose one and press **Load this
+model** (the model loaded now is unloaded first), or **See all models…** for the full Load dialog. If
+nothing fits, it says why. It uses the same ranking as **Recommended**.
+The full card shows **Recommended**: the biggest coding model that should still run fast on that
+node, with the reason and a one-click **Load**. How it is chosen:
+- A model that fits fully in GPU memory counts as fast.
+- A model split between GPU memory and system RAM gets a speed estimate from the share that stays
+  in VRAM. A mixture-of-experts model reads only a few percent of its weights per token, so a big
+  one split this way can beat a smaller model that fits in VRAM; a dense model that would crawl
+  cannot. This estimate is rough and has not been compared with real hardware.
+- A CPU machine (including a Linux node with a GPU but no Vulkan driver, which runs the CPU build)
+  is ranked by speed: the node times its own memory (about a second, at start-up) and the controller
+  reads each model's GGUF header to see how many weights one token reads.
+- An Apple Silicon Mac runs the model on its GPU from unified memory. Its estimate is the CPU one
+  times 1.5, which is a guess until that Mac has a benchmark.
+- **Speed floor.** A model expected to run slower than about 5 tok/s on that node (CPU, Apple Silicon
+  or split) is not recommended while a faster one fits. If nothing reaches 5, the fastest model at
+  3.5 tok/s or more is still recommended, with a note that it is under your target. Under 3.5 there is
+  no pick; the models stay in the Load dialog with a slow warning. A target below 5 lowers both limits.
+- **Target speed.** A slider beside *Context size* in the Load dialog (and one at the top of the Pick
+  best dialog) sets the tok/s you want from this node, 2 to 32 or any number from 1 to 100. The
+  default is 8. The pick is the biggest coding model estimated at or above the target; if none
+  reaches it, the biggest at half the target or better, then the fastest. It is saved per node and
+  applies to CPU machines, split GPU + RAM picks and Macs. A model that fits fully in VRAM has no speed
+  estimate, so the target never rules it out. The estimates behind it (memory speed x 0.6 on CPU,
+  x 0.7 more for mixture-of-experts, VRAM part 8x faster when split, x 1.5 on Apple Silicon) are
+  untuned guesses until compared with real hardware.
+- The pick shows **~N tok/s** where there is an estimate; under half the target (4 tok/s by default)
+  it is marked slow in orange. At or above the target (8 by default) counts as fast. A benchmark of a model on the node replaces the estimate for that
+  model (and, on CPU machines and Macs, rescales the others).
+- Sizes are checked against the memory that is free now: what other programs hold (a game, a
+  browser) is left alone and the reason says so. The node's own loaded model does not count,
+  because loading another one frees it. On CPU machines this is cautious only when the system
+  reports the memory as used.
+- A model that is not on the node yet is skipped when the disk is too small, or when it would pass
+  the node's storage limit. If the limit is set to remove old models, their space counts as room
+  and the reason says older models will be removed.
+- Nothing is picked when no llama.cpp build exists for the node.
 
    The estimates are conservative guesses until you compare them with real benchmarks; the full
    **Load model** list still offers every model.
