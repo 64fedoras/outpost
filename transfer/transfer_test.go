@@ -126,7 +126,14 @@ func TestAllPeersTamperedFailsAndDeletes(t *testing.T) {
 func TestWrongCertificateRefused(t *testing.T) {
 	src, data, sum := makeFile(t, 2*testChunk)
 	p := newPeer(t, "p", src, "tok")
-	p.Fingerprint = "00" + p.Fingerprint[2:] // impostor: pin does not match
+	// impostor: pin does not match. Change the first digit rather than
+	// overwrite it with a fixed value, which was a no-op for the 1 in 256
+	// certificates whose fingerprint already started with that value.
+	first := "0"
+	if p.Fingerprint[0] == '0' {
+		first = "1"
+	}
+	p.Fingerprint = first + p.Fingerprint[1:]
 	dest := filepath.Join(t.TempDir(), "out.gguf")
 	_, err := Fetch(context.Background(), req(dest, len(data), sum, p.Peer))
 	if err == nil {
