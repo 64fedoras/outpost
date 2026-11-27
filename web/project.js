@@ -546,8 +546,17 @@ async function projectAction(act, el) {
   const id = el.dataset.id;
   const f = (k) => document.querySelector(`#modal-pj-settings [data-pf="${k}"][data-id="${id}"]`) || document.querySelector(`[data-pf="${k}"][data-id="${id}"]`);
   if (act === 'project-delete') {
-    if (!await askConfirm('Delete this project and its files? Its git remote is not touched. (A project that still has tasks cannot be deleted; delete them first.)')) return;
-    await api(`/api/projects/${id}`, { method: 'DELETE' }); toast('Project deleted');
+    const pj = projectById(id) || {};
+    const n = pj.tasks || 0;
+    if (!await askConfirm(`Delete the project ${pj.name ? '"' + pj.name + '"' : ''} and all its ${n ? n + ' task' + (n === 1 ? '' : 's') + ' and threads' : 'tasks and threads'}? Its files and conversation go too; its git remote is not touched.`)) return;
+    let arts = 0;
+    try { arts = ((await api(`/api/projects/${id}/overview`)).artifacts || []).filter((a) => a.kind !== 'pr').length; } catch (e) {}
+    let keep = false;
+    if (arts) {
+      // Escape or clicking outside keeps them: the safe answer.
+      keep = !await askShow({ title: `This project has ${arts} artifact${arts === 1 ? '' : 's'} (outputs, uploads, Stash documents). Delete them too?`, body: 'Keep them in an archive moves the uploads and task outputs to the archive folder on the controller and keeps the Stash as its own Stash.', yes: 'Delete artifacts', no: 'Keep in archive', danger: true });
+    }
+    await api(`/api/projects/${id}${keep ? '?artifacts=archive' : ''}`, { method: 'DELETE' }); toast(keep ? 'Project deleted, artifacts archived' : 'Project deleted');
     close('modal-pj-settings'); close('modal-pj-edit');
     projects = (projects || []).filter((q) => q.id !== id); renderSidePins();
     if (page === 'project' && pageArg === id) location.hash = '#/projects';
@@ -748,7 +757,6 @@ const projLink = (id) => location.origin + location.pathname + '#/projects/' + i
 
 async function deleteProject(id) {
   const p = projectById(id); if (!p) return;
-  if (p.tasks) { toast(`${p.name} still has ${p.tasks} task${p.tasks === 1 ? '' : 's'}; delete them first`, 4000); return; }
   await projectAction('project-delete', { dataset: { id } });
   refresh();
 }
