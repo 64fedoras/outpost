@@ -152,6 +152,16 @@ messages contain every word (the same search as the sidebar's "Search tasks and 
 Drag the panel's left edge to make it wider or narrower (240 to 560 px; arrow keys work on the focused
 edge, double-click resets); the width is remembered in this browser.
 
+**Chats in a project (API).** A chat can belong to a project: `POST /api/chats` takes `project_id`, and
+`POST /api/chats/{id}/meta` takes `project_id` to move a chat into a project (`""` takes it out). A project
+chat is answered by the same engine (node picker, Auto, cache reuse, images, Run code) with the project's
+instructions, memory and file tools added, and may start tasks and research. Its node choice can also be
+`planner`, which answers with the project's cloud planner; plain chats refuse that value. `GET /api/chats`
+lists chats that are in no project (what the Chat page shows); `?project=<id>` lists one project's
+conversations and `?project=all` every chat. The project's single conversation (`/api/projects/{id}/chat`)
+is kept as a chat of that project and the old endpoint works as before. On first start the conversation
+from earlier versions is copied into such a chat; the old file is left in place.
+
 **Live preview.** When an answer (in Chat or the project conversation) contains a whole HTML page, an SVG
 image, a Mermaid diagram (a code block marked `mermaid`) or a long Markdown document (marked `md`), a
 card appears under it; **Open** shows it in a panel on the right with **Preview** and **Code**, a

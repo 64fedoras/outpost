@@ -44,6 +44,10 @@ type chatToolset struct {
 	web     bool
 	run     *codeRunner
 	runTool agentTool
+	// project (project conversations, chat_project.go): the project's read tools, and the web tools when
+	// it has web set; help is added to the system message in place of the plain web-search text.
+	project *projectReads
+	help    string
 }
 
 // smallModelRe matches file names of models of 3B parameters or fewer (qwen2.5-3b, llama-3.2-1b, 0.5b).
@@ -144,10 +148,15 @@ func (c *Controller) chatWithToolset(ctx context.Context, infer inferFn, hist []
 		msgs[0].Content += chatToolSystem
 		tools = append(tools, chatWebTools...)
 	}
+	if ts.project != nil {
+		msgs[0].Content += ts.help
+		tools = append(tools, ts.project.tools()...)
+		rounds = maxProjectToolRounds
+	}
 	if ts.run != nil {
 		msgs[0].Content += chatRunSystem
 		tools = append(tools, ts.runTool)
-		rounds = maxChatToolRounds + 2 // room to fix a failing program
+		rounds += 2 // room to fix a failing program
 	}
 	defs := toolDefs(tools)
 	known := map[string]bool{}
@@ -155,6 +164,10 @@ func (c *Controller) chatWithToolset(ctx context.Context, infer inferFn, hist []
 		known[t.Name] = true
 	}
 	budget := (ctxTok - maxOut) * 3
+	if ts.project != nil {
+		// The project text is long: a small context still leaves room for some file reading, as the old project conversation did.
+		budget = max(budget, len(msgs[0].Content)+4000)
+	}
 	// One result may take about a third of the budget, so a few of them and the conversation fit.
 	capChars := max(min(chatToolPageCap, ctxTok, budget/3), chatToolKeepMin)
 	parseFails, badCalls := 0, 0
@@ -197,6 +210,9 @@ func (c *Controller) chatWithToolset(ctx context.Context, infer inferFn, hist []
 			case call.Function.Name == "run_code":
 				res = searchClip(ts.run.run(ctx, call.Function.Arguments), capChars)
 				st.runs++
+			case ts.project != nil:
+				res = ts.project.run(toolCall{ID: call.ID, Name: call.Function.Name, Args: call.Function.Arguments}, capChars)
+				st.runs++ // keeps "the model keeps calling tools that do not exist" from tripping on real tools
 			default:
 				res = c.runChatTool(ctx, call, capChars, st)
 			}

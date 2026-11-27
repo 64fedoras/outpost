@@ -63,6 +63,9 @@ type Project struct {
 	Pinned bool `json:"pinned,omitempty"`
 	// StashID is the project's own stash (stash_project.go), made when first opened.
 	StashID string `json:"stash_id,omitempty"`
+	// ConvChatID is the chat the project's conversation lives in (chat_project.go): the old single
+	// conversation (chat.json) copied into a Chat, or one made on first use.
+	ConvChatID string `json:"conv_chat_id,omitempty"`
 
 	// Git. GitURL empty = a plain folder project.
 	GitURL      string `json:"git_url,omitempty"`
@@ -492,6 +495,7 @@ func (c *Controller) handleDeleteProject(w http.ResponseWriter, r *http.Request)
 	}
 	pc.mu.Unlock()
 	projectChats.Delete(pc.path)
+	c.removeProjectChats(p.ID)
 	os.RemoveAll(p.dir)
 	c.spendDeleted("projchat_" + p.ID)
 	writeJSON(w, 200, map[string]any{"ok": true, "tasks": len(tasks), "archive": arch != ""})

@@ -42,6 +42,8 @@ type SettingOffer struct {
 type offerScope struct {
 	chat    *Chat
 	project *Project
+	// declinedFrom: the project's conversation chat, whose "Not now" answers count here (chat_project.go).
+	declinedFrom *Chat
 }
 
 type offerDef struct {
@@ -192,6 +194,10 @@ func declinedOffers(s offerScope) []string {
 		s.chat.mu.Lock()
 		defer s.chat.mu.Unlock()
 		return append([]string(nil), s.chat.OffersDeclined...)
+	case s.declinedFrom != nil:
+		s.declinedFrom.mu.Lock()
+		defer s.declinedFrom.mu.Unlock()
+		return append([]string(nil), s.declinedFrom.OffersDeclined...)
 	case s.project != nil:
 		pc := s.project.chatLog()
 		pc.mu.Lock()
@@ -291,11 +297,16 @@ func (c *Controller) handleSettingOffer(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, 404, map[string]string{"error": "no such project"})
 			return
 		}
+		s.chat = c.projectConvChat(s.project, true) // the card is on a message of the project's conversation chat
 	default:
 		writeJSON(w, 400, map[string]string{"error": "name the chat or project"})
 		return
 	}
-	if !d.fits(s) {
+	fit := s
+	if req.Project != "" {
+		fit = offerScope{project: s.project} // the card was offered under the project's rules: no Run code
+	}
+	if !d.fits(fit) {
 		writeJSON(w, 400, map[string]string{"error": "that setting does not apply here"})
 		return
 	}
@@ -309,12 +320,7 @@ func (c *Controller) handleSettingOffer(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	retried := false
-	if s.chat != nil {
-		retried = c.chatOfferDone(s.chat, req.Msg, d.key, req.Act == "apply")
-	} else {
-		retried = c.projectOfferDone(s.project, req.Msg, d.key, req.Act == "apply")
-	}
+	retried := c.chatOfferDone(s.chat, req.Msg, d.key, req.Act == "apply")
 	writeJSON(w, 200, map[string]bool{"ok": true, "retried": retried})
 }
 
@@ -329,7 +335,7 @@ func (c *Controller) chatOfferDone(ch *Chat, msgID, key string, applied bool) bo
 	if !applied && !slices.Contains(ch.OffersDeclined, key) {
 		ch.OffersDeclined = append(ch.OffersDeclined, key)
 	}
-	if applied && i >= 1 && i == len(ch.Messages)-1 && ch.Busy == "" && ch.Messages[i].Role == "assistant" {
+	if applied && i >= 1 && i == len(ch.Messages)-1 && ch.Busy == "" && ch.Messages[i].Role == "assistant" && len(ch.Messages[i].Tasks) == 0 {
 		all := ch.cutTail(i)
 		c.beginAnswerLocked(ch, all, len(all)) // unlocks ch.mu
 		return true
@@ -338,30 +344,4 @@ func (c *Controller) chatOfferDone(ch *Chat, msgID, key string, applied bool) bo
 	ch.mu.Unlock()
 	taskLive.changed("chat_" + ch.ID)
 	return false
-}
-
-// projectOfferDone is chatOfferDone for a project conversation, which keeps no
-// versions: the answer with the card is replaced by the new one.
-func (c *Controller) projectOfferDone(p *Project, msgID, key string, applied bool) bool {
-	pc := p.chatLog()
-	pc.mu.Lock()
-	idx := -1
-	for i := range pc.Messages {
-		if pc.Messages[i].ID == msgID {
-			pc.Messages[i].Offer, idx = nil, i
-		}
-	}
-	if !applied && !slices.Contains(pc.OffersDeclined, key) {
-		pc.OffersDeclined = append(pc.OffersDeclined, key)
-	}
-	retry := applied && idx >= 1 && idx == len(pc.Messages)-1 && !pc.busy && pc.Messages[idx].Role == "assistant" && len(pc.Messages[idx].Tasks) == 0
-	if retry {
-		pc.Messages = pc.Messages[:idx]
-	}
-	pc.saveLocked()
-	if retry {
-		c.startProjectAnswerLocked(p, pc)
-	}
-	pc.mu.Unlock()
-	return retry
 }

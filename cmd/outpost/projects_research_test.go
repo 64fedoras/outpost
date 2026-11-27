@@ -43,11 +43,12 @@ func TestProjectChatStartsResearch(t *testing.T) {
 }
 
 func TestProjectResearchOneAtATime(t *testing.T) {
-	c, p, pc, _ := projectWebRig(t, true, fmt.Sprintf(claudeText, "x"))
-	pc.mu.Lock()
-	pc.resCancel = func() {}
-	pc.mu.Unlock()
-	if err := c.startProjectResearch(p, pc, "q"); err == nil || !strings.Contains(err.Error(), "already running") {
+	c, p, _, _ := projectWebRig(t, true, fmt.Sprintf(claudeText, "x"))
+	ch := c.projectConvChat(p, true)
+	ch.mu.Lock()
+	ch.Busy, ch.projRes = "answering", true // a research run is working
+	ch.mu.Unlock()
+	if err := c.startProjectResearch(ch, p, "q"); err == nil || !strings.Contains(err.Error(), "already running") {
 		t.Fatalf("second run: %v", err)
 	}
 }

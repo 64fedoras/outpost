@@ -57,8 +57,12 @@ type projectChat struct {
 	OffersDeclined []string `json:"offers_declined,omitempty"`
 	busy           bool
 	cancel         context.CancelFunc
-	reading        []string           // chips of the answer being written
-	resCancel      context.CancelFunc // a research run in progress (projects_research.go)
+	reading        []string // chips of the answer being written
+	// Set when answerProjectChat answers for a conversation chat (chat_project.go): the chat, for its
+	// declined offers and the tasks' ChatID, and a callback for the chips.
+	conv      *Chat
+	chatID    string
+	onReading func([]string)
 }
 
 type projectChatView struct {
@@ -127,7 +131,7 @@ func (pc *projectChat) saveLocked() {
 func (pc *projectChat) view() projectChatView {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
-	return projectChatView{Messages: append([]ProjectChatMsg{}, pc.Messages...), Busy: pc.busy, Reading: pc.reading, Research: pc.resCancel != nil}
+	return projectChatView{Messages: append([]ProjectChatMsg{}, pc.Messages...), Busy: pc.busy, Reading: pc.reading}
 }
 
 func (pc *projectChat) add(m ProjectChatMsg) {
@@ -179,6 +183,7 @@ func (c *Controller) handleProjectFile(w http.ResponseWriter, r *http.Request) {
 
 // handleProjectChat takes one message. mode "task" starts it as a task at once;
 // otherwise the planner answers in the background (the page polls the overview).
+// The conversation is the project's conversation chat (chat_project.go).
 func (c *Controller) handleProjectChat(w http.ResponseWriter, r *http.Request) {
 	p := c.getProject(r.PathValue("id"))
 	if p == nil {
@@ -202,58 +207,27 @@ func (c *Controller) handleProjectChat(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": fmt.Sprintf("the message is too long (over %d characters); attach big text to a task instead", maxProjectChatChars)})
 		return
 	}
-	pc := p.chatLog()
+	ch := c.projectConvChat(p, true)
 	if req.Mode == "task" {
-		t, code, err := c.createTask(createReq{Prompt: text, Project: p.ID}, nil, createOpts{})
+		t, code, err := c.createTask(createReq{Prompt: text, Project: p.ID}, nil, createOpts{ChatID: ch.ID})
 		if err != nil {
 			writeJSON(w, code, map[string]string{"error": err.Error()})
 			return
 		}
-		pc.add(ProjectChatMsg{ID: newID("m"), Role: "user", Text: text, Time: time.Now(), Tasks: []string{t.ID}})
+		ch.mu.Lock()
+		ch.Messages = append(ch.Messages, ChatMsg{ID: newID("m"), Role: "user", Text: text, At: time.Now(), Tasks: []string{t.ID}})
+		ch.Updated = time.Now()
+		ch.saveLocked()
+		ch.mu.Unlock()
+		taskLive.changed("chat_" + ch.ID)
 		writeJSON(w, 200, map[string]string{"task": t.ID})
 		return
 	}
-	pc.mu.Lock()
-	if pc.busy {
-		pc.mu.Unlock()
+	if !c.startChatReply(ch, text) {
 		writeJSON(w, 409, map[string]string{"error": "still answering the last message; wait or press Stop"})
 		return
 	}
-	pc.Messages = append(pc.Messages, ProjectChatMsg{ID: newID("m"), Role: "user", Text: text, Time: time.Now()})
-	pc.saveLocked()
-	c.startProjectAnswerLocked(p, pc)
-	pc.mu.Unlock()
 	writeJSON(w, 200, map[string]bool{"ok": true})
-}
-
-// startProjectAnswerLocked answers the conversation's last message in the
-// background; pc.mu must be held and pc.busy false.
-func (c *Controller) startProjectAnswerLocked(p *Project, pc *projectChat) {
-	ctx, cancel := context.WithTimeout(context.Background(), chatWait+projectChatMax)
-	pc.busy, pc.cancel = true, cancel
-	go func() {
-		defer cancel()
-		msg := c.answerProjectChat(ctx, p, pc)
-		msg.ID, msg.Role, msg.Time = newID("m"), "assistant", time.Now()
-		pc.mu.Lock()
-		pc.Messages = append(pc.Messages, msg)
-		pc.busy, pc.cancel = false, nil
-		pc.saveLocked()
-		pc.mu.Unlock()
-		if msg.research == "" {
-			return
-		}
-		if err := c.startProjectResearch(p, pc, msg.research); err != nil {
-			pc.mu.Lock()
-			for i := range pc.Messages {
-				if pc.Messages[i].ID == msg.ID {
-					pc.Messages[i].Error = strings.TrimPrefix(pc.Messages[i].Error+"; ", "; ") + "could not start research: " + err.Error()
-				}
-			}
-			pc.saveLocked()
-			pc.mu.Unlock()
-		}
-	}()
 }
 
 func (c *Controller) handleProjectChatStop(w http.ResponseWriter, r *http.Request) {
@@ -262,15 +236,13 @@ func (c *Controller) handleProjectChatStop(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, 404, map[string]string{"error": "no such project"})
 		return
 	}
-	pc := p.chatLog()
-	pc.mu.Lock()
-	if pc.cancel != nil {
-		pc.cancel()
+	if ch := c.projectConvChat(p, false); ch != nil {
+		ch.mu.Lock()
+		if ch.cancel != nil {
+			ch.cancel()
+		}
+		ch.mu.Unlock()
 	}
-	if pc.resCancel != nil {
-		pc.resCancel()
-	}
-	pc.mu.Unlock()
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -281,16 +253,18 @@ func (c *Controller) handleProjectChatClear(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, 404, map[string]string{"error": "no such project"})
 		return
 	}
-	pc := p.chatLog()
-	pc.mu.Lock()
-	if pc.busy || pc.researchRunningLocked() {
-		pc.mu.Unlock()
+	ch := c.projectConvChat(p, true) // a legacy chat.json is copied first, so it is cleared too
+	ch.mu.Lock()
+	if ch.Busy != "" {
+		ch.mu.Unlock()
 		writeJSON(w, 409, map[string]string{"error": "still answering; press Stop first"})
 		return
 	}
-	pc.Messages = []ProjectChatMsg{}
-	pc.saveLocked()
-	pc.mu.Unlock()
+	ch.Messages, ch.MemTries = []ChatMsg{}, 0
+	ch.Updated = time.Now()
+	ch.saveLocked()
+	ch.mu.Unlock()
+	taskLive.changed("chat_" + ch.ID)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -340,7 +314,7 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 	p.mu.Lock()
 	repo, name := p.repoDir(), p.Name
 	p.mu.Unlock()
-	scope := offerScope{project: p}
+	scope := offerScope{project: p, declinedFrom: pc.conv}
 	system := c.projectChatSystem(p) + c.offerPrompt(scope)
 	user := projectChatTranscript(hist, projectChatHistory)
 	last := ""
@@ -438,7 +412,11 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 	onNote := func(n []string) {
 		pc.mu.Lock()
 		pc.reading = n
+		cb := pc.onReading
 		pc.mu.Unlock()
+		if cb != nil {
+			cb(n)
+		}
 	}
 	defer onNote(nil)
 	var text string
@@ -478,22 +456,8 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 	if ws.problem != "" {
 		pr.note(clip(ws.problemNote(), 120))
 	}
-	reply, asks := splitTaskBlocks(text)
-	reply, rq := splitResearchBlocks(reply)
-	reply, offer := c.takeOffer(reply, scope)
-	msg := ProjectChatMsg{Text: reply, Who: who, Cost: cost, Reads: pr.Notes, Offer: offer}
-	if rq != "" {
-		if webOn {
-			msg.research = rq
-		} else if msg.Offer == nil {
-			// Research needs the web: offer the switch (setting_offers.go) unless the owner declined it here.
-			if _, o := c.takeOffer("[[offer: web_search]]", scope); o != nil {
-				msg.Offer = o
-			} else {
-				msg.Error = "research needs web search (Settings → Tasks, \"Let chats search the web\")"
-			}
-		}
-	}
+	msg := c.projectBlocks(p, pc.chatID, text, scope)
+	msg.Who, msg.Cost, msg.Reads = who, cost, pr.Notes
 	if memInfer != nil && c.memorySuggestOn() {
 		pc.mu.Lock()
 		ask := pc.MemTries < maxMemoryTries
@@ -514,10 +478,34 @@ func (c *Controller) answerProjectChat(ctx context.Context, p *Project, pc *proj
 			msg.Suggest = suggestMemory(ctx, memInfer, owner, c.mem().forScope(p.ID))
 		}
 	}
+	return msg
+}
+
+// projectBlocks takes the [start task] and [start research] blocks and any offer marker out of an
+// answer's text, starts the tasks (in the project, from conversation chatID) and returns the message
+// with what that changed. Research is only noted in msg.research: the caller starts it once the
+// answer is saved.
+func (c *Controller) projectBlocks(p *Project, chatID, text string, scope offerScope) ProjectChatMsg {
+	reply, asks := splitTaskBlocks(text)
+	reply, rq := splitResearchBlocks(reply)
+	reply, offer := c.takeOffer(reply, scope)
+	msg := ProjectChatMsg{Text: reply, Offer: offer}
+	if rq != "" {
+		if c.projectWebOn() {
+			msg.research = rq
+		} else if msg.Offer == nil {
+			// Research needs the web: offer the switch (setting_offers.go) unless the owner declined it here.
+			if _, o := c.takeOffer("[[offer: web_search]]", scope); o != nil {
+				msg.Offer = o
+			} else {
+				msg.Error = "research needs web search (Settings → Tasks, \"Let chats search the web\")"
+			}
+		}
+	}
 	var failed []string
 	for _, prompt := range asks {
 		// The conversation already settled what to do, so the plan starts on its own (autoApproveHold).
-		t, _, terr := c.createTask(createReq{Prompt: prompt, Project: p.ID}, nil, createOpts{FromChat: true})
+		t, _, terr := c.createTask(createReq{Prompt: prompt, Project: p.ID}, nil, createOpts{FromChat: true, ChatID: chatID})
 		if terr != nil {
 			failed = append(failed, terr.Error())
 			continue
@@ -621,9 +609,20 @@ func sortTasksByCreated(list []*Task) {
 
 // projectChatSystem describes the job and the project's current state.
 func (c *Controller) projectChatSystem(p *Project) string {
+	s := projectGuidance(p)
+	if m := c.memoryPrompt(p.ID); m != "" {
+		s += m + "\n"
+	}
+	return s + c.projectState(p)
+}
+
+// projectGuidance is the part of the project text that only changes when the owner edits the
+// project: the lead's job, the [start task] rules, test command, git and the project instructions.
+// In a project conversation it goes in the system prompt, where a stable prefix keeps the model's
+// prompt cache.
+func projectGuidance(p *Project) string {
 	p.mu.Lock()
 	name, instr, test, gitURL, branch := p.Name, p.Instructions, p.TestCommand, p.GitURL, p.GitBranch
-	repo := p.repoDir()
 	p.mu.Unlock()
 	var b strings.Builder
 	fmt.Fprintf(&b, `You are the lead for the software project %q in Outpost, a self-hosted cluster that plans and writes code with the computers on the owner's network. You talk with the owner about this project. You can see the project's state below; you cannot change files or run commands yourself.
@@ -645,10 +644,16 @@ Rules: start a task only when the owner asks for work or agrees to your suggesti
 	if s := strings.TrimSpace(instr); s != "" {
 		fmt.Fprintf(&b, "\nProject instructions (the owner's standing rules):\n%s\n", clip(s, 3000))
 	}
-	if m := c.memoryPrompt(p.ID); m != "" {
-		b.WriteString(m + "\n")
-	}
+	return b.String()
+}
 
+// projectState is the part that changes as work happens: the project's tasks and files. A project
+// conversation puts it after the owner's newest message, not in the system prompt.
+func (c *Controller) projectState(p *Project) string {
+	p.mu.Lock()
+	repo := p.repoDir()
+	p.mu.Unlock()
+	var b strings.Builder
 	c.mu.Lock()
 	var list []*Task
 	for _, t := range c.tasks {

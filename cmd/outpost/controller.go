@@ -249,6 +249,7 @@ func runController(args []string) error {
 	c.loadCad()
 	c.loadProjects()
 	c.loadChats()
+	c.migrateProjectChats()
 	c.loadGroups()
 	c.loadTemplates()
 	c.loadSavedCatalog()

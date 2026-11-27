@@ -40,51 +40,53 @@ func splitResearchBlocks(text string) (string, string) {
 	return strings.TrimSpace(researchBlockRe.ReplaceAllString(text, "")), q
 }
 
-// researchRunning reports whether a project research run is working (pc.mu held).
-func (pc *projectChat) researchRunningLocked() bool {
-	return pc.resCancel != nil
-}
-
-// startProjectResearch adds a live research answer and runs it in the background.
-func (c *Controller) startProjectResearch(p *Project, pc *projectChat, question string) error {
-	pc.mu.Lock()
-	if pc.researchRunningLocked() {
-		pc.mu.Unlock()
+// startProjectResearch runs a research question in the project's conversation chat when it is idle.
+func (c *Controller) startProjectResearch(ch *Chat, p *Project, question string) error {
+	ch.mu.Lock()
+	defer ch.mu.Unlock()
+	if ch.Busy != "" {
 		return errors.New("research is already running in this project; wait for it or press Stop")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), researchTimeout)
-	id := newID("m")
-	pc.resCancel = cancel
-	pc.Messages = append(pc.Messages, ProjectChatMsg{ID: id, Role: "assistant", Time: time.Now(), Who: "Research", Question: question,
-		Research: &ResearchRun{Stage: "planning"}})
-	pc.saveLocked()
-	pc.mu.Unlock()
-	go func() {
-		defer cancel()
-		msg := c.runProjectResearch(ctx, p, pc, id, question)
-		pc.mu.Lock()
-		for i := range pc.Messages {
-			if pc.Messages[i].ID == id {
-				msg.ID, msg.Role, msg.Time, msg.Question = id, "assistant", time.Now(), question
-				pc.Messages[i] = msg
-			}
-		}
-		pc.resCancel = nil
-		pc.saveLocked()
-		pc.mu.Unlock()
-	}()
+	c.beginProjectResearchLocked(ch, p, question)
 	return nil
 }
 
-func (c *Controller) runProjectResearch(ctx context.Context, p *Project, pc *projectChat, id, question string) ProjectChatMsg {
-	st := &researchState{run: ResearchRun{Stage: "planning"}, liveKey: "projres_" + p.ID, publish: func(r *ResearchRun) {
-		pc.mu.Lock()
-		for i := range pc.Messages {
-			if pc.Messages[i].ID == id {
-				pc.Messages[i].Research = r
+// beginProjectResearchLocked adds a live research answer to the conversation and runs it in the
+// background. ch.mu must be held and ch.Busy empty. The conversation counts as busy meanwhile
+// (Stop cancels the run); the project page shows it as a research run, not as thinking.
+func (c *Controller) beginProjectResearchLocked(ch *Chat, p *Project, question string) {
+	ctx, cancel := context.WithTimeout(context.Background(), researchTimeout)
+	id := newID("m")
+	ch.Busy, ch.projRes, ch.cancel = "answering", true, cancel
+	ch.Messages = append(ch.Messages, ChatMsg{ID: id, Role: "assistant", At: time.Now(), Node: "Research", Question: question,
+		Research: &ResearchRun{Stage: "planning"}})
+	ch.saveLocked()
+	go func() {
+		defer cancel()
+		msg := c.runProjectResearch(ctx, ch, p, id, question)
+		ch.mu.Lock()
+		for i := range ch.Messages {
+			if ch.Messages[i].ID == id {
+				msg.ID, msg.Role, msg.At, msg.Question = id, "assistant", time.Now(), question
+				ch.Messages[i] = msg
 			}
 		}
-		pc.mu.Unlock()
+		ch.Busy, ch.projRes, ch.cancel, ch.Updated = "", false, nil, time.Now()
+		ch.saveLocked()
+		ch.mu.Unlock()
+		taskLive.changed("chat_" + ch.ID)
+	}()
+}
+
+func (c *Controller) runProjectResearch(ctx context.Context, ch *Chat, p *Project, id, question string) ChatMsg {
+	st := &researchState{run: ResearchRun{Stage: "planning"}, liveKey: "chat_" + ch.ID, publish: func(r *ResearchRun) {
+		ch.mu.Lock()
+		for i := range ch.Messages {
+			if ch.Messages[i].ID == id {
+				ch.Messages[i].Research = r
+			}
+		}
+		ch.mu.Unlock()
 	}}
 	hist := []ChatMessage{{Role: "system", Content: ""}, {Role: "user", Content: question}}
 	r := c.runResearch(ctx, st, hist, func() {})
@@ -92,7 +94,7 @@ func (c *Controller) runProjectResearch(ctx context.Context, p *Project, pc *pro
 	if r.Node != "" {
 		who = "Research · report by " + r.Node
 	}
-	msg := ProjectChatMsg{Text: r.Text, Who: who, Error: r.Error, Research: r.Research}
+	msg := ChatMsg{Text: r.Text, Node: who, Error: r.Error, Research: r.Research}
 	if r.Error != "" || strings.TrimSpace(r.Text) == "" {
 		return msg
 	}
