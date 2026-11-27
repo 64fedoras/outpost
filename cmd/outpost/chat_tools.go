@@ -164,6 +164,10 @@ func (c *Controller) chatWithToolset(ctx context.Context, infer inferFn, hist []
 		known[t.Name] = true
 	}
 	budget := (ctxTok - maxOut) * 3
+	if ts.project != nil {
+		// The project text is long: a small context still leaves room for some file reading, as the old project conversation did.
+		budget = max(budget, len(msgs[0].Content)+4000)
+	}
 	// One result may take about a third of the budget, so a few of them and the conversation fit.
 	capChars := max(min(chatToolPageCap, ctxTok, budget/3), chatToolKeepMin)
 	parseFails, badCalls := 0, 0
