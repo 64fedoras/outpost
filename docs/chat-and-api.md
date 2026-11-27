@@ -284,7 +284,8 @@ arrays and `dimensions` are refused. A **Chat only** token works here. `GET /v1/
 embedding models with `"capabilities": ["embedding"]`.
 
 Embedding models are small models that turn text into vectors for search. Add one on the **Models** page
-(*Add to library* on Nomic Embed Text, the default, or Qwen3 Embedding 0.6B for other languages; any
+(*Add to library* on Nomic Embed Text, the default, Qwen3 Embedding 0.6B for other languages, or Qwen3
+Embedding 4B for the best search results on a node with RAM to spare; any
 Hugging Face GGUF whose name says "embed" works too). They get an *Embedding* tag, have no *Load* button
 and are never offered as chat or task models. When a request arrives, Outpost picks an online node that has
 llama.cpp (preferring one that already has the model, then the one with the most CPU threads), copies the

@@ -65,7 +65,7 @@ func TestLoadOptionsRecommendation(t *testing.T) {
 	for _, o := range opts {
 		groups[o.Name] = o.Group
 	}
-	if groups["custom"] != "library" || groups["gemma-4-26b-a4b-q4km"] != "catalog" || groups["qwen2.5-coder-14b-q4km"] != "recommended" {
+	if groups["custom"] != "library" || groups["gemma-4-26b-a4b-q4km"] != "catalog" || groups["gpt-oss-20b-mxfp4"] != "recommended" {
 		t.Errorf("groups: %v", groups)
 	}
 }

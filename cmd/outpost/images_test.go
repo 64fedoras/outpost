@@ -181,8 +181,8 @@ func TestCatalogVisionModels(t *testing.T) {
 			}
 		}
 	}
-	if n != 3 {
-		t.Errorf("want Qwen3.6 35B, Qwen3.6 27B and Gemma 4 wired for vision, got %d entries", n)
+	if n != 13 {
+		t.Errorf("want 13 catalog models wired for vision (Qwen3.5, Qwen3.6, Qwen3.8, Gemma 4), got %d", n)
 	}
 	m := &ModelRec{HFFiles: []string{"a.gguf", "mmproj-F16.gguf"}}
 	if !m.hasVision() || (&ModelRec{HFFiles: []string{"a.gguf"}}).hasVision() {

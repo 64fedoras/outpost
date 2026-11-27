@@ -127,11 +127,11 @@ func TestBestFitFreeMemory(t *testing.T) {
 func TestBestFitAppleSilicon(t *testing.T) {
 	m := &Hello{OS: "darwin", Arch: "arm64", MemBWGBs: 60, RAMBytes: 16 * tgb, ModelsFreeBytes: 500 * tgb, GPUs: []GPUInfo{{Vendor: "apple", VRAMBytes: 16 * tgb}}}
 	o := bestFor(t, m, nil)
-	if !o.Unified || o.SpeedSrc != "apple" || o.Name != "qwen2.5-coder-7b-q4km" || !strings.Contains(o.SpeedNote, "guess") {
+	if !o.Unified || o.SpeedSrc != "apple" || o.Name != "qwen3.5-9b-q4km" || !strings.Contains(o.SpeedNote, "guess") {
 		t.Errorf("M-series 16 GB: got %s unified %v src %s note %q", o.Name, o.Unified, o.SpeedSrc, o.SpeedNote)
 	}
 	// A benchmark on the Mac is used as it is, without the factor.
-	o = bestFor(t, m, func(c *Controller) { c.nodes["n"].Bench = &NodeBench{Model: "qwen2.5-coder-7b-q4km", GenTPS: 30} })
+	o = bestFor(t, m, func(c *Controller) { c.nodes["n"].Bench = &NodeBench{Model: "qwen3.5-9b-q4km", GenTPS: 30} })
 	if o.SpeedSrc == "apple" {
 		t.Errorf("benchmarked Mac still shows a guess for %s", o.Name)
 	}
