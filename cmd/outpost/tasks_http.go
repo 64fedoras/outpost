@@ -160,6 +160,7 @@ type createOpts struct {
 	Unattended bool   // a schedule started it: no questions, the plan is approved on its own
 	Template   string // the saved task it came from
 	FromChat   bool   // the project conversation started it: its first plan starts on its own (autoApproveHold)
+	ChatID     string // the conversation that started it
 }
 
 // createTask starts a task from a request; the int is the HTTP status for an error.
@@ -215,7 +216,7 @@ func (c *Controller) createTask(req createReq, files []attachedFile, opt createO
 	review := req.Review == nil || *req.Review
 	t = &Task{ProjectID: req.Project, ID: newID("task"), Prompt: strings.TrimSpace(req.Prompt), Planner: req.Planner, ClaudeModel: req.ClaudeModel, ORModel: req.ORModel, Review: review,
 		Instructions: joinInstructions(set.Instructions, projectInstructions(proj)), Mockup: req.Mockup, TestFirst: req.TestFirst, MaxFix: clampFixRounds(req.FixRounds), TestMinutes: clampTestMinutes(req.TestMinutes), CapUSD: req.CapUSD, Status: "planning", Created: time.Now(), Subtasks: []*SubtaskState{}, Events: []TaskEvent{}, Round: 1,
-		NodeLabel: normLabel(req.NodeLabel), Unattended: opt.Unattended, Template: opt.Template, FromChat: opt.FromChat}
+		NodeLabel: normLabel(req.NodeLabel), Unattended: opt.Unattended, Template: opt.Template, FromChat: opt.FromChat, ChatID: opt.ChatID}
 	t.dir = filepath.Join(c.tasksDir(), t.ID)
 	if proj != nil {
 		t.repo = proj.repoDir()

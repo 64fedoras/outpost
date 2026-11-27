@@ -57,6 +57,15 @@ type ChatMsg struct {
 	Research *ResearchRun `json:"research,omitempty"`
 	// Offer is a setting that blocked this answer, shown as a card until answered (setting_offers.go).
 	Offer *SettingOffer `json:"offer,omitempty"`
+	// Project conversations (chat_project.go): tasks this answer started, the files and pages it
+	// looked at, a research report's question and the Stash resource it was saved as, and the
+	// cost of a cloud planner's answer. Old versions ignore them.
+	Tasks    []string `json:"tasks,omitempty"`
+	Reads    []string `json:"reads,omitempty"`
+	Question string   `json:"question,omitempty"`
+	Saved    string   `json:"saved,omitempty"`
+	Cost     float64  `json:"cost_usd,omitempty"`
+	research string   // the research question this answer asked for, started after it is saved
 }
 
 type Chat struct {
@@ -80,9 +89,15 @@ type Chat struct {
 	Research *ResearchRun `json:"research,omitempty"`
 	// Prompt is the question or progress line while Auto gets a model (chat_switch.go); not saved.
 	Prompt *ChatPrompt `json:"prompt,omitempty"`
+	// ProjectID makes this a conversation of a project (chat_project.go): the project's
+	// text and file tools join the prompt. "" is a plain chat. Old versions ignore it.
+	ProjectID string `json:"project_id,omitempty"`
+	// Reading is the file and web chips of the answer being written in a project conversation; not kept.
+	Reading []string `json:"reading,omitempty"`
 
 	aff          chatAff // the node and model that answered last (chat_cache.go); memory only
 	needOverride string  // the next answer is for this need (the "chosen for" menu)
+	projRes      bool    // the busy work is a project research run (chat_project.go)
 	dir          string
 	cancel       context.CancelFunc
 	mu           sync.Mutex
@@ -127,7 +142,7 @@ func (c *Controller) loadChats() {
 		if json.Unmarshal(b, ch) != nil || ch.ID+".json" != e.Name() {
 			continue
 		}
-		ch.dir, ch.Busy, ch.RunOn, ch.Research, ch.Prompt = c.chatsDir(), "", "", nil, nil
+		ch.dir, ch.Busy, ch.RunOn, ch.Research, ch.Prompt, ch.Reading = c.chatsDir(), "", "", nil, nil, nil
 		c.chats[ch.ID] = ch
 	}
 }
@@ -160,18 +175,28 @@ func (c *Controller) chatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chats/{id}/instructions", c.auth(c.handleChatInstructions))
 }
 
+// handleListChats lists chats. ?project=<id> lists that project's conversations, ?project=all every
+// chat; without it (or with none) only chats that are in no project, as before projects had chats.
 func (c *Controller) handleListChats(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, c.chatSummaries())
+	writeJSON(w, 200, c.chatSummariesFor(r.URL.Query().Get("project")))
 }
 
 // chatSummaries is the chat list for the sidebar, newest first (also pushed
-// with the state, state_stream.go).
-func (c *Controller) chatSummaries() []map[string]any {
+// with the state, state_stream.go): the chats that are in no project.
+func (c *Controller) chatSummaries() []map[string]any { return c.chatSummariesFor("") }
+
+func (c *Controller) chatSummariesFor(filter string) []map[string]any {
 	c.chatMu.Lock()
 	out := []map[string]any{}
 	for _, ch := range c.chats {
 		ch.mu.Lock()
-		out = append(out, map[string]any{"id": ch.ID, "title": ch.Title, "updated": ch.Updated, "busy": ch.Busy, "messages": len(ch.Messages), "group_id": ch.GroupID})
+		if c.chatInFilter(ch, filter) {
+			m := map[string]any{"id": ch.ID, "title": ch.Title, "updated": ch.Updated, "busy": ch.Busy, "messages": len(ch.Messages), "group_id": ch.GroupID}
+			if ch.ProjectID != "" {
+				m["project_id"] = ch.ProjectID
+			}
+			out = append(out, m)
+		}
 		ch.mu.Unlock()
 	}
 	c.chatMu.Unlock()
@@ -199,9 +224,10 @@ type chatReq struct {
 	Docs   []imageUpload `json:"docs"` // PDF, DOCX, XLSX, ODT, CSV (chat_docs.go)
 	// Instructions (new chats only): nil takes the default from Settings.
 	Instructions *string  `json:"instructions"`
-	RunCode      bool     `json:"run_code"` // new chats only: start with Run code on
-	Need         string   `json:"need"`     // coding | vision | general: answer for this need (Auto only)
-	Stashes      []string `json:"stashes"`  // new chats only: stashes to search
+	RunCode      bool     `json:"run_code"`   // new chats only: start with Run code on
+	Need         string   `json:"need"`       // coding | vision | general: answer for this need (Auto only)
+	Stashes      []string `json:"stashes"`    // new chats only: stashes to search
+	ProjectID    string   `json:"project_id"` // new chats only: a conversation of this project (chat_project.go)
 }
 
 func (req *chatReq) check() error {
@@ -254,8 +280,16 @@ func (c *Controller) handleNewChat(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
+	if req.ProjectID != "" && c.getProject(req.ProjectID) == nil {
+		writeJSON(w, 404, map[string]string{"error": "no such project"})
+		return
+	}
+	if req.Node == chatPlanner && req.ProjectID == "" {
+		writeJSON(w, 400, map[string]string{"error": "the project's planner only answers in a project conversation"})
+		return
+	}
 	now := time.Now()
-	ch := &Chat{ID: newID("chat"), Title: chatTitle(firstNonEmpty(req.Text, "Image")), Node: firstNonEmpty(req.Node, "auto"), RunCode: req.RunCode, Stashes: c.validStashIDs(req.Stashes), Created: now, Updated: now, dir: c.chatsDir()}
+	ch := &Chat{ID: newID("chat"), Title: chatTitle(firstNonEmpty(req.Text, "Image")), Node: firstNonEmpty(req.Node, "auto"), ProjectID: req.ProjectID, RunCode: req.RunCode, Stashes: c.validStashIDs(req.Stashes), Created: now, Updated: now, dir: c.chatsDir()}
 	if req.Instructions != nil {
 		ch.Instructions = clipChatInstructions(*req.Instructions)
 	} else {
@@ -290,7 +324,12 @@ func (c *Controller) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	if req.Node == "" {
 		req.Node = ch.Node
 	}
+	plainPlanner := req.Node == chatPlanner && ch.ProjectID == ""
 	ch.mu.Unlock()
+	if plainPlanner {
+		writeJSON(w, 400, map[string]string{"error": "the project's planner only answers in a project conversation"})
+		return
+	}
 	imgs, err := req.checked(c)
 	var docs []chatDoc
 	if err == nil {
@@ -330,24 +369,10 @@ func (c *Controller) handleChatStop(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Controller) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	c.chatMu.Lock()
-	ch := c.chats[id]
-	delete(c.chats, id)
-	c.chatMu.Unlock()
-	if ch == nil {
+	if !c.removeChat(r.PathValue("id")) {
 		writeJSON(w, 404, map[string]string{"error": "no such chat"})
 		return
 	}
-	ch.mu.Lock()
-	if ch.cancel != nil {
-		ch.cancel()
-	}
-	ch.mu.Unlock()
-	os.Remove(filepath.Join(c.chatsDir(), id+".json"))
-	os.RemoveAll(filepath.Join(c.chatsDir(), id+"-images"))
-	os.RemoveAll(filepath.Join(c.chatsDir(), id+"-docs"))
-	os.RemoveAll(filepath.Join(c.chatsDir(), id+"-runs"))
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -413,7 +438,14 @@ func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	ch.Updated, ch.Busy, ch.cancel = time.Now(), "waiting", cancel
 	hist := chatHistoryDocs(ch.Messages, ch.imageURI, ch.docText)
-	hist[0].Content = c.chatSystemPrompt(ch.Instructions)
+	var proj *Project // set for a conversation of a project that still exists (chat_project.go)
+	if ch.ProjectID != "" {
+		proj = c.getProject(ch.ProjectID)
+	}
+	if pref == chatPlanner && proj == nil {
+		pref = "auto" // the project's planner is for project conversations only
+	}
+	hist[0].Content = c.chatSystemFor(ch, proj)
 	stashIDs := append([]string(nil), ch.Stashes...)
 	askMem := ch.MemTries < maxMemoryTries && c.memorySuggestOn()
 	if askMem {
@@ -427,6 +459,10 @@ func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
 	ch.saveLocked()
 	ch.mu.Unlock()
 	scope := offerScope{chat: ch}
+	cloud := false // the project's cloud planner answers (chat_project.go)
+	if proj != nil && pref == chatPlanner {
+		pref, cloud = c.resolveProjectPlanner(proj)
+	}
 	if pref != chatResearch {
 		hist[0].Content += c.offerPrompt(scope)
 	}
@@ -450,21 +486,37 @@ func (c *Controller) beginAnswerLocked(ch *Chat, alts []ChatAlt, ver int) {
 		}
 		var msg ChatMsg
 		var found *stashFound
-		if pref == chatResearch {
+		switch {
+		case cloud:
+			started()
+			msg = c.answerProjectCloud(ctx, ch, proj)
+		case pref == chatResearch:
 			msg = c.answerResearch(ctx, ch, hist, started)
-		} else {
-			sctx, f := c.withStash(ctx, stashIDs, hist)
+		default:
+			sctx, f := c.withStash(ctx, c.projectStashIDs(stashIDs, proj), hist)
 			found = f
+			if proj != nil {
+				sctx = context.WithValue(sctx, projectCtxKey{}, c.newProjectCtx(ch, proj))
+			}
 			msg = c.answerChatRun(sctx, ch.ID, pref, hist, askMem, run, started)
 		}
 		found.apply(&msg)
 		if pref != chatResearch && msg.Error == "" {
-			msg.Text, msg.Offer = c.takeOffer(msg.Text, scope)
+			switch {
+			case cloud:
+			case proj != nil:
+				c.applyProjectBlocks(ch, proj, &msg, scope)
+			default:
+				msg.Text, msg.Offer = c.takeOffer(msg.Text, scope)
+			}
 		}
 		ch.mu.Lock()
 		msg.ID, msg.At, msg.Alts, msg.Ver = newID("m"), time.Now(), alts, ver
 		ch.Messages = append(ch.Messages, msg)
-		ch.Updated, ch.Busy, ch.RunOn, ch.cancel = time.Now(), "", "", nil
+		ch.Updated, ch.Busy, ch.RunOn, ch.cancel, ch.Reading = time.Now(), "", "", nil, nil
+		if msg.research != "" && proj != nil {
+			c.beginProjectResearchLocked(ch, proj, msg.research) // keeps the chat busy until the report is in
+		}
 		ch.saveLocked()
 		ch.mu.Unlock()
 		taskLive.changed("chat_" + ch.ID)
@@ -641,13 +693,22 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 	c.chatSw.touch(node, loaded)
 	ran := false
 	pre := stashBriefFrom(ctx)
-	if run != nil || c.chatToolsOn() {
+	pj := projectCtxFrom(ctx) // nil in a plain chat, which builds its request exactly as before projects had chats
+	if pj != nil {
+		// A project conversation: the stash passages and the project's tasks and files go after the
+		// newest message, so the prompt before it stays the same from turn to turn.
+		hist, pre = withSearchBrief(hist, strings.TrimSpace(pre+"\n\n"+pj.state)), ""
+	} else if run != nil || c.chatToolsOn() {
 		hist, pre = withSearchBrief(hist, pre), "" // local paths: nothing leaves the cluster
 	}
-	if run != nil {
+	if run != nil && pj == nil {
 		out, note, ran, err = c.answerWithRun(ctx, infer, loaded, hist, ctxTok, maxOut, run)
 	}
 	switch {
+	case pj != nil:
+		var n2 string
+		out, n2, err = c.answerWithProject(ctx, infer, loaded, hist, ctxTok, maxOut, run, pj)
+		note = joinNotes(note, n2)
 	case ran:
 	case c.chatToolsOn():
 		var n2 string
@@ -663,19 +724,19 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 	note = joinNotes(note, contNote)
 	switch {
 	case errors.Is(ctx.Err(), context.Canceled):
-		return ChatMsg{Role: "assistant", Node: name, Error: "stopped", Runs: run.done()}, ""
+		return ChatMsg{Role: "assistant", Node: name, Error: "stopped", Runs: run.done(), Reads: pj.notes()}, ""
 	case err != nil:
 		if isNodeProblem(err) {
 			lost = node
 		}
-		return ChatMsg{Role: "assistant", Node: name, Error: err.Error(), Note: note, Runs: run.done()}, lost
+		return ChatMsg{Role: "assistant", Node: name, Error: err.Error(), Note: note, Runs: run.done(), Reads: pj.notes()}, lost
 	}
 	text := out.Text
 	if out.FinishReason == "length" {
 		text = cutOffText(text)
 	}
 	cut := out.FinishReason == "length" && strings.TrimSpace(out.Text) != ""
-	msg := ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note, Prompt: out.PromptTokens, Cached: out.CachedTokens, Cut: cut, Think: out.Reasoning, ThinkS: out.ThinkSecs}
+	msg := ChatMsg{Role: "assistant", Text: text, Node: name, Model: out.Model, TPS: out.TokensPerSec, Note: note, Prompt: out.PromptTokens, Cached: out.CachedTokens, Cut: cut, Think: out.Reasoning, ThinkS: out.ThinkSecs, Reads: pj.notes()}
 	c.noteChatNode(chatID, node, out.Model, out.PromptTokens)
 	if run != nil {
 		msg.Runs = run.done()
@@ -690,7 +751,7 @@ func (c *Controller) answerChatOnce(ctx context.Context, chatID, pref string, hi
 		plain := func(ctx context.Context, spec InferenceSpec) (*InferenceOutput, error) {
 			return c.runInferenceJob(ctx, node, memoryOnChat(spec, fitHistory(hist, (ctxTok-maxOut)*3), text), "Chat: memory", 2*time.Minute)
 		}
-		msg.Suggest = suggestMemory(ctx, plain, owner, c.mem().forScope(""))
+		msg.Suggest = suggestMemory(ctx, plain, owner, c.mem().forScope(pj.memScope()))
 	}
 	return msg, ""
 }

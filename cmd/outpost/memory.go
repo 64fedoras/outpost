@@ -366,15 +366,18 @@ func (c *Controller) handleMemorySuggestion(w http.ResponseWriter, r *http.Reque
 			writeJSON(w, 404, map[string]string{"error": "no such project"})
 			return
 		}
-		pc := p.chatLog()
-		pc.mu.Lock()
-		for i := range pc.Messages {
-			if pc.Messages[i].ID == req.Msg {
-				pc.Messages[i].Suggest = ""
+		// The suggestion is on a message of the project's conversation chat.
+		if ch := c.projectConvChat(p, false); ch != nil {
+			ch.mu.Lock()
+			for i := range ch.Messages {
+				if ch.Messages[i].ID == req.Msg {
+					ch.Messages[i].Suggest = ""
+				}
 			}
+			ch.saveLocked()
+			ch.mu.Unlock()
+			taskLive.changed("chat_" + ch.ID)
 		}
-		pc.saveLocked()
-		pc.mu.Unlock()
 		source = "from the project chat"
 	default:
 		writeJSON(w, 400, map[string]string{"error": "name the chat or project"})

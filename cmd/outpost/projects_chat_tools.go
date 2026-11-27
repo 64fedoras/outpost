@@ -52,6 +52,8 @@ type projectReads struct {
 	Notes []string
 	// web runs web_search and read_page; nil when web search is off.
 	web func(call toolCall) string
+	// onNote (may be nil) is told the chips so far whenever one is added.
+	onNote func([]string)
 }
 
 // tools is what the model is offered: the read tools, plus the web tools when web search is on.
@@ -69,6 +71,9 @@ func newProjectReads(repo string) *projectReads {
 func (pr *projectReads) note(s string) {
 	if len(pr.Notes) < maxProjectReadNotes {
 		pr.Notes = append(pr.Notes, s)
+		if pr.onNote != nil {
+			pr.onNote(append([]string(nil), pr.Notes...))
+		}
 	}
 }
 

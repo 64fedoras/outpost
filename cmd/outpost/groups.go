@@ -275,9 +275,15 @@ func (c *Controller) handleChatMeta(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Title *string `json:"title"`
 		Group *string `json:"group"`
+		// Project moves the chat into a project ("" takes it out; chat_project.go).
+		Project *string `json:"project_id"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "bad request"})
+		return
+	}
+	if req.Project != nil && *req.Project != "" && c.getProject(*req.Project) == nil {
+		writeJSON(w, 404, map[string]string{"error": "no such project"})
 		return
 	}
 	if req.Group != nil && *req.Group != "" && !c.groupExists(*req.Group) {
@@ -299,8 +305,14 @@ func (c *Controller) handleChatMeta(w http.ResponseWriter, r *http.Request) {
 	if req.Group != nil {
 		ch.GroupID = *req.Group
 	}
+	if req.Project != nil && ch.ProjectID != *req.Project {
+		ch.ProjectID = *req.Project
+		if ch.ProjectID == "" && ch.Node == chatPlanner {
+			ch.Node = "auto" // the project's planner answers project conversations only
+		}
+	}
 	ch.saveLocked()
-	out := map[string]any{"id": ch.ID, "title": ch.Title, "group": ch.GroupID}
+	out := map[string]any{"id": ch.ID, "title": ch.Title, "group": ch.GroupID, "project_id": ch.ProjectID}
 	ch.mu.Unlock()
 	writeJSON(w, 200, out)
 }

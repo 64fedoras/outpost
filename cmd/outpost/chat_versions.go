@@ -38,11 +38,16 @@ func clipChatInstructions(s string) string {
 
 // chatSystemPrompt is the system message for a chat with these instructions.
 func (c *Controller) chatSystemPrompt(instructions string) string {
+	return c.chatSystemPromptIn(instructions, "")
+}
+
+// chatSystemPromptIn is chatSystemPrompt with the memory facts of one project as well as the general ones.
+func (c *Controller) chatSystemPromptIn(instructions, memScope string) string {
 	p := chatBaseSystem
 	if instructions = strings.TrimSpace(instructions); instructions != "" {
 		p += "\n\nFollow these instructions from the user for this chat:\n" + instructions
 	}
-	return p + c.memoryPrompt("")
+	return p + c.memoryPrompt(memScope)
 }
 
 // msgIndex finds a message by id in the current version of the chat.
@@ -120,7 +125,7 @@ func (c *Controller) handleChatEdit(w http.ResponseWriter, r *http.Request) {
 	all := ch.cutTail(i)
 	ch.Messages = append(ch.Messages, ChatMsg{ID: newID("m"), Role: "user", Text: text, Images: imgs, Docs: docs, At: time.Now(), Alts: all, Ver: len(all)})
 	if req.Node != "" {
-		ch.Node = req.Node
+		ch.setNodeLocked(req.Node)
 	}
 	c.beginAnswerLocked(ch, nil, 0)
 	writeJSON(w, 200, map[string]bool{"ok": true})
@@ -152,7 +157,7 @@ func (c *Controller) handleChatRegenerate(w http.ResponseWriter, r *http.Request
 	}
 	all := ch.cutTail(i)
 	if req.Node != "" {
-		ch.Node = req.Node
+		ch.setNodeLocked(req.Node)
 	}
 	if validNeed(req.Need) {
 		ch.needOverride = req.Need

@@ -164,8 +164,8 @@ func TestSettingOfferDismissAndProjectApply(t *testing.T) {
 	// A project answer that started a task is not replaced; the setting still goes on.
 	p := &Project{ID: "proj_x", dir: t.TempDir()}
 	c.projects[p.ID] = p
-	pc := p.chatLog()
-	pc.Messages = []ProjectChatMsg{{ID: "u", Role: "user", Text: "what is hermes?"}, {ID: "a", Role: "assistant", Text: "off", Tasks: []string{"t1"}, Offer: &SettingOffer{Key: "web_search"}}}
+	pcv := c.projectConvChat(p, true) // the card is on a message of the project's conversation chat
+	pcv.Messages = []ChatMsg{{ID: "u", Role: "user", Text: "what is hermes?"}, {ID: "a", Role: "assistant", Text: "off", Tasks: []string{"t1"}, Offer: &SettingOffer{Key: "web_search"}}}
 	if rec := call(`{"project":"proj_x","msg":"a","key":"run_code","act":"apply"}`); rec.Code != 400 {
 		t.Fatalf("run_code in a project %d", rec.Code)
 	}
@@ -173,7 +173,7 @@ func TestSettingOfferDismissAndProjectApply(t *testing.T) {
 	if rec.Code != 200 || strings.Contains(rec.Body.String(), `"retried":true`) {
 		t.Fatalf("project apply %d %s", rec.Code, rec.Body)
 	}
-	if !c.settings.ChatWebSearch || c.settings.ChatSearchWith != "local" || pc.Messages[1].Offer != nil || len(pc.Messages) != 2 {
-		t.Fatalf("after project apply: %+v %q %+v", c.settings.ChatWebSearch, c.settings.ChatSearchWith, pc.Messages)
+	if !c.settings.ChatWebSearch || c.settings.ChatSearchWith != "local" || pcv.Messages[1].Offer != nil || len(pcv.Messages) != 2 {
+		t.Fatalf("after project apply: %+v %q %+v", c.settings.ChatWebSearch, c.settings.ChatSearchWith, pcv.Messages)
 	}
 }

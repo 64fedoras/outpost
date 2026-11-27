@@ -67,30 +67,39 @@ func TestProjectChatSendAndPersist(t *testing.T) {
 	if w := send(`{"text":"hello?"}`); w.Code != 200 {
 		t.Fatalf("send: %d %s", w.Code, w.Body)
 	}
-	pc := p.chatLog()
+	ch := c.projectConvChat(p, false) // made by the first message; the old chat.json is not used
+	if ch == nil || ch.ProjectID != p.ID || p.ConvChatID != ch.ID {
+		t.Fatalf("no conversation chat: %+v", ch)
+	}
 	deadline := time.Now().Add(3 * time.Second)
-	for pc.view().Busy {
+	for ch.projectView().Busy {
 		if time.Now().After(deadline) {
 			t.Fatal("answer never finished")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	v := pc.view()
+	v := ch.projectView()
 	if len(v.Messages) != 2 || v.Messages[0].Text != "hello?" || !strings.Contains(v.Messages[1].Error, "Claude API key") {
 		t.Fatalf("messages: %+v", v.Messages)
 	}
-	projectChats.Delete(pc.path)
-	if got := p.chatLog().view(); len(got.Messages) != 2 {
-		t.Fatalf("not saved: %+v", got)
+	// The log survives a restart: a fresh controller reads the chat and the project's link to it.
+	c2 := &Controller{dataDir: c.dataDir, projects: map[string]*Project{}}
+	c2.loadProjects()
+	c2.loadChats()
+	if p2 := c2.projects[p.ID]; p2 == nil || p2.ConvChatID != ch.ID || len(c2.projectChatViewFor(p2).Messages) != 2 {
+		t.Fatalf("not saved: %+v", c2.projects[p.ID])
 	}
-	if _, err := os.Stat(filepath.Join(p.dir, "chat.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(c.chatsDir(), ch.ID+".json")); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(p.dir, "chat.json")); err == nil {
+		t.Fatal("chat.json must not be written any more")
 	}
 	w = httptest.NewRecorder()
 	r := httptest.NewRequest("DELETE", "/api/projects/"+p.ID+"/chat", nil)
 	r.SetPathValue("id", p.ID)
 	c.handleProjectChatClear(w, r)
-	if w.Code != 200 || len(p.chatLog().view().Messages) != 0 {
+	if w.Code != 200 || len(c.projectChatViewFor(p).Messages) != 0 {
 		t.Fatalf("clear: %d", w.Code)
 	}
 }

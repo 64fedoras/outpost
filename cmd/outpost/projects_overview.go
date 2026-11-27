@@ -125,7 +125,7 @@ func (c *Controller) handleProjectOverview(w http.ResponseWriter, r *http.Reques
 		files = files[:overviewMaxFiles]
 	}
 	out.Files = files
-	out.Chat = p.chatLog().view()
+	out.Chat = c.projectChatViewFor(p)
 	writeJSON(w, 200, out)
 }
 

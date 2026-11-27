@@ -147,6 +147,7 @@ type Task struct {
 	Touched      []string        `json:"touched,omitempty"`      // files written this round
 	Instructions string          `json:"instructions,omitempty"` // standing rules copied from settings when the task was created
 	ProjectID    string          `json:"project_id,omitempty"`   // "" = unfiled; see projects.go
+	ChatID       string          `json:"chat_id,omitempty"`      // the conversation that started it (chat_project.go)
 	Seeded       bool            `json:"seeded,omitempty"`       // the repo started with files (project or attached zip)
 	Attachments  []Attachment    `json:"attachments,omitempty"`
 	Mockup       bool            `json:"mockup,omitempty"`         // plan 2 or 3 design variants first (visual.go)
