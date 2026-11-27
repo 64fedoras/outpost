@@ -7,7 +7,7 @@ One entry point, `sh testing/run_all.sh`:
 | --- | --- |
 | `sh testing/run_all.sh` (or `fast`) | A `gofmt` check, `go vet`, all unit tests, `node --check` on every `web/*.js`, and a build for all five platforms. |
 | `sh testing/run_all.sh race` | Unit tests with the race detector (needs gcc). |
-| `sh testing/run_all.sh e2e` | Starts the local rig, runs the browser scripts below (`groups`, `steer`, `edit`, `rerun`, `taskmenu`, `projmenu`, `mobile`, `dropzone`, `projectnew`, `chatpage`), stops the rig. Needs Python Playwright; it stops with an error if that is missing instead of skipping. `E2E_FULL=1` adds `flow.py` (about 4 minutes) and `soak.py`. |
+| `sh testing/run_all.sh e2e` | Starts the local rig, runs the browser scripts below (`groups`, `steer`, `edit`, `rerun`, `taskmenu`, `projmenu`, `mobile`, `dropzone`, `projectnew`, `chatpage`, `sendkey`), stops the rig. Needs Python Playwright; it stops with an error if that is missing instead of skipping. `E2E_FULL=1` adds `flow.py` (about 4 minutes) and `soak.py`. |
 | `sh testing/run_all.sh all` | `fast`, then `race`, then `e2e`. |
 
 CI runs `fast` and `race` on every pull request. `e2e` is run by hand (the nightly soak workflow runs `soak.py`).
@@ -44,6 +44,7 @@ Then, with `OUTPOST_E2E_DIR=$PWD/testing/e2e/run`:
 | `usability4.py` | Monthly limit asked once on the first cloud key (Set limit / No limit); Scheduled shows the browser clock when it differs; shots in `run/shots/usability4/`. |
 | `usability5.py` | Settings autosave: planner defaults, running tasks and free-disk cards have no Save button and save after a change (including reordering Auto); shots in `run/shots/usability5/`. |
 | `assume.py` | Plan first with assumptions: Assumed row on the plan card, a changed chip turns the button into Re-plan, Other… takes a typed value, a clear request has no row; shots in `run/shots/assume/`. |
+| `sendkey.py` | The Chat send-key setting (Enter or Ctrl+Enter) applies to the Chat box and the project conversation box. |
 | `projpane.py` | Project pane: a task opens inside the Threads pane (address, ‹ Threads, ↗ full page, the project composer kept, the wider task width) and the Context tab (instructions, a memory note added and forgotten, Stash upload and removal, folds kept after reload); on a phone a task link opens the task page. Shots in `run/shots/projpane/`. |
 | `projfiles.py` | Project Artifacts as folders and files: a finished task's **Result files** and build output cards open its file browser in the pane; uploads (files through the dialog, a folder by its paths) open in their viewers (CSV table, picture, PDF text, STL 3D, audio, Markdown with Preview); a file, a folder and a build output are deleted. Shots in `run/shots/projfiles/`. |
 | `panelresize.py` | Project Threads pane: Artifacts row with Stash documents, folding groups (kept after reload), dragging the left edge (clamped, remembered, keyboard, double-click reset), the same edge on the Chat page's chats list, no edge in the narrow overlay or on a phone; `before` only takes screenshots. Shots in `run/shots/panelresize/`. |
