@@ -120,7 +120,7 @@ function renderThreadItems(items) {
   for (const it of items) {
     let el = th._items[it.key];
     if (!el) { el = document.createElement('div'); th._items[it.key] = el; grew = true; }
-    if (el._h !== it.html) {
+    if (el._h !== it.html && !(el.parentNode && Date.now() - selForce > 1500 && selectionIn(el))) { // text selected in this card: leave it alone until the selection is gone
       // keep each live pane's scroll position across the rebuild (bottom stays pinned)
       const pos = {};
       el.querySelectorAll('.live-text').forEach((p) => { const k = p.closest('.live')?.dataset.sub; if (k) pos[k] = { top: p.scrollTop, stick: p.scrollHeight - p.scrollTop - p.clientHeight < 24 }; });
