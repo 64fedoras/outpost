@@ -41,6 +41,24 @@ async def main():
             # a model may not be loaded on the rig: Enter still posts the message or an error, so look for any POST under /api/chats
             got = await tries("/api/chats", "#chat-text", "hello chat")
             assert got == want, f"chat box ctrl={ctrl}: {got} != {want}"
+        # Lists continue on a newline in every box; an empty item ends the list (Shift+Enter is a newline in both modes).
+        async def lists(sel):
+            async def typed(parts):
+                await pg.fill(sel, "")
+                for t in parts:
+                    await (pg.press(sel, "Shift+Enter") if t == "\n" else pg.keyboard.type(t))
+                return await pg.input_value(sel)
+            assert await typed(["1. a", "\n", "b", "\n"]) == "1. a\n2. b\n3. ", sel
+            assert await typed(["1. a", "\n", "\n"]) == "1. a\n", sel
+            assert await typed(["- a", "\n", "b"]) == "- a\n- b", sel
+            assert await typed(["  * a", "\n"]) == "  * a\n  * ", sel
+            assert await typed(["```", "\n", "- a", "\n"]) == "```\n- a\n", sel
+            assert await typed(["plain", "\n"]) == "plain\n", sel
+        await pg.evaluate("() => localStorage.removeItem('outpost.chatSendKey')")
+        await pg.goto(U + "/#/projects/" + pid); await pg.reload(); await pg.wait_for_selector("#pj-text")
+        await lists("#pj-text")
+        await pg.goto(U + "/#/chat"); await pg.reload(); await pg.wait_for_selector("#chat-text")
+        await lists("#chat-text")
         assert not errors, errors
         print("ok")
         await b.close()

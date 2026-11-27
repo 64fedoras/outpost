@@ -492,7 +492,7 @@ async function pjSend(asTask) {
 $('pj-go').onclick = () => pjSend(false);
 $('pj-task').onclick = () => pjSend(true);
 // Enter asks, like Chat (or Ctrl+Enter, by the Chat send-key setting); Shift+Enter adds a line. Not while an input method is composing.
-$('pj-text').addEventListener('keydown', (e) => { if (composerEnterSends(e)) { e.preventDefault(); pjSend(false); } });
+$('pj-text').addEventListener('keydown', (e) => composerKey(e, () => pjSend(false)));
 $('pj-text').addEventListener('input', () => autoGrow($('pj-text')));
 $('pj-more').onclick = (e) => {
   e.preventDefault();

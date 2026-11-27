@@ -349,6 +349,28 @@ function composerEnterSends(e) {
   if (e.key !== 'Enter' || e.isComposing || e.shiftKey || chatTouch()) return false;
   return !chatCtrlSend() || e.ctrlKey || e.metaKey;
 }
+// Continue a list: a newline after "1. x", "- x" or "* x" starts the next item ("2. "); a newline on an empty item ends the list.
+// Returns true when it handled the key. Not inside a ``` code fence, not while composing, not with a selection.
+function composerListContinue(e) {
+  const ta = e.target;
+  if (e.key !== 'Enter' || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || !ta || ta.selectionStart !== ta.selectionEnd) return false;
+  const pos = ta.selectionStart, text = ta.value, ls = text.lastIndexOf('\n', pos - 1) + 1;
+  const m = /^(\s*)(?:([-*+])|(\d{1,9})([.)]))\s+(.*)$/.exec(text.slice(ls, pos));
+  if (!m) return false;
+  if ((text.slice(0, ls).match(/^\s*```/gm) || []).length % 2) return false;
+  let ins, from = pos;
+  if (!m[5].trim()) { from = ls; ins = ''; }
+  else ins = '\n' + m[1] + (m[2] ? m[2] : (+m[3] + 1) + m[4]) + ' ';
+  e.preventDefault();
+  ta.setSelectionRange(from, pos);
+  // execCommand keeps the browser's undo stack; fall back to setRangeText where it is missing.
+  if (!(document.execCommand && document.execCommand('insertText', false, ins))) { ta.setRangeText(ins, from, pos, 'end'); ta.dispatchEvent(new Event('input', { bubbles: true })); }
+  return true;
+}
+// One keydown handler for every composer: send on the configured key, otherwise continue lists.
+function composerKey(e, send) {
+  if (composerEnterSends(e)) { e.preventDefault(); send(); } else composerListContinue(e);
+}
 // Placeholder / hint wording for the current setting.
 const composerKeyHint = (verb) => (chatTouch() ? '' : chatCtrlSend() ? `Ctrl+Enter ${verb} · Enter adds a line` : `Enter ${verb} · Shift+Enter adds a line`);
 function chatSendKeySet(ctrl) {
@@ -358,7 +380,7 @@ function chatSendKeySet(ctrl) {
   const c = document.getElementById('set-chatkey'); if (c) c.checked = ctrl;
 }
 $('chat-text').addEventListener('keydown', (e) => {
-  if (composerEnterSends(e)) { e.preventDefault(); chatSend(); }
+  composerKey(e, chatSend);
 });
 $('chat-key').onclick = () => chatSendKeySet(!chatCtrlSend());
 { const k = document.querySelector('.pj-keys'); if (k) k.textContent = composerKeyHint('asks'); }
